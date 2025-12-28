@@ -1,3 +1,8 @@
+// ==========================================
+// 🐾 猫後市立ねこづか小学校：究極・完全版
+// ==========================================
+const SERVER_URL = "https://neru-teacher.onrender.com";
+
 let users = JSON.parse(localStorage.getItem('nekoneko_users')) || [];
 let currentUser = null; let currentMode = ''; let transcribedProblems = []; let selectedProblem = null;
 let hintIndex = 0; let isAnalyzing = false; let currentAudio = null;
@@ -15,15 +20,23 @@ function switchScreen(to) {
     if (target) { target.classList.remove('hidden'); window.scrollTo(0, 0); }
 }
 function showEnrollment() { switchScreen('screen-enrollment'); }
-function backToGate() { currentUser = null; switchScreen('screen-gate'); renderUserList(); }
+function backToGate() { resetAppData(); switchScreen('screen-gate'); renderUserList(); }
 function backToLobby() { document.getElementById('chalkboard').classList.add('hidden'); switchScreen('screen-lobby'); }
 
-// --- 音声合成 ---
+function resetAppData() {
+    currentUser = null; transcribedProblems = []; selectedProblem = null; hintIndex = 0; isAnalyzing = false;
+    document.getElementById('nell-text').innerText = "";
+    document.getElementById('chalkboard').innerHTML = "";
+    document.getElementById('final-view').classList.add('hidden');
+    document.getElementById('problem-selection-view').classList.add('hidden');
+}
+
+// --- 音声管理 ---
 async function speakNell(text, mood = "normal") {
-    if (!text) return;
+    if (!text || text === "undefined") return;
     if (currentAudio) { currentAudio.pause(); currentAudio = null; }
     try {
-        const res = await fetch('http://localhost:3000/synthesize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, mood }) });
+        const res = await fetch(`${SERVER_URL}/synthesize`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, mood }) });
         const data = await res.json();
         currentAudio = new Audio("data:audio/mp3;base64," + data.audioContent);
         return new Promise(resolve => { currentAudio.onended = resolve; currentAudio.play(); });
@@ -41,38 +54,27 @@ async function loadFaceModels() {
     const URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
     try {
         await faceapi.nets.ssdMobilenetv1.loadFromUri(URL); await faceapi.nets.faceLandmark68Net.loadFromUri(URL);
-        modelsLoaded = true; document.getElementById('loading-models').innerText = "準備OKだにゃ！🐾"; document.getElementById('complete-btn').disabled = false;
+        modelsLoaded = true; document.getElementById('loading-models').innerText = "準備完了にゃ！🐾"; document.getElementById('complete-btn').disabled = false;
     } catch (e) { console.error("Face API Error."); }
 }
 
 document.getElementById('student-photo-input').addEventListener('change', async (e) => {
     const file = e.target.files[0]; if (!file || !modelsLoaded) return;
     const img = await faceapi.bufferToImage(file);
-    const det = await faceapi.detectSingleFace(img).withFaceLandmarks();
+    const detection = await faceapi.detectSingleFace(img).withFaceLandmarks();
     const canvas = document.getElementById('id-photo-preview-canvas');
     const ctx = canvas.getContext('2d');
     const targetW = 94, targetH = 102; ctx.clearRect(0,0,targetW,targetH);
-
-    // 【重要】学生証の写真を綺麗にするために、比率を保ってクロップにゃ！
-    if (det) {
-        const box = det.detection.box; const nose = det.landmarks.getNose()[3];
+    if (detection) {
+        const box = detection.detection.box; const nose = detection.landmarks.getNose()[3];
         const aspect = targetW / targetH; let cropW = box.width * 2.8; let cropH = cropW / aspect;
         let sX = box.x + box.width / 2 - cropW / 2; let sY = box.y + box.height / 2 - cropH * 0.45;
         ctx.drawImage(img, sX, sY, cropW, cropH, 0, 0, targetW, targetH);
-        const scale = targetW / cropW;
-        const nX = (nose.x - sX) * scale; const nY = (nose.y - sY) * scale; const headTopY = (box.y - sY) * scale;
+        const scale = targetW / cropW; const nX = (nose.x - sX) * scale; const nY = (nose.y - sY) * scale; const fY = (box.y - sY) * scale;
         const earW = targetW * 1.0;
-        ctx.drawImage(decoEars, (targetW - earW)/2, headTopY - (earW * 0.45), earW, earW);
-        ctx.drawImage(decoMuzzle, nX - (targetW*0.65)/2, nY - (targetW*0.65)/3.5, targetW*0.65, targetW*0.65 * 0.8);
-        ctx.strokeStyle = '#333'; ctx.lineWidth = 1.2;
-        for(let i=-1; i<=1; i++) {
-            ctx.beginPath(); ctx.moveTo(nX - 10, nY + 10 + i*5); ctx.lineTo(nX - 45, nY + 5 + i*12); ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(nX + 10, nY + 10 + i*5); ctx.lineTo(nX + 45, nY + 5 + i*12); ctx.stroke();
-        }
-    } else {
-        const s = Math.min(img.width, img.height);
-        ctx.drawImage(img, (img.width-s)/2, (img.height-s)/2, s, s, 0, 0, targetW, targetH);
-    }
+        ctx.drawImage(decoEars, (targetW - earW)/2, fY - (earW * 0.45), earW, earW);
+        ctx.drawImage(decoMuzzle, nX-(targetW*0.65)/2, nY-(targetW*0.65)/3.5, targetW*0.65, targetW*0.65 * 0.8);
+    } else { ctx.drawImage(img, 0,0, img.width, img.height, 0,0, targetW, targetH); }
 });
 
 function processAndCompleteEnrollment() {
@@ -84,24 +86,23 @@ function processAndCompleteEnrollment() {
     const pCanvas = document.getElementById('id-photo-preview-canvas');
     ctx.drawImage(pCanvas, 21*2.5, 133*2.5, 94*2.5, 102*2.5);
     ctx.fillStyle="#333"; ctx.font="bold 42px 'M PLUS Rounded 1c'"; 
-    ctx.fillText(grade+"年生", 190*2.5, 139*2.5+32); 
-    ctx.fillText(name, 190*2.5, 177*2.5+42);
+    ctx.fillText(grade+"年生", 190*2.5, 139*2.5+32); ctx.fillText(name, 190*2.5, 177*2.5+42);
     const newUser = { id: Date.now(), name, grade, photo: canvas.toDataURL(), karikari: 0, attendance: {} };
     users.push(newUser); localStorage.setItem('nekoneko_users', JSON.stringify(users)); login(newUser);
 }
 
-// --- 解析ロジック (高精度 1600px) ---
+// --- 解析ロジック ---
 async function shrinkImage(file) {
     return new Promise((resolve) => {
         const reader = new FileReader(); reader.readAsDataURL(file);
         reader.onload = (e) => {
             const img = new Image(); img.onload = () => {
-                const canvas = document.createElement('canvas'); const MAX = 1600; // 解析精度のため大きくにゃ
+                const canvas = document.createElement('canvas'); const MAX = 1600;
                 let w = img.width, h = img.height;
                 if (w > MAX || h > MAX) { if (w > h) { h *= MAX / w; w = MAX; } else { w *= MAX / h; h = MAX; } }
                 canvas.width = w; canvas.height = h;
                 canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-                resolve(canvas.toDataURL('image/jpeg', 0.9).split(',')[1]); // 解析用も高品質にゃ
+                resolve(canvas.toDataURL('image/jpeg', 0.9).split(',')[1]);
             }; img.src = e.target.result;
         };
     });
@@ -112,25 +113,31 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
     isAnalyzing = true;
     document.getElementById('upload-controls').classList.add('hidden');
     document.getElementById('thinking-view').classList.remove('hidden');
-    let progress = 0; 
-    const timer = setInterval(() => { if (progress < 90) { progress += 4; document.getElementById('progress-bar').style.width = progress + '%'; document.getElementById('progress-percent').innerText = progress; } }, 500);
+    const pBar = document.getElementById('progress-bar'); const pTxt = document.getElementById('progress-percent');
+    let p = 0; const timer = setInterval(() => { if (p < 90) { p += 4; pBar.style.width = p+'%'; pTxt.innerText = p; } }, 500);
+
     try {
         updateNellMessage("どれどれ……ネル先生がじっくり見てあげるにゃ。……", "thinking");
         const b64 = await shrinkImage(e.target.files[0]);
-        const res = await fetch('http://localhost:3000/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: b64, mode: currentMode, grade: currentUser.grade }) });
+        const res = await fetch(`${SERVER_URL}/analyze`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: b64, mode: currentMode, grade: currentUser.grade }) });
+        if(!res.ok) throw new Error("Google先生が制限エラーだにゃ🐾");
         transcribedProblems = await res.json();
-        clearInterval(timer); document.getElementById('progress-bar').style.width = '100%'; document.getElementById('progress-percent').innerText = '100';
-        setTimeout(() => { document.getElementById('thinking-view').classList.add('hidden'); if (currentMode === 'explain') renderProblemSelection(); else showGradingView(); }, 800);
-    } catch (err) { updateNellMessage("Google先生が制限エラーだにゃ🐾"); document.getElementById('upload-controls').classList.remove('hidden');
+        clearInterval(timer); pBar.style.width = '100%'; pTxt.innerText = '100';
+        setTimeout(() => {
+            document.getElementById('thinking-view').classList.add('hidden');
+            if (currentMode === 'explain') renderProblemSelection(); else showGradingView();
+        }, 800);
+    } catch (err) { updateNellMessage(err.message); document.getElementById('upload-controls').classList.remove('hidden'); document.getElementById('thinking-view').classList.add('hidden');
     } finally { isAnalyzing = false; }
 });
 
+// --- レンダリング ---
 function renderUserList() {
     const list = document.getElementById('user-list'); if(!list) return;
-    list.innerHTML = users.length ? "" : "<p style='text-align:right'>入学してにゃ</p>";
+    list.innerHTML = users.length ? "" : "<p style='text-align:right; font-size:0.7rem; opacity:0.5;'>入学してにゃ</p>";
     users.forEach(user => {
         const div = document.createElement('div'); div.className = "user-card";
-        div.innerHTML = `<img src="${user.photo}"><div class="user-card-info">${user.grade}年生 ${user.name}</div><button class="delete-student-btn" onclick="deleteUser(event, ${user.id})">×</button>`;
+        div.innerHTML = `<img src="${user.photo}"><div class="user-card-info">${user.grade}年 ${user.name}</div><button class="delete-student-btn" onclick="deleteUser(event, ${user.id})">×</button>`;
         div.onclick = () => login(user); list.appendChild(div);
     });
 }
@@ -144,24 +151,22 @@ function renderProblemSelection() {
     transcribedProblems.forEach(p => {
         const div = document.createElement('div'); div.className = "prob-card";
         div.innerHTML = `<div><span class="q-label">${p.label || '?'}</span><span>${p.question}</span></div><button class="main-btn blue-btn" style="width:auto; padding:10px;" onclick="startHint(${p.id})">教えて！</button>`;
-        div.onclick = () => startHint(p.id); list.appendChild(div);
+        list.appendChild(div);
     });
+    updateNellMessage("どの問題をおしえてほしいかにゃ？", "happy");
 }
-function startHint(id) { selectedProblem = transcribedProblems.find(p => p.id === id); hintIndex = 0; switchView('hint-detail-container'); document.getElementById('chalkboard').innerHTML = selectedProblem.question; document.getElementById('chalkboard').classList.remove('hidden'); showHintStep(); }
+function startHint(id) { selectedProblem = transcribedProblems.find(p => p.id === id); hintIndex = 0; switchViewInMain('hint-detail-container'); document.getElementById('chalkboard').innerHTML = selectedProblem.question; document.getElementById('chalkboard').classList.remove('hidden'); showHintStep(); }
 function showHintStep() {
-    const labels = ["考え方", "式の作り方", "計算"]; document.getElementById('hint-step-label').innerText = labels[hintIndex];
+    document.getElementById('hint-step-label').innerText = ["考え方", "式の作り方", "計算"][hintIndex];
     updateNellMessage(selectedProblem.hints[hintIndex], "thinking");
     const next = document.getElementById('next-hint-btn'); const reveal = document.getElementById('reveal-answer-btn');
     if(hintIndex < 2) { next.classList.remove('hidden'); reveal.classList.add('hidden'); } else { next.classList.add('hidden'); reveal.classList.remove('hidden'); }
 }
 function showNextHint() { hintIndex++; showHintStep(); }
-function revealAnswer() { 
-    const ans = selectedProblem.correct_answer; document.getElementById('final-answer-text').innerText = ans; document.getElementById('answer-display-area').classList.remove('hidden'); document.getElementById('reveal-answer-btn').classList.add('hidden'); 
-    updateNellMessage(`答えは……「${ans}」だにゃ！`, "gentle"); 
-}
+function revealAnswer() { const ans = selectedProblem.correct_answer; document.getElementById('final-answer-text').innerText = ans; document.getElementById('answer-display-area').classList.remove('hidden'); document.getElementById('reveal-answer-btn').classList.add('hidden'); document.getElementById('thanks-btn').classList.remove('hidden'); updateNellMessage(`答えは……「${ans}」だにゃ！`, "gentle"); }
 async function pressThanks() { await updateNellMessage("よくがんばったにゃ！えらいにゃ〜！", "happy"); backToProblemSelection(); }
 function backToProblemSelection() { document.getElementById('final-view').classList.add('hidden'); document.getElementById('problem-selection-view').classList.remove('hidden'); document.getElementById('chalkboard').classList.add('hidden'); updateNellMessage("どの問題をおしえてほしいかにゃ？", "happy"); }
-function showGradingView() { switchView('final-view'); document.getElementById('grade-sheet-container').classList.remove('hidden'); renderWorksheet(); }
+function showGradingView() { switchViewInMain('grade-sheet-container'); renderWorksheet(); }
 function renderWorksheet() {
     const list = document.getElementById('problem-list-grade'); list.innerHTML = "";
     transcribedProblems.forEach((item, idx) => {
@@ -171,15 +176,16 @@ function renderWorksheet() {
     });
 }
 function updateAns(idx, val) { const itm = transcribedProblems[idx]; itm.student_answer = val; if (val.trim() === String(itm.correct_answer)) { itm.status = 'correct'; updateNellMessage("正解にゃ！", "happy"); } renderWorksheet(); }
-function switchView(id) { document.getElementById('problem-selection-view').classList.add('hidden'); document.getElementById('final-view').classList.remove('hidden'); document.getElementById('grade-sheet-container').classList.add('hidden'); document.getElementById('hint-detail-container').classList.add('hidden'); document.getElementById(id).classList.remove('hidden'); }
+function switchViewInMain(id) { document.getElementById('problem-selection-view').classList.add('hidden'); document.getElementById('final-view').classList.remove('hidden'); document.getElementById('grade-sheet-container').classList.add('hidden'); document.getElementById('hint-detail-container').classList.add('hidden'); document.getElementById(id).classList.remove('hidden'); }
+function pressThanks() { const today = new Date().toISOString().split('T')[0]; currentUser.attendance[today] = 'red'; currentUser.karikari += 5; saveAndSync(); switchScreen('screen-lobby'); }
 function saveAndSync() { const idx = users.findIndex(u => u.id === currentUser.id); if (idx !== -1) users[idx] = currentUser; localStorage.setItem('nekoneko_users', JSON.stringify(users)); document.getElementById('karikari-count').innerText = currentUser.karikari; }
-function updateIDPreview() { document.getElementById('preview-name').innerText = document.getElementById('new-student-name').value || "なまえ"; document.getElementById('preview-grade').innerText = (document.getElementById('new-student-grade').value || "○") + "年生"; }
 function showAttendance() {
-    switchScreen('screen-attendance');
     const grid = document.getElementById('attendance-grid'); grid.innerHTML = "";
     for(let i=0; i<12; i++) {
         const d = new Date(); d.setDate(d.getDate() - i); const dateStr = d.toISOString().split('T')[0];
         const status = currentUser.attendance ? currentUser.attendance[dateStr] : null;
         grid.innerHTML += `<div class="day-box">${d.getDate()}日<br>${status==='red'?'🐾赤':(status==='blue'?'🐾青':'ー')}</div>`;
     }
+    switchScreen('screen-attendance');
 }
+function updateIDPreview() { document.getElementById('preview-name').innerText = document.getElementById('new-student-name').value || "なまえ"; document.getElementById('preview-grade').innerText = (document.getElementById('new-student-grade').value || "○") + "年生"; }
