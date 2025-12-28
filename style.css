@@ -1,42 +1,61 @@
-:root { --primary: #1e3a5f; --accent-pink: #ff85a1; --accent-blue: #4fc3f7; --accent-orange: #ffb74d; --chalk: #1b4d3e; }
-body { margin: 0; padding: 0; background-color: #fffaf0; background-image: url('nell-bg.png'); background-size: cover; background-attachment: fixed; background-position: top center; font-family: 'M PLUS Rounded 1c', sans-serif; color: var(--primary); }
+:root {
+    --primary: #1e3a5f; --accent-pink: #ff85a1; --accent-blue: #4fc3f7; --accent-orange: #ffb74d; --chalk: #1b4d3e;
+}
+body { 
+    margin: 0; padding: 0; min-height: 100vh; background-color: #fffaf0; 
+    background-image: url('nell-bg.png'); background-size: cover; background-attachment: fixed; background-position: top center;
+    font-family: 'M PLUS Rounded 1c', sans-serif; color: var(--primary); overflow-x: hidden;
+}
 .screen { max-width: 480px; margin: 0 auto; padding: 20px; min-height: 100vh; position: relative; }
 .hidden { display: none !important; }
 
+/* 校門レイアウト：名簿を右側に */
+.gate-layout { display: flex; justify-content: flex-end; width: 100%; margin-top: 20px; }
+.right-user-list { display: flex; flex-direction: column; gap: 10px; width: 160px; max-height: 60vh; overflow-y: auto; padding-right: 5px; }
+.user-card { background: rgba(255,255,255,0.9); padding: 8px; border-radius: 15px; border: 2px solid var(--accent-pink); cursor: pointer; text-align: center; }
+.user-card img { width: 120px !important; height: 120px !important; object-fit: contain; border-radius: 8px; }
+.enroll-btn-fixed { margin-top: 30px; }
+
 /* タイトル */
-.school-title { text-align: center; color: var(--primary); font-family: 'Sawarabi Gothic', sans-serif; font-size: 3.2rem; line-height: 1.2; margin: 40px 0; font-weight: 900; text-shadow: 4px 4px 0 #fff, -4px -4px 0 #fff, 4px -4px 0 #fff, -4px 4px 0 #fff, 0px 4px 0 #fff, 0px -4px 0 #fff, 4px 0px 0 #fff, -4px 0px 0 #fff; }
+.school-title { 
+    text-align: center; color: var(--primary); font-family: 'Sawarabi Gothic', sans-serif; font-size: 3.2rem; 
+    line-height: 1.2; margin: 30px 0; font-weight: 900; 
+    text-shadow: 4px 4px 0 #fff, -4px -4px 0 #fff, 4px -4px 0 #fff, -4px 4px 0 #fff, 0px 4px 0 #fff, 0px -4px 0 #fff, 4px 0px 0 #fff, -4px 0px 0 #fff;
+}
+
+/* 学生証：サイズ厳守 320px */
+.id-card-wrap {
+    position: relative; width: 320px !important; height: 320px !important; margin: 0 auto 20px; 
+    border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.15); 
+    border: 6px solid white; background: white;
+}
+.mini-id { width: 220px !important; height: 220px !important; }
+.id-base-img { width: 100%; height: 100%; object-fit: contain; }
+#id-photo-slot { position: absolute; top: 133px; left: 21px; width: 94px; height: 102px; overflow: hidden; }
 
 /* ボタン */
-.main-btn { background: var(--accent-pink); color: white; border: none; padding: 18px 25px; border-radius: 50px; font-weight: 900; font-size: 1.2rem; cursor: pointer; width: 100%; box-shadow: 0 6px 0 #d15d7d; transition: 0.1s; margin: 10px 0; font-family: inherit; }
+.main-btn {
+    background: var(--accent-pink); color: white; border: none; padding: 18px 25px; border-radius: 50px; font-weight: 900; font-size: 1.2rem; cursor: pointer; width: 100%; box-shadow: 0 6px 0 #d15d7d; transition: 0.1s; margin: 10px 0; font-family: inherit;
+}
 .main-btn:active { transform: translateY(4px); box-shadow: 0 2px 0 #d15d7d; }
 .blue-btn { background: var(--accent-blue); box-shadow: 0 6px 0 #3a9fd1; }
 .orange-btn { background: var(--accent-orange); box-shadow: 0 6px 0 #e69530; }
 .gray-btn { background: #aab7b8; box-shadow: 0 6px 0 #7f8c8d; }
 
-/* 学生証サイズ固定 */
-.id-card-wrap { position: relative; width: 320px !important; height: 320px !important; margin: 0 auto 20px; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.15); border: 6px solid white; background: white; }
-.mini-id { width: 260px !important; height: 260px !important; }
-#id-photo-slot { position: absolute; top: 133px; left: 21px; width: 94px; height: 102px; overflow: hidden; }
-.id-text-overlay { position: absolute; left: 190px; font-weight: 900; color: #333; font-size: 1rem; pointer-events: none; }
-.id-grade-text { top: 136px; } .id-name-text { top: 175px; }
+/* 問題リスト：カード形式で見やすく */
+.problem-scroll-area { max-height: 55vh; overflow-y: auto; padding: 10px; background: rgba(255,255,255,0.7); border-radius: 20px; }
+.prob-card { 
+    background: white; padding: 15px; border-radius: 15px; margin-bottom: 12px; 
+    border: 2px solid #ffccbc; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 4px 0 #ffccbc;
+}
+.q-label { background: var(--accent-pink); color: white; padding: 3px 10px; border-radius: 8px; font-size: 0.9rem; width: fit-content; font-weight: 900; }
+.prob-card span { font-size: 1.1rem; font-weight: bold; color: var(--primary); }
 
-/* ログイン画面の学生証サイズ */
-.user-card { background: rgba(255,255,255,0.9); margin: 15px 0; padding: 10px; border-radius: 25px; display: flex; align-items: center; border: 3px solid #eee; cursor: pointer; position: relative; }
-.user-card img { width: 120px !important; height: 120px !important; object-fit: contain; border-radius: 10px; }
-.delete-student-btn { position: absolute; right: 10px; top: 10px; background: #bbb; color: white; border: none; border-radius: 50%; width: 26px; height: 26px; cursor: pointer; }
-
-/* ふきだし・黒板 */
+/* その他UI */
 .chat-bubble { background: white; border: 4px solid var(--accent-pink); padding: 15px; border-radius: 25px 25px 25px 0; flex: 1; margin-left: 12px; box-shadow: 0 6px 15px rgba(0,0,0,0.1); }
 .chat-bubble p { margin: 0; font-size: 1.2rem; line-height: 1.6; font-weight: 700; font-family: 'Kiwi Maru', serif; }
-.chalkboard { background: var(--chalk); color: white; border: 8px solid #5d4037; border-radius: 15px; padding: 20px; margin: 15px 0; text-align: center; font-size: 1.5rem; box-shadow: inset 0 0 20px rgba(0,0,0,0.5); border-style: double; }
+.chalkboard { background: var(--chalk); color: white; border: 8px solid #5d4037; border-radius: 15px; padding: 15px; margin: 15px 0; text-align: center; font-size: 1.6rem; box-shadow: inset 0 0 20px rgba(0,0,0,0.5); border-style: double; }
 .progress-container { width: 100%; height: 15px; background: #ddd; border-radius: 10px; overflow: hidden; margin: 15px 0; }
 .progress-bar { width: 0%; height: 100%; background: var(--accent-blue); transition: width 0.3s; }
-.loader-cat { font-size: 4rem; animation: walk 1s infinite alternate; text-align: center; }
+.loader-cat { font-size: 4rem; animation: walk 1.5s infinite alternate; text-align: center; }
 @keyframes walk { from { transform: translateX(-15px) rotate(-10deg); } to { transform: translateX(15px) rotate(10deg); } }
-.q-label { background: var(--accent-pink); color: white; padding: 4px 10px; border-radius: 10px; font-size: 1rem; margin-right: 12px; font-weight: 900; }
-.camera-btn-large { display: block; background: #009688; color: white; padding: 25px; text-align: center; border-radius: 50px; font-weight: 900; cursor: pointer; font-size: 1.2rem; box-shadow: 0 8px 0 #00796b; margin: 20px 0; }
-.camera-btn-large input { display: none; }
-.attendance-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; padding: 10px; }
-.day-box { background: #f9f9f9; border-radius: 10px; padding: 10px; text-align: center; font-size: 0.75rem; border: 1px solid #eee; }
-.hint-step-badge { background: linear-gradient(90deg, #1e3a5f, #4fc3f7); color: white; padding: 5px 15px; border-radius: 12px; font-size: 0.85rem; font-weight: 900; margin-bottom: 10px; display: inline-block; }
-.answer-box { background: #fff3e0; border: 3px solid var(--accent-orange); padding: 15px; border-radius: 15px; margin-top: 10px; text-align: center; font-weight: 900; }
