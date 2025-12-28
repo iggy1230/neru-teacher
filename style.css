@@ -1,38 +1,50 @@
-:root { --primary: #1e3a5f; --accent-pink: #ff85a1; --accent-blue: #4fc3f7; --accent-orange: #ffb74d; --chalk: #1b4d3e; }
-body { margin: 0; padding: 0; min-height: 100vh; background-color: #fffaf0; background-image: url('nell-bg.png'); background-size: cover; background-attachment: fixed; background-position: top center; font-family: 'M PLUS Rounded 1c', sans-serif; color: var(--primary); overflow-x: hidden; }
+:root {
+    --primary: #1e3a5f; --accent-pink: #ff85a1; --accent-blue: #4fc3f7; --accent-orange: #ffb74d; --chalk: #1b4d3e;
+}
+body { 
+    margin: 0; padding: 0; min-height: 100vh; background-color: #fffaf0; 
+    background-image: url('nell-bg.png'); background-size: cover; background-attachment: fixed; background-position: top center;
+    font-family: 'M PLUS Rounded 1c', sans-serif; color: var(--primary); overflow-x: hidden;
+}
 .screen { max-width: 480px; margin: 0 auto; padding: 20px; min-height: 100vh; position: relative; }
 .hidden { display: none !important; }
 
-/* 巨大タイトル + さわらびゴシック + 白縁 */
+/* タイトルを上部に固定 */
 .school-title { 
-    text-align: center; color: var(--primary); font-family: 'Sawarabi Gothic', sans-serif; font-size: 3.2rem; line-height: 1.2; margin: 10px 0 30px; font-weight: 900; 
-    text-shadow: 4px 4px 0 #fff, -4px -4px 0 #fff, 4px -4px 0 #fff, -4px 4px 0 #fff, 0px 4px 0 #fff, 0px -4px 0 #fff, 4px 0px 0 #fff, -4px 0px 0 #fff;
+    text-align: center; color: var(--primary); font-family: 'Sawarabi Gothic', sans-serif; 
+    font-size: 3.2rem; line-height: 1.2; margin: 20px 0 40px; font-weight: 900; 
+    text-shadow: 4px 4px 0 #fff, -4px -4px 0 #fff, 4px -4px 0 #fff, -4px 4px 0 #fff, 0px 4px 0 #fff, 0px -4px 0 #fff;
 }
 
-/* 学生証：320px固定 & 指定位置 */
-.id-card-wrap { position: relative; width: 320px !important; height: 320px !important; margin: 0 auto 20px; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.15); border: 6px solid white; background: white; }
+/* ぷっくりボタン */
+.main-btn {
+    background: var(--accent-pink); color: white; border: none; padding: 18px 25px; 
+    border-radius: 50px; font-weight: 900; font-size: 1.2rem; cursor: pointer; width: 100%;
+    box-shadow: 0 6px 0 #d15d7d; transition: 0.1s; margin: 10px 0; font-family: inherit; display: block; text-align: center;
+}
+.main-btn:active { transform: translateY(4px); box-shadow: 0 2px 0 #d15d7d; }
+.blue-btn { background: var(--accent-blue); box-shadow: 0 6px 0 #3a9fd1; }
+.blue-btn:active { box-shadow: 0 2px 0 #3a9fd1; }
+.gray-btn { background: #aab7b8; box-shadow: 0 6px 0 #7f8c8d; }
+
+/* 学生証：320px固定 & 文字位置調整 (学年2px上げ) */
+.id-card-wrap {
+    position: relative; width: 320px !important; height: 320px !important; margin: 0 auto 20px; 
+    border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.15); 
+    border: 6px solid white; background: white;
+}
 .id-base-img { width: 100%; height: 100%; object-fit: contain; }
 #id-photo-slot { position: absolute; top: 133px; left: 21px; width: 94px; height: 102px; overflow: hidden; }
 #id-photo-preview-canvas { width: 100%; height: 100%; }
+
 .id-text-overlay { position: absolute; left: 190px; font-weight: 900; color: #333; font-size: 1.1rem; pointer-events: none; }
-.id-grade-text { top: 139px; } /* 141から2px上 */
+.id-grade-text { top: 137px; } /* 139から2px上 */
 .id-name-text { top: 177px; }
 
-/* 入学画面の整列 */
-.enroll-container { display: flex; flex-direction: column; align-items: center; }
-.input-form { width: 100%; display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
-
-/* ぷっくりボタン */
-.main-btn { background: var(--accent-pink); color: white; border: none; padding: 18px 25px; border-radius: 50px; font-weight: 900; font-size: 1.2rem; cursor: pointer; width: 100%; box-shadow: 0 6px 0 #d15d7d; transition: 0.1s; margin: 5px 0; font-family: inherit; }
-.main-btn:active { transform: translateY(4px); box-shadow: 0 2px 0 #d15d7d; }
-.blue-btn { background: var(--accent-blue); box-shadow: 0 6px 0 #3a9fd1; }
-.orange-btn { background: var(--accent-orange); box-shadow: 0 6px 0 #e69530; }
-.gray-btn { background: #aab7b8; box-shadow: 0 6px 0 #7f8c8d; }
-
-/* 校門レイアウト：右側縦並び */
+/* 校門レイアウト：右側縦並び名簿 */
 .gate-layout { display: flex; justify-content: flex-end; width: 100%; }
-.right-user-list { display: flex; flex-direction: column; gap: 25px; width: 180px; }
-.user-card { background: rgba(255,255,255,0.95); padding: 10px; border-radius: 20px; border: 2px solid var(--accent-pink); cursor: pointer; text-align: center; transition: transform 0.3s; }
+.right-user-list { display: flex; flex-direction: column; gap: 20px; width: 180px; max-height: 60vh; overflow-y: auto; padding-right: 5px; }
+.user-card { background: rgba(255,255,255,0.9); padding: 10px; border-radius: 20px; border: 2px solid var(--accent-pink); cursor: pointer; text-align: center; transition: transform 0.3s; }
 .user-card:hover { transform: scale(1.3); z-index: 100; }
 .user-card img { width: 130px !important; height: 130px !important; object-fit: contain; }
 
@@ -40,10 +52,14 @@ body { margin: 0; padding: 0; min-height: 100vh; background-color: #fffaf0; back
 .nell-chat { display: flex; align-items: center; margin: 15px 0; }
 .nell-avatar-wrap { width: 85px; height: 85px; background: white; border-radius: 50%; border: 3px solid var(--accent-pink); padding: 5px; flex-shrink: 0; }
 .chat-bubble { background: white; border: 4px solid var(--accent-pink); padding: 15px; border-radius: 25px 25px 25px 0; flex: 1; margin-left: 12px; box-shadow: 0 6px 15px rgba(0,0,0,0.1); }
-.chat-bubble p { margin: 0; font-size: 1.2rem; line-height: 1.6; font-weight: 700; font-family: 'Kiwi Maru', serif; }
-.chalkboard { background: var(--chalk); color: white; border: 8px solid #5d4037; border-radius: 15px; padding: 20px; margin: 15px 0; text-align: center; font-size: 1.6rem; box-shadow: inset 0 0 20px rgba(0,0,0,0.5); border-style: double; font-family: 'M PLUS Rounded 1c', sans-serif; }
+.chat-bubble p { margin: 0; font-size: 1.2rem; line-height: 1.5; font-weight: 700; font-family: 'Kiwi Maru', serif; }
+.chalkboard { background: var(--chalk); color: white; border: 8px solid #5d4037; border-radius: 15px; padding: 15px; margin: 15px 0; text-align: center; font-size: 1.5rem; box-shadow: inset 0 0 20px rgba(0,0,0,0.5); border-style: double; }
 
+/* ％表示 */
 .progress-container { width: 100%; height: 15px; background: #ddd; border-radius: 10px; overflow: hidden; margin: 15px 0; }
 .progress-bar { width: 0%; height: 100%; background: var(--accent-blue); transition: width 0.3s; }
 .loader-cat { font-size: 4rem; animation: walk 1.5s infinite alternate; text-align: center; }
 @keyframes walk { from { transform: translateX(-15px) rotate(-10deg); } to { transform: translateX(15px) rotate(10deg); } }
+
+/* 入力フォーム */
+.styled-input, .styled-select { width: 100%; padding: 14px; border-radius: 15px; border: 2px solid #ddd; margin-bottom: 12px; font-family: inherit; font-size: 1rem; text-align: center; }

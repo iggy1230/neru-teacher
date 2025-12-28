@@ -12,6 +12,7 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
+// --- 環境変数から設定を読み込むにゃ ---
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY; 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 const GOOGLE_CREDENTIALS = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
@@ -23,7 +24,8 @@ function createSSML(text, mood) {
     if (mood === "thinking") { rate = "0.95"; pitch = "-1st"; }
     if (mood === "gentle") { rate = "0.9"; pitch = "+1st"; }
     if (mood === "excited") { rate = "1.2"; pitch = "+3st"; }
-    const processedText = text.replace(/……/g, '<break time="650ms"/>').replace(/にゃ/g, '<prosody pitch="+3st">にゃ</prosody>');
+    const processedText = text.replace(/……/g, '<break time="650ms"/>')
+                              .replace(/にゃ/g, '<prosody pitch="+3st">にゃ</prosody>');
     return `<speak><prosody rate="${rate}" pitch="${pitch}">${processedText}</prosody></speak>`;
 }
 
@@ -44,8 +46,9 @@ app.post('/analyze', async (req, res) => {
         const { image, mode, grade } = req.body;
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         const prompt = mode === 'explain' 
-            ? `あなたはネル先生。小${grade}生への指導。算数記号×÷、横棒はマイナス。全問抽出。JSON:[{"id":1,"label":"①","question":"式","hints":["考え方","式の作り方","計算"],"correct_answer":"答え"}]`
-            : `小${grade}の厳格採点。JSON形式で返して。`;
+            ? `あなたはネル先生。生徒は小${grade}生。算数記号は×÷、横棒はマイナス。全問題を抽出してJSONで返して。
+               [{"id":1,"label":"①","question":"式","hints":["ヒ1","ヒ2","ヒ3"],"correct_answer":"答え"}]`
+            : `小${grade}の採点。独立計算せよ。JSON形式。`;
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
         let text = result.response.text().replace(/```json|```/g, "").trim().replace(/\*/g, '×').replace(/\//g, '÷');
         res.json(JSON.parse(text));
@@ -54,4 +57,5 @@ app.post('/analyze', async (req, res) => {
 
 app.use(express.static(path.join(__dirname, '.')));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
-app.listen(process.env.PORT || 3000);
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Nell-Server started on port ${PORT}`));
