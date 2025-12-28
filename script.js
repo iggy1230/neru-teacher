@@ -17,6 +17,7 @@ function showEnrollment() { switchScreen('screen-enrollment'); }
 function backToGate() { currentUser = null; switchScreen('screen-gate'); renderUserList(); }
 function backToLobby() { switchScreen('screen-lobby'); }
 
+// --- 高品質音声合成：終了を待機するにゃ ---
 async function speakNell(text, mood = "normal") {
     if (!text) return;
     if (currentAudio) { currentAudio.pause(); currentAudio = null; }
@@ -24,37 +25,44 @@ async function speakNell(text, mood = "normal") {
         const res = await fetch('/synthesize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, mood }) });
         const data = await res.json();
         currentAudio = new Audio("data:audio/mp3;base64," + data.audioContent);
-        return new Promise(resolve => { currentAudio.onended = resolve; currentAudio.play(); });
+        return new Promise(resolve => {
+            currentAudio.onended = resolve;
+            currentAudio.play();
+        });
     } catch (e) {
-        return new Promise(resolve => { const u = new SpeechSynthesisUtterance(text); u.lang = 'ja-JP'; u.onend = resolve; window.speechSynthesis.speak(u); });
+        return new Promise(resolve => {
+            const u = new SpeechSynthesisUtterance(text); u.lang = 'ja-JP'; u.onend = resolve;
+            window.speechSynthesis.speak(u);
+        });
     }
 }
 async function updateNellMessage(t, mood = "normal") {
     document.getElementById('nell-text').innerText = t;
-    return await speakNell(t, mood);
+    await speakNell(t, mood);
 }
 
+// --- Face API ---
 async function loadFaceModels() {
     const URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
     await faceapi.nets.ssdMobilenetv1.loadFromUri(URL); await faceapi.nets.faceLandmark68Net.loadFromUri(URL);
-    modelsLoaded = true; document.getElementById('loading-models').innerText = "準備OKだにゃ！🐾"; document.getElementById('complete-btn').disabled = false;
+    modelsLoaded = true; document.getElementById('loading-models').innerText = "準備完了だにゃ！🐾"; document.getElementById('complete-btn').disabled = false;
 }
 
 document.getElementById('student-photo-input').addEventListener('change', async (e) => {
     const file = e.target.files[0]; if (!file || !modelsLoaded) return;
     const img = await faceapi.bufferToImage(file);
-    const detection = await faceapi.detectSingleFace(img).withFaceLandmarks();
+    const det = await faceapi.detectSingleFace(img).withFaceLandmarks();
     const canvas = document.getElementById('id-photo-preview-canvas');
     const ctx = canvas.getContext('2d');
     const targetW = 94, targetH = 102; ctx.clearRect(0,0,targetW,targetH);
-    if (detection) {
-        const box = detection.detection.box; const nose = detection.landmarks.getNose()[3];
+    if (det) {
+        const box = det.detection.box; const nose = det.landmarks.getNose()[3];
         const aspect = targetW / targetH; let cropW = box.width * 2.5; let cropH = cropW / aspect;
         let sX = box.x + box.width / 2 - cropW / 2; let sY = box.y + box.height / 2 - cropH * 0.45;
         ctx.drawImage(img, sX, sY, cropW, cropH, 0, 0, targetW, targetH);
         const scale = targetW / cropW; 
         const nX = (nose.x - sX) * scale; const nY = (nose.y - sY) * scale; 
-        const fY = (box.y - sY) * scale; // 頭のてっぺん
+        const fY = (box.y - sY) * scale;
         const earW = targetW * 0.95;
         ctx.drawImage(decoEars, (targetW - earW)/2, fY - (earW * 0.5), earW, earW);
         ctx.drawImage(decoMuzzle, nX-(targetW*0.6)/2, nY-(targetW*0.6)/3, targetW*0.6, targetW*0.6*0.8);
@@ -70,11 +78,20 @@ function processAndCompleteEnrollment() {
     const pCanvas = document.getElementById('id-photo-preview-canvas');
     ctx.drawImage(pCanvas, 21*2.5, 133*2.5, 94*2.5, 102*2.5);
     ctx.fillStyle="#333"; ctx.font="bold 42px Kiwi Maru"; 
-    ctx.fillText(grade+"年生", 190*2.5, (136+10)*2.5+32); ctx.fillText(name, 190*2.5, (175+4)*2.5+42);
+    // 修正：学年+5px上, 氏名+2px上 (2.5倍換算)
+    ctx.fillText(grade+"年生", 190*2.5, (136+5)*2.5+32); 
+    ctx.fillText(name, 190*2.5, (175+2)*2.5+42);
     const newUser = { id: Date.now(), name, grade, photo: canvas.toDataURL(), karikari: 0, attendance: {} };
     users.push(newUser); localStorage.setItem('nekoneko_users', JSON.stringify(users)); login(newUser);
 }
 
+// --- 解析 ---
+function updateProgress(percent) {
+    const bar = document.getElementById('progress-bar');
+    if (bar) bar.style.width = percent + '%';
+    const text = document.getElementById('progress-percent');
+    if (text) text.innerText = percent;
+}
 async function shrinkImage(file) {
     return new Promise((resolve) => {
         const reader = new FileReader(); reader.readAsDataURL(file);
@@ -90,26 +107,24 @@ async function shrinkImage(file) {
         };
     });
 }
-
 document.getElementById('hw-input').addEventListener('change', async (e) => {
     if (isAnalyzing || !e.target.files[0]) return;
     isAnalyzing = true;
     document.getElementById('upload-controls').classList.add('hidden');
     document.getElementById('thinking-view').classList.remove('hidden');
-    document.getElementById('progress-bar').style.width = "0%";
-    let p = 0; const pBar = document.getElementById('progress-bar'); const pTxt = document.getElementById('progress-percent');
-    const timer = setInterval(() => { if (p < 90) { p += 4; pBar.style.width = p+'%'; pTxt.innerText = p; } }, 500);
+    updateProgress(0); updateNellMessage("ネル先生がじっくり見てるにゃ……。", "thinking");
+    let p = 0; const pTimer = setInterval(() => { if (p < 90) { p += 4; updateProgress(Math.min(p, 90)); } }, 500);
     try {
-        updateNellMessage("どれどれ……ネル先生がじっくり見てあげるにゃ。……", "thinking");
         const b64 = await shrinkImage(e.target.files[0]);
         const res = await fetch('/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: b64, mode: currentMode, grade: currentUser.grade }) });
         transcribedProblems = await res.json();
-        clearInterval(timer); pBar.style.width = '100%'; pTxt.innerText = '100';
+        clearInterval(pTimer); updateProgress(100);
         setTimeout(() => { document.getElementById('thinking-view').classList.add('hidden'); if (currentMode === 'explain') renderProblemSelection(); else showGradingView(); }, 500);
     } catch (err) { updateNellMessage("Google先生が制限エラーだにゃ🐾"); document.getElementById('upload-controls').classList.remove('hidden');
     } finally { isAnalyzing = false; }
 });
 
+// --- UI ---
 function renderUserList() {
     const list = document.getElementById('user-list'); if(!list) return;
     list.innerHTML = users.length ? "" : "<p style='text-align:right'>入学してにゃ</p>";
@@ -122,6 +137,7 @@ function renderUserList() {
 function deleteUser(e, id) { e.stopPropagation(); if(confirm("削除する？")) { users = users.filter(u => u.id !== id); localStorage.setItem('nekoneko_users', JSON.stringify(users)); renderUserList(); } }
 function login(user) { currentUser = user; document.getElementById('current-student-avatar').src = user.photo; document.getElementById('karikari-count').innerText = user.karikari || 0; switchScreen('screen-lobby'); updateNellMessage(`おかえり、${user.name}さん！`, "happy"); }
 function selectMode(m) { currentMode = m; switchScreen('screen-main'); document.getElementById('mode-badge-text').innerText = (m==='explain'?'教えてモード':'採点モード'); updateNellMessage("宿題をみせてにゃ！", "happy"); }
+
 function renderProblemSelection() {
     document.getElementById('problem-selection-view').classList.remove('hidden');
     const list = document.getElementById('transcribed-problem-list'); list.innerHTML = "";
@@ -134,8 +150,7 @@ function renderProblemSelection() {
 }
 function startHint(id) { selectedProblem = transcribedProblems.find(p => p.id === id); hintIndex = 0; switchView('hint-detail-container'); document.getElementById('chalkboard').innerHTML = selectedProblem.question; document.getElementById('chalkboard').classList.remove('hidden'); showHintStep(); }
 function showHintStep() {
-    const labels = ["考え方", "式の作り方", "計算"];
-    document.getElementById('hint-step-label').innerText = labels[hintIndex];
+    const labels = ["考え方", "式の作り方", "計算"]; document.getElementById('hint-step-label').innerText = labels[hintIndex];
     updateNellMessage(selectedProblem.hints[hintIndex], "thinking");
     const next = document.getElementById('next-hint-btn'); const reveal = document.getElementById('reveal-answer-btn');
     if(hintIndex < 2) { next.classList.remove('hidden'); reveal.classList.add('hidden'); } else { next.classList.add('hidden'); reveal.classList.remove('hidden'); }
@@ -156,7 +171,7 @@ function renderWorksheet() {
         list.appendChild(div);
     });
 }
-function updateAns(idx, val) { const itm = transcribedProblems[idx]; itm.student_answer = val; if (val.trim() === String(itm.correct_answer)) { itm.status = 'correct'; updateNellMessage("正解にゃ！……すごいにゃ！", "happy"); } renderWorksheet(); }
+function updateAns(idx, val) { const itm = transcribedProblems[idx]; itm.student_answer = val; if (val.trim() === String(itm.correct_answer)) { itm.status = 'correct'; updateNellMessage("正解にゃ！", "happy"); } renderWorksheet(); }
 function switchView(id) { document.getElementById('problem-selection-view').classList.add('hidden'); document.getElementById('final-view').classList.remove('hidden'); document.getElementById('grade-sheet-container').classList.add('hidden'); document.getElementById('hint-detail-container').classList.add('hidden'); document.getElementById(id).classList.remove('hidden'); }
 function saveAndSync() { const idx = users.findIndex(u => u.id === currentUser.id); if (idx !== -1) users[idx] = currentUser; localStorage.setItem('nekoneko_users', JSON.stringify(users)); document.getElementById('karikari-count').innerText = currentUser.karikari; }
 function showAttendance() {

@@ -10,39 +10,56 @@ body {
 .screen { max-width: 480px; margin: 0 auto; padding: 20px; min-height: 100vh; position: relative; }
 .hidden { display: none !important; }
 
-/* タイトル：さわらびゴシック + 白縁 */
+/* タイトル：白縁 */
 .school-title { 
     text-align: center; color: var(--primary); font-family: 'Sawarabi Gothic', sans-serif; 
     font-size: 3.2rem; line-height: 1.2; margin: 40px 0; font-weight: 900; 
     text-shadow: 4px 4px 0 #fff, -4px -4px 0 #fff, 4px -4px 0 #fff, -4px 4px 0 #fff, 0px 4px 0 #fff, 0px -4px 0 #fff;
 }
 
-/* 校門レイアウト：右側縦並び */
+/* 校門レイアウト：右側縦並び & ぷにっと大きく拡大 */
 .gate-layout { display: flex; justify-content: flex-end; width: 100%; margin-top: 20px; }
-.right-user-list { display: flex; flex-direction: column; gap: 20px; width: 180px; padding-right: 10px; }
+.right-user-list { display: flex; flex-direction: column; gap: 25px; width: 180px; padding-right: 10px; }
 .user-card { 
     background: rgba(255,255,255,0.95); padding: 10px; border-radius: 20px; 
     border: 2px solid var(--accent-pink); cursor: pointer; text-align: center;
     transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
-.user-card:hover { transform: scale(1.1); z-index: 10; }
+.user-card:hover { transform: scale(1.3); z-index: 100; box-shadow: 0 15px 30px rgba(0,0,0,0.2); }
 .user-card img { width: 130px !important; height: 130px !important; object-fit: contain; border-radius: 10px; }
-.user-card-info { font-size: 0.85rem; font-weight: 900; margin-top: 5px; }
+.user-card-info { font-size: 0.9rem; font-weight: 900; margin-top: 8px; color: var(--primary); }
 
-/* 学生証サイズ固定 320px */
+/* 学生証：文字位置調整（指定通り上にずらしたにゃ） */
 .id-card-wrap {
     position: relative; width: 320px !important; height: 320px !important; margin: 0 auto 20px; 
     border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.15); 
     border: 6px solid white; background: white;
 }
-.mini-id { width: 220px !important; height: 220px !important; }
 .id-base-img { width: 100%; height: 100%; object-fit: contain; }
 #id-photo-slot { position: absolute; top: 133px; left: 21px; width: 94px; height: 102px; overflow: hidden; }
 
-/* 学生証文字位置調整 */
+/* 修正：学年+5px上(146-5=141), 氏名+2px上(179-2=177) */
 .id-text-overlay { position: absolute; left: 190px; font-weight: 900; color: #333; font-size: 1.1rem; pointer-events: none; }
-.id-grade-text { top: 146px; } 
-.id-name-text { top: 179px; }
+.id-grade-text { top: 141px; } 
+.id-name-text { top: 177px; }
+
+/* メイン画面：重なり防止レイアウト */
+.operation-layout { display: flex; flex-direction: column; gap: 15px; width: 100%; padding-bottom: 50px; }
+.nell-chat { display: flex; align-items: center; margin-bottom: 5px; }
+.nell-avatar-wrap { width: 90px; height: 90px; background: white; border-radius: 50%; border: 4px solid var(--accent-pink); flex-shrink: 0; padding: 5px; }
+.nell-img { width: 100%; height: 100%; object-fit: contain; }
+.chat-bubble { background: white; border: 4px solid var(--accent-pink); padding: 15px; border-radius: 25px 25px 25px 0; flex: 1; margin-left: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+.chat-bubble p { margin: 0; font-size: 1.2rem; line-height: 1.5; font-weight: 700; font-family: 'Kiwi Maru', serif; }
+
+.chalkboard { background: var(--chalk); color: white; border: 8px solid #5d4037; border-radius: 15px; padding: 15px; text-align: center; font-size: 1.6rem; box-shadow: inset 0 0 20px rgba(0,0,0,0.5); border-style: double; min-height: 80px; display: flex; align-items: center; justify-content: center; }
+
+/* 問題選択リスト：見やすく修正 */
+.problem-scroll-area { max-height: 50vh; overflow-y: auto; padding: 10px; background: rgba(255,255,255,0.75); border-radius: 20px; border: 2px solid white; }
+.prob-card { 
+    background: white; padding: 18px; border-radius: 15px; margin-bottom: 12px; 
+    border: 2px solid #ffccbc; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 0 #ffccbc; cursor: pointer;
+}
+.prob-card span { font-size: 1.1rem; font-weight: bold; }
 
 /* ボタン */
 .main-btn { background: var(--accent-pink); color: white; border: none; padding: 18px 25px; border-radius: 50px; font-weight: 900; font-size: 1.2rem; cursor: pointer; width: 100%; box-shadow: 0 6px 0 #d15d7d; transition: 0.1s; margin: 10px 0; font-family: inherit; }
@@ -51,16 +68,6 @@ body {
 .orange-btn { background: var(--accent-orange); box-shadow: 0 6px 0 #e69530; }
 .gray-btn { background: #aab7b8; box-shadow: 0 6px 0 #7f8c8d; }
 
-.nell-chat { display: flex; align-items: center; margin: 15px 0; }
-.nell-avatar-wrap { width: 85px; height: 85px; background: white; border-radius: 50%; border: 4px solid var(--accent-pink); padding: 5px; flex-shrink: 0; }
-.chat-bubble { background: white; border: 4px solid var(--accent-pink); padding: 15px; border-radius: 25px 25px 25px 0; flex: 1; margin-left: 12px; box-shadow: 0 6px 15px rgba(0,0,0,0.1); }
-.chat-bubble p { margin: 0; font-size: 1.2rem; line-height: 1.6; font-weight: 700; font-family: 'Kiwi Maru', serif; }
-.chalkboard { background: var(--chalk); color: white; border: 8px solid #5d4037; border-radius: 15px; padding: 15px; margin: 15px 0; text-align: center; font-size: 1.6rem; box-shadow: inset 0 0 20px rgba(0,0,0,0.5); border-style: double; font-family: 'M PLUS Rounded 1c', sans-serif; }
-
-.problem-scroll-area { max-height: 50vh; overflow-y: auto; padding: 10px; background: rgba(255,255,255,0.7); border-radius: 20px; }
-.prob-card { background: white; padding: 15px; border-radius: 15px; margin-bottom: 12px; border: 2px solid #ffccbc; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 0 #ffccbc; cursor: pointer; }
-.q-label { background: var(--accent-pink); color: white; padding: 4px 10px; border-radius: 8px; font-size: 0.9rem; font-weight: 900; margin-right: 10px; }
-
-.progress-container { width: 100%; height: 15px; background: #ddd; border-radius: 10px; overflow: hidden; margin: 15px 0; }
-.progress-bar { width: 0%; height: 100%; background: var(--accent-blue); transition: width 0.3s; }
-.camera-btn-large { display: block; background: #009688; color: white; padding: 25px; text-align: center; border-radius: 50px; font-weight: 900; cursor: pointer; font-size: 1.2rem; box-shadow: 0 6px 0 #00796b; margin-top: 20px; }
+/* 進捗ゲージ */
+.progress-container { width: 100%; height: 18px; background: #ddd; border-radius: 10px; overflow: hidden; margin: 10px 0; border: 2px solid white; }
+.progress-bar { width: 0%; height: 100%; background: linear-gradient(90deg, var(--accent-pink), var(--accent-blue)); transition: width 0.3s ease; }
