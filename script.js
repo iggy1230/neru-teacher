@@ -8,7 +8,6 @@ let modelsLoaded = false;
 
 window.onload = () => { renderUserList(); loadFaceModels(); };
 
-// --- 画面管理 ---
 function switchScreen(to) {
     document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
     const target = document.getElementById(to);
@@ -18,45 +17,27 @@ function showEnrollment() { switchScreen('screen-enrollment'); }
 function backToGate() { currentUser = null; switchScreen('screen-gate'); renderUserList(); }
 function backToLobby() { switchScreen('screen-lobby'); }
 
-// --- 高品質音声合成 ---
 async function speakNell(text, mood = "normal") {
     if (!text) return;
     if (currentAudio) { currentAudio.pause(); currentAudio = null; }
     try {
-        const res = await fetch('http://localhost:3000/synthesize', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text, mood })
-        });
+        const res = await fetch('/synthesize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, mood }) });
         const data = await res.json();
         currentAudio = new Audio("data:audio/mp3;base64," + data.audioContent);
-        // 音声の終了を待機できるプロミスを作成にゃ
-        return new Promise(resolve => {
-            currentAudio.onended = resolve;
-            currentAudio.play();
-        });
+        return new Promise(resolve => { currentAudio.onended = resolve; currentAudio.play(); });
     } catch (e) {
-        return new Promise(resolve => {
-            const u = new SpeechSynthesisUtterance(text); u.lang = 'ja-JP';
-            u.onend = resolve;
-            window.speechSynthesis.speak(u);
-        });
+        return new Promise(resolve => { const u = new SpeechSynthesisUtterance(text); u.lang = 'ja-JP'; u.onend = resolve; window.speechSynthesis.speak(u); });
     }
 }
 async function updateNellMessage(t, mood = "normal") {
     document.getElementById('nell-text').innerText = t;
-    await speakNell(t, mood);
+    return await speakNell(t, mood);
 }
 
-// --- Face API & 学生証合成 ---
 async function loadFaceModels() {
     const URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
-    try {
-        await faceapi.nets.ssdMobilenetv1.loadFromUri(URL);
-        await faceapi.nets.faceLandmark68Net.loadFromUri(URL);
-        modelsLoaded = true;
-        document.getElementById('loading-models').innerText = "準備OKにゃ！🐾";
-        document.getElementById('complete-btn').disabled = false;
-    } catch (e) { console.error("Face API Error"); }
+    await faceapi.nets.ssdMobilenetv1.loadFromUri(URL); await faceapi.nets.faceLandmark68Net.loadFromUri(URL);
+    modelsLoaded = true; document.getElementById('loading-models').innerText = "準備OKだにゃ！🐾"; document.getElementById('complete-btn').disabled = false;
 }
 
 document.getElementById('student-photo-input').addEventListener('change', async (e) => {
@@ -73,11 +54,9 @@ document.getElementById('student-photo-input').addEventListener('change', async 
         ctx.drawImage(img, sX, sY, cropW, cropH, 0, 0, targetW, targetH);
         const scale = targetW / cropW; 
         const nX = (nose.x - sX) * scale; const nY = (nose.y - sY) * scale; 
-        const fY = (box.y - sY) * scale; // 顔のてっぺん
-        
-        // 猫耳の位置調整（fYからさらにおでこの上へ）
-        const earW = targetW * 0.9;
-        ctx.drawImage(decoEars, (targetW - earW)/2, fY - (earW * 0.4), earW, earW);
+        const fY = (box.y - sY) * scale; // 頭のてっぺん
+        const earW = targetW * 0.95;
+        ctx.drawImage(decoEars, (targetW - earW)/2, fY - (earW * 0.5), earW, earW);
         ctx.drawImage(decoMuzzle, nX-(targetW*0.6)/2, nY-(targetW*0.6)/3, targetW*0.6, targetW*0.6*0.8);
     } else { ctx.drawImage(img, 0,0, img.width, img.height, 0,0, targetW, targetH); }
 });
@@ -85,17 +64,17 @@ document.getElementById('student-photo-input').addEventListener('change', async 
 function processAndCompleteEnrollment() {
     const name = document.getElementById('new-student-name').value;
     const grade = document.getElementById('new-student-grade').value;
-    if(!name || !grade) return alert("全部入れてにゃ！");
+    if(!name || !grade) return alert("お名前と学年を入れてにゃ！");
     const canvas = document.getElementById('deco-canvas'); canvas.width=800; canvas.height=800;
     const ctx = canvas.getContext('2d'); ctx.drawImage(idBase, 0, 0, 800, 800);
     const pCanvas = document.getElementById('id-photo-preview-canvas');
     ctx.drawImage(pCanvas, 21*2.5, 133*2.5, 94*2.5, 102*2.5);
-    ctx.fillStyle="#333"; ctx.font="bold 42px Kiwi Maru"; ctx.fillText(grade+"年生", 190*2.5, 136*2.5+32); ctx.fillText(name, 190*2.5, 175*2.5+42);
+    ctx.fillStyle="#333"; ctx.font="bold 42px Kiwi Maru"; 
+    ctx.fillText(grade+"年生", 190*2.5, (136+10)*2.5+32); ctx.fillText(name, 190*2.5, (175+4)*2.5+42);
     const newUser = { id: Date.now(), name, grade, photo: canvas.toDataURL(), karikari: 0, attendance: {} };
     users.push(newUser); localStorage.setItem('nekoneko_users', JSON.stringify(users)); login(newUser);
 }
 
-// --- 解析ロジック ---
 async function shrinkImage(file) {
     return new Promise((resolve) => {
         const reader = new FileReader(); reader.readAsDataURL(file);
@@ -111,6 +90,7 @@ async function shrinkImage(file) {
         };
     });
 }
+
 document.getElementById('hw-input').addEventListener('change', async (e) => {
     if (isAnalyzing || !e.target.files[0]) return;
     isAnalyzing = true;
@@ -119,49 +99,39 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
     document.getElementById('progress-bar').style.width = "0%";
     let p = 0; const pBar = document.getElementById('progress-bar'); const pTxt = document.getElementById('progress-percent');
     const timer = setInterval(() => { if (p < 90) { p += 4; pBar.style.width = p+'%'; pTxt.innerText = p; } }, 500);
-
     try {
-        updateNellMessage("どれどれ……。じっくり見るにゃ。……", "thinking");
+        updateNellMessage("どれどれ……ネル先生がじっくり見てあげるにゃ。……", "thinking");
         const b64 = await shrinkImage(e.target.files[0]);
-        const res = await fetch('http://localhost:3000/analyze', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image: b64, mode: currentMode, grade: currentUser.grade })
-        });
+        const res = await fetch('/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: b64, mode: currentMode, grade: currentUser.grade }) });
         transcribedProblems = await res.json();
         clearInterval(timer); pBar.style.width = '100%'; pTxt.innerText = '100';
-        setTimeout(() => {
-            document.getElementById('thinking-view').classList.add('hidden');
-            if (currentMode === 'explain') renderProblemSelection(); else showGradingView();
-        }, 500);
-    } catch (err) { updateNellMessage("制限エラーだにゃ🐾"); document.getElementById('upload-controls').classList.remove('hidden');
+        setTimeout(() => { document.getElementById('thinking-view').classList.add('hidden'); if (currentMode === 'explain') renderProblemSelection(); else showGradingView(); }, 500);
+    } catch (err) { updateNellMessage("Google先生が制限エラーだにゃ🐾"); document.getElementById('upload-controls').classList.remove('hidden');
     } finally { isAnalyzing = false; }
 });
 
-// --- UIレンダリング ---
 function renderUserList() {
     const list = document.getElementById('user-list'); if(!list) return;
-    list.innerHTML = users.length ? "" : "<p style='text-align:right'>生徒手帳を作ってにゃ</p>";
+    list.innerHTML = users.length ? "" : "<p style='text-align:right'>入学してにゃ</p>";
     users.forEach(user => {
         const div = document.createElement('div'); div.className = "user-card";
-        div.innerHTML = `<img src="${user.photo}"><button class="delete-student-btn" onclick="deleteUser(event, ${user.id})">×</button>`;
+        div.innerHTML = `<img src="${user.photo}"><div class="user-card-info">${user.grade}年生 ${user.name}</div><button class="delete-student-btn" onclick="deleteUser(event, ${user.id})">×</button>`;
         div.onclick = () => login(user); list.appendChild(div);
     });
 }
 function deleteUser(e, id) { e.stopPropagation(); if(confirm("削除する？")) { users = users.filter(u => u.id !== id); localStorage.setItem('nekoneko_users', JSON.stringify(users)); renderUserList(); } }
 function login(user) { currentUser = user; document.getElementById('current-student-avatar').src = user.photo; document.getElementById('karikari-count').innerText = user.karikari || 0; switchScreen('screen-lobby'); updateNellMessage(`おかえり、${user.name}さん！`, "happy"); }
 function selectMode(m) { currentMode = m; switchScreen('screen-main'); document.getElementById('mode-badge-text').innerText = (m==='explain'?'教えてモード':'採点モード'); updateNellMessage("宿題をみせてにゃ！", "happy"); }
-
 function renderProblemSelection() {
     document.getElementById('problem-selection-view').classList.remove('hidden');
     const list = document.getElementById('transcribed-problem-list'); list.innerHTML = "";
     transcribedProblems.forEach(p => {
         const div = document.createElement('div'); div.className = "prob-card";
-        div.innerHTML = `<div class="q-label">${p.label || '?'}</div><span>${p.question}</span><button class="main-btn blue-btn" style="width:auto; padding:10px;" onclick="startHint(${p.id})">教えて！</button>`;
+        div.innerHTML = `<div><span class="q-label">${p.label || '?'}</span><span>${p.question}</span></div><button class="main-btn blue-btn" style="width:auto; padding:10px;" onclick="startHint(${p.id})">教えて！</button>`;
         list.appendChild(div);
     });
     updateNellMessage("どの問題をおしえてほしいかにゃ？", "happy");
 }
-
 function startHint(id) { selectedProblem = transcribedProblems.find(p => p.id === id); hintIndex = 0; switchView('hint-detail-container'); document.getElementById('chalkboard').innerHTML = selectedProblem.question; document.getElementById('chalkboard').classList.remove('hidden'); showHintStep(); }
 function showHintStep() {
     const labels = ["考え方", "式の作り方", "計算"];
@@ -175,19 +145,7 @@ function revealAnswer() {
     const ans = selectedProblem.correct_answer; document.getElementById('final-answer-text').innerText = ans; document.getElementById('answer-display-area').classList.remove('hidden'); document.getElementById('reveal-answer-btn').classList.add('hidden'); document.getElementById('thanks-btn').classList.remove('hidden'); 
     updateNellMessage(`答えは……「${ans}」だにゃ！`, "gentle"); 
 }
-
-// ありがとうボタン：ブツ切り防止に await を使うにゃ
-async function pressThanks() {
-    const praiseMsgs = ["すごいにゃ！納得（なっとく）できたにゃ？", "その調子だにゃ！えらいにゃ〜！", "ネル先生も嬉しいにゃ！"];
-    const msg = praiseMsgs[Math.floor(Math.random() * praiseMsgs.length)];
-    
-    // 褒め言葉を最後まで喋らせるにゃ
-    await updateNellMessage(msg, "happy");
-    
-    // 喋り終わったら戻るにゃ
-    backToProblemSelection();
-}
-
+async function pressThanks() { await updateNellMessage("よくがんばったにゃ！えらいにゃ〜！", "happy"); backToProblemSelection(); }
 function backToProblemSelection() { document.getElementById('final-view').classList.add('hidden'); document.getElementById('problem-selection-view').classList.remove('hidden'); document.getElementById('chalkboard').classList.add('hidden'); updateNellMessage("どの問題をおしえてほしいかにゃ？", "happy"); }
 function showGradingView() { switchView('grade-sheet-container'); renderWorksheet(); }
 function renderWorksheet() {
@@ -198,7 +156,16 @@ function renderWorksheet() {
         list.appendChild(div);
     });
 }
-function updateAns(idx, val) { const itm = transcribedProblems[idx]; itm.student_answer = val; if (val.trim() === String(itm.correct_answer)) { itm.status = 'correct'; updateNellMessage("正解にゃ！", "happy"); } renderWorksheet(); }
+function updateAns(idx, val) { const itm = transcribedProblems[idx]; itm.student_answer = val; if (val.trim() === String(itm.correct_answer)) { itm.status = 'correct'; updateNellMessage("正解にゃ！……すごいにゃ！", "happy"); } renderWorksheet(); }
 function switchView(id) { document.getElementById('problem-selection-view').classList.add('hidden'); document.getElementById('final-view').classList.remove('hidden'); document.getElementById('grade-sheet-container').classList.add('hidden'); document.getElementById('hint-detail-container').classList.add('hidden'); document.getElementById(id).classList.remove('hidden'); }
 function saveAndSync() { const idx = users.findIndex(u => u.id === currentUser.id); if (idx !== -1) users[idx] = currentUser; localStorage.setItem('nekoneko_users', JSON.stringify(users)); document.getElementById('karikari-count').innerText = currentUser.karikari; }
+function showAttendance() {
+    const grid = document.getElementById('attendance-grid'); grid.innerHTML = "";
+    for(let i=0; i<12; i++) {
+        const d = new Date(); d.setDate(d.getDate() - i); const dateStr = d.toISOString().split('T')[0];
+        const status = currentUser.attendance ? currentUser.attendance[dateStr] : null;
+        grid.innerHTML += `<div class="day-box">${d.getDate()}日<br>${status==='red'?'🐾赤':(status==='blue'?'🐾青':'ー')}</div>`;
+    }
+    switchScreen('screen-attendance');
+}
 function updateIDPreview() { document.getElementById('preview-name').innerText = document.getElementById('new-student-name').value || "なまえ"; document.getElementById('preview-grade').innerText = (document.getElementById('new-student-grade').value || "○") + "年生"; }
