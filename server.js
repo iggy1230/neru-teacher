@@ -23,8 +23,7 @@ function createSSML(text, mood) {
     if (mood === "thinking") { rate = "0.95"; pitch = "-1st"; }
     if (mood === "gentle") { rate = "0.9"; pitch = "+1st"; }
     if (mood === "excited") { rate = "1.2"; pitch = "+3st"; }
-    const processedText = text.replace(/……/g, '<break time="650ms"/>')
-                              .replace(/にゃ/g, '<prosody pitch="+3st">にゃ</prosody>');
+    const processedText = text.replace(/……/g, '<break time="650ms"/>').replace(/にゃ/g, '<prosody pitch="+3st">にゃ</prosody>');
     return `<speak><prosody rate="${rate}" pitch="${pitch}">${processedText}</prosody></speak>`;
 }
 
@@ -45,11 +44,8 @@ app.post('/analyze', async (req, res) => {
         const { image, mode, grade } = req.body;
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         const prompt = mode === 'explain' 
-            ? `あなたはネル先生です。生徒は小${grade}生。算数記号は必ず×÷を使用。横棒はマイナス。
-               【指示】画像を分析し、全問を書き起こして。
-               ヒントは3段階（考え方、式の作り方、計算）で、先生らしく非常に優しく丁寧におしゃべりしてにゃ。
-               JSON形式:[{"id":1,"label":"①","question":"式","hints":["考え方ヒント","式ヒント","計算ヒント"],"correct_answer":"答え"}]`
-            : `小${grade}採点。厳格判定。JSON形式。`;
+            ? `あなたはネル先生。小${grade}生への指導。算数記号×÷、横棒はマイナス。全問抽出。JSON:[{"id":1,"label":"①","question":"式","hints":["考え方","式の作り方","計算"],"correct_answer":"答え"}]`
+            : `小${grade}の厳格採点。JSON形式で返して。`;
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
         let text = result.response.text().replace(/```json|```/g, "").trim().replace(/\*/g, '×').replace(/\//g, '÷');
         res.json(JSON.parse(text));
