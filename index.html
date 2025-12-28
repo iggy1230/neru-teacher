@@ -4,169 +4,85 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🐾猫後市立ねこづか小学校</title>
-    <!-- CSSの読み込み -->
     <link rel="stylesheet" href="style.css">
-    <!-- Google Fonts: さわらびゴシック, Kiwi Maru, M PLUS Rounded 1c の一括読み込み -->
-    <link href="https://fonts.googleapis.com/css2?family=Sawarabi+Gothic&family=M+PLUS+Rounded+1c:wght@400;700;900&family=Kiwi+Maru:wght@900&display=swap" rel="stylesheet">
-    <!-- 顔認識ライブラリ face-api.js -->
+    <link href="https://fonts.googleapis.com/css2?family=Sawarabi+Gothic&family=M+PLUS+Rounded+1c:wght@700;900&family=Kiwi+Maru:wght@900&display=swap" rel="stylesheet">
     <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 </head>
 <body>
-    <!-- はなまる・お祝い演出用のキャンバス -->
     <canvas id="hanamaru-canvas"></canvas>
-    <!-- 学生証合成用の隠しキャンバス（ユーザーには見えません） -->
     <canvas id="deco-canvas" style="display:none;"></canvas>
 
     <div id="app-container">
-        
-        <!-- 【画面1】校門（トップ画面・名簿） -->
         <section id="screen-gate" class="screen">
             <h1 class="school-title">猫後市立<br>ねこづか小学校</h1>
-            
-            <div class="gate-layout">
-                <!-- 左側を空けて、右側に学生証を縦に並べるにゃ -->
-                <div class="spacer"></div>
-                <div id="user-list" class="right-user-list">
-                    <!-- ここに登録済みの生徒カードがJSで挿入されます -->
-                </div>
-            </div>
-            
-            <button onclick="showEnrollment()" class="main-btn pink-btn enroll-btn-fixed">🐾 新しく入学するにゃ</button>
+            <div class="gate-layout"><div id="user-list" class="right-user-list"></div></div>
+            <button onclick="showEnrollment()" class="main-btn pink-btn">🐾 新しく入学するにゃ</button>
         </section>
 
-        <!-- 【画面2】入学手続き（学生証作成） -->
         <section id="screen-enrollment" class="screen hidden">
             <h2 class="section-title">🎒 入学手続き</h2>
-            <div class="glass-card enroll-box">
-                <div id="loading-models" class="status-msg" style="text-align:center; font-size:0.8rem; margin-bottom:10px;">準備中だにゃ...✨</div>
-                
-                <!-- 学生証プレビュー：320px固定サイズ -->
-                <div id="id-card-preview-area" class="id-card-wrap">
-                    <img src="student-id-base.png" class="id-base-img" alt="学生証台紙">
-                    <div id="id-photo-slot">
-                        <canvas id="id-photo-preview-canvas" width="94" height="102"></canvas>
-                    </div>
-                    <!-- 文字位置はCSSで調整済みだにゃ -->
+            <div class="glass-card">
+                <div id="loading-models" class="status-msg" style="text-align:center; font-size:0.8rem; margin-bottom:5px;">準備中...✨</div>
+                <div class="id-card-wrap">
+                    <img src="student-id-base.png" class="id-base-img">
+                    <div id="id-photo-slot"><canvas id="id-photo-preview-canvas" width="94" height="102"></canvas></div>
                     <div class="id-text-overlay id-grade-text" id="preview-grade">○年生</div>
                     <div class="id-text-overlay id-name-text" id="preview-name">なまえ</div>
                 </div>
-
-                <div class="input-form">
-                    <label class="camera-btn-large">
-                        📸 おかおを撮る・えらぶ
-                        <input type="file" id="student-photo-input" accept="image/*">
-                    </label>
-                    <input type="text" id="new-student-name" class="styled-input" placeholder="おなまえを入力" oninput="updateIDPreview()">
-                    <select id="new-student-grade" class="styled-select" onchange="updateIDPreview()">
-                        <option value="" disabled selected>学年をえらんでにゃ</option>
-                        <option value="1">1年生</option><option value="2">2年生</option><option value="3">3年生</option>
-                        <option value="4">4年生</option><option value="5">5年生</option><option value="6">6年生</option>
-                    </select>
-                </div>
-
-                <div class="btn-group">
-                    <button onclick="processAndCompleteEnrollment()" id="complete-btn" class="main-btn pink-btn" disabled>入学する！</button>
-                    <button onclick="backToGate()" class="main-btn gray-btn">もどる</button>
-                </div>
+                <!-- PC/スマホ両対応のボタンだにゃ -->
+                <label class="main-btn blue-btn" style="text-align:center;">📸 写真を撮る・えらぶ
+                    <input type="file" id="student-photo-input" accept="image/*" style="display:none;">
+                </label>
+                <input type="text" id="new-student-name" class="styled-input" placeholder="おなまえ" oninput="updateIDPreview()">
+                <select id="new-student-grade" class="styled-select" onchange="updateIDPreview()">
+                    <option value="" disabled selected>学年をえらぶ</option>
+                    <option value="1">1年生</option><option value="2">2年生</option><option value="3">3年生</option>
+                    <option value="4">4年生</option><option value="5">5年生</option><option value="6">6年生</option>
+                </select>
+                <button onclick="processAndCompleteEnrollment()" id="complete-btn" class="main-btn pink-btn" disabled>入学する！</button>
+                <button onclick="backToGate()" class="main-btn gray-btn">もどる</button>
             </div>
         </section>
 
-        <!-- 【画面3】ロビー（廊下・メニュー） -->
         <section id="screen-lobby" class="screen hidden">
-            <div class="lobby-top">
-                <!-- 自分の学生証を表示 -->
-                <div class="id-card-wrap mini-id">
-                    <img id="current-student-avatar" class="id-base-img" alt="自分の学生証">
-                </div>
-                <div class="karikari-counter" style="text-align:center; font-weight:900;">🍖 <span id="karikari-count">0</span></div>
-            </div>
-            
+            <div class="lobby-top"><div class="id-card-wrap mini-id"><img id="current-student-avatar" class="id-base-img"></div></div>
+            <div class="karikari-counter" style="text-align:center; font-weight:900; margin-bottom:10px;">🍖 <span id="karikari-count">0</span></div>
             <div class="lobby-menu">
-                <button onclick="selectMode('explain')" class="main-btn blue-btn">
-                    <span class="icon">💡</span> 教えて！ネル先生！
-                </button>
-                <button onclick="selectMode('grade')" class="main-btn pink-btn">
-                    <span class="icon">💯</span> 採点して！ネル先生！
-                </button>
-                <button onclick="showAttendance()" class="main-btn orange-btn">
-                    <span class="icon">📅</span> 出席簿をみる
-                </button>
+                <button onclick="selectMode('explain')" class="main-btn blue-btn">💡 教えてネル先生</button>
+                <button onclick="selectMode('grade')" class="main-btn pink-btn">💯 採点ネル先生</button>
+                <button onclick="showAttendance()" class="main-btn orange-btn">📅 出席簿</button>
                 <button onclick="backToGate()" class="main-btn gray-btn">👋 帰宅する</button>
             </div>
         </section>
 
-        <!-- 【画面4】教室（メイン操作・ネル先生） -->
         <section id="screen-main" class="screen hidden">
-            <header class="app-header">
-                <button onclick="backToLobby()" class="round-btn">←</button>
-                <div class="mode-badge" id="mode-badge-text">教室</div>
-            </header>
-            
+            <header class="app-header"><button onclick="backToLobby()" class="main-btn gray-btn" style="width:auto; padding:10px 20px;">← もどる</button></header>
             <div class="operation-layout">
-                <!-- ネル先生のチャットエリア -->
                 <div class="nell-chat">
-                    <div class="nell-avatar-wrap">
-                        <img src="nell-icon.png" alt="ネル先生" class="nell-img" id="nell-img">
-                    </div>
-                    <!-- ネル先生のヒントが表示される場所 -->
-                    <div class="chat-bubble"><p id="nell-text">こんにちは！準備はいいかにゃ？</p></div>
+                    <div class="nell-avatar-wrap"><img src="nell-icon.png" class="nell-img"></div>
+                    <div class="chat-bubble"><p id="nell-text"></p></div>
                 </div>
-
-                <!-- 黒板（元の問題文を白文字で表示する場所） -->
                 <div id="chalkboard" class="chalkboard hidden"></div>
-
                 <div class="work-area">
-                    <!-- 写真アップロード -->
                     <div id="upload-controls">
-                        <label class="camera-btn-large">
-                            📷 宿題を撮る・えらぶ
-                            <input type="file" id="hw-input" accept="image/*">
-                        </label>
+                        <label class="camera-btn-large">📷 宿題をみせる<input type="file" id="hw-input" accept="image/*" style="display:none;"></label>
                     </div>
-
-                    <!-- 解析中の％表示演出 -->
                     <div id="thinking-view" class="hidden">
                         <div class="loader-cat">🐾</div>
-                        <div class="progress-container">
-                            <div id="progress-bar" class="progress-bar"></div>
-                        </div>
-                        <p id="thinking-status">考え中... <span id="progress-percent">0</span>%</p>
+                        <div class="progress-container"><div id="progress-bar" class="progress-bar"></div></div>
+                        <p style="text-align:center;">ネル先生が考え中... <span id="progress-percent">0</span>%</p>
                     </div>
-
-                    <!-- 問題選択リストエリア -->
-                    <div id="problem-selection-view" class="hidden">
-                        <div class="problem-scroll-area" id="transcribed-problem-list">
-                            <!-- ここにJSで問題カードが並ぶ -->
-                        </div>
-                    </div>
-
-                    <!-- 結果・ヒント・採点詳細エリア -->
+                    <div id="problem-selection-view" class="hidden"><div class="problem-scroll-area" id="transcribed-problem-list"></div></div>
                     <div id="final-view" class="hidden">
-                        <!-- 採点モード用：デジタル見直しシート -->
-                        <div id="grade-sheet-container" class="hidden">
-                            <div class="glass-card">
-                                <div class="worksheet-header">📝 デジタル見直しシート</div>
-                                <div id="problem-list-grade"></div>
-                            </div>
-                        </div>
-
-                        <!-- 教えてモード用：ヒント操作パネル -->
+                        <div id="grade-sheet-container" class="hidden"><div class="glass-card" id="problem-list-grade"></div></div>
                         <div id="hint-detail-container" class="hidden">
                             <div class="hint-btns">
                                 <div class="hint-step-badge" id="hint-step-label">考え方</div>
-                                <!-- ヒント本文はふきだし(nell-text)に出るので、ここにはボタンのみ配置 -->
                                 <button onclick="showNextHint()" id="next-hint-btn" class="main-btn blue-btn">次のヒント！</button>
                                 <button onclick="revealAnswer()" id="reveal-answer-btn" class="main-btn orange-btn hidden">答えを見る🐾</button>
-                                
-                                <!-- 答えの文字表示エリア -->
-                                <div id="answer-display-area" class="answer-box hidden">
-                                    答え：<span id="final-answer-text"></span>
-                                </div>
+                                <div id="answer-display-area" class="answer-box hidden">答え：<span id="final-answer-text"></span></div>
                             </div>
-                            
-                            <!-- 完了ボタン -->
                             <button id="thanks-btn" onclick="pressThanks()" class="main-btn pink-btn hidden">✨ ありがとう！</button>
-                            <!-- 戻るボタン -->
                             <button onclick="backToProblemSelection()" class="main-btn gray-btn">他の問題をえらぶ</button>
                         </div>
                     </div>
@@ -174,18 +90,12 @@
             </div>
         </section>
 
-        <!-- 【画面5】出席簿（スタンプ帳） -->
         <section id="screen-attendance" class="screen hidden">
             <h2 class="section-title">📅 出席簿</h2>
-            <div class="glass-card">
-                <div id="attendance-grid" class="attendance-grid"></div>
-            </div>
+            <div class="glass-card"><div id="attendance-grid" class="attendance-grid"></div></div>
             <button onclick="backToLobby()" class="main-btn pink-btn mt-20">教室にもどる</button>
         </section>
-
     </div>
-
-    <!-- JavaScript の読み込み -->
     <script src="script.js"></script>
 </body>
 </html>
