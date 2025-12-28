@@ -3,30 +3,37 @@
 }
 body { 
     margin: 0; padding: 0; min-height: 100vh; background-color: #fffaf0; 
-    background-image: url('nell-bg.png'); background-size: cover; background-attachment: fixed; background-position: top center;
+    background-image: url('nell-bg.png'); background-size: cover; 
+    background-attachment: fixed; background-position: top center;
     font-family: 'M PLUS Rounded 1c', sans-serif; color: var(--primary); overflow-x: hidden;
 }
 .screen { max-width: 480px; margin: 0 auto; padding: 20px; min-height: 100vh; position: relative; }
 .hidden { display: none !important; }
 
-/* タイトルを最上部に固定 */
+/* タイトル：さわらびゴシック + 白縁 */
 .school-title { 
     text-align: center; color: var(--primary); font-family: 'Sawarabi Gothic', sans-serif; 
-    font-size: 3.2rem; line-height: 1.1; margin: 0 0 30px 0; font-weight: 900; padding-top: 10px;
+    font-size: 3.2rem; line-height: 1.2; margin: 20px 0 40px; font-weight: 900; 
     text-shadow: 4px 4px 0 #fff, -4px -4px 0 #fff, 4px -4px 0 #fff, -4px 4px 0 #fff, 0px 4px 0 #fff, 0px -4px 0 #fff;
 }
 
-/* ぷっくりボタン */
-.main-btn {
-    display: flex; align-items: center; justify-content: center;
-    background: var(--accent-pink); color: white; border: none; padding: 18px 25px; 
-    border-radius: 50px; font-weight: 900; font-size: 1.2rem; cursor: pointer; width: 100%;
-    box-shadow: 0 6px 0 #d15d7d; transition: 0.1s; margin: 10px 0; font-family: inherit;
+/* 校門レイアウト：右側縦並び名簿 */
+.gate-layout { display: flex; justify-content: flex-end; width: 100%; margin-bottom: 50px; }
+.right-user-list { display: flex; flex-direction: column; gap: 30px; width: 180px; padding-right: 10px; }
+
+/* ユーザーカード：2倍に拡大するにゃ！ */
+.user-card { 
+    background: rgba(255,255,255,0.95); padding: 10px; border-radius: 20px; 
+    border: 2px solid var(--accent-pink); cursor: pointer; text-align: center;
+    transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
-.main-btn:active { transform: translateY(4px); box-shadow: 0 2px 0 #d15d7d; }
-.blue-btn { background: var(--accent-blue); box-shadow: 0 6px 0 #3a9fd1; }
-.orange-btn { background: var(--accent-orange); box-shadow: 0 6px 0 #e69530; }
-.gray-btn { background: #aab7b8; box-shadow: 0 6px 0 #7f8c8d; color: white; }
+.user-card:hover { 
+    transform: scale(2.0); /* ここを2.0に変更にゃ！ */
+    z-index: 1000; 
+    box-shadow: 0 20px 40px rgba(0,0,0,0.3); 
+}
+.user-card img { width: 120px !important; height: 120px !important; object-fit: contain; border-radius: 10px; }
+.user-card-info { font-size: 0.85rem; font-weight: 900; margin-top: 5px; color: var(--primary); }
 
 /* 学生証サイズ固定 320px */
 .id-card-wrap {
@@ -37,29 +44,24 @@ body {
 .id-base-img { width: 100%; height: 100%; object-fit: contain; }
 #id-photo-slot { position: absolute; top: 133px; left: 21px; width: 94px; height: 102px; overflow: hidden; }
 
-/* 文字位置：学年 139px(さらに2px上), 氏名 177px */
+/* 修正文字位置：学年 139px, 氏名 177px */
 .id-text-overlay { position: absolute; left: 190px; font-weight: 900; color: #333; font-size: 1.1rem; pointer-events: none; }
-.id-grade-text { top: 139px; } .id-name-text { top: 177px; }
+.id-grade-text { top: 139px; } 
+.id-name-text { top: 177px; }
 
-/* ネル先生エリア：重なり防止！ */
-.nell-chat { display: flex; align-items: center; margin: 10px 0; width: 100%; }
-.nell-avatar-wrap { width: 80px; height: 80px; background: white; border-radius: 50%; border: 3px solid var(--accent-pink); flex-shrink: 0; padding: 5px; overflow: hidden; }
-.nell-img { width: 100%; height: 100%; object-fit: contain; }
-.chat-bubble { background: white; border: 4px solid var(--accent-pink); padding: 12px; border-radius: 20px 20px 20px 0; flex: 1; margin-left: 10px; box-shadow: 0 6px 15px rgba(0,0,0,0.1); }
-.chat-bubble p { margin: 0; font-size: 1.1rem; line-height: 1.4; font-weight: 700; font-family: 'Kiwi Maru', serif; }
+/* 共通UI */
+.main-btn { background: var(--accent-pink); color: white; border: none; padding: 18px 25px; border-radius: 50px; font-weight: 900; font-size: 1.2rem; cursor: pointer; width: 100%; box-shadow: 0 6px 0 #d15d7d; transition: 0.1s; margin: 10px 0; font-family: inherit; }
+.main-btn:active { transform: translateY(4px); box-shadow: 0 2px 0 #d15d7d; }
+.blue-btn { background: var(--accent-blue); box-shadow: 0 6px 0 #3a9fd1; }
+.orange-btn { background: var(--accent-orange); box-shadow: 0 6px 0 #e69530; }
+.gray-btn { background: #aab7b8; box-shadow: 0 6px 0 #7f8c8d; }
 
-/* 黒板 */
-.chalkboard { background: var(--chalk); color: white; border: 6px solid #5d4037; border-radius: 12px; padding: 15px; margin: 10px 0; text-align: center; font-size: 1.4rem; box-shadow: inset 0 0 15px rgba(0,0,0,0.5); border-style: double; font-family: 'M PLUS Rounded 1c', sans-serif; }
+.chat-bubble { background: white; border: 4px solid var(--accent-pink); padding: 15px; border-radius: 25px 25px 25px 0; flex: 1; margin-left: 12px; box-shadow: 0 6px 15px rgba(0,0,0,0.1); }
+.chat-bubble p { margin: 0; font-size: 1.2rem; line-height: 1.6; font-weight: 700; font-family: 'Kiwi Maru', serif; }
+.chalkboard { background: var(--chalk); color: white; border: 8px solid #5d4037; border-radius: 15px; padding: 20px; margin: 15px 0; text-align: center; font-size: 1.6rem; box-shadow: inset 0 0 20px rgba(0,0,0,0.5); border-style: double; font-family: 'M PLUS Rounded 1c', sans-serif; }
 
-/* ％表示 */
-.progress-container { width: 100%; height: 15px; background: #ddd; border-radius: 10px; overflow: hidden; margin: 10px 0; border: 2px solid white; }
+.prob-card { background: #fff; padding: 15px; border-radius: 15px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; border-left: 8px solid var(--accent-blue); box-shadow: 0 4px 0 #eee; cursor: pointer; }
+.progress-container { width: 100%; height: 15px; background: #ddd; border-radius: 10px; overflow: hidden; margin: 15px 0; }
 .progress-bar { width: 0%; height: 100%; background: var(--accent-blue); transition: width 0.3s; }
-
-/* 問題リスト */
-.problem-scroll-area { max-height: 50vh; overflow-y: auto; padding: 10px; background: rgba(255,255,255,0.8); border-radius: 20px; }
-.prob-card { background: white; padding: 15px; border-radius: 15px; margin-bottom: 12px; border: 2px solid #ffccbc; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 0 #ffccbc; }
-
-/* 校門名簿 */
-.user-card { background: rgba(255,255,255,0.9); margin-bottom: 15px; padding: 10px; border-radius: 20px; border: 2px solid var(--accent-pink); cursor: pointer; transition: transform 0.3s; text-align: center; }
-.user-card:hover { transform: scale(1.3); z-index: 100; }
-.user-card img { width: 110px !important; height: 110px !important; object-fit: contain; }
+.camera-btn-large { display: block; background: #009688; color: white; padding: 25px; text-align: center; border-radius: 50px; font-weight: 900; cursor: pointer; font-size: 1.2rem; box-shadow: 0 8px 0 #00796b; margin: 20px 0; }
+.camera-btn-large input { display: none; }
