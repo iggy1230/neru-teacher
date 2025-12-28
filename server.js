@@ -12,7 +12,7 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-// --- 設定 (自分のキーを入れてにゃ！) ---
+// --- 設定 ---
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY; 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 const GOOGLE_CREDENTIALS = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
@@ -46,23 +46,15 @@ app.post('/analyze', async (req, res) => {
         const { image, mode, grade } = req.body;
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         const prompt = mode === 'explain' 
-            ? `あなたはネル先生。生徒は小${grade}生。全問題を抽出。算数記号は×÷を使用。横棒はマイナス。
-               【重要】(□-□)などの穴埋めは答えを「89と39」形式で。必ず有効なJSON配列のみ返して。
-               JSON:[{"id":1,"label":"①","question":"式","hints":["考え方","式の作り方","計算"],"correct_answer":"答え"}]`
-            : `小${grade}採点。厳格判定。JSON配列で返して。`;
+            ? `あなたはネル先生。生徒は小${grade}生。全問を抽出。算数記号は×÷、横棒はマイナス。
+               国語の漢字練習の場合：1.成り立ちや意味、2.へん・つくり等の構造、3.書き順や形のコツをヒントに。
+               おしゃべりに詳しく教えて。JSON:[{"id":1,"label":"①","question":"問題","hints":["ヒ1","ヒ2","ヒ3"],"correct_answer":"答え"}]`
+            : `小${grade}採点。厳格判定。JSON形式。`;
 
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
-        const responseText = result.response.text();
-        // JSON部分だけを抽出する正規表現
-        const jsonMatch = responseText.match(/\[[\s\S]*\]/);
-        if (!jsonMatch) throw new Error("AIがJSON形式で答えられなかったにゃ");
-        
-        let cleanedJson = jsonMatch[0].replace(/\*/g, '×').replace(/\//g, '÷');
-        res.json(JSON.parse(cleanedJson));
-    } catch (err) { 
-        console.error("AI解析エラー:", err.message);
-        res.status(500).json({ error: err.message }); 
-    }
+        let text = result.response.text().replace(/```json|```/g, "").trim().replace(/\*/g, '×').replace(/\//g, '÷');
+        res.json(JSON.parse(text));
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.use(express.static(path.join(__dirname, '.')));
