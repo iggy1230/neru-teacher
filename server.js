@@ -15,23 +15,20 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, '.')));
 
 // ==========================================
-// 🐾 設定エリア (Build v2.5.0-Final)
+// 🐾 設定エリア (Build v2.5.1-Ultimate)
 // ==========================================
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY; 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 const GOOGLE_CREDENTIALS = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
 const ttsClient = new textToSpeech.TextToSpeechClient({ credentials: GOOGLE_CREDENTIALS });
 
-// 🔊 ネル先生の感情豊かな声を生成するにゃ
 function createSSML(text, mood) {
     let rate = "1.0"; let pitch = "0.0";
-    if (mood === "happy") { rate = "1.05"; pitch = "+2st"; }
+    if (mood === "happy") { rate = "1.1"; pitch = "+2st"; }
     if (mood === "thinking") { rate = "0.95"; pitch = "-1st"; }
     if (mood === "gentle") { rate = "0.9"; pitch = "+1st"; }
-    if (mood === "excited") { rate = "1.15"; pitch = "+3st"; }
-
-    const processedText = text.replace(/……/g, '<break time="650ms"/>')
-                              .replace(/にゃ/g, '<prosody pitch="+3st">にゃ</prosody>');
+    if (mood === "excited") { rate = "1.2"; pitch = "+3st"; }
+    const processedText = text.replace(/……/g, '<break time="650ms"/>').replace(/にゃ/g, '<prosody pitch="+3st">にゃ</prosody>');
     return `<speak><prosody rate="${rate}" pitch="${pitch}">${processedText}</prosody></speak>`;
 }
 
@@ -55,19 +52,21 @@ app.post('/analyze', async (req, res) => {
             generationConfig: { responseMimeType: "application/json" }
         });
         
+        // 🐾 指示を強力に強化にゃ！
         const prompt = mode === 'explain' 
-            ? `あなたはネル先生。小${grade}生、教科は${subject}です。
-               【重要】画像の問題を全て抽出し、問題文を正確に書き起こしてJSONで返して。算数記号は×÷、横棒はマイナス。
-               【重要】ヒントは3段階（考え方、式の作り方、計算）で、先生らしく非常に優しく丁寧に教えて。
-               JSON:[{"id":1,"label":"①","question":"問題文全文","hints":["考え方ヒント","式作りヒント","計算ヒント"],"correct_answer":"正解"}]`
-            : `小学校${grade}年生の${subject}の採点。独立計算せよ。JSON形式で返して。`;
+            ? `あなたはネル先生です。生徒は小${grade}生、教科は${subject}です。
+               【最重要：全問抽出の義務】
+               画像内にある「全て」の問題（大問1から最後の大問まで全て）を正確に一文字残らず書き起こしてJSONで返してください。
+               大問、小問の構造を保ってください。算数記号は×÷、横棒はマイナス。
+               ヒントは必ず3段階（考え方、式の作り方、計算のコツ）で、優しく丁寧に教えて。
+               JSON形式:[{"id":1,"label":"大問1 ①","question":"問題文全文を書き起こし","hints":["ヒ1","ヒ2","ヒ3"],"correct_answer":"正解"}]`
+            : `小学校${grade}年生の${subject}の採点。独立計算。JSONで返して。`;
 
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
-        let text = result.response.text().replace(/\*/g, '×').replace(/\//g, '÷');
-        res.json(JSON.parse(text));
-    } catch (err) { res.status(500).json({ error: err.message }); }
+        res.json(JSON.parse(result.response.text().replace(/\*/g, '×').replace(/\//g, '÷')));
+    } catch (err) { res.status(500).json({ error: "読み取り失敗にゃ🐾" }); }
 });
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Nell-Server Build v2.5.0-Final started on port ${PORT}`));
+app.listen(PORT, () => console.log(`Nell Build v2.5.1 started`));
