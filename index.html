@@ -11,17 +11,17 @@
 <body>
     <canvas id="hanamaru-canvas"></canvas>
     <canvas id="deco-canvas" style="display:none;"></canvas>
-    <div class="version-tag">Build: v2.7.4-Final</div>
+    <div class="version-tag">Build: v2.7.5-Ultimate</div>
 
     <div id="app-container">
         <!-- 画面1：校門 -->
         <section id="screen-gate" class="screen">
             <h1 class="school-title">猫後市立<br>ねこづか小学校</h1>
-            <div style="display:flex; justify-content:flex-end; width:100%;"><div id="user-list" style="display:flex; flex-direction:column; gap:20px; width:160px; margin-left:auto;"></div></div>
+            <div style="display:flex; justify-content:flex-end; width:100%;"><div id="user-list" class="right-user-list"></div></div>
             <button onclick="showEnrollment()" class="main-btn pink-btn">🐾 新しく入学するにゃ</button>
         </section>
 
-        <!-- 画面2：入学手続き -->
+        <!-- 画面2：入学 -->
         <section id="screen-enrollment" class="screen hidden">
             <h2 class="section-title">🎒 入学手続き</h2>
             <div class="id-card-wrap">
@@ -49,7 +49,7 @@
             <div class="lobby-menu">
                 <button onclick="selectMode('explain')" class="main-btn blue-btn">💡 教えてネル先生</button>
                 <button onclick="selectMode('grade')" class="main-btn pink-btn">💯 採点ネル先生</button>
-                <button onclick="showAttendance()" class="main-btn orange-btn">📅 出席簿をみる</button>
+                <button onclick="showAttendance()" class="main-btn gray-btn">📅 出席簿をみる</button>
                 <button onclick="backToGate()" class="main-btn gray-btn">👋 帰宅する</button>
             </div>
         </section>
@@ -63,11 +63,11 @@
                     <div class="chat-bubble"><p id="nell-text"></p></div>
                 </div>
 
-                <!-- 解析中（％ゲージ）：虫眼鏡ネル先生を復活にゃ！ -->
+                <!-- ％表示：ネル先生のすぐ下に配置にゃ -->
                 <div id="thinking-view" class="hidden">
                     <img src="nell-inspect.png" class="loader-inspect-img">
                     <div class="progress-container"><div id="progress-bar" class="progress-bar"></div></div>
-                    <p id="thinking-status">ネル先生考え中... <span id="progress-percent">0</span>%</p>
+                    <p id="thinking-status">ネル先生が考え中... <span id="progress-percent">0</span>%</p>
                 </div>
 
                 <div id="subject-selection-view">
@@ -82,7 +82,7 @@
                 <div id="chalkboard" class="chalkboard hidden"></div>
                 
                 <div class="work-area">
-                    <div id="upload-controls" class="hidden"><label class="main-btn blue-btn">📷 宿題をみせる<input type="file" id="hw-input" accept="image/*" style="display:none;"></label></div>
+                    <div id="upload-controls" class="hidden"><label class="main-btn blue-btn">📷 宿題をネル先生にみせる<input type="file" id="hw-input" accept="image/*" style="display:none;"></label></div>
                     
                     <div id="problem-selection-view" class="hidden">
                         <div class="problem-selection-card">
@@ -95,9 +95,10 @@
                         <div id="grade-sheet-container" class="hidden"><div class="glass-card" id="problem-list-grade" style="background:white; border-radius:15px; padding:10px;"></div></div>
                         <div id="hint-detail-container" class="hidden">
                             <div class="hint-btns">
+                                <div class="hint-step-badge" id="hint-step-label">考え方</div>
                                 <button onclick="showNextHint()" id="next-hint-btn" class="main-btn blue-btn">次のヒント！</button>
                                 <button onclick="revealAnswer()" id="reveal-answer-btn" class="main-btn orange-btn hidden">答えを見る🐾</button>
-                                <div id="answer-display-area" class="answer-box hidden">ネル先生の答え：<br><span id="final-answer-text" style="font-size:1.5rem;"></span></div>
+                                <div id="answer-display-area" class="answer-box hidden">答え：<br><span id="final-answer-text" style="font-size:1.5rem;"></span></div>
                             </div>
                             <button onclick="pressThanks()" class="main-btn pink-btn">✨ ありがとう！</button>
                             <button onclick="backToProblemSelection()" class="main-btn gray-btn">他の問題へ</button>
