@@ -15,7 +15,7 @@ function switchScreen(to) {
     if (target) { target.classList.remove('hidden'); window.scrollTo({ top: 0, behavior: 'instant' }); }
 }
 function showEnrollment() { switchScreen('screen-enrollment'); }
-function backToGate() { currentUser = null; switchScreen('screen-gate'); renderUserList(); }
+function backToGate() { currentUser = null; transcribedProblems = []; switchScreen('screen-gate'); renderUserList(); }
 function backToLobby() { document.getElementById('chalkboard').classList.add('hidden'); switchScreen('screen-lobby'); }
 
 function setSubject(s) {
@@ -46,7 +46,7 @@ async function loadFaceModels() {
     const URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
     try {
         await faceapi.nets.ssdMobilenetv1.loadFromUri(URL); await faceapi.nets.faceLandmark68Net.loadFromUri(URL);
-        modelsLoaded = true; document.getElementById('loading-models').innerText = "準備OK！🐾"; document.getElementById('complete-btn').disabled = false;
+        modelsLoaded = true; document.getElementById('loading-models').innerText = "準備OKだにゃ！🐾"; document.getElementById('complete-btn').disabled = false;
     } catch (e) { console.error("Face API Error."); }
 }
 
@@ -62,15 +62,11 @@ document.getElementById('student-photo-input').addEventListener('change', async 
         const aspect = targetW / targetH; let cropW = box.width * 2.8; let cropH = cropW / aspect;
         let sX = box.x + box.width / 2 - cropW / 2; let sY = box.y + box.height / 2 - cropH * 0.45;
         ctx.drawImage(img, sX, sY, cropW, cropH, 0, 0, targetW, targetH);
-        const scale = targetW / cropW; const nX = (nose.x - sX) * scale; const nY = (nose.y - sY) * scale; const fY = (box.y - sY) * scale;
-        const earW = targetW * 1.0;
-        ctx.drawImage(decoEars, (targetW - earW)/2, fY - (earW * 0.45), earW, earW);
+        const scale = targetW / cropW; const nX = (nose.x - sX) * scale; const nY = (nose.y - sY) * scale; 
+        const fY = (box.y - sY) * scale;
+        const earW = targetW * 0.95;
+        ctx.drawImage(decoEars, (targetW - earW)/2, fY - (earW * 0.5), earW, earW);
         ctx.drawImage(decoMuzzle, nX-(targetW*0.65)/2, nY-(targetW*0.65)/3.5, targetW*0.65, targetW*0.65 * 0.8);
-        ctx.strokeStyle = '#333'; ctx.lineWidth = 1.2;
-        for(let i=-1; i<=1; i++) {
-            ctx.beginPath(); ctx.moveTo(nX - 10, nY + 10 + i*5); ctx.lineTo(nX - 45, nY + 5 + i*12); ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(nX + 10, nY + 10 + i*5); ctx.lineTo(nX + 45, nY + 5 + i*12); ctx.stroke();
-        }
     } else { ctx.drawImage(img, 0,0, img.width, img.height, 0,0, targetW, targetH); }
 });
 
@@ -83,17 +79,15 @@ function processAndCompleteEnrollment() {
     const pCanvas = document.getElementById('id-photo-preview-canvas');
     ctx.drawImage(pCanvas, 21*2.5, 133*2.5, 94*2.5, 102*2.5);
     ctx.fillStyle="#333"; ctx.font="bold 42px 'M PLUS Rounded 1c'"; 
-    ctx.fillText(grade+"年生", 190*2.5, 137*2.5+32); ctx.fillText(name, 190*2.5, 177*2.5+42);
-    const newUser = { id: Date.now(), name, grade, photo: canvas.toDataURL(), karikari: 0, attendance: {} };
+    ctx.fillText(grade+"年生", 190*2.5, 137*2.5+32); 
+    ctx.fillText(name, 190*2.5, 177*2.5+42);
+    const newUser = { id: Date.now(), name, grade, photo: canvas.toDataURL("image/jpeg", 0.75), karikari: 0, attendance: {} };
     users.push(newUser); localStorage.setItem('nekoneko_users', JSON.stringify(users)); login(newUser);
 }
 
-// ％表示ロジック
 function updateProgress(p) {
-    const bar = document.getElementById('progress-bar');
-    if (bar) bar.style.width = p + '%';
-    const txt = document.getElementById('progress-percent');
-    if (txt) txt.innerText = Math.floor(p);
+    const bar = document.getElementById('progress-bar'); if (bar) bar.style.width = p + '%';
+    const txt = document.getElementById('progress-percent'); if (txt) txt.innerText = Math.floor(p);
 }
 
 async function shrinkImage(file) {
@@ -117,7 +111,6 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
     isAnalyzing = true;
     document.getElementById('upload-controls').classList.add('hidden');
     document.getElementById('thinking-view').classList.remove('hidden');
-    document.getElementById('problem-selection-view').classList.add('hidden');
     updateProgress(0); updateNellMessage("どれどれ……ネル先生がじっくり見てあげるにゃ。……", "thinking");
     let p = 0; const timer = setInterval(() => { if (p < 90) { p += 4; updateProgress(p); } }, 500);
     try {
@@ -126,7 +119,7 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
         transcribedProblems = await res.json();
         clearInterval(timer); updateProgress(100);
         setTimeout(() => { document.getElementById('thinking-view').classList.add('hidden'); if (transcribedProblems.length > 0) { if (currentMode === 'explain') renderProblemSelection(); else showGradingView(); } }, 800);
-    } catch (err) { updateNellMessage("制限エラーだにゃ🐾"); document.getElementById('upload-controls').classList.remove('hidden'); document.getElementById('thinking-view').classList.add('hidden');
+    } catch (err) { updateNellMessage("制限エラーだにゃ🐾"); document.getElementById('upload-controls').classList.remove('hidden');
     } finally { isAnalyzing = false; }
 });
 
@@ -140,7 +133,7 @@ function renderUserList() {
     });
 }
 function deleteUser(e, id) { e.stopPropagation(); if(confirm("削除する？")) { users = users.filter(u => u.id !== id); localStorage.setItem('nekoneko_users', JSON.stringify(users)); renderUserList(); } }
-function login(user) { currentUser = user; transcribedProblems = []; document.getElementById('current-student-avatar').src = user.photo; document.getElementById('karikari-count').innerText = user.karikari || 0; switchScreen('screen-lobby'); updateNellMessage(`おかえり、${user.name}さん！`, "happy"); }
+function login(user) { currentUser = user; document.getElementById('current-student-avatar').src = user.photo; document.getElementById('karikari-count').innerText = user.karikari || 0; switchScreen('screen-lobby'); updateNellMessage(`おかえり、${user.name}さん！`, "happy"); }
 function selectMode(m) { currentMode = m; switchScreen('screen-main'); document.getElementById('subject-selection-view').classList.remove('hidden'); }
 function renderProblemSelection() {
     document.getElementById('problem-selection-view').classList.remove('hidden');
@@ -161,7 +154,6 @@ function showHintStep() {
 function showNextHint() { hintIndex++; showHintStep(); }
 function revealAnswer() { const ans = selectedProblem.correct_answer; document.getElementById('final-answer-text').innerText = ans; document.getElementById('answer-display-area').classList.remove('hidden'); document.getElementById('reveal-answer-btn').classList.add('hidden'); updateNellMessage(`答えは……「${ans}」だにゃ！`, "gentle"); }
 async function pressThanks() { await updateNellMessage("よくがんばったにゃ！えらいにゃ〜！", "happy"); backToProblemSelection(); }
-async function pressAllSolved() { await updateNellMessage("全部終わったにゃ！……ネル先生もうれしいにゃ。ごほうびだにゃ！", "excited"); currentUser.karikari += 10; saveAndSync(); backToLobby(); }
 function backToProblemSelection() { document.getElementById('final-view').classList.add('hidden'); document.getElementById('problem-selection-view').classList.remove('hidden'); document.getElementById('chalkboard').classList.add('hidden'); }
 function showGradingView() { switchView('final-view'); document.getElementById('grade-sheet-container').classList.remove('hidden'); renderWorksheet(); }
 function renderWorksheet() {
@@ -176,3 +168,12 @@ function updateAns(idx, val) { const itm = transcribedProblems[idx]; itm.student
 function switchView(id) { document.getElementById('problem-selection-view').classList.add('hidden'); document.getElementById('final-view').classList.remove('hidden'); document.getElementById('grade-sheet-container').classList.add('hidden'); document.getElementById('hint-detail-container').classList.add('hidden'); document.getElementById(id).classList.remove('hidden'); }
 function saveAndSync() { const idx = users.findIndex(u => u.id === currentUser.id); if (idx !== -1) users[idx] = currentUser; localStorage.setItem('nekoneko_users', JSON.stringify(users)); document.getElementById('karikari-count').innerText = currentUser.karikari; }
 function updateIDPreview() { document.getElementById('preview-name').innerText = document.getElementById('new-student-name').value || "なまえ"; document.getElementById('preview-grade').innerText = (document.getElementById('new-student-grade').value || "○") + "年生"; }
+function showAttendance() {
+    const grid = document.getElementById('attendance-grid'); grid.innerHTML = "";
+    for(let i=0; i<12; i++) {
+        const d = new Date(); d.setDate(d.getDate() - i); const dateStr = d.toISOString().split('T')[0];
+        const status = currentUser.attendance ? currentUser.attendance[dateStr] : null;
+        grid.innerHTML += `<div class="day-box">${d.getDate()}日<br>${status==='red'?'🐾赤':(status==='blue'?'🐾青':'ー')}</div>`;
+    }
+    switchScreen('screen-attendance');
+}
