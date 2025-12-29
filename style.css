@@ -1,40 +1,80 @@
-:root { --primary: #1e3a5f; --accent-pink: #ff85a1; --accent-blue: #4fc3f7; --accent-orange: #ffb74d; --chalk: #1b4d3e; }
-body { margin: 0; padding: 0; min-height: 100vh; background-color: #fffaf0; background-image: url('nell-bg.png'); background-size: cover; background-attachment: fixed; background-position: top center; font-family: 'M PLUS Rounded 1c', sans-serif; color: var(--primary); overflow-x: hidden; }
+:root {
+    --primary: #1e3a5f; --accent-pink: #ff85a1; --accent-blue: #4fc3f7; --accent-orange: #ffb74d; --chalk: #1b4d3e;
+}
 
-/* 画面全体を上に詰めるにゃ */
-.screen { max-width: 480px; margin: 0 auto; padding: 5px 15px 20px 15px; min-height: 100vh; display: flex; flex-direction: column; }
+body { 
+    margin: 0; padding: 0; min-height: 100vh;
+    background-color: #fffaf0; 
+    background-image: url('nell-bg.png');
+    background-size: cover; 
+    background-attachment: fixed; 
+    background-position: top center;
+    font-family: 'M PLUS Rounded 1c', sans-serif; 
+    color: var(--primary); 
+    overflow-x: hidden;
+}
+
+/* スマホでは背景の固定を解除（動作安定のため） */
+@media screen and (max-width: 480px) {
+    body { background-attachment: scroll; }
+}
+
+.screen { 
+    max-width: 480px; margin: 0 auto; padding: 10px 15px 40px; 
+    min-height: 100vh; display: flex; flex-direction: column; 
+    box-sizing: border-box;
+}
+
 .hidden { display: none !important; }
 
-/* タイトルを一番上に！ */
-.school-title { text-align: center; color: var(--primary); font-family: 'M PLUS Rounded 1c', sans-serif; font-size: 2.8rem; line-height: 1.1; margin: 0 0 15px 0; font-weight: 900; text-shadow: 4px 4px 0 #fff, -4px -4px 0 #fff; }
-
-/* アップロードボタンを「超巨大化」したにゃ！ */
-.camera-btn-large { 
-    display: flex; align-items: center; justify-content: center;
-    background: #00897b; color: white; padding: 50px 20px; /* 縦幅を2倍にしたにゃ */
-    text-align: center; border-radius: 30px; font-weight: 900; cursor: pointer; 
-    font-size: 1.8rem; /* 文字も巨大にゃ */
-    box-shadow: 0 10px 0 #004d40; margin: 10px 0; width: 100%; border: 4px solid white;
+/* タイトル：二重にならないクッキリ白縁取り */
+.school-title { 
+    text-align: center; color: var(--primary); 
+    font-family: 'Sawarabi Gothic', sans-serif; 
+    font-size: 2.8rem; line-height: 1.1; margin: 5px 0 20px 0; font-weight: 900;
+    -webkit-text-stroke: 1.5px white; /* 本物の縁取り機能 */
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.1); /* 軽い影で浮かせるにゃ */
 }
-.camera-btn-large:active { transform: translateY(6px); box-shadow: 0 4px 0 #004d40; }
 
-/* 学生証の文字位置：固定 */
-.id-card-wrap { position: relative; width: 320px !important; height: 320px !important; margin: 0 auto 10px; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.15); border: 6px solid white; background: white; flex-shrink: 0; }
+/* 学生証：サイズ固定（320px）かつレスポンシブ */
+.id-card-wrap {
+    position: relative; 
+    width: 100% !important; max-width: 320px !important; aspect-ratio: 1/1;
+    margin: 0 auto 15px; border-radius: 20px; overflow: hidden; 
+    box-shadow: 0 10px 30px rgba(0,0,0,0.15); border: 6px solid white; background: white;
+    flex-shrink: 0;
+}
 .id-base-img { width: 100%; height: 100%; object-fit: contain; }
-#id-photo-slot { position: absolute; top: 133px; left: 21px; width: 94px; height: 102px; overflow: hidden; }
-.id-text-overlay { position: absolute; left: 190px; font-weight: 900; color: #333; font-size: 1rem; pointer-events: none; }
-.id-grade-text { top: 137px; } .id-name-text { top: 177px; }
+#id-photo-slot { position: absolute; top: 41.5%; left: 6.5%; width: 29.5%; height: 32%; overflow: hidden; }
+#id-photo-preview-canvas { width: 100%; height: 100%; }
 
-/* ネル先生ふきだしを上に詰める */
-.nell-chat { display: flex; align-items: flex-start; margin: 5px 0; width: 100%; }
-.nell-avatar-wrap { width: 75px; height: 75px; background: white; border-radius: 50%; border: 3px solid var(--accent-pink); flex-shrink: 0; padding: 4px; }
-.chat-bubble { background: white; border: 4px solid var(--accent-pink); padding: 10px; border-radius: 0 20px 20px 20px; flex: 1; margin-left: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+/* 文字位置：学年 137px, 氏名 177px */
+.id-text-overlay { position: absolute; left: 60%; font-weight: 900; color: #333; font-size: 1rem; pointer-events: none; }
+.id-grade-text { top: 42.8%; } /* 137px付近 */
+.id-name-text { top: 55.3%; }  /* 177px付近 */
+
+/* 名簿レイアウト */
+.gate-layout { display: flex; justify-content: flex-end; width: 100%; }
+.right-user-list { display: flex; flex-direction: column; gap: 15px; width: 150px; }
+.user-card { background: rgba(255,255,255,0.95); padding: 8px; border-radius: 15px; border: 2px solid var(--accent-pink); cursor: pointer; text-align: center; transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+.user-card:hover { transform: scale(1.15); z-index: 100; }
+.user-card img { width: 100%; height: auto; object-fit: contain; }
+
+/* ネル先生ふきだし（重なり防止） */
+.nell-chat { display: flex; align-items: center; margin: 10px 0; width: 100%; flex-shrink: 0; }
+.nell-avatar-wrap { width: 75px; height: 75px; background: white; border-radius: 50%; border: 3px solid var(--accent-pink); flex-shrink: 0; padding: 3px; }
+.nell-img { width: 100%; height: 100%; object-fit: contain; }
+.chat-bubble { background: white; border: 4px solid var(--accent-pink); padding: 12px; border-radius: 20px; flex: 1; margin-left: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
 .chat-bubble p { margin: 0; font-size: 1rem; line-height: 1.4; font-weight: 700; font-family: 'Kiwi Maru', serif; }
 
-.chalkboard { background: var(--chalk); color: white; border: 8px solid #5d4037; border-radius: 15px; padding: 10px; margin: 5px 0; text-align: center; font-size: 1.4rem; box-shadow: inset 0 0 15px rgba(0,0,0,0.5); min-height: 60px; display: flex; align-items: center; justify-content: center; }
+.chalkboard { background: var(--chalk); color: white; border: 6px solid #5d4037; border-radius: 15px; padding: 15px; margin: 10px 0; text-align: center; font-size: 1.3rem; box-shadow: inset 0 0 15px rgba(0,0,0,0.5); border-style: double; min-height: 50px; display: flex; align-items: center; justify-content: center; }
 
-/* ぷっくりボタン */
-.main-btn { display: flex; align-items: center; justify-content: center; background: var(--accent-pink); color: white; border: none; padding: 15px; border-radius: 50px; font-weight: 900; font-size: 1.1rem; cursor: pointer; width: 100%; box-shadow: 0 6px 0 #d15d7d; transition: 0.1s; margin: 5px 0; }
-.main-btn:active { transform: translateY(4px); box-shadow: 0 2px 0 #d15d7d; }
-.blue-btn { background: var(--accent-blue); box-shadow: 0 6px 0 #3a9fd1; }
-.orange-btn { background: var(--accent-orange); box-shadow: 0 6px 0 #e69530; }
+/* ボタン */
+.main-btn { background: var(--accent-pink); color: white; border: none; padding: 16px; border-radius: 50px; font-weight: 900; font-size: 1.1rem; cursor: pointer; width: 100%; box-shadow: 0 5px 0 #d15d7d; transition: 0.1s; margin: 8px 0; font-family: inherit; }
+.main-btn:active { transform: translateY(3px); box-shadow: 0 2px 0 #d15d7d; }
+.blue-btn { background: var(--accent-blue); box-shadow: 0 5px 0 #3a9fd1; }
+.orange-btn { background: var(--accent-orange); box-shadow: 0 5px 0 #e69530; }
+.gray-btn { background: #aab7b8; box-shadow: 0 5px 0 #7f8c8d; }
+
+.progress-container { width: 100%; height: 14px; background: #ddd; border-radius: 10px; overflow: hidden; margin: 10px 0; border: 2px solid white; }
+.progress-bar { width: 0%; height: 100%; background: var(--accent-blue); transition: width 0.3s; }
