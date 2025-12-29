@@ -15,23 +15,20 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, '.')));
 
 // ==========================================
-// 🐾 設定エリア (Build v2.6.0)
+// 🐾 設定エリア (Build v2.6.1)
 // ==========================================
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY; 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 const GOOGLE_CREDENTIALS = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
 const ttsClient = new textToSpeech.TextToSpeechClient({ credentials: GOOGLE_CREDENTIALS });
 
-// 🔊 ja-JP-Neural2-B 音声生成
 function createSSML(text, mood) {
     let rate = "1.0"; let pitch = "0.0";
     if (mood === "happy") { rate = "1.05"; pitch = "+2st"; }
     if (mood === "thinking") { rate = "0.95"; pitch = "-1st"; }
     if (mood === "gentle") { rate = "0.9"; pitch = "+1st"; }
     if (mood === "excited") { rate = "1.15"; pitch = "+3st"; }
-
-    const processedText = text.replace(/……/g, '<break time="650ms"/>')
-                              .replace(/にゃ/g, '<prosody pitch="+3st">にゃ</prosody>');
+    const processedText = text.replace(/……/g, '<break time="650ms"/>').replace(/にゃ/g, '<prosody pitch="+3st">にゃ</prosody>');
     return `<speak><prosody rate="${rate}" pitch="${pitch}">${processedText}</prosody></speak>`;
 }
 
@@ -57,21 +54,17 @@ app.post('/analyze', async (req, res) => {
         
         const prompt = mode === 'explain' 
             ? `あなたはネル先生です。生徒は小${grade}生、教科は${subject}です。
-               【最重要：全問抽出と正確な書き起こし】
-               画像内の全ての問題（大問1から最後の大問まで）を抽出してください。
-               "question"フィールドには、問題番号だけでなく、問題文の全文を一文字残さず書き起こしてください。
+               【重要】画像内の全問題を①から順に抽出し、問題文を正確に書き起こしてJSONで返してください。
                算数記号は×÷、横棒はマイナス。
-               【重要】ヒントは必ず3段階（1.考え方、2.式の作り方、3.計算のコツ）で構成し、
-               その次に正解(correct_answer)を日本語で返してください。
-               JSON形式:[{"id":1,"label":"大問1 ①","question":"問題文全文","hints":["考え方","式作り","計算"],"correct_answer":"正解"}]`
-            : `小学校${grade}年生の${subject}の採点。独立計算。JSON形式。`;
+               【重要】ヒントは必ず3段階（考え方、式の作り方、計算のコツ）で構成し、正解(correct_answer)を日本語で返してください。
+               JSON形式:[{"id":1,"label":"①","question":"問題文全文","hints":["ヒ1","ヒ2","ヒ3"],"correct_answer":"答え"}]`
+            : `小学校${grade}年生の${subject}採点。JSON形式。`;
 
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
         let text = result.response.text().replace(/\*/g, '×').replace(/\//g, '÷');
         res.json(JSON.parse(text));
-    } catch (err) { res.status(500).json({ error: "読み取り失敗だにゃ🐾" }); }
+    } catch (err) { res.status(500).json({ error: "読み取り失敗にゃ🐾" }); }
 });
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Nell Build v2.6.0 Final started`));
+app.listen(process.env.PORT || 3000);
