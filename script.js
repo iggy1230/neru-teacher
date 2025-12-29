@@ -18,13 +18,19 @@ function switchScreen(to) {
 
 function showEnrollment() { switchScreen('screen-enrollment'); }
 function backToGate() { currentUser = null; switchScreen('screen-gate'); renderUserList(); }
-function backToLobby() { switchScreen('screen-lobby'); }
+function backToLobby() { resetSubject(); switchScreen('screen-lobby'); }
 
 function setSubject(s) {
     currentSubject = s;
     document.getElementById('subject-selection-view').classList.add('hidden');
-    document.getElementById('upload-controls').classList.remove('hidden');
+    document.getElementById('operation-area').classList.remove('hidden');
     updateNellMessage(`${currentSubject}の問題をネル先生にみせてにゃ！`, "happy");
+}
+
+function resetSubject() {
+    currentSubject = '';
+    document.getElementById('subject-selection-view').classList.remove('hidden');
+    document.getElementById('operation-area').classList.add('hidden');
 }
 
 // --- 音声合成 ---
@@ -45,37 +51,35 @@ async function updateNellMessage(t, mood = "normal") {
     return await speakNell(t, mood);
 }
 
-// --- Face API & 学生証合成 ---
+// --- Face API & 学生証 ---
 async function loadFaceModels() {
     const URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
     try {
-        await faceapi.nets.ssdMobilenetv1.loadFromUri(URL);
-        await faceapi.nets.faceLandmark68Net.loadFromUri(URL);
-        modelsLoaded = true;
-        document.getElementById('loading-models').innerText = "準備OKだにゃ！🐾";
-        document.getElementById('complete-btn').disabled = false;
-    } catch (e) { console.error("Face API load failed."); }
+        await faceapi.nets.ssdMobilenetv1.loadFromUri(URL); await faceapi.nets.faceLandmark68Net.loadFromUri(URL);
+        modelsLoaded = true; document.getElementById('loading-models').innerText = "準備OKだにゃ！🐾"; document.getElementById('complete-btn').disabled = false;
+    } catch (e) { console.error("Face API Error."); }
 }
 
 document.getElementById('student-photo-input').addEventListener('change', async (e) => {
     const file = e.target.files[0]; if (!file || !modelsLoaded) return;
     const img = await faceapi.bufferToImage(file);
-    const detection = await faceapi.detectSingleFace(img).withFaceLandmarks();
+    const det = await faceapi.detectSingleFace(img).withFaceLandmarks();
     const canvas = document.getElementById('id-photo-preview-canvas');
     const ctx = canvas.getContext('2d');
     const targetW = 94, targetH = 102; ctx.clearRect(0,0,targetW,targetH);
-    if (detection) {
-        const box = detection.detection.box; const nose = detection.landmarks.getNose()[3];
+    if (det) {
+        const box = det.detection.box; const nose = det.landmarks.getNose()[3];
         const aspect = targetW / targetH; let cropW = box.width * 2.5; let cropH = cropW / aspect;
         let sX = box.x + box.width / 2 - cropW / 2; let sY = box.y + box.height / 2 - cropH * 0.45;
         ctx.drawImage(img, sX, sY, cropW, cropH, 0, 0, targetW, targetH);
-        const scale = targetW / cropW; 
-        const nX = (nose.x - sX) * scale; const nY = (nose.y - sY) * scale; 
-        const fY = (box.y - sY) * scale; // 頭のてっぺん
-        const earW = targetW * 0.95;
+        const scale = targetW / cropW; const nX = (nose.x - sX) * scale; const nY = (nose.y - sY) * scale; const fY = (box.y - sY) * scale;
+        const earW = targetW * 1.0;
         ctx.drawImage(decoEars, (targetW - earW)/2, fY - (earW * 0.45), earW, earW);
-        ctx.drawImage(decoMuzzle, nX-(targetW*0.6)/2, nY-(targetW*0.6)/3, targetW*0.6, targetW*0.6*0.8);
-    } else { ctx.drawImage(img, 0,0, img.width, img.height, 0,0, targetW, targetH); }
+        ctx.drawImage(decoMuzzle, nX-(targetW*0.65)/2, nY-(targetW*0.65)/3.5, targetW*0.65, targetW*0.65 * 0.8);
+    } else {
+        const s = Math.min(img.width, img.height);
+        ctx.drawImage(img, (img.width-s)/2, (img.height-s)/2, s, s, 0, 0, targetW, targetH);
+    }
 });
 
 function processAndCompleteEnrollment() {
@@ -87,24 +91,28 @@ function processAndCompleteEnrollment() {
     const pCanvas = document.getElementById('id-photo-preview-canvas');
     ctx.drawImage(pCanvas, 21*2.5, 133*2.5, 94*2.5, 102*2.5);
     ctx.fillStyle="#333"; ctx.font="bold 42px 'M PLUS Rounded 1c'"; 
-    ctx.fillText(grade+"年生", 190*2.5, 139*2.5+32); 
+    ctx.fillText(grade+"年生", 190*2.5, 137*2.5+32); 
     ctx.fillText(name, 190*2.5, 177*2.5+42);
-    const newUser = { id: Date.now(), name, grade, photo: canvas.toDataURL(), karikari: 0, attendance: {} };
+    const newUser = { id: Date.now(), name, grade, photo: canvas.toDataURL("image/jpeg", 0.7), karikari: 0, attendance: {} };
     users.push(newUser); localStorage.setItem('nekoneko_users', JSON.stringify(users)); login(newUser);
 }
 
-// --- 解析 ---
+// --- 解析ロジック ---
+function updateProgress(percent) {
+    const bar = document.getElementById('progress-bar'); const text = document.getElementById('progress-percent');
+    if (bar) bar.style.width = percent + '%'; if (text) text.innerText = percent;
+}
 async function shrinkImage(file) {
     return new Promise((resolve) => {
         const reader = new FileReader(); reader.readAsDataURL(file);
         reader.onload = (e) => {
             const img = new Image(); img.onload = () => {
-                const canvas = document.createElement('canvas'); const MAX = 1600;
+                const canvas = document.createElement('canvas'); const MAX = 1200;
                 let w = img.width, h = img.height;
                 if (w > MAX || h > MAX) { if (w > h) { h *= MAX / w; w = MAX; } else { w *= MAX / h; h = MAX; } }
                 canvas.width = w; canvas.height = h;
                 canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-                resolve(canvas.toDataURL('image/jpeg', 0.9).split(',')[1]);
+                resolve(canvas.toDataURL('image/jpeg', 0.8).split(',')[1]);
             }; img.src = e.target.result;
         };
     });
@@ -115,26 +123,41 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
     isAnalyzing = true;
     document.getElementById('upload-controls').classList.add('hidden');
     document.getElementById('thinking-view').classList.remove('hidden');
-    let p = 0; const pBar = document.getElementById('progress-bar');
-    const timer = setInterval(() => { if (p < 90) { p += 4; pBar.style.width = p+'%'; document.getElementById('progress-percent').innerText = p; } }, 500);
+    document.getElementById('problem-selection-view').classList.add('hidden');
+    updateProgress(0); 
+
+    updateNellMessage(`${currentSubject}の問題だにゃ。じっくり見てあげるにゃ。……`, "thinking");
+
+    let p = 0; 
+    const pTimer = setInterval(() => { if (p < 90) { p += 3; updateProgress(p); } }, 500);
 
     try {
-        updateNellMessage("どれどれ……じっくり見るにゃ。……", "thinking");
         const b64 = await shrinkImage(e.target.files[0]);
-        const res = await fetch('/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: b64, mode: currentMode, grade: currentUser.grade, subject: currentSubject }) });
-        transcribedProblems = await res.json();
-        clearInterval(timer); pBar.style.width = '100%'; document.getElementById('progress-percent').innerText = '100';
+        const res = await fetch('/analyze', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: b64, mode: currentMode, grade: currentUser.grade, subject: currentSubject })
+        });
+        const data = await res.json();
+        transcribedProblems = Array.isArray(data) ? data : [];
+        
+        clearInterval(pTimer); updateProgress(100);
+        
         setTimeout(() => {
             document.getElementById('thinking-view').classList.add('hidden');
-            if (currentMode === 'explain') renderProblemSelection(); else showGradingView();
+            if (transcribedProblems.length > 0) {
+                if (currentMode === 'explain') renderProblemSelection(); else showGradingView();
+            } else {
+                updateNellMessage("ごめんにゃ、うまく読めなかったにゃ。");
+                document.getElementById('upload-controls').classList.remove('hidden');
+            }
         }, 800);
-    } catch (err) { updateNellMessage("制限エラーだにゃ🐾"); document.getElementById('upload-controls').classList.remove('hidden');
+    } catch (err) { clearInterval(pTimer); updateNellMessage("制限エラーだにゃ🐾"); document.getElementById('upload-controls').classList.remove('hidden'); document.getElementById('thinking-view').classList.add('hidden');
     } finally { isAnalyzing = false; }
 });
 
 function renderUserList() {
     const list = document.getElementById('user-list'); if(!list) return;
-    list.innerHTML = users.length ? "" : "<p style='text-align:right'>入学してにゃ</p>";
+    list.innerHTML = users.length ? "" : "<p style='text-align:right; font-size:0.8rem; opacity:0.5;'>入学してにゃ</p>";
     users.forEach(user => {
         const div = document.createElement('div'); div.className = "user-card";
         div.innerHTML = `<img src="${user.photo}"><div class="user-card-info">${user.grade}年生 ${user.name}</div><button class="delete-student-btn" onclick="deleteUser(event, ${user.id})">×</button>`;
@@ -143,27 +166,19 @@ function renderUserList() {
 }
 function deleteUser(e, id) { e.stopPropagation(); if(confirm("削除する？")) { users = users.filter(u => u.id !== id); localStorage.setItem('nekoneko_users', JSON.stringify(users)); renderUserList(); } }
 function login(user) { currentUser = user; document.getElementById('current-student-avatar').src = user.photo; document.getElementById('karikari-count').innerText = user.karikari || 0; switchScreen('screen-lobby'); updateNellMessage(`おかえり、${user.name}さん！`, "happy"); }
-
-function selectMode(m) {
-    currentMode = m; switchScreen('screen-main');
-    document.getElementById('subject-selection-view').classList.remove('hidden');
-    document.getElementById('upload-controls').classList.add('hidden');
-    document.getElementById('problem-selection-view').classList.add('hidden');
-    document.getElementById('final-view').classList.add('hidden');
-    document.getElementById('chalkboard').classList.add('hidden');
-    updateNellMessage("何のしゅくだいかにゃ？", "happy");
-}
+function selectMode(m) { currentMode = m; switchScreen('screen-main'); resetSubject(); }
 
 function renderProblemSelection() {
     document.getElementById('problem-selection-view').classList.remove('hidden');
     const list = document.getElementById('transcribed-problem-list'); list.innerHTML = "";
     transcribedProblems.forEach(p => {
         const div = document.createElement('div'); div.className = "prob-card";
-        div.innerHTML = `<div><span class="q-label">${p.label || '?'}</span><span>${p.question}</span></div><button class="main-btn blue-btn" style="width:auto; padding:10px;" onclick="startHint(${p.id})">教えて！</button>`;
+        div.innerHTML = `<div><span class="q-label">${p.label || '?'}</span><span>${p.question.substring(0,25)}...</span></div><button class="main-btn blue-btn" style="width:auto; padding:10px;" onclick="startHint(${p.id})">教えて！</button>`;
         list.appendChild(div);
     });
+    updateNellMessage("書き起こしが終わったにゃ！……どの問題をおしえてほしいかにゃ？", "happy");
 }
-function startHint(id) { selectedProblem = transcribedProblems.find(p => p.id === id); hintIndex = 0; switchView('final-view'); document.getElementById('hint-detail-container').classList.remove('hidden'); document.getElementById('chalkboard').innerHTML = selectedProblem.question; document.getElementById('chalkboard').classList.remove('hidden'); showHintStep(); }
+function startHint(id) { selectedProblem = transcribedProblems.find(p => p.id === id); hintIndex = 0; switchView('hint-detail-container'); document.getElementById('chalkboard').innerHTML = selectedProblem.question; document.getElementById('chalkboard').classList.remove('hidden'); document.getElementById('answer-display-area').classList.add('hidden'); showHintStep(); }
 function showHintStep() {
     const labels = ["考え方", "式の作り方", "計算"]; document.getElementById('hint-step-label').innerText = labels[hintIndex];
     updateNellMessage(selectedProblem.hints[hintIndex], "thinking");
@@ -177,7 +192,7 @@ function revealAnswer() {
 }
 async function pressThanks() { await updateNellMessage("よくがんばったにゃ！えらいにゃ〜！", "happy"); backToProblemSelection(); }
 function backToProblemSelection() { document.getElementById('final-view').classList.add('hidden'); document.getElementById('problem-selection-view').classList.remove('hidden'); document.getElementById('chalkboard').classList.add('hidden'); updateNellMessage("どの問題をおしえてほしいかにゃ？", "happy"); }
-function showGradingView() { switchView('final-view'); document.getElementById('grade-sheet-container').classList.remove('hidden'); renderWorksheet(); }
+function showGradingView() { switchView('grade-sheet-container'); renderWorksheet(); }
 function renderWorksheet() {
     const list = document.getElementById('problem-list-grade'); list.innerHTML = "";
     transcribedProblems.forEach((item, idx) => {
@@ -185,18 +200,9 @@ function renderWorksheet() {
         div.innerHTML = `<div><span class="q-label">${item.label || '?'}</span><span>${item.question}</span></div><input type="text" class="student-ans-input" value="${item.student_answer || ''}" onchange="updateAns(${idx}, this.value)"><div class="${item.status==='correct'?'correct':'incorrect'}">${item.status==='correct'?'⭕️':'❌'}</div>`;
         list.appendChild(div);
     });
+    document.getElementById('thanks-btn').classList.remove('hidden');
 }
 function updateAns(idx, val) { const itm = transcribedProblems[idx]; itm.student_answer = val; if (val.trim() === String(itm.correct_answer)) { itm.status = 'correct'; updateNellMessage("正解にゃ！", "happy"); } renderWorksheet(); }
-function switchView(id) { document.getElementById('problem-selection-view').classList.add('hidden'); document.getElementById('final-view').classList.remove('hidden'); document.getElementById('grade-sheet-container').classList.add('hidden'); document.getElementById('hint-detail-container').classList.add('hidden'); document.getElementById(id).classList.remove('hidden'); }
-function saveAndSync() { const idx = users.findIndex(u => u.id === currentUser.id); if (idx !== -1) users[idx] = currentUser; localStorage.setItem('nekoneko_users', JSON.stringify(users)); document.getElementById('karikari-count').innerText = currentUser.karikari; }
+function switchView(id) { document.getElementById('problem-selection-view').classList.add('hidden'); document.getElementById('final-view').classList.add('hidden'); document.getElementById('grade-sheet-container').classList.add('hidden'); document.getElementById('hint-detail-container').classList.add('hidden'); document.getElementById(id).classList.remove('hidden'); }
+function saveAndSync() { const idx = users.findIndex(u => u.id === currentUser.id); if (idx !== -1) users[idx] = currentUser; localStorage.setItem('nekoneko_users', JSON.stringify(users)); if(document.getElementById('karikari-count')) document.getElementById('karikari-count').innerText = currentUser.karikari; }
 function updateIDPreview() { document.getElementById('preview-name').innerText = document.getElementById('new-student-name').value || "なまえ"; document.getElementById('preview-grade').innerText = (document.getElementById('new-student-grade').value || "○") + "年生"; }
-
-function showAttendance() {
-    switchScreen('screen-attendance');
-    const grid = document.getElementById('attendance-grid'); grid.innerHTML = "";
-    for(let i=0; i<12; i++) {
-        const d = new Date(); d.setDate(d.getDate() - i); const dateStr = d.toISOString().split('T')[0];
-        const status = currentUser.attendance ? currentUser.attendance[dateStr] : null;
-        grid.innerHTML += `<div class="day-box">${d.getDate()}日<br>${status==='red'?'🐾赤':(status==='blue'?'🐾青':'ー')}</div>`;
-    }
-}

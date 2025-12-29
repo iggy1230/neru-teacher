@@ -1,67 +1,43 @@
-:root {
-    --primary: #1e3a5f; --accent-pink: #ff85a1; --accent-blue: #4fc3f7; --accent-orange: #ffb74d; --chalk: #1b4d3e;
-}
-body { 
-    margin: 0; padding: 0; min-height: 100vh; background-color: #fffaf0; 
-    background-image: url('nell-bg.png'); background-size: cover; background-attachment: fixed; background-position: top center;
-    font-family: 'M PLUS Rounded 1c', sans-serif; color: var(--primary); overflow-x: hidden;
-}
+:root { --primary: #1e3a5f; --accent-pink: #ff85a1; --accent-blue: #4fc3f7; --accent-orange: #ffb74d; --chalk: #1b4d3e; }
+body { margin: 0; padding: 0; min-height: 100vh; background-color: #fffaf0; background-image: url('nell-bg.png'); background-size: cover; background-attachment: fixed; background-position: top center; font-family: 'M PLUS Rounded 1c', sans-serif; color: var(--primary); overflow-x: hidden; }
 .screen { max-width: 480px; margin: 0 auto; padding: 15px; min-height: 100vh; display: flex; flex-direction: column; }
 .hidden { display: none !important; }
 
-/* タイトル：画面上部 */
-.school-title { 
-    text-align: center; color: var(--primary); font-family: 'Sawarabi Gothic', sans-serif; 
-    font-size: 2.8rem; line-height: 1.1; margin: 10px 0 20px 0; font-weight: 900; 
-    text-shadow: 4px 4px 0 #fff, -4px -4px 0 #fff, 4px -4px 0 #fff, -4px 4px 0 #fff, 0px 4px 0 #fff, 0px -4px 0 #fff;
-}
+/* タイトル：丸ゴシック + 白縁 */
+.school-title { text-align: center; color: var(--primary); font-family: 'M PLUS Rounded 1c', sans-serif; font-size: 3.0rem; line-height: 1.2; margin: 0 0 25px 0; font-weight: 900; padding-top: 10px; text-shadow: 4px 4px 0 #fff, -4px -4px 0 #fff, 4px -4px 0 #fff, -4px 4px 0 #fff, 0px 4px 0 #fff, 0px -4px 0 #fff; }
 
-/* 校門名簿：右側に縦並び */
-.gate-layout { display: flex; justify-content: flex-end; width: 100%; flex: 1; }
-.right-user-list { display: flex; flex-direction: column; gap: 20px; width: 160px; max-height: 60vh; overflow-y: auto; padding: 10px; }
-.user-card { 
-    background: rgba(255,255,255,0.9); padding: 10px; border-radius: 20px; border: 2px solid var(--accent-pink); 
-    cursor: pointer; text-align: center; transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-.user-card:hover { transform: scale(1.8); z-index: 100; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
-.user-card img { width: 100%; height: auto; object-fit: contain; border-radius: 10px; }
-.user-card-info { font-size: 0.8rem; font-weight: 900; margin-top: 5px; }
-
-/* 学生証：サイズ固定 & 指定位置修正 */
+/* 学生証：丸ゴシック & サイズ固定 */
 .id-card-wrap { position: relative; width: 320px !important; height: 320px !important; margin: 0 auto 20px; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.15); border: 6px solid white; background: white; flex-shrink: 0; }
 .id-base-img { width: 100%; height: 100%; object-fit: contain; }
 #id-photo-slot { position: absolute; top: 133px; left: 21px; width: 94px; height: 102px; overflow: hidden; }
-.id-text-overlay { position: absolute; left: 190px; font-weight: 900; color: #333; font-size: 1rem; pointer-events: none; }
-.id-grade-text { top: 131px; } /* さらに5px上 */
-.id-name-text { top: 173px; }  /* さらに2px上 */
+.id-text-overlay { position: absolute; left: 190px; font-weight: 900; color: #333; font-size: 1.05rem; pointer-events: none; font-family: 'M PLUS Rounded 1c', sans-serif; }
 
-/* ネル先生ふきだし（重なり防止） */
-.nell-chat { display: flex; align-items: center; margin: 10px 0; width: 100%; flex-shrink: 0; }
-.nell-avatar-wrap { width: 80px; height: 80px; background: white; border-radius: 50%; border: 3px solid var(--accent-pink); flex-shrink: 0; padding: 4px; }
-.nell-img { width: 100%; height: 100%; object-fit: contain; }
-.chat-bubble { background: white; border: 4px solid var(--accent-pink); padding: 12px; border-radius: 20px; flex: 1; margin-left: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
-.chat-bubble p { margin: 0; font-size: 1.1rem; line-height: 1.4; font-weight: 700; font-family: 'Kiwi Maru', serif; }
+/* 修正：学年をさらに2px上(139から137へ) */
+.id-grade-text { top: 137px; } 
+.id-name-text { top: 177px; }
 
-/* 黒板 */
-.chalkboard { background: var(--chalk); color: white; border: 8px solid #5d4037; border-radius: 15px; padding: 15px; margin: 10px 0; text-align: center; font-size: 1.4rem; box-shadow: inset 0 0 15px rgba(0,0,0,0.5); border-style: double; min-height: 60px; font-family: 'M PLUS Rounded 1c', sans-serif; }
+/* ネル先生：配置を整理 */
+.nell-chat { display: flex; align-items: flex-start; margin: 15px 0; width: 100%; flex-shrink: 0; }
+.nell-avatar-wrap { width: 80px; height: 80px; background: white; border-radius: 50%; border: 3px solid var(--accent-pink); flex-shrink: 0; padding: 4px; overflow: hidden; }
+.chat-bubble { background: white; border: 4px solid var(--accent-pink); padding: 12px; border-radius: 0 20px 20px 20px; flex: 1; margin-left: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
+.chat-bubble p { margin: 0; font-size: 1rem; line-height: 1.4; font-weight: 700; font-family: 'Kiwi Maru', serif; }
+
+.chalkboard { background: var(--chalk); color: white; border: 8px solid #5d4037; border-radius: 15px; padding: 15px; margin: 10px 0; text-align: center; font-size: 1.4rem; box-shadow: inset 0 0 15px rgba(0,0,0,0.5); border-style: double; min-height: 60px; display: flex; align-items: center; justify-content: center; width: 100%; box-sizing: border-box; }
 
 /* ボタン */
-.main-btn { background: var(--accent-pink); color: white; border: none; padding: 16px; border-radius: 50px; font-weight: 900; font-size: 1.1rem; cursor: pointer; width: 100%; box-shadow: 0 6px 0 #d15d7d; transition: 0.1s; margin: 8px 0; font-family: inherit; }
+.main-btn { display: flex; align-items: center; justify-content: center; background: var(--accent-pink); color: white; border: none; padding: 18px 25px; border-radius: 50px; font-weight: 900; font-size: 1.2rem; cursor: pointer; width: 100%; box-shadow: 0 6px 0 #d15d7d; transition: 0.1s; margin: 8px 0; font-family: inherit; }
 .main-btn:active { transform: translateY(4px); box-shadow: 0 2px 0 #d15d7d; }
 .blue-btn { background: var(--accent-blue); box-shadow: 0 6px 0 #3a9fd1; }
-.orange-btn { background: var(--accent-orange); box-shadow: 0 6px 0 #e69530; }
 .gray-btn { background: #aab7b8; box-shadow: 0 6px 0 #7f8c8d; }
 
-/* 解析演出 */
-.progress-container { width: 100%; height: 15px; background: #ddd; border-radius: 10px; overflow: hidden; margin: 10px 0; border: 2px solid white; }
+.progress-container { width: 100%; height: 15px; background: #ddd; border-radius: 10px; overflow: hidden; margin: 15px 0; border: 2px solid white; }
 .progress-bar { width: 0%; height: 100%; background: var(--accent-blue); transition: width 0.3s; }
-.loader-cat { font-size: 3rem; text-align: center; animation: walk 1s infinite alternate; }
-@keyframes walk { from { transform: translateX(-10px); } to { transform: translateX(10px); } }
 
-/* スマホ対応 */
-@media screen and (max-width: 480px) {
-    .school-title { font-size: 2.2rem; }
-    .id-card-wrap { width: 280px !important; height: 280px !important; }
-    .user-card:hover { transform: scale(1.2); }
-    .right-user-list { width: 140px; }
-}
+/* 問題リスト */
+.problem-scroll-area { max-height: 50vh; overflow-y: auto; padding: 8px; background: rgba(255,255,255,0.7); border-radius: 20px; width: 100%; }
+.prob-card { background: white; padding: 15px; border-radius: 15px; margin-bottom: 12px; border: 2px solid #ffccbc; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 0 #ffccbc; width: 100%; box-sizing: border-box; }
+
+.user-card { background: rgba(255,255,255,0.95); margin-bottom: 15px; padding: 10px; border-radius: 20px; border: 2px solid var(--accent-pink); cursor: pointer; text-align: center; transition: transform 0.3s; }
+.user-card:hover { transform: scale(1.3); z-index: 100; }
+.user-card img { width: 110px !important; height: 110px !important; object-fit: contain; }
+.right-user-list { display: flex; flex-direction: column; gap: 20px; width: 180px; margin-left: auto; }
