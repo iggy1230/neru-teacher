@@ -15,7 +15,7 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, '.')));
 
 // ==========================================
-// 🐾 設定エリア (Build v2.6.1)
+// 🐾 設定エリア (Build v2.6.2)
 // ==========================================
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY; 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
@@ -54,17 +54,20 @@ app.post('/analyze', async (req, res) => {
         
         const prompt = mode === 'explain' 
             ? `あなたはネル先生です。生徒は小${grade}生、教科は${subject}です。
-               【重要】画像内の全問題を①から順に抽出し、問題文を正確に書き起こしてJSONで返してください。
-               算数記号は×÷、横棒はマイナス。
-               【重要】ヒントは必ず3段階（考え方、式の作り方、計算のコツ）で構成し、正解(correct_answer)を日本語で返してください。
-               JSON形式:[{"id":1,"label":"①","question":"問題文全文","hints":["ヒ1","ヒ2","ヒ3"],"correct_answer":"答え"}]`
-            : `小学校${grade}年生の${subject}採点。JSON形式。`;
+               【最重要：抽出ルール】
+               1. 画像内の全ての問題を抽出してください。
+               2. 「大問1」「(2)」などの見出しを絶対に【label】フィールドに入れてください。例：「大問1 ①」
+               3. 数式や問題文を正確に書き起こしてください。
+               4. ヒントは必ず3段階で構成し、正解(correct_answer)を日本語で返してください。
+               JSON形式:[{"id":1,"label":"大問1 ①","question":"問題文全文","hints":["ヒ1","ヒ2","ヒ3"],"correct_answer":"答え"}]`
+            : `小学校${grade}年生の${subject}採点。独立計算。JSON形式。`;
 
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
         let text = result.response.text().replace(/\*/g, '×').replace(/\//g, '÷');
         res.json(JSON.parse(text));
-    } catch (err) { res.status(500).json({ error: "読み取り失敗にゃ🐾" }); }
+    } catch (err) { res.status(500).json({ error: "読み取り失敗だにゃ🐾" }); }
 });
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
-app.listen(process.env.PORT || 3000);
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Nell Build v2.6.2 started`));
