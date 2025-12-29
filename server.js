@@ -12,7 +12,7 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-// --- 設定 ---
+// --- 設定 (自分のキーを入れてにゃ) ---
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY; 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 const GOOGLE_CREDENTIALS = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
@@ -23,6 +23,7 @@ function createSSML(text, mood) {
     if (mood === "happy") { rate = "1.1"; pitch = "+2st"; }
     if (mood === "thinking") { rate = "0.95"; pitch = "-1st"; }
     if (mood === "gentle") { rate = "0.9"; pitch = "+1st"; }
+    if (mood === "excited") { rate = "1.2"; pitch = "+3st"; }
     const processedText = text.replace(/……/g, '<break time="650ms"/>').replace(/にゃ/g, '<prosody pitch="+3st">にゃ</prosody>');
     return `<speak><prosody rate="${rate}" pitch="${pitch}">${processedText}</prosody></speak>`;
 }
@@ -36,25 +37,23 @@ app.post('/synthesize', async (req, res) => {
             audioConfig: { audioEncoding: 'MP3' },
         });
         res.json({ audioContent: response.audioContent.toString('base64') });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { res.status(500).send(err.message); }
 });
 
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject } = req.body;
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-8b" }); // 制限に強いモデル
-        
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         const prompt = mode === 'explain' 
-            ? `あなたはネル先生です。小${grade}生の「${subject}」の授業です。
-               【重要】画像の問題文をすべて一文字ずつ正確に書き起こしてJSONで返してください。
-               ヒントは3段階（考え方、解き方のコツ、仕上げ）で、先生らしく非常に優しく丁寧におしゃべりしてにゃ。
-               JSON形式:[{"id":1,"label":"①","question":"問題文を全部書き起こし","hints":["ヒ1","ヒ2","ヒ3"],"correct_answer":"答え"}]`
-            : `小${grade}・${subject}の採点。独立計算せよ。JSON形式。`;
+            ? `あなたはネル先生。生徒は小${grade}。教科は${subject}。
+               全問題を抽出し、3段階(考え方、式の作り方、計算)で優しく丁寧にお喋りして。
+               JSON形式:[{"id":1,"label":"①","question":"問題文","hints":["考え方","式の作り方","計算"],"correct_answer":"答え"}]`
+            : `小${grade}採点。独立計算。JSON:[{"id":1,"label":"①","question":"式","student_answer":"答","status":"correct/incorrect","correct_answer":"正解"}]`;
 
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
         let text = result.response.text().replace(/```json|```/g, "").trim().replace(/\*/g, '×').replace(/\//g, '÷');
         res.json(JSON.parse(text));
-    } catch (err) { res.status(err.status === 429 ? 429 : 500).json({ error: err.message }); }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.use(express.static(path.join(__dirname, '.')));
