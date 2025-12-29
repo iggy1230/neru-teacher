@@ -11,17 +11,15 @@
 <body>
     <canvas id="hanamaru-canvas"></canvas>
     <canvas id="deco-canvas" style="display:none;"></canvas>
-    <div class="version-tag">Build: v2.6.3-Ultimate</div>
+    <div class="version-tag">Build: v2.6.5-Ultimate</div>
 
     <div id="app-container">
-        <!-- 画面1：校門 -->
         <section id="screen-gate" class="screen">
             <h1 class="school-title">猫後市立<br>ねこづか小学校</h1>
             <div class="gate-layout"><div id="user-list" class="right-user-list"></div></div>
             <button onclick="showEnrollment()" class="main-btn pink-btn">🐾 新しく入学するにゃ</button>
         </section>
 
-        <!-- 画面2：入学 -->
         <section id="screen-enrollment" class="screen hidden">
             <h2 class="section-title">🎒 入学手続き</h2>
             <div class="id-card-wrap">
@@ -39,9 +37,9 @@
             </select>
             <button onclick="processAndCompleteEnrollment()" id="complete-btn" class="main-btn pink-btn" disabled>入学する！</button>
             <button onclick="backToGate()" class="main-btn gray-btn">もどる</button>
+            <div id="loading-models" style="text-align:center; font-size:0.7rem; margin-top:5px;">準備中...</div>
         </section>
 
-        <!-- 画面3：ロビー -->
         <section id="screen-lobby" class="screen hidden">
             <div class="lobby-top"><div class="id-card-wrap mini-id"><img id="current-student-avatar" class="id-base-img"></div></div>
             <div style="text-align:center; font-weight:900; margin-bottom:10px;">🍖 <span id="karikari-count">0</span></div>
@@ -53,7 +51,6 @@
             </div>
         </section>
 
-        <!-- 画面4：教室 -->
         <section id="screen-main" class="screen hidden">
             <header><button onclick="backToLobby()" class="main-btn gray-btn" style="width:auto; padding:10px 20px;">←</button></header>
             <div class="operation-layout">
@@ -74,9 +71,13 @@
                 <div id="chalkboard" class="chalkboard hidden"></div>
                 
                 <div class="work-area">
-                    <div id="upload-controls" class="hidden"><label class="camera-btn-large" style="background:#00897b; color:white; padding:30px; text-align:center; border-radius:50px; font-weight:900; cursor:pointer; display:block; box-shadow: 0 8px 0 #00796b;">📷 宿題をみせる<input type="file" id="hw-input" accept="image/*" style="display:none;"></label></div>
+                    <div id="upload-controls" class="hidden">
+                        <label class="camera-btn-large" style="background:#00897b; color:white; padding:30px; text-align:center; border-radius:50px; font-weight:900; cursor:pointer; display:block; box-shadow: 0 8px 0 #00796b;">📷 宿題をみせる
+                            <input type="file" id="hw-input" accept="image/*" style="display:none;">
+                        </label>
+                    </div>
                     
-                    <!-- ％表示：虫眼鏡ネル先生が登場！ -->
+                    <!-- ％表示：ネル先生の下に配置 -->
                     <div id="thinking-view" class="hidden">
                         <img src="nell-inspect.png" class="loader-inspect-img">
                         <div class="progress-container"><div id="progress-bar" class="progress-bar"></div></div>
