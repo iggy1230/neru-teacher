@@ -43,14 +43,23 @@ app.post('/synthesize', async (req, res) => {
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject } = req.body;
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash", generationConfig: { responseMimeType: "application/json" } });
+        const model = genAI.getGenerativeModel({ 
+            model: "gemini-2.5-flash",
+            generationConfig: { responseMimeType: "application/json" }
+        });
         const prompt = mode === 'explain' 
-            ? `あなたはネル先生。小${grade}生、教科は${subject}です。全問抽出、算数記号×÷、横棒マイナス。丁寧な3段階ヒントをJSONで返して。[{"id":1,"label":"①","question":"問題文全文","hints":["ヒ1","ヒ2","ヒ3"],"correct_answer":"正解"}]`
-            : `小${grade}生${subject}の採点。独立計算。JSON形式。`;
+            ? `あなたはネル先生。生徒は小${grade}生、教科は${subject}です。
+               【重要】画像内の全問題を抽出し、大問番号(例:大問1)や小問番号(例:①)も含め、問題文を省略せず全て正確に書き起こしてJSONで返して。
+               ヒントは3段階（考え方、式の作り方、計算）で丁寧にお喋りして。
+               JSON形式:[{"id":1,"label":"大問1 ①","question":"問題文を全部書き起こし","hints":["ヒ1","ヒ2","ヒ3"],"correct_answer":"答え"}]`
+            : `採点。独立計算せよ。JSON配列で返して。`;
+
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
-        res.json(JSON.parse(result.response.text().replace(/\*/g, '×').replace(/\//g, '÷')));
+        let text = result.response.text().replace(/\*/g, '×').replace(/\//g, '÷');
+        res.json(JSON.parse(text));
     } catch (err) { res.status(500).json({ error: "AIエラーだにゃ🐾" }); }
 });
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
-app.listen(process.env.PORT || 3000, () => console.log("Nell Server v2.5.2 Stable"));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT);

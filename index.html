@@ -11,7 +11,6 @@
 <body>
     <canvas id="hanamaru-canvas"></canvas>
     <canvas id="deco-canvas" style="display:none;"></canvas>
-    <div class="version-tag">Build: v2.5.2-Final-Stable</div>
 
     <div id="app-container">
         <!-- 1. 校門 -->
@@ -31,14 +30,15 @@
                 <div class="id-text-overlay id-name-text" id="preview-name">なまえ</div>
             </div>
             <label class="main-btn blue-btn">📸 写真を撮る・選ぶ<input type="file" id="student-photo-input" accept="image/*" style="display:none;"></label>
-            <input type="text" id="new-student-name" class="styled-input" placeholder="おなまえ" oninput="updateIDPreview()" style="width:100%; padding:14px; border-radius:15px; border:2px solid #ddd; text-align:center;">
-            <select id="new-student-grade" class="styled-select" onchange="updateIDPreview()" style="width:100%; padding:14px; border-radius:15px; border:2px solid #ddd; margin:10px 0; text-align:center;">
+            <input type="text" id="new-student-name" class="styled-input" placeholder="おなまえ" oninput="updateIDPreview()" style="width:100%; padding:15px; border-radius:15px; border:2px solid #ddd; text-align:center; margin-bottom:10px;">
+            <select id="new-student-grade" class="styled-select" onchange="updateIDPreview()" style="width:100%; padding:15px; border-radius:15px; border:2px solid #ddd; margin-bottom:15px; text-align:center;">
                 <option value="" disabled selected>学年</option>
                 <option value="1">1年生</option><option value="2">2年生</option><option value="3">3年生</option>
                 <option value="4">4年生</option><option value="5">5年生</option><option value="6">6年生</option>
             </select>
             <button onclick="processAndCompleteEnrollment()" id="complete-btn" class="main-btn pink-btn" disabled>入学する！</button>
             <button onclick="backToGate()" class="main-btn gray-btn">もどる</button>
+            <div id="loading-models" style="text-align:center; font-size:0.7rem; margin-top:5px;">準備中...</div>
         </section>
 
         <!-- 3. ロビー -->
@@ -48,7 +48,7 @@
             <div class="lobby-menu">
                 <button onclick="selectMode('explain')" class="main-btn blue-btn">💡 教えてネル先生</button>
                 <button onclick="selectMode('grade')" class="main-btn pink-btn">💯 採点ネル先生</button>
-                <button onclick="showAttendance()" class="main-btn gray-btn">📅 出席簿をみる</button>
+                <button onclick="showAttendance()" class="main-btn gray-btn">📅 出席簿</button>
                 <button onclick="backToGate()" class="main-btn gray-btn">👋 帰宅する</button>
             </div>
         </section>
@@ -71,11 +71,13 @@
             </div>
 
             <div id="chalkboard" class="chalkboard hidden"></div>
+            
             <div class="work-area">
                 <div id="upload-controls" class="hidden"><label class="main-btn blue-btn">📷 宿題をみせる<input type="file" id="hw-input" accept="image/*" style="display:none;"></label></div>
                 <div id="thinking-view" class="hidden">
+                    <div class="loader-cat">🐾</div>
                     <div class="progress-container"><div id="progress-bar" class="progress-bar"></div></div>
-                    <p style="text-align:center;">ネル先生考え中... <span id="progress-percent">0</span>%</p>
+                    <p style="text-align:center;">考え中... <span id="progress-percent">0</span>%</p>
                 </div>
                 <div id="problem-selection-view" class="hidden"><div class="problem-scroll-area" id="transcribed-problem-list"></div></div>
                 <div id="final-view" class="hidden">
@@ -83,19 +85,8 @@
                     <div id="hint-detail-container" class="hidden">
                         <div class="hint-btns">
                             <div class="hint-step-badge" id="hint-step-label">考え方</div>
-                            <button onclick="showNextHint()" id="next-hint-btn" class="main-btn blue-btn">次のヒント！</button>
+                            <button onclick="showNextHint()" id="next-hint-btn" class="main-btn blue-btn">次へ</button>
                             <button onclick="revealAnswer()" id="reveal-answer-btn" class="main-btn orange-btn hidden">答えを見る🐾</button>
                             <div id="answer-display-area" class="answer-box hidden">答え：<span id="final-answer-text"></span></div>
                         </div>
-                        <button onclick="pressThanks()" class="main-btn pink-btn">✨ ありがとう！</button>
-                        <button onclick="backToProblemSelection()" class="main-btn gray-btn">他の問題へ</button>
-                    </div>
-                </div>
-            </div>
-        </section>
-        
-        <section id="screen-attendance" class="screen hidden"><h2 class="section-title">📅 出席簿</h2><div class="glass-card"><div id="attendance-grid" class="attendance-grid"></div></div><button onclick="backToLobby()" class="main-btn pink-btn">教室にもどる</button></section>
-    </div>
-    <script src="script.js"></script>
-</body>
-</html>
+                        <but
