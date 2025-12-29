@@ -9,14 +9,11 @@ import fs from 'fs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
-
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, '.')));
 
-// ==========================================
-// 🐾 設定エリア (Build v2.5.3)
-// ==========================================
+// --- 設定 (RenderのEnvironmentに登録してにゃ) ---
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY; 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 const GOOGLE_CREDENTIALS = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
@@ -52,12 +49,12 @@ app.post('/analyze', async (req, res) => {
             generationConfig: { responseMimeType: "application/json" }
         });
         const prompt = mode === 'explain' 
-            ? `あなたはネル先生。小${grade}生、教科は${subject}。全問抽出、算数記号×÷、横棒マイナス。丁寧な3段階ヒントを詳しく返して。JSON:[{"id":1,"label":"①","question":"問題文","hints":["考え方","式作り","計算"],"correct_answer":"正解"}]`
-            : `採点。独立計算。JSON形式。`;
+            ? `あなたはネル先生。生徒は小${grade}生、教科は${subject}。全問抽出、算数記号×÷、横棒マイナス。丁寧な3段階ヒントとお喋りな解説。JSON配列:[{"id":1,"label":"①","question":"問題文全文","hints":["ヒ1","ヒ2","ヒ3"],"correct_answer":"答え"}]`
+            : `採点モード。独立計算せよ。JSON配列で返して。`;
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
         let text = result.response.text().replace(/\*/g, '×').replace(/\//g, '÷');
         res.json(JSON.parse(text));
-    } catch (err) { res.status(500).json({ error: "AIエラー" }); }
+    } catch (err) { res.status(500).json({ error: "AIエラーだにゃ🐾" }); }
 });
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
