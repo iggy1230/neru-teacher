@@ -11,13 +11,13 @@
 <body>
     <canvas id="hanamaru-canvas"></canvas>
     <canvas id="deco-canvas" style="display:none;"></canvas>
-    <div class="version-tag">Build: v2.7.5-Ultimate</div>
+    <div class="version-tag">Build: v2.9.0-Final</div>
 
     <div id="app-container">
         <!-- 画面1：校門 -->
         <section id="screen-gate" class="screen">
             <h1 class="school-title">猫後市立<br>ねこづか小学校</h1>
-            <div style="display:flex; justify-content:flex-end; width:100%;"><div id="user-list" class="right-user-list"></div></div>
+            <div class="gate-layout"><div id="user-list" class="right-user-list"></div></div>
             <button onclick="showEnrollment()" class="main-btn pink-btn">🐾 新しく入学するにゃ</button>
         </section>
 
@@ -30,9 +30,9 @@
                 <div class="id-text-overlay id-grade-text" id="preview-grade">○年生</div>
                 <div class="id-text-overlay id-name-text" id="preview-name">なまえ</div>
             </div>
-            <label class="main-btn blue-btn">📸 写真を撮る・選ぶ<input type="file" id="student-photo-input" accept="image/*" style="display:none;"></label>
-            <input type="text" id="new-student-name" class="styled-input" placeholder="おなまえ" oninput="updateIDPreview()" style="width:100%; padding:14px; border-radius:15px; border:2px solid #ddd; text-align:center; font-family:inherit;">
-            <select id="new-student-grade" class="styled-select" onchange="updateIDPreview()" style="width:100%; padding:14px; border-radius:15px; border:2px solid #ddd; margin:10px 0; text-align:center; font-family:inherit;">
+            <label class="main-btn blue-btn">📸 おかおを撮る・選ぶ<input type="file" id="student-photo-input" accept="image/*" style="display:none;"></label>
+            <input type="text" id="new-student-name" class="styled-input" placeholder="おなまえ" oninput="updateIDPreview()">
+            <select id="new-student-grade" class="styled-select" onchange="updateIDPreview()">
                 <option value="" disabled selected>学年</option>
                 <option value="1">1年生</option><option value="2">2年生</option><option value="3">3年生</option>
                 <option value="4">4年生</option><option value="5">5年生</option><option value="6">6年生</option>
@@ -45,10 +45,11 @@
         <!-- 画面3：ロビー -->
         <section id="screen-lobby" class="screen hidden">
             <div class="lobby-top"><div class="id-card-wrap mini-id"><img id="current-student-avatar" class="id-base-img"></div></div>
-            <div style="text-align:center; font-weight:900; margin-bottom:10px;">🍖 <span id="karikari-count">0</span></div>
+            <div class="karikari-counter">🍖 カリカリ: <span id="karikari-count">0</span></div>
             <div class="lobby-menu">
                 <button onclick="selectMode('explain')" class="main-btn blue-btn">💡 教えてネル先生</button>
                 <button onclick="selectMode('grade')" class="main-btn pink-btn">💯 採点ネル先生</button>
+                <button onclick="selectMode('review')" class="main-btn orange-btn">🔥 復習ノート</button>
                 <button onclick="showAttendance()" class="main-btn gray-btn">📅 出席簿をみる</button>
                 <button onclick="backToGate()" class="main-btn gray-btn">👋 帰宅する</button>
             </div>
@@ -62,14 +63,6 @@
                     <div class="nell-avatar-wrap"><img src="nell-icon.png" class="nell-img"></div>
                     <div class="chat-bubble"><p id="nell-text"></p></div>
                 </div>
-
-                <!-- ％表示：ネル先生のすぐ下に配置にゃ -->
-                <div id="thinking-view" class="hidden">
-                    <img src="nell-inspect.png" class="loader-inspect-img">
-                    <div class="progress-container"><div id="progress-bar" class="progress-bar"></div></div>
-                    <p id="thinking-status">ネル先生が考え中... <span id="progress-percent">0</span>%</p>
-                </div>
-
                 <div id="subject-selection-view">
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
                         <button onclick="setSubject('こくご')" class="main-btn pink-btn">こくご</button>
@@ -78,19 +71,20 @@
                         <button onclick="setSubject('しゃかい')" class="main-btn gray-btn">しゃかい</button>
                     </div>
                 </div>
-
                 <div id="chalkboard" class="chalkboard hidden"></div>
-                
                 <div class="work-area">
-                    <div id="upload-controls" class="hidden"><label class="main-btn blue-btn">📷 宿題をネル先生にみせる<input type="file" id="hw-input" accept="image/*" style="display:none;"></label></div>
-                    
+                    <div id="upload-controls" class="hidden"><label class="camera-btn-large">📷 宿題をみせる<input type="file" id="hw-input" accept="image/*" style="display:none;"></label></div>
+                    <div id="thinking-view" class="hidden">
+                        <img src="nell-inspect.png" class="loader-inspect-img">
+                        <div class="progress-container"><div id="progress-bar" class="progress-bar"></div></div>
+                        <p id="thinking-status">考え中... <span id="progress-percent">0</span>%</p>
+                    </div>
                     <div id="problem-selection-view" class="hidden">
                         <div class="problem-selection-card">
                             <div class="problem-scroll-area" id="transcribed-problem-list"></div>
-                            <button onclick="pressAllSolved()" class="main-btn orange-btn" style="margin-top:15px;">✨ 全部おわったにゃ！</button>
+                            <button onclick="pressAllSolved()" class="main-btn orange-btn">✨ 全部おわったにゃ！</button>
                         </div>
                     </div>
-
                     <div id="final-view" class="hidden">
                         <div id="grade-sheet-container" class="hidden"><div class="glass-card" id="problem-list-grade" style="background:white; border-radius:15px; padding:10px;"></div></div>
                         <div id="hint-detail-container" class="hidden">
@@ -98,7 +92,7 @@
                                 <div class="hint-step-badge" id="hint-step-label">考え方</div>
                                 <button onclick="showNextHint()" id="next-hint-btn" class="main-btn blue-btn">次のヒント！</button>
                                 <button onclick="revealAnswer()" id="reveal-answer-btn" class="main-btn orange-btn hidden">答えを見る🐾</button>
-                                <div id="answer-display-area" class="answer-box hidden">答え：<br><span id="final-answer-text" style="font-size:1.5rem;"></span></div>
+                                <div id="answer-display-area" class="answer-box hidden">ネル先生の答え：<br><span id="final-answer-text"></span></div>
                             </div>
                             <button onclick="pressThanks()" class="main-btn pink-btn">✨ ありがとう！</button>
                             <button onclick="backToProblemSelection()" class="main-btn gray-btn">他の問題へ</button>
@@ -107,7 +101,15 @@
                 </div>
             </div>
         </section>
+
+        <!-- 画面5：出席簿 -->
+        <section id="screen-attendance" class="screen hidden"><h2 class="section-title">📅 出席簿</h2><div class="glass-card"><div id="attendance-grid" class="attendance-grid"></div></div><button onclick="backToLobby()" class="main-btn pink-btn mt-20">教室にもどる</button></section>
     </div>
-    <script src="script.js"></script>
+
+    <!-- スクリプト分割読み込み -->
+    <script src="audio.js"></script>
+    <script src="ui.js"></script>
+    <script src="user.js"></script>
+    <script src="analyze.js"></script>
 </body>
 </html>
