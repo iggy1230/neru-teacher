@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版：セリフ修正済み) ---
+// --- anlyze.js (画像切り替え・音声修正版) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -6,6 +6,15 @@ let hintIndex = 0;
 let isAnalyzing = false; 
 let currentSubject = '';
 let currentMode = ''; 
+
+// 教科ごとの画像設定（画像ファイルがない場合は nell-icon.png のままになります）
+const subjectImages = {
+    'こくご': 'nell-kokugo.png',
+    'さんすう': 'nell-sansu.png',
+    'りか': 'nell-rika.png',
+    'しゃかい': 'nell-shakai.png'
+};
+const defaultIcon = 'nell-icon.png';
 
 // 1. モード選択と画面初期化
 function selectMode(m) {
@@ -19,12 +28,16 @@ function selectMode(m) {
         if(el) el.classList.add('hidden');
     });
 
+    // アイコンをデフォルトに戻す
+    const icon = document.querySelector('.nell-avatar-wrap img');
+    if(icon) icon.src = defaultIcon;
+
     if (m === 'review') {
         renderMistakeSelection();
     } else {
         document.getElementById('subject-selection-view').classList.remove('hidden');
-        // ★修正：ここを「～するにゃ？」に変更してロボット声を防止
-        updateNellMessage("どの科目のお勉強をするにゃ？", "normal");
+        // ★修正：ロボット声回避のため、少し言い回しを変えました
+        updateNellMessage("どの教科にするのかにゃ？", "normal");
     }
 }
 
@@ -35,6 +48,17 @@ function setSubject(s) {
         currentUser.history[s] = (currentUser.history[s] || 0) + 1; 
         saveAndSync();
     }
+    
+    // ★追加：教科に合わせてネル先生の画像を変更
+    const icon = document.querySelector('.nell-avatar-wrap img');
+    if(icon && subjectImages[s]) {
+        // 画像が存在しない場合のエラーハンドリング（元のアイコンに戻す）
+        const img = new Image();
+        img.src = subjectImages[s];
+        img.onload = () => { icon.src = subjectImages[s]; };
+        img.onerror = () => { icon.src = defaultIcon; }; // 画像がなければデフォルト
+    }
+
     document.getElementById('subject-selection-view').classList.add('hidden');
     document.getElementById('upload-controls').classList.remove('hidden');
     updateNellMessage(`${currentSubject}の問題をみせてにゃ！`, "happy");

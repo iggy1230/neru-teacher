@@ -18,7 +18,7 @@ const ttsClient = new textToSpeech.TextToSpeechClient({
     credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON) 
 });
 
-// 🔊 音声合成 (SSML調整版)
+// 🔊 音声合成 (安全対策強化版)
 function createSSML(text, mood) {
     let rate = "1.0"; let pitch = "0.0";
     if (mood === "happy") { rate = "1.1"; pitch = "+2st"; }
@@ -26,13 +26,22 @@ function createSSML(text, mood) {
     if (mood === "gentle") { rate = "0.9"; pitch = "+1st"; }
     if (mood === "excited") { rate = "1.2"; pitch = "+4st"; }
     
-    // ★読み上げ禁止文字の削除★
-    const cleanText = text
-        .replace(/🐾/g, '') // 足跡を読まない
-        .replace(/[✨⭐🎵]/g, '') // 絵文字を読まない
-        .replace(/⭕️/g, '正解') // 記号を言葉に
+    // 1. 読み上げ禁止文字の削除
+    let cleanText = text
+        .replace(/🐾/g, '') 
+        .replace(/[✨⭐🎵]/g, '')
+        .replace(/⭕️/g, '正解')
         .replace(/❌/g, '不正解');
 
+    // 2. SSMLを壊す特殊文字のエスケープ（重要）
+    cleanText = cleanText
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+
+    // 3. ネル先生用の装飾
     const processedText = cleanText
         .replace(/……/g, '<break time="650ms"/>')
         .replace(/にゃ/g, '<prosody pitch="+3st">にゃ</prosody>');
