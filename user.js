@@ -76,3 +76,33 @@ function updateIDPreview() {
     document.getElementById('preview-name').innerText = document.getElementById('new-student-name').value || "なまえ";
     document.getElementById('preview-grade').innerText = (document.getElementById('new-student-grade').value || "○") + "年生";
 }
+
+// --- user.js の末尾に追加 ---
+
+// 学生証の写真選択処理
+const photoInput = document.getElementById('student-photo-input');
+if (photoInput) {
+    photoInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.getElementById('id-photo-preview-canvas');
+                const ctx = canvas.getContext('2d');
+                // キャンバスサイズに合わせて正方形にトリミングして描画
+                const size = Math.min(img.width, img.height);
+                const sx = (img.width - size) / 2;
+                const sy = (img.height - size) / 2;
+                
+                // 一旦クリアしてから描画
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, sx, sy, size, size, 0, 0, canvas.width, canvas.height);
+            };
+            img.src = event.target.result;
+        };
+        reader.readAsDataURL(file);
+    });
+}
