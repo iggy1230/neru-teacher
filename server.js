@@ -18,30 +18,18 @@ const ttsClient = new textToSpeech.TextToSpeechClient({
     credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON) 
 });
 
-// 🔊 音声合成 (安全対策強化版)
-function createSSML(text, mood) {
+// SSML生成（リッチ版）
+function createRichSSML(text, mood) {
     let rate = "1.0"; let pitch = "0.0";
     if (mood === "happy") { rate = "1.1"; pitch = "+2st"; }
     if (mood === "thinking") { rate = "0.95"; pitch = "-1st"; }
     if (mood === "gentle") { rate = "0.9"; pitch = "+1st"; }
     if (mood === "excited") { rate = "1.2"; pitch = "+4st"; }
     
-    // 1. 読み上げ禁止文字の削除
-    let cleanText = text
-        .replace(/🐾/g, '') 
-        .replace(/[✨⭐🎵]/g, '')
-        .replace(/⭕️/g, '正解')
-        .replace(/❌/g, '不正解');
+    // 読み上げ禁止文字削除 & エスケープ
+    let cleanText = text.replace(/🐾|✨|⭐|🎵/g, '').replace(/⭕️/g, '正解').replace(/❌/g, '不正解')
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-    // 2. SSMLを壊す特殊文字のエスケープ（重要）
-    cleanText = cleanText
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&apos;');
-
-    // 3. ネル先生用の装飾
     const processedText = cleanText
         .replace(/……/g, '<break time="650ms"/>')
         .replace(/にゃ/g, '<prosody pitch="+3st">にゃ</prosody>');
@@ -49,25 +37,41 @@ function createSSML(text, mood) {
     return `<speak><prosody rate="${rate}" pitch="${pitch}">${processedText}</prosody></speak>`;
 }
 
+// ロボット声対策用：安全なSSML（タグなし）
+function createSafeSSML(text) {
+    let cleanText = text.replace(/🐾|✨|⭐|🎵/g, '').replace(/⭕️/g, '正解').replace(/❌/g, '不正解');
+    return `<speak>${cleanText}</speak>`;
+}
+
 app.post('/synthesize', async (req, res) => {
     try {
         const { text, mood } = req.body;
-        if (!text || typeof text !== 'string' || text.trim().length === 0) {
-            return res.status(400).json({ error: "Text required" });
+        if (!text) return res.status(400).json({ error: "No text" });
+
+        // まずリッチな音声で試す
+        try {
+            const [response] = await ttsClient.synthesizeSpeech({
+                input: { ssml: createRichSSML(text, mood) },
+                voice: { languageCode: 'ja-JP', name: 'ja-JP-Neural2-B' },
+                audioConfig: { audioEncoding: 'MP3' },
+            });
+            return res.json({ audioContent: response.audioContent.toString('base64') });
+        } catch (innerErr) {
+            console.warn("TTS Rich Failed, retrying safe mode:", innerErr.message);
+            // 失敗したら安全モードで再試行（これでロボット声を防ぐ）
+            const [retryRes] = await ttsClient.synthesizeSpeech({
+                input: { ssml: createSafeSSML(text) },
+                voice: { languageCode: 'ja-JP', name: 'ja-JP-Neural2-B' },
+                audioConfig: { audioEncoding: 'MP3' },
+            });
+            return res.json({ audioContent: retryRes.audioContent.toString('base64') });
         }
-        const [response] = await ttsClient.synthesizeSpeech({
-            input: { ssml: createSSML(text, mood) },
-            voice: { languageCode: 'ja-JP', name: 'ja-JP-Neural2-B' },
-            audioConfig: { audioEncoding: 'MP3' },
-        });
-        res.json({ audioContent: response.audioContent.toString('base64') });
     } catch (err) { 
-        console.error("TTS Error:", err);
+        console.error("TTS Fatal Error:", err);
         res.status(500).send(err.message); 
     }
 });
 
-// 🤖 AI解析
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject } = req.body;
@@ -76,43 +80,38 @@ app.post('/analyze', async (req, res) => {
             generationConfig: { responseMimeType: "application/json" }
         });
         
-        let prompt = "";
+        // ★修正：ヒント3が答えにならないように指示を明確化
         const hintInstruction = `
         - "hints": 生徒が間違えた時に備えて、解き方を導くヒントを3つ作成してください。
-          1つ目は「考え方」、2つ目は「式のヒント」、3つ目は「答えに近づくヒント」です。
+          1. 「考え方の入り口」
+          2. 「式のヒントや途中経過」
+          3. 「答えにかなり近づく大きなヒント（※ただし答えそのものは書かないでください）」
           語尾は「〜だにゃ」「〜してね」等のネル先生口調にしてください。
         `;
 
+        let prompt = "";
         if (mode === 'explain') {
-            prompt = `
-            あなたは「ネル先生」という猫の先生です。小学${grade}年生の${subject}を教えています。
-            画像から全問を抽出し、以下のJSON形式で出力してください。
-            1. "question": 問題文を画像通りに正確に書き起こす。
+            prompt = `あなたは「ネル先生」。小学${grade}年生の${subject}。画像から全問抽出。
+            1. "question": 問題文書き起こし。
             2. "correct_answer": 正解。
             3. ${hintInstruction}
-            4. 算数記号は×÷を使用。
-            JSON例: [{"id":1, "label":"(1)", "question":"...", "hints":["..."], "correct_answer":"..."}]
+            4. 算数記号は×÷。JSON配列で出力。
             `;
         } else {
-            prompt = `
-            あなたは厳格な採点を行う先生です。小学${grade}年生の${subject}の宿題画像を分析します。
-            以下を抽出しJSON配列で出力してください。
-            1. "question": 問題文を省略せず正確に書き起こす。
-            2. "correct_answer": 正解（数字や単語のみ）。
-            3. "student_answer": 画像内の手書き文字から「生徒が書いた答え」を読み取る。空欄や読み取れない場合は空文字""とする。
+            prompt = `厳格な採点先生。小学${grade}年生の${subject}。
+            1. "question": 問題文書き起こし。
+            2. "correct_answer": 正解。
+            3. "student_answer": 手書き文字読み取り(空欄なら"")。
             4. ${hintInstruction}
-            JSON例: [{"id":1, "label":"①", "question":"...", "correct_answer":"10", "student_answer":"10", "hints":["..."]}]
+            JSON配列で出力。
             `;
         }
 
-        const result = await model.generateContent([
-            { inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }
-        ]);
-        const textRes = result.response.text().replace(/\*/g, '×').replace(/\//g, '÷');
-        res.json(JSON.parse(textRes));
+        const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
+        res.json(JSON.parse(result.response.text().replace(/\*/g, '×').replace(/\//g, '÷')));
     } catch (err) { 
         console.error("Analyze Error:", err);
-        res.status(500).json({ error: "AI解析エラー" }); 
+        res.status(500).json({ error: "AIエラー" }); 
     }
 });
 

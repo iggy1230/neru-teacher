@@ -1,4 +1,4 @@
-// --- anlyze.js (画像切り替え・音声修正版) ---
+// --- anlyze.js (演出・報酬・常時表示対応版) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -7,41 +7,78 @@ let isAnalyzing = false;
 let currentSubject = '';
 let currentMode = ''; 
 
-// 教科ごとの画像設定（画像ファイルがない場合は nell-icon.png のままになります）
 const subjectImages = {
-    'こくご': 'nell-kokugo.png',
-    'さんすう': 'nell-sansu.png',
-    'りか': 'nell-rika.png',
-    'しゃかい': 'nell-shakai.png'
+    'こくご': 'nell-kokugo.png', 'さんすう': 'nell-sansu.png',
+    'りか': 'nell-rika.png', 'しゃかい': 'nell-shakai.png'
 };
 const defaultIcon = 'nell-icon.png';
 
-// 1. モード選択と画面初期化
+// 1. モード選択
 function selectMode(m) {
     currentMode = m; 
     switchScreen('screen-main'); 
 
-    // UI要素をリセット
+    // UIリセット
     const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard'];
-    ids.forEach(id => {
-        const el = document.getElementById(id);
-        if(el) el.classList.add('hidden');
-    });
+    ids.forEach(id => document.getElementById(id).classList.add('hidden'));
 
-    // アイコンをデフォルトに戻す
+    // ネル先生アイコンリセット
     const icon = document.querySelector('.nell-avatar-wrap img');
     if(icon) icon.src = defaultIcon;
+
+    // ★カリカリ常時表示ON
+    document.getElementById('mini-karikari-display').classList.remove('hidden');
+    updateMiniKarikari();
 
     if (m === 'review') {
         renderMistakeSelection();
     } else {
         document.getElementById('subject-selection-view').classList.remove('hidden');
-        // ★修正：ロボット声回避のため、少し言い回しを変えました
         updateNellMessage("どの教科にするのかにゃ？", "normal");
     }
 }
 
-// 2. 科目選択
+// 2. カリカリ常時表示更新
+function updateMiniKarikari() {
+    if(currentUser) {
+        document.getElementById('mini-karikari-count').innerText = currentUser.karikari;
+        // ロビーの表示も同期
+        const k = document.getElementById('karikari-count');
+        if(k) k.innerText = currentUser.karikari;
+    }
+}
+
+// 3. ハート演出 & カリカリ消費演出
+function showKarikariEffect() {
+    // 1. 数値が減る演出
+    const container = document.querySelector('.nell-avatar-wrap');
+    if(container) {
+        const floatText = document.createElement('div');
+        floatText.className = 'floating-text';
+        floatText.innerText = '-5';
+        floatText.style.right = '0px';
+        floatText.style.top = '0px';
+        container.appendChild(floatText);
+        setTimeout(() => floatText.remove(), 1500);
+    }
+    
+    // 2. ハート演出
+    const heartCont = document.getElementById('heart-container');
+    if(heartCont) {
+        for(let i=0; i<8; i++) {
+            const heart = document.createElement('div');
+            heart.className = 'heart-particle';
+            heart.innerText = '💗';
+            heart.style.left = (Math.random()*80 + 10) + '%';
+            heart.style.top = (Math.random()*50 + 20) + '%';
+            heart.style.animationDelay = (Math.random()*0.5) + 's';
+            heartCont.appendChild(heart);
+            setTimeout(() => heart.remove(), 1500);
+        }
+    }
+}
+
+// 4. 科目選択
 function setSubject(s) {
     currentSubject = s; 
     if (currentUser) {
@@ -49,14 +86,12 @@ function setSubject(s) {
         saveAndSync();
     }
     
-    // ★追加：教科に合わせてネル先生の画像を変更
     const icon = document.querySelector('.nell-avatar-wrap img');
     if(icon && subjectImages[s]) {
-        // 画像が存在しない場合のエラーハンドリング（元のアイコンに戻す）
         const img = new Image();
         img.src = subjectImages[s];
         img.onload = () => { icon.src = subjectImages[s]; };
-        img.onerror = () => { icon.src = defaultIcon; }; // 画像がなければデフォルト
+        img.onerror = () => { icon.src = defaultIcon; };
     }
 
     document.getElementById('subject-selection-view').classList.add('hidden');
@@ -64,7 +99,6 @@ function setSubject(s) {
     updateNellMessage(`${currentSubject}の問題をみせてにゃ！`, "happy");
 }
 
-// 3. 復習ノート表示
 function renderMistakeSelection() {
     if (!currentUser.mistakes || currentUser.mistakes.length === 0) {
         updateNellMessage("ノートは空っぽにゃ！完ぺきだにゃ✨", "happy");
@@ -76,7 +110,6 @@ function renderMistakeSelection() {
     updateNellMessage("復習するにゃ？えらいにゃ！", "excited");
 }
 
-// 4. 画像縮小処理
 async function shrinkImage(file) {
     return new Promise((resolve) => {
         const reader = new FileReader(); 
@@ -100,7 +133,7 @@ async function shrinkImage(file) {
     });
 }
 
-// 5. アップロード・分析・自動採点ロジック
+// 5. 分析 & 報酬ロジック
 document.getElementById('hw-input').addEventListener('change', async (e) => {
     if (isAnalyzing || !e.target.files[0]) return;
     
@@ -126,12 +159,10 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
         if (!res.ok) throw new Error("Server Error");
         const data = await res.json();
         
-        // データ処理：ID付与と自動採点
+        // データ処理
         transcribedProblems = data.map((prob, index) => {
             const safeId = index + 1; 
             const studentAns = prob.student_answer || "";
-            
-            // 正誤判定（正規化して比較）
             const normalize = (v) => v.toString().replace(/\s/g, '').replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0)).replace(/cm|ｍ|ｍｍ|円|個/g, '').replace(/[×＊]/g, '*').replace(/[÷／]/g, '/');
             
             let status = "unanswered";
@@ -149,15 +180,32 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
             
             if (transcribedProblems.length > 0) { 
                 if (currentMode === 'explain' || currentMode === 'review') {
-                    // 教えてモード
                     renderProblemSelection(); 
                     updateNellMessage("問題が読めたにゃ！", "happy");
                 } else { 
-                    // 採点モード
+                    // 採点モード：報酬計算
                     showGradingView(); 
-                    const allCorrect = transcribedProblems.every(p => p.status === 'correct');
-                    if(allCorrect) updateNellMessage("すごい！全部正解にゃ！✨", "excited");
-                    else updateNellMessage("採点したにゃ。わからなかったら「教えて」ボタンを押してね。", "gentle");
+                    
+                    const total = transcribedProblems.length;
+                    const correctCount = transcribedProblems.filter(p => p.status === 'correct').length;
+                    const rate = correctCount / total;
+
+                    if (correctCount === total) {
+                        // 全問正解
+                        currentUser.karikari += 100;
+                        saveAndSync();
+                        updateMiniKarikari();
+                        updateNellMessage("すごーい！！全問正解だにゃ！\nご褒美のカリカリ100個あげるにゃ！✨", "excited");
+                        drawHanamaru(); // 花丸描画
+                    } else if (rate >= 0.8) {
+                        // 8割以上
+                        currentUser.karikari += 50;
+                        saveAndSync();
+                        updateMiniKarikari();
+                        updateNellMessage("がんばったにゃ！ほとんど正解だにゃ！\nカリカリ50個あげるにゃ🐾", "happy");
+                    } else {
+                        updateNellMessage("採点したにゃ。間違えたところは「教えて」ボタンを使ってね。", "gentle");
+                    }
                 } 
             } else {
                 updateNellMessage("文字が読めなかったにゃ……", "thinking");
@@ -176,30 +224,25 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
     }
 });
 
-// 6. ヒント開始処理
 function startHint(id) {
     if (currentUser.karikari < 5) return updateNellMessage("カリカリが足りないにゃ……。", "thinking");
     
-    // IDで検索
     selectedProblem = transcribedProblems.find(p => p.id == id); 
-    
-    if (!selectedProblem) {
-        console.error("Problem ID not found:", id);
-        return updateNellMessage("データが見つからないにゃ……", "thinking");
-    }
+    if (!selectedProblem) return updateNellMessage("データが見つからないにゃ……", "thinking");
 
     hintIndex = 0;
+    
+    // ★カリカリ消費 & 演出
     currentUser.karikari -= 5; 
     saveAndSync();
-    
-    // 画面切り替え
+    updateMiniKarikari();
+    showKarikariEffect();
+
     document.getElementById('problem-selection-view').classList.add('hidden');
     document.getElementById('grade-sheet-container').classList.add('hidden'); 
-    
     document.getElementById('final-view').classList.remove('hidden');
     document.getElementById('hint-detail-container').classList.remove('hidden'); 
     
-    // 黒板表示
     const board = document.getElementById('chalkboard');
     board.innerText = (selectedProblem.label || "") + " " + selectedProblem.question;
     board.classList.remove('hidden');
@@ -231,8 +274,13 @@ function showHintStep() {
 
 function showNextHint() {
     if (currentUser.karikari < 5) return updateNellMessage("カリカリが足りないにゃ……。", "thinking");
+    
+    // ★次のヒントもカリカリ消費 & 演出
     currentUser.karikari -= 5; 
     saveAndSync(); 
+    updateMiniKarikari();
+    showKarikariEffect();
+
     hintIndex++; 
     showHintStep();
 }
@@ -245,7 +293,6 @@ function revealAnswer() {
     updateNellMessage(`答えは……「${ans}」だにゃ！`, "gentle");
 }
 
-// 7. 問題リスト表示（教えてモード用）
 function renderProblemSelection() {
     document.getElementById('final-view').classList.add('hidden');
     document.getElementById('upload-controls').classList.add('hidden');
@@ -253,71 +300,51 @@ function renderProblemSelection() {
 
     const list = document.getElementById('transcribed-problem-list'); 
     list.innerHTML = "";
-    
     transcribedProblems.forEach(p => {
         const div = document.createElement('div'); 
         div.className = "prob-card";
         div.innerHTML = `
-            <div>
-                <span class="q-label">${p.label || '?'}</span>
-                <span>${p.question ? p.question.substring(0,25) : ""}...</span>
-            </div>
+            <div><span class="q-label">${p.label || '?'}</span><span>${p.question ? p.question.substring(0,25) : ""}...</span></div>
             <button class="main-btn blue-btn" style="width:auto; padding:10px;" onclick="startHint(${p.id})">教えて！</button>
         `;
         list.appendChild(div);
     });
 }
 
-// 8. 採点画面表示
 function showGradingView() { 
     document.getElementById('chalkboard').classList.add('hidden'); 
     document.getElementById('upload-controls').classList.add('hidden');
     document.getElementById('problem-selection-view').classList.add('hidden');
-
     document.getElementById('final-view').classList.remove('hidden');
     document.getElementById('grade-sheet-container').classList.remove('hidden');
     document.getElementById('hint-detail-container').classList.add('hidden');
-    
     renderWorksheet(); 
 }
 
-// 9. 採点シート描画
 function renderWorksheet() {
     const list = document.getElementById('problem-list-grade'); 
     list.innerHTML = "";
-    
     transcribedProblems.forEach((item, idx) => {
         const div = document.createElement('div'); 
         div.className = "problem-row";
-        
-        let markHTML = '';
-        if (item.status === 'correct') markHTML = '⭕️';
-        else if (item.status === 'incorrect') markHTML = '❌';
-        
+        let markHTML = item.status === 'correct' ? '⭕️' : (item.status === 'incorrect' ? '❌' : '');
         div.innerHTML = `
             <div style="flex:1; display:flex; align-items:center;">
                 <span class="q-label">${item.label || '?'}</span>
                 <span style="font-size:0.9rem;">${item.question}</span>
             </div>
             <div style="display:flex; align-items:center; gap:5px;">
-                <input type="text" class="student-ans-input" 
-                       value="${item.student_answer || ''}" 
-                       onchange="updateAns(${idx}, this.value)"
-                       style="color:${item.status==='correct'?'#2e7d32':'#c62828'};">
-                <div class="judgment-mark ${item.status}">
-                    ${markHTML}
-                </div>
+                <input type="text" class="student-ans-input" value="${item.student_answer || ''}" onchange="updateAns(${idx}, this.value)" style="color:${item.status==='correct'?'#2e7d32':'#c62828'};">
+                <div class="judgment-mark ${item.status}">${markHTML}</div>
                 <button class="mini-teach-btn" onclick="startHint(${item.id})">教えて！</button>
             </div>`;
         list.appendChild(div);
     });
 }
 
-// 10. 答えの修正
 function updateAns(idx, val) {
     const itm = transcribedProblems[idx]; 
     itm.student_answer = val;
-    
     const normalize = (v) => v.toString().replace(/\s/g, '').replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0)).replace(/cm|ｍ|ｍｍ|円|個/g, '').replace(/[×＊]/g, '*').replace(/[÷／]/g, '/');
     
     if (normalize(val) === normalize(itm.correct_answer) && val !== "") {
@@ -337,11 +364,8 @@ function updateAns(idx, val) {
 
 async function pressThanks() { 
     await updateNellMessage("どういたしましてにゃ！", "happy"); 
-    if (currentMode === 'grade') {
-        showGradingView(); 
-    } else {
-        backToProblemSelection(); 
-    }
+    if (currentMode === 'grade') showGradingView(); 
+    else backToProblemSelection(); 
 }
 
 async function pressAllSolved() { 
@@ -349,6 +373,7 @@ async function pressAllSolved() {
     if (currentUser) {
         currentUser.karikari += 100; 
         saveAndSync(); 
+        updateMiniKarikari();
     }
     backToLobby(); 
 }

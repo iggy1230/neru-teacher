@@ -6,20 +6,24 @@
     <title>🐾猫後市立ねこづか小学校</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Sawarabi+Gothic&family=M+PLUS+Rounded+1c:wght@700;900&family=Kiwi+Maru:wght@900&display=swap" rel="stylesheet">
-    <!-- 顔認識AI (使わない場合もエラー防止のため残しておいてOK) -->
     <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 </head>
 <body>
     <canvas id="hanamaru-canvas"></canvas>
     <canvas id="deco-canvas" style="display:none;"></canvas>
-    <div class="version-tag">Build: v3.0.0-Fix</div>
+    
+    <!-- ★カリカリ常時表示（デフォルトは非表示）★ -->
+    <div id="mini-karikari-display" class="mini-karikari-display hidden">
+        <span>🍖</span><span id="mini-karikari-count">0</span>
+    </div>
+
+    <div class="version-tag">Build: v4.2.0-LoveNell</div>
 
     <div id="app-container">
         <!-- 画面1：校門 -->
         <section id="screen-gate" class="screen">
             <h1 class="school-title">猫後市立<br>ねこづか小学校</h1>
             <div class="gate-layout"><div id="user-list" class="right-user-list"></div></div>
-            <!-- このonclick名とui.jsの関数名が一致している必要があります -->
             <button onclick="showEnrollment()" class="main-btn pink-btn">🐾 新しく入学するにゃ</button>
         </section>
 
@@ -39,7 +43,6 @@
                 <option value="1">1年生</option><option value="2">2年生</option><option value="3">3年生</option>
                 <option value="4">4年生</option><option value="5">5年生</option><option value="6">6年生</option>
             </select>
-            <!-- ボタンは初期状態disabledですが、ui.jsのshowEnrollment内でloadFaceModelsが呼ばれて有効化されます -->
             <button onclick="processAndCompleteEnrollment()" id="complete-btn" class="main-btn pink-btn" disabled>入学する！</button>
             <button onclick="backToGate()" class="main-btn gray-btn">もどる</button>
             <div id="loading-models" style="text-align:center; font-size:0.7rem; margin-top:5px;"></div>
@@ -63,7 +66,11 @@
             <header><button onclick="backToLobby()" class="main-btn gray-btn" style="width:auto; padding:10px 20px;">←</button></header>
             <div class="operation-layout">
                 <div class="nell-chat">
-                    <div class="nell-avatar-wrap"><img src="nell-icon.png" class="nell-img"></div>
+                    <div class="nell-avatar-wrap">
+                        <img src="nell-icon.png" class="nell-img">
+                        <!-- ハート演出用コンテナ -->
+                        <div id="heart-container" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;"></div>
+                    </div>
                     <div class="chat-bubble"><p id="nell-text"></p></div>
                 </div>
                 <div id="subject-selection-view">
@@ -109,7 +116,6 @@
         <section id="screen-attendance" class="screen hidden"><h2 class="section-title">📅 出席簿</h2><div class="glass-card"><div id="attendance-grid" class="attendance-grid"></div></div><button onclick="backToLobby()" class="main-btn pink-btn mt-20">教室にもどる</button></section>
     </div>
 
-    <!-- スクリプトの読み込み順序も重要です -->
     <script src="audio.js"></script>
     <script src="ui.js"></script>
     <script src="user.js"></script>
