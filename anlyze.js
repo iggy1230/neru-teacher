@@ -1,6 +1,5 @@
-// --- anlyze.js (表示修正・強化版) ---
+// --- anlyze.js ---
 
-// 変数定義
 let transcribedProblems = []; 
 let selectedProblem = null; 
 let hintIndex = 0; 
@@ -8,47 +7,36 @@ let isAnalyzing = false;
 let currentSubject = '';
 let currentMode = ''; 
 
-// 1. モード選択時の処理（画面を一度きれいにリセットします）
+// 1. モード選択と画面リセット
 function selectMode(m) {
     currentMode = m; 
-    switchScreen('screen-main'); // 教室画面へ
+    switchScreen('screen-main'); 
 
-    // まず、作業エリアの要素を全て隠す（リセット）
-    document.getElementById('subject-selection-view').classList.add('hidden');
-    document.getElementById('upload-controls').classList.add('hidden');
-    document.getElementById('thinking-view').classList.add('hidden');
-    document.getElementById('problem-selection-view').classList.add('hidden');
-    document.getElementById('final-view').classList.add('hidden');
-    document.getElementById('chalkboard').classList.add('hidden');
+    // 要素を一旦すべて隠す
+    const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard'];
+    ids.forEach(id => document.getElementById(id).classList.add('hidden'));
 
     if (m === 'review') {
-        // 復習ノートモードなら、すぐにノートを表示
         renderMistakeSelection();
     } else {
-        // 「教えて」「採点」なら、まずは科目選択を表示
         document.getElementById('subject-selection-view').classList.remove('hidden');
         updateNellMessage("どの科目のお勉強をする？", "normal");
     }
 }
 
-// 2. 科目選択後の処理（ここで確実にアップロードボタンを出します）
+// 2. 科目選択
 function setSubject(s) {
     currentSubject = s; 
-    
-    // 履歴更新
     if (currentUser) {
         currentUser.history[s] = (currentUser.history[s] || 0) + 1; 
         saveAndSync();
     }
-
-    // 科目選択を隠して、アップロードボタンを表示！
     document.getElementById('subject-selection-view').classList.add('hidden');
     document.getElementById('upload-controls').classList.remove('hidden');
-    
     updateNellMessage(`${currentSubject}の問題をみせてにゃ！`, "happy");
 }
 
-// 3. 復習ノート表示
+// 3. 復習ノートモード
 function renderMistakeSelection() {
     if (!currentUser.mistakes || currentUser.mistakes.length === 0) {
         updateNellMessage("ノートは空っぽにゃ！完ぺきだにゃ✨", "happy");
@@ -57,10 +45,10 @@ function renderMistakeSelection() {
     }
     transcribedProblems = currentUser.mistakes; 
     renderProblemSelection();
-    updateNellMessage("間違えた問題を復習するにゃ？えらいにゃ！", "excited");
+    updateNellMessage("復習するにゃ？えらいにゃ！", "excited");
 }
 
-// 4. 画像縮小処理
+// 4. 画像処理
 async function shrinkImage(file) {
     return new Promise((resolve) => {
         const reader = new FileReader(); 
@@ -84,16 +72,14 @@ async function shrinkImage(file) {
     });
 }
 
-// 5. 画像アップロードとAI解析（ここを頑丈にしました）
+// 5. アップロード・分析・自動採点
 document.getElementById('hw-input').addEventListener('change', async (e) => {
     if (isAnalyzing || !e.target.files[0]) return;
     
-    // 解析開始：アップロードボタンを隠して、考え中画面を出す
     isAnalyzing = true;
     document.getElementById('upload-controls').classList.add('hidden');
     document.getElementById('thinking-view').classList.remove('hidden');
-    
-    updateNellMessage("どれどれ……ネル先生がじっくり見てあげるにゃ……", "thinking");
+    updateNellMessage("答えも合ってるか見てあげるにゃ……", "thinking");
     updateProgress(0); 
 
     let p = 0; 
@@ -101,66 +87,57 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
 
     try {
         const b64 = await shrinkImage(e.target.files[0]);
-        
-        // サーバーへ送信
         const res = await fetch('/analyze', { 
             method: 'POST', 
             headers: { 'Content-Type': 'application/json' }, 
             body: JSON.stringify({ 
-                image: b64, 
-                mode: currentMode, 
-                grade: currentUser.grade, 
-                subject: currentSubject 
+                image: b64, mode: currentMode, grade: currentUser.grade, subject: currentSubject 
             }) 
         });
         
-        // サーバーからの返答がエラーでないか確認
         if (!res.ok) throw new Error("Server Error");
-
         const data = await res.json();
         
-        // データが配列か確認（エラー対策）
-        if (!Array.isArray(data)) {
-            console.error("AI Response is not array:", data);
-            throw new Error("AIの読み取り形式がおかしいにゃ");
-        }
+        // データの正規化と自動採点
+        transcribedProblems = data.map(prob => {
+            const studentAns = prob.student_answer || "";
+            // 正規化: 空白削除, 全角→半角, 単位削除
+            const normalize = (v) => v.toString().replace(/\s/g, '').replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0)).replace(/cm|ｍ|ｍｍ|円|個/g, '').replace(/[×＊]/g, '*').replace(/[÷／]/g, '/');
+            
+            let status = "unanswered";
+            if (studentAns !== "") {
+                status = (normalize(studentAns) === normalize(prob.correct_answer)) ? "correct" : "incorrect";
+            }
+            return { ...prob, student_answer: studentAns, status: status };
+        });
         
-        transcribedProblems = data.map(prob => ({ 
-            ...prob, 
-            student_answer: "", 
-            status: "unanswered" 
-        }));
-        
-        // 完了処理
         clearInterval(timer); 
         updateProgress(100);
 
         setTimeout(() => { 
-            // 考え中画面を隠す
             document.getElementById('thinking-view').classList.add('hidden'); 
             
             if (transcribedProblems.length > 0) { 
-                // モードに応じて画面を切り替え
                 if (currentMode === 'explain' || currentMode === 'review') {
                     renderProblemSelection(); 
-                    updateNellMessage("問題が読めたにゃ！どれから教えてほしい？", "happy");
+                    updateNellMessage("問題が読めたにゃ！", "happy");
                 } else { 
-                    // 採点モード：確実にgrade viewを表示
+                    // 採点モード
                     showGradingView(); 
-                    updateNellMessage("採点するにゃ！答えを入力してね。", "gentle");
+                    const allCorrect = transcribedProblems.every(p => p.status === 'correct');
+                    if(allCorrect) updateNellMessage("すごい！全部正解にゃ！✨", "excited");
+                    else updateNellMessage("採点したにゃ。読み間違いは直してね。", "gentle");
                 } 
             } else {
-                updateNellMessage("うーん、文字が読めなかったにゃ……もう一度試してにゃ。", "thinking");
+                updateNellMessage("文字が読めなかったにゃ……", "thinking");
                 document.getElementById('upload-controls').classList.remove('hidden');
             }
         }, 800);
 
     } catch (err) { 
-        console.error("Analyze Error:", err);
+        console.error(err);
         clearInterval(timer);
-        updateNellMessage("ごめんね、エラーが起きちゃったにゃ……。", "thinking"); 
-        
-        // エラー時は元に戻す
+        updateNellMessage("エラーだにゃ……。", "thinking"); 
         document.getElementById('thinking-view').classList.add('hidden');
         document.getElementById('upload-controls').classList.remove('hidden');
     } finally { 
@@ -168,9 +145,8 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
     }
 });
 
-// 6. 問題選択画面の描画（教えてモード用）
+// 6. 問題リスト表示（教えてモード用）
 function renderProblemSelection() {
-    // 他のビューを隠して、問題選択ビューを表示
     document.getElementById('final-view').classList.add('hidden');
     document.getElementById('upload-controls').classList.add('hidden');
     document.getElementById('problem-selection-view').classList.remove('hidden');
@@ -184,7 +160,7 @@ function renderProblemSelection() {
         div.innerHTML = `
             <div>
                 <span class="q-label">${p.label || '?'}</span>
-                <span>${p.question ? p.question.substring(0,25) : "読み取れなかった問題"}...</span>
+                <span>${p.question ? p.question.substring(0,25) : ""}...</span>
             </div>
             <button class="main-btn blue-btn" style="width:auto; padding:10px;" onclick="startHint(${p.id})">教えて！</button>
         `;
@@ -192,23 +168,22 @@ function renderProblemSelection() {
     });
 }
 
-// 7. ヒント・解説のロジック
+// 7. ヒント開始
 function startHint(id) {
     if (currentUser.karikari < 5) return updateNellMessage("カリカリが足りないにゃ……。", "thinking");
     
     selectedProblem = transcribedProblems.find(p => p.id === id); 
     hintIndex = 0;
-    
     currentUser.karikari -= 5; 
     saveAndSync();
     
-    // 画面切り替え：問題選択を隠して、ファイナルビュー（解説・採点）を表示
+    // 画面切り替え
     document.getElementById('problem-selection-view').classList.add('hidden');
     document.getElementById('final-view').classList.remove('hidden');
     
-    // 解説用のコンテナを表示、採点用は隠す
-    document.getElementById('hint-detail-container').classList.remove('hidden');
+    // 採点シートを隠してヒントを表示
     document.getElementById('grade-sheet-container').classList.add('hidden');
+    document.getElementById('hint-detail-container').classList.remove('hidden');
     
     const board = document.getElementById('chalkboard');
     board.innerText = (selectedProblem.label || "") + " " + selectedProblem.question;
@@ -219,9 +194,13 @@ function startHint(id) {
 }
 
 function showHintStep() {
-    const hints = selectedProblem.hints || ["ヒントがないにゃ……", "自分で考えてみてにゃ", "答えを見る？"];
-    updateNellMessage(hints[hintIndex] || "……", "thinking");
-    
+    let hints = selectedProblem.hints;
+    // 採点モードなどでヒントがない場合のフォールバック
+    if (!hints || hints.length === 0) {
+        hints = ["まずは問題をよく読んでみてにゃ", "正解と見比べてみるにゃ", "先生と一緒に解くにゃ？"];
+    }
+
+    updateNellMessage(hints[hintIndex], "thinking");
     document.getElementById('hint-step-label').innerText = `ヒント ${hintIndex + 1}`;
     
     const nextBtn = document.getElementById('next-hint-btn'); 
@@ -252,25 +231,20 @@ function revealAnswer() {
     updateNellMessage(`答えは……「${ans}」だにゃ！`, "gentle");
 }
 
-// 8. 採点モードの表示（採点ネル先生用）
+// 8. 採点ビュー表示
 function showGradingView() { 
-    // 黒板は隠す
     document.getElementById('chalkboard').classList.add('hidden'); 
-    
-    // アップロード画面なども隠す
     document.getElementById('upload-controls').classList.add('hidden');
     document.getElementById('problem-selection-view').classList.add('hidden');
 
-    // ファイナルビューを表示
     document.getElementById('final-view').classList.remove('hidden');
-    
-    // その中の採点シートを表示、ヒント詳細は隠す
     document.getElementById('grade-sheet-container').classList.remove('hidden');
     document.getElementById('hint-detail-container').classList.add('hidden');
     
     renderWorksheet(); 
 }
 
+// 9. 採点シート描画（修正機能・教えてボタン付）
 function renderWorksheet() {
     const list = document.getElementById('problem-list-grade'); 
     list.innerHTML = "";
@@ -278,15 +252,23 @@ function renderWorksheet() {
     transcribedProblems.forEach((item, idx) => {
         const div = document.createElement('div'); 
         div.className = "problem-row";
+        
+        let markHTML = '';
+        if (item.status === 'correct') markHTML = '⭕️';
+        else if (item.status === 'incorrect') markHTML = '❌';
+        
         div.innerHTML = `
             <div style="flex:1; display:flex; align-items:center;">
                 <span class="q-label">${item.label || '?'}</span>
                 <span style="font-size:0.9rem;">${item.question}</span>
             </div>
             <div style="display:flex; align-items:center; gap:5px;">
-                <input type="text" class="student-ans-input" value="${item.student_answer || ''}" onchange="updateAns(${idx}, this.value)">
-                <div class="judgment-mark ${item.status==='correct'?'correct':'incorrect'}">
-                    ${item.status==='correct'?'⭕️':(item.status==='unanswered'?'':'❌')}
+                <input type="text" class="student-ans-input" 
+                       value="${item.student_answer || ''}" 
+                       onchange="updateAns(${idx}, this.value)"
+                       style="color:${item.status==='correct'?'#2e7d32':'#c62828'};">
+                <div class="judgment-mark ${item.status}">
+                    ${markHTML}
                 </div>
                 <button class="mini-teach-btn" onclick="startHint(${item.id})">教えて！</button>
             </div>`;
@@ -294,11 +276,12 @@ function renderWorksheet() {
     });
 }
 
+// 10. 答えの修正と再判定
 function updateAns(idx, val) {
     const itm = transcribedProblems[idx]; 
     itm.student_answer = val;
     
-    const normalize = (v) => v.toString().replace(/\s/g, '').replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0)).replace(/cm|ｍ|ｍｍ/g, '').replace(/[×＊]/g, '*').replace(/[÷／]/g, '/');
+    const normalize = (v) => v.toString().replace(/\s/g, '').replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0)).replace(/cm|ｍ|ｍｍ|円|個/g, '').replace(/[×＊]/g, '*').replace(/[÷／]/g, '/');
     
     if (normalize(val) === normalize(itm.correct_answer) && val !== "") {
         itm.status = 'correct'; 
@@ -316,8 +299,13 @@ function updateAns(idx, val) {
 }
 
 async function pressThanks() { 
-    await updateNellMessage("よくがんばったにゃ！", "happy"); 
-    backToProblemSelection(); 
+    await updateNellMessage("どういたしましてにゃ！", "happy"); 
+    // 戻り先分岐
+    if (currentMode === 'grade') {
+        showGradingView();
+    } else {
+        backToProblemSelection();
+    }
 }
 
 async function pressAllSolved() { 
