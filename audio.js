@@ -1,4 +1,4 @@
-// --- audio.js (音声安定化版) ---
+// --- audio.js (再生エラー対策版) ---
 
 let currentAudio = null;
 
@@ -26,22 +26,30 @@ async function speakNell(text, mood = "normal") {
         if (!data.audioContent) throw new Error("No audio content");
 
         // Base64音声を再生
-        currentAudio = new Audio("data:audio/mp3;base64," + data.audioContent);
+        // 再生時にエラーが出たらフォールバックするようにイベントリスナーを設定
         return new Promise(resolve => {
-            currentAudio.onended = resolve;
-            currentAudio.onerror = () => {
-                console.warn("Audio Playback Error, falling back.");
-                fallbackSpeech(text, resolve); // 再生エラー時のみフォールバック
+            const audio = new Audio("data:audio/mp3;base64," + data.audioContent);
+            currentAudio = audio;
+
+            audio.onended = resolve;
+            
+            // 再生エラー（形式非対応など）の場合
+            audio.onerror = () => {
+                console.warn("Audio Playback Error, falling back to browser voice.");
+                fallbackSpeech(text, resolve); 
             };
-            currentAudio.play().catch(e => {
+            
+            // play()のPromiseが拒否された場合（自動再生ポリシーなど）
+            audio.play().catch(e => {
                 console.warn("Autoplay blocked or failed:", e);
+                // 再生できない場合は、無理にロボット声を出さずに終了させる（エラー音回避）
                 resolve();
             });
         });
 
     } catch (e) {
         console.warn("Voice Synthesis Failed (using browser voice):", e);
-        // サーバー通信失敗時のみ、ブラウザの音声を使う
+        // 通信エラーなどの場合はブラウザの音声を使う
         return new Promise(resolve => fallbackSpeech(text, resolve));
     }
 }
@@ -53,7 +61,7 @@ function fallbackSpeech(text, callback) {
         return;
     }
     
-    // 現在の発生をキャンセル
+    // 現在の発声をキャンセル
     window.speechSynthesis.cancel();
 
     const u = new SpeechSynthesisUtterance(text);
@@ -62,12 +70,12 @@ function fallbackSpeech(text, callback) {
     u.pitch = 1.5; // 声を高くして猫っぽく
     
     u.onend = callback;
-    u.onerror = callback; // エラーでも止まらないように
+    u.onerror = callback; 
     
     window.speechSynthesis.speak(u);
 }
 
-// ネル先生のメッセージ更新用ラッパー
+// メッセージ更新関数
 async function updateNellMessage(t, mood = "normal") {
     const el = document.getElementById('nell-text');
     if (el) el.innerText = t;
