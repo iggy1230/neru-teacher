@@ -18,29 +18,27 @@ const ttsClient = new textToSpeech.TextToSpeechClient({
     credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON) 
 });
 
-// SSML生成（リッチ版）
-function createRichSSML(text, mood) {
+// SSML生成（ロボット声対策強化版）
+function createSSML(text, mood) {
     let rate = "1.0"; let pitch = "0.0";
     if (mood === "happy") { rate = "1.1"; pitch = "+2st"; }
-    if (mood === "thinking") { rate = "0.95"; pitch = "-1st"; }
-    if (mood === "gentle") { rate = "0.9"; pitch = "+1st"; }
     if (mood === "excited") { rate = "1.2"; pitch = "+4st"; }
+    if (mood === "thinking") { rate = "0.95"; pitch = "-1st"; }
     
-    // 読み上げ禁止文字削除 & エスケープ
-    let cleanText = text.replace(/🐾|✨|⭐|🎵/g, '').replace(/⭕️/g, '正解').replace(/❌/g, '不正解')
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    // 1. 読み上げ禁止文字削除
+    let cleanText = text.replace(/🐾|✨|⭐|🎵|🐟/g, '').replace(/⭕️/g, '正解').replace(/❌/g, '不正解');
 
+    // ★重要対策：短い疑問形（教科選択など）はタグをつけすぎるとエラーになるためシンプルにする
+    if (cleanText.includes("どの教科") || cleanText.includes("にするにゃ")) {
+        return `<speak>${cleanText}</speak>`;
+    }
+
+    // 通常の処理
     const processedText = cleanText
         .replace(/……/g, '<break time="650ms"/>')
-        .replace(/にゃ/g, '<prosody pitch="+3st">にゃ</prosody>');
+        .replace(/にゃ/g, 'にゃ'); // prosodyタグを一旦外して安定性重視にする
         
     return `<speak><prosody rate="${rate}" pitch="${pitch}">${processedText}</prosody></speak>`;
-}
-
-// ロボット声対策用：安全なSSML（タグなし）
-function createSafeSSML(text) {
-    let cleanText = text.replace(/🐾|✨|⭐|🎵/g, '').replace(/⭕️/g, '正解').replace(/❌/g, '不正解');
-    return `<speak>${cleanText}</speak>`;
 }
 
 app.post('/synthesize', async (req, res) => {
@@ -48,27 +46,39 @@ app.post('/synthesize', async (req, res) => {
         const { text, mood } = req.body;
         if (!text) return res.status(400).json({ error: "No text" });
 
-        // まずリッチな音声で試す
-        try {
-            const [response] = await ttsClient.synthesizeSpeech({
-                input: { ssml: createRichSSML(text, mood) },
-                voice: { languageCode: 'ja-JP', name: 'ja-JP-Neural2-B' },
-                audioConfig: { audioEncoding: 'MP3' },
-            });
-            return res.json({ audioContent: response.audioContent.toString('base64') });
-        } catch (innerErr) {
-            console.warn("TTS Rich Failed, retrying safe mode:", innerErr.message);
-            // 失敗したら安全モードで再試行（これでロボット声を防ぐ）
-            const [retryRes] = await ttsClient.synthesizeSpeech({
-                input: { ssml: createSafeSSML(text) },
-                voice: { languageCode: 'ja-JP', name: 'ja-JP-Neural2-B' },
-                audioConfig: { audioEncoding: 'MP3' },
-            });
-            return res.json({ audioContent: retryRes.audioContent.toString('base64') });
-        }
+        const [response] = await ttsClient.synthesizeSpeech({
+            input: { ssml: createSSML(text, mood) },
+            voice: { languageCode: 'ja-JP', name: 'ja-JP-Neural2-B' },
+            audioConfig: { audioEncoding: 'MP3' },
+        });
+        res.json({ audioContent: response.audioContent.toString('base64') });
     } catch (err) { 
-        console.error("TTS Fatal Error:", err);
+        console.error("TTS Error:", err);
         res.status(500).send(err.message); 
+    }
+});
+
+// ★新設：会話モード用エンドポイント
+app.post('/chat', async (req, res) => {
+    try {
+        const { message, grade, name } = req.body;
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+        
+        const prompt = `
+        あなたは小学校の猫の先生「ネル先生」です。
+        相手は小学${grade}年生の「${name}」さんです。
+        以下の発言に対して、優しく、短く（30文字以内）、猫語（語尾に「にゃ」をつける）で返事をしてください。
+        子供が相談しやすい雰囲気で。
+        
+        子供の発言: ${message}
+        `;
+        
+        const result = await model.generateContent(prompt);
+        const reply = result.response.text();
+        res.json({ reply });
+    } catch (err) {
+        console.error("Chat Error:", err);
+        res.status(500).json({ error: "Chat Error" });
     }
 });
 
@@ -80,7 +90,6 @@ app.post('/analyze', async (req, res) => {
             generationConfig: { responseMimeType: "application/json" }
         });
         
-        // ★修正：ヒント3が答えにならないように指示を明確化
         const hintInstruction = `
         - "hints": 生徒が間違えた時に備えて、解き方を導くヒントを3つ作成してください。
           1. 「考え方の入り口」
@@ -95,23 +104,21 @@ app.post('/analyze', async (req, res) => {
             1. "question": 問題文書き起こし。
             2. "correct_answer": 正解。
             3. ${hintInstruction}
-            4. 算数記号は×÷。JSON配列で出力。
-            `;
+            4. 算数記号は×÷。JSON配列で出力。`;
         } else {
             prompt = `厳格な採点先生。小学${grade}年生の${subject}。
             1. "question": 問題文書き起こし。
             2. "correct_answer": 正解。
             3. "student_answer": 手書き文字読み取り(空欄なら"")。
             4. ${hintInstruction}
-            JSON配列で出力。
-            `;
+            JSON配列で出力。`;
         }
 
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
         res.json(JSON.parse(result.response.text().replace(/\*/g, '×').replace(/\//g, '÷')));
     } catch (err) { 
         console.error("Analyze Error:", err);
-        res.status(500).json({ error: "AIエラー" }); 
+        res.status(500).json({ error: "AI解析エラー" }); 
     }
 });
 
