@@ -5,16 +5,7 @@ const idBase = new Image(); idBase.src = 'student-id-base.png';
 const decoEars = new Image(); decoEars.src = 'ears.png';
 const decoMuzzle = new Image(); decoMuzzle.src = 'muzzle.png';
 
-async function loadFaceModels() {
-    const URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
-    try {
-        await faceapi.nets.ssdMobilenetv1.loadFromUri(URL);
-        await faceapi.nets.faceLandmark68Net.loadFromUri(URL);
-        modelsLoaded = true;
-        document.getElementById('loading-models').innerText = "準備完了にゃ！🐾";
-        document.getElementById('complete-btn').disabled = false;
-    } catch (e) { console.error("Face API Error."); }
-}
+loadFaceModels
 
 function renderUserList() {
     const list = document.getElementById('user-list');
