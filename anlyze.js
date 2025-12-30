@@ -1,5 +1,6 @@
-// --- anlyze.js (完全版) ---
+// --- anlyze.js (表示修正・強化版) ---
 
+// 変数定義
 let transcribedProblems = []; 
 let selectedProblem = null; 
 let hintIndex = 0; 
@@ -7,34 +8,43 @@ let isAnalyzing = false;
 let currentSubject = '';
 let currentMode = ''; 
 
-// 1. ロビーでモードを選んだとき
+// 1. モード選択時の処理（画面を一度きれいにリセットします）
 function selectMode(m) {
     currentMode = m; 
-    switchScreen('screen-main'); 
+    switchScreen('screen-main'); // 教室画面へ
+
+    // まず、作業エリアの要素を全て隠す（リセット）
+    document.getElementById('subject-selection-view').classList.add('hidden');
+    document.getElementById('upload-controls').classList.add('hidden');
+    document.getElementById('thinking-view').classList.add('hidden');
+    document.getElementById('problem-selection-view').classList.add('hidden');
+    document.getElementById('final-view').classList.add('hidden');
+    document.getElementById('chalkboard').classList.add('hidden');
 
     if (m === 'review') {
-        document.getElementById('subject-selection-view').classList.add('hidden');
+        // 復習ノートモードなら、すぐにノートを表示
         renderMistakeSelection();
     } else {
+        // 「教えて」「採点」なら、まずは科目選択を表示
         document.getElementById('subject-selection-view').classList.remove('hidden');
-        document.getElementById('upload-controls').classList.add('hidden');
-        document.getElementById('chalkboard').classList.add('hidden');
-        switchView('problem-selection-view'); 
-        document.getElementById('transcribed-problem-list').innerHTML = "";
-        
         updateNellMessage("どの科目のお勉強をする？", "normal");
     }
 }
 
-// 2. 科目を選んだとき
+// 2. 科目選択後の処理（ここで確実にアップロードボタンを出します）
 function setSubject(s) {
     currentSubject = s; 
+    
+    // 履歴更新
     if (currentUser) {
         currentUser.history[s] = (currentUser.history[s] || 0) + 1; 
         saveAndSync();
     }
+
+    // 科目選択を隠して、アップロードボタンを表示！
     document.getElementById('subject-selection-view').classList.add('hidden');
     document.getElementById('upload-controls').classList.remove('hidden');
+    
     updateNellMessage(`${currentSubject}の問題をみせてにゃ！`, "happy");
 }
 
@@ -74,10 +84,11 @@ async function shrinkImage(file) {
     });
 }
 
-// 5. 画像アップロードとAI解析
+// 5. 画像アップロードとAI解析（ここを頑丈にしました）
 document.getElementById('hw-input').addEventListener('change', async (e) => {
     if (isAnalyzing || !e.target.files[0]) return;
     
+    // 解析開始：アップロードボタンを隠して、考え中画面を出す
     isAnalyzing = true;
     document.getElementById('upload-controls').classList.add('hidden');
     document.getElementById('thinking-view').classList.remove('hidden');
@@ -90,6 +101,8 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
 
     try {
         const b64 = await shrinkImage(e.target.files[0]);
+        
+        // サーバーへ送信
         const res = await fetch('/analyze', { 
             method: 'POST', 
             headers: { 'Content-Type': 'application/json' }, 
@@ -100,7 +113,17 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
                 subject: currentSubject 
             }) 
         });
+        
+        // サーバーからの返答がエラーでないか確認
+        if (!res.ok) throw new Error("Server Error");
+
         const data = await res.json();
+        
+        // データが配列か確認（エラー対策）
+        if (!Array.isArray(data)) {
+            console.error("AI Response is not array:", data);
+            throw new Error("AIの読み取り形式がおかしいにゃ");
+        }
         
         transcribedProblems = data.map(prob => ({ 
             ...prob, 
@@ -108,29 +131,36 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
             status: "unanswered" 
         }));
         
+        // 完了処理
         clearInterval(timer); 
         updateProgress(100);
 
         setTimeout(() => { 
+            // 考え中画面を隠す
             document.getElementById('thinking-view').classList.add('hidden'); 
+            
             if (transcribedProblems.length > 0) { 
+                // モードに応じて画面を切り替え
                 if (currentMode === 'explain' || currentMode === 'review') {
                     renderProblemSelection(); 
                     updateNellMessage("問題が読めたにゃ！どれから教えてほしい？", "happy");
                 } else { 
+                    // 採点モード：確実にgrade viewを表示
                     showGradingView(); 
                     updateNellMessage("採点するにゃ！答えを入力してね。", "gentle");
                 } 
             } else {
-                updateNellMessage("うーん、文字が読めなかったにゃ……", "thinking");
+                updateNellMessage("うーん、文字が読めなかったにゃ……もう一度試してにゃ。", "thinking");
                 document.getElementById('upload-controls').classList.remove('hidden');
             }
         }, 800);
 
     } catch (err) { 
-        console.error(err);
+        console.error("Analyze Error:", err);
         clearInterval(timer);
-        updateNellMessage("エラーだにゃ……通信環境を確認してにゃ🐾", "thinking"); 
+        updateNellMessage("ごめんね、エラーが起きちゃったにゃ……。", "thinking"); 
+        
+        // エラー時は元に戻す
         document.getElementById('thinking-view').classList.add('hidden');
         document.getElementById('upload-controls').classList.remove('hidden');
     } finally { 
@@ -138,9 +168,13 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
     }
 });
 
-// 6. 問題選択画面の描画
+// 6. 問題選択画面の描画（教えてモード用）
 function renderProblemSelection() {
-    switchView('problem-selection-view');
+    // 他のビューを隠して、問題選択ビューを表示
+    document.getElementById('final-view').classList.add('hidden');
+    document.getElementById('upload-controls').classList.add('hidden');
+    document.getElementById('problem-selection-view').classList.remove('hidden');
+
     const list = document.getElementById('transcribed-problem-list'); 
     list.innerHTML = "";
     
@@ -150,7 +184,7 @@ function renderProblemSelection() {
         div.innerHTML = `
             <div>
                 <span class="q-label">${p.label || '?'}</span>
-                <span>${p.question.substring(0,25)}...</span>
+                <span>${p.question ? p.question.substring(0,25) : "読み取れなかった問題"}...</span>
             </div>
             <button class="main-btn blue-btn" style="width:auto; padding:10px;" onclick="startHint(${p.id})">教えて！</button>
         `;
@@ -158,7 +192,7 @@ function renderProblemSelection() {
     });
 }
 
-// 7. ヒントモードの処理
+// 7. ヒント・解説のロジック
 function startHint(id) {
     if (currentUser.karikari < 5) return updateNellMessage("カリカリが足りないにゃ……。", "thinking");
     
@@ -168,8 +202,13 @@ function startHint(id) {
     currentUser.karikari -= 5; 
     saveAndSync();
     
-    switchView('final-view'); 
+    // 画面切り替え：問題選択を隠して、ファイナルビュー（解説・採点）を表示
+    document.getElementById('problem-selection-view').classList.add('hidden');
+    document.getElementById('final-view').classList.remove('hidden');
+    
+    // 解説用のコンテナを表示、採点用は隠す
     document.getElementById('hint-detail-container').classList.remove('hidden');
+    document.getElementById('grade-sheet-container').classList.add('hidden');
     
     const board = document.getElementById('chalkboard');
     board.innerText = (selectedProblem.label || "") + " " + selectedProblem.question;
@@ -213,11 +252,22 @@ function revealAnswer() {
     updateNellMessage(`答えは……「${ans}」だにゃ！`, "gentle");
 }
 
-// 8. 採点モードの処理
+// 8. 採点モードの表示（採点ネル先生用）
 function showGradingView() { 
+    // 黒板は隠す
     document.getElementById('chalkboard').classList.add('hidden'); 
-    switchView('final-view'); 
-    document.getElementById('grade-sheet-container').classList.remove('hidden'); 
+    
+    // アップロード画面なども隠す
+    document.getElementById('upload-controls').classList.add('hidden');
+    document.getElementById('problem-selection-view').classList.add('hidden');
+
+    // ファイナルビューを表示
+    document.getElementById('final-view').classList.remove('hidden');
+    
+    // その中の採点シートを表示、ヒント詳細は隠す
+    document.getElementById('grade-sheet-container').classList.remove('hidden');
+    document.getElementById('hint-detail-container').classList.add('hidden');
+    
     renderWorksheet(); 
 }
 
@@ -248,18 +298,15 @@ function updateAns(idx, val) {
     const itm = transcribedProblems[idx]; 
     itm.student_answer = val;
     
-    // 全角半角統一、単位除去、算数記号変換
     const normalize = (v) => v.toString().replace(/\s/g, '').replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0)).replace(/cm|ｍ|ｍｍ/g, '').replace(/[×＊]/g, '*').replace(/[÷／]/g, '/');
     
     if (normalize(val) === normalize(itm.correct_answer) && val !== "") {
         itm.status = 'correct'; 
         updateNellMessage("正解にゃ！", "happy");
-        // 正解したら復習ノートから削除
         if (currentUser.mistakes) currentUser.mistakes = currentUser.mistakes.filter(m => m.question !== itm.question);
     } else {
         itm.status = 'incorrect'; 
         updateNellMessage("おしいにゃ……ノートに書いておくね。", "thinking");
-        // 間違えたら復習ノートに追加
         if (!currentUser.mistakes.some(m => m.question === itm.question)) {
             currentUser.mistakes.push({...itm, subject: currentSubject});
         }
