@@ -1,4 +1,4 @@
-// --- anlyze.js ---
+// --- anlyze.js (完全修正版) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -12,7 +12,7 @@ function selectMode(m) {
     currentMode = m; 
     switchScreen('screen-main'); 
 
-    // UI要素をリセット（全て隠す）
+    // UI要素をリセット
     const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard'];
     ids.forEach(id => {
         const el = document.getElementById(id);
@@ -103,7 +103,10 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
         
         // データ処理：ID付与と自動採点
         transcribedProblems = data.map((prob, index) => {
-            const safeId = prob.id || (index + 1); // IDがない場合の保険
+            // ★ここを修正しました：AIが返すIDを無視し、強制的に連番を振ります
+            // これで「全部IDが1になる」バグを防ぎます
+            const safeId = index + 1; 
+            
             const studentAns = prob.student_answer || "";
             
             // 正誤判定（正規化して比較）
@@ -155,7 +158,7 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
 function startHint(id) {
     if (currentUser.karikari < 5) return updateNellMessage("カリカリが足りないにゃ……。", "thinking");
     
-    // IDで検索（型変換のため == を使用）
+    // IDで検索
     selectedProblem = transcribedProblems.find(p => p.id == id); 
     
     if (!selectedProblem) {
@@ -167,7 +170,7 @@ function startHint(id) {
     currentUser.karikari -= 5; 
     saveAndSync();
     
-    // 画面切り替え：リストや採点シートを隠してヒント画面へ
+    // 画面切り替え
     document.getElementById('problem-selection-view').classList.add('hidden');
     document.getElementById('grade-sheet-container').classList.add('hidden'); 
     
@@ -185,7 +188,6 @@ function startHint(id) {
 
 function showHintStep() {
     let hints = selectedProblem.hints;
-    // ヒント配列がない場合のフォールバック
     if (!hints || !Array.isArray(hints) || hints.length === 0) {
         hints = ["問題をよく読んでみてにゃ。", "式を立ててみるにゃ。", "先生と一緒に解くにゃ？"];
     }
@@ -244,7 +246,7 @@ function renderProblemSelection() {
     });
 }
 
-// 8. 採点画面表示（採点ネル先生用）
+// 8. 採点画面表示
 function showGradingView() { 
     document.getElementById('chalkboard').classList.add('hidden'); 
     document.getElementById('upload-controls').classList.add('hidden');
@@ -270,6 +272,7 @@ function renderWorksheet() {
         if (item.status === 'correct') markHTML = '⭕️';
         else if (item.status === 'incorrect') markHTML = '❌';
         
+        // ここでの item.id は safeId (1, 2, 3...) になっているので正しく動作します
         div.innerHTML = `
             <div style="flex:1; display:flex; align-items:center;">
                 <span class="q-label">${item.label || '?'}</span>
@@ -289,7 +292,7 @@ function renderWorksheet() {
     });
 }
 
-// 10. 答えの修正と再判定
+// 10. 答えの修正
 function updateAns(idx, val) {
     const itm = transcribedProblems[idx]; 
     itm.student_answer = val;
@@ -311,14 +314,12 @@ function updateAns(idx, val) {
     renderWorksheet();
 }
 
-// 11. 「ありがとう」ボタンの挙動
 async function pressThanks() { 
     await updateNellMessage("どういたしましてにゃ！", "happy"); 
-    
     if (currentMode === 'grade') {
-        showGradingView(); // 採点モードなら採点シートに戻る
+        showGradingView(); 
     } else {
-        backToProblemSelection(); // その他ならリストに戻る
+        backToProblemSelection(); 
     }
 }
 
