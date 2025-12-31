@@ -14,198 +14,137 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, '.')));
 
-// API初期化
+// --- 既存のAPI設定 (TTS/Analyze) ---
 let genAI, ttsClient;
 try {
     genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    ttsClient = new textToSpeech.TextToSpeechClient({ 
-        credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON) 
-    });
+    ttsClient = new textToSpeech.TextToSpeechClient({ credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON) });
 } catch (e) { console.error("Init Error:", e.message); }
 
-// 音声合成 (SSML)
+// 通常TTS
 function createSSML(text, mood) {
     let rate = "1.1", pitch = "+2st"; 
     if (mood === "thinking") { rate = "1.0"; pitch = "0st"; }
-    if (mood === "gentle") { rate = "0.95"; pitch = "+1st"; }
-    if (mood === "excited") { rate = "1.2"; pitch = "+4st"; }
-    
-    // 安全装置：もしテキストが空ならデフォルトを入れる
-    if (!text || text === "undefined") text = "にゃあ？";
-
-    let cleanText = text
-        .replace(/[\u{1F600}-\u{1F6FF}]/gu, '')
-        .replace(/🐾|✨|⭐|🎵|🐟|🎤|⭕️|❌/g, '')
-        .replace(/&/g, 'と').replace(/[<>"']/g, ' ');
-
-    if (cleanText.length < 2 || cleanText.includes("どの教科") || cleanText.includes("おはなし")) {
-        return `<speak>${cleanText}</speak>`;
-    }
-    cleanText = cleanText.replace(/……/g, '<break time="500ms"/>');
-    return `<speak><prosody rate="${rate}" pitch="${pitch}">${cleanText}</prosody></speak>`;
+    let clean = text.replace(/[\u{1F600}-\u{1F6FF}]/gu, '').replace(/🐾|✨|⭐|🎵|🐟|🎤/g, '');
+    if (clean.length < 5) return `<speak>${clean}</speak>`;
+    return `<speak><prosody rate="${rate}" pitch="${pitch}">${clean.replace(/……/g, '<break time="500ms"/>').replace(/にゃ/g, '<prosody pitch="+3st">にゃ</prosody>')}</prosody></speak>`;
 }
 
 app.post('/synthesize', async (req, res) => {
     try {
-        if (!ttsClient) throw new Error("TTS not ready");
         const { text, mood } = req.body;
-        if (!text) return res.status(400).json({ error: "No text" });
-        try {
-            const [response] = await ttsClient.synthesizeSpeech({
-                input: { ssml: createSSML(text, mood) },
-                voice: { languageCode: 'ja-JP', name: 'ja-JP-Neural2-B' }, 
-                audioConfig: { audioEncoding: 'MP3' },
-            });
-            res.json({ audioContent: response.audioContent.toString('base64') });
-        } catch (e) {
-            const [retry] = await ttsClient.synthesizeSpeech({
-                input: { text: text.replace(/[^a-zA-Z0-9\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/g, '') },
-                voice: { languageCode: 'ja-JP', name: 'ja-JP-Neural2-B' },
-                audioConfig: { audioEncoding: 'MP3' },
-            });
-            res.json({ audioContent: retry.audioContent.toString('base64') });
-        }
-    } catch (err) { res.status(500).send(err.message); }
+        const [r] = await ttsClient.synthesizeSpeech({
+            input: { ssml: createSSML(text, mood) },
+            voice: { languageCode: 'ja-JP', name: 'ja-JP-Neural2-B' },
+            audioConfig: { audioEncoding: 'MP3' }
+        });
+        res.json({ audioContent: r.audioContent.toString('base64') });
+    } catch (e) { res.status(500).send(e.message); }
 });
 
-// --- 給食リアクションAPI (安全対策強化版) ---
-app.post('/lunch-reaction', async (req, res) => {
-    try {
-        if (!genAI) throw new Error("GenAI not ready");
-        const { count, name } = req.body;
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-        
-        const isSpecial = count % 10 === 0;
-        let prompt = "";
-
-        if (isSpecial) {
-            const specialThemes = [
-                "生徒を神様のように崇め奉り、大げさに感謝する",
-                "カリカリの美味しさについて、グルメレポーターのように情熱的に語る",
-                "生徒との出会いと絆について、涙ながらに熱く語る",
-                "「もっとくれたら世界を救える気がする」と壮大な話をする"
-            ];
-            const theme = specialThemes[Math.floor(Math.random() * specialThemes.length)];
-
-            prompt = `
-            あなたは猫の先生「ネル先生」です。生徒「${name}」さんから給食(カリカリ)をもらいました。
-            本日${count}個目です！
-            テーマ: 【${theme}】
-            【厳守】60文字程度。注釈禁止。語尾「にゃ」。
-            `;
-        } else {
-            const nuances = [
-                "食べる音（カリッ、ポリポリ）をメインにする",
-                "「うまい！」「美味しい！」と叫ぶ",
-                "「幸せ〜」と表現する",
-                "「もっと！」とねだる",
-                "「いい音だにゃ...」と噛み締める"
-            ];
-            const nuance = nuances[Math.floor(Math.random() * nuances.length)];
-
-            prompt = `
-            あなたは猫の先生「ネル先生」です。カリカリを1つ食べました。
-            ニュアンス: 【${nuance}】
-            【厳守】15文字以内の一言のみ。語尾「にゃ」。
-            `;
-        }
-
-        const result = await model.generateContent(prompt);
-        
-        // ★ここが重要：結果が空でないか確認
-        let replyText = result.response.text();
-        if (!replyText) {
-            replyText = "おいしいにゃ！"; // 万が一のデフォルト値
-        } else {
-            replyText = replyText.trim()
-                .replace(/^[A-C][:：]\s*/i, '')
-                .replace(/^テーマ[:：]\s*/, '');
-            
-            if (!isSpecial && replyText.includes('\n')) {
-                replyText = replyText.split('\n')[0];
-            }
-        }
-
-        res.json({ reply: replyText, isSpecial: isSpecial });
-    } catch (err) { 
-        console.error(err);
-        res.status(500).json({ error: "Lunch Error" }); 
-    }
-});
-
-// チャットAPI
-app.post('/chat', async (req, res) => {
-    try {
-        if (!genAI) throw new Error("GenAI not ready");
-        const { message, grade, name } = req.body;
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-        const prompt = `あなたは「ネル先生」。相手は小学${grade}年生「${name}」。30文字以内、語尾「にゃ」。絵文字禁止。発言: ${message}`;
-        const result = await model.generateContent(prompt);
-        res.json({ reply: result.response.text() });
-    } catch (err) { res.status(500).json({ error: "Chat Error" }); }
-});
-
-// 画像分析API
+// 分析API
 app.post('/analyze', async (req, res) => {
     try {
-        if (!genAI) throw new Error("GenAI not ready");
         const { image, mode, grade, subject } = req.body;
-        const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.0-flash", 
-            generationConfig: { responseMimeType: "application/json" } 
-        });
-        
-        const role = `あなたは「ネル先生」。小学${grade}年生の「${subject}」。`;
-        const scanInstruction = `画像の「最上部」から「最下部」まで、すべての問題を漏らさず抽出してください。問題文は一字一句正確に。`;
-        const hintInstruction = `
-        "hints": 生徒が段階的に解けるよう、必ず3つのヒントを作成してください。正解そのものは書かないでください。
-        ■漢字: 意味、部首、構成要素。
-        ■算数: 考え方、式、注目点。
-        `;
-        
-        let prompt = "";
-        if (mode === 'explain') {
-            prompt = `${role} ${scanInstruction} 以下のJSON形式で出力。[{"id":1,"label":"問題番号","question":"文","correct_answer":"正解",${hintInstruction}}] 記号は×÷。語尾「にゃ」。`;
-        } else {
-            prompt = `${role} 厳格な採点。${scanInstruction} [{"id":1,"label":"問題番号","question":"文","correct_answer":"正解","student_answer":"手書き読取(空欄なら\"\")",${hintInstruction}}]`;
-        }
-
-        const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
-        res.json(JSON.parse(result.response.text().replace(/\*/g, '×').replace(/\//g, '÷')));
-    } catch (err) { res.status(500).json({ error: "AI Error" }); }
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash", generationConfig: { responseMimeType: "application/json" } });
+        const hint = `- "hints": ヒント3つ(1.考え方 2.式 3.ほぼ答え)。語尾は「〜にゃ」。`;
+        let prompt = mode === 'explain' ? `ネル先生。小学${grade}${subject}。1."question":書き起こし 2."correct_answer":正解 3.${hint} 4.記号は×÷。JSON配列。` : `採点。小学${grade}${subject}。1."question":書き起こし 2."correct_answer":正解 3."student_answer":手書き読取 4.${hint} JSON配列。`;
+        const r = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
+        res.json(JSON.parse(r.response.text().replace(/\*/g, '×').replace(/\//g, '÷')));
+    } catch (e) { res.status(500).json({ error: "AI Error" }); }
 });
 
+// 給食API
+app.post('/lunch-reaction', async (req, res) => {
+    try {
+        const { count, name } = req.body;
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+        const isSpecial = count % 10 === 0;
+        let prompt = isSpecial 
+            ? `あなたは猫の先生「ネル先生」。生徒「${name}」から給食(カリカリ)${count}個目をもらった。60文字程度で熱く感謝を語って。注釈禁止。語尾「にゃ」。`
+            : `あなたは猫の先生「ネル先生」。カリカリを1つ食べた。15文字以内で一言リアクション。「うみゃい！」など。語尾「にゃ」。`;
+        const r = await model.generateContent(prompt);
+        res.json({ reply: r.response.text().trim(), isSpecial });
+    } catch (e) { res.status(500).json({ error: "Error" }); }
+});
+
+// HTTPサーバー起動
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// Live API Proxy
-const wss = new WebSocketServer({ server });
+
+// ★★★ Gemini Live API Proxy ★★★
+const wss = new WebSocketServer({ noServer: true });
+
+// HTTPサーバーのUpgradeリクエストをフックしてWebSocketに流す
+server.on('upgrade', (request, socket, head) => {
+    wss.handleUpgrade(request, socket, head, (ws) => {
+        wss.emit('connection', ws, request);
+    });
+});
+
 wss.on('connection', (clientWs) => {
-    let geminiWs = null;
+    console.log('Client connected to Live Chat');
+    
     const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidirectionalGenerateContent?key=${process.env.GEMINI_API_KEY}`;
+    let geminiWs = null;
+
     try {
         geminiWs = new WebSocket(GEMINI_URL);
+
         geminiWs.on('open', () => {
-            geminiWs.send(JSON.stringify({
+            console.log('Connected to Gemini');
+            // 1. 初期設定 (Setup) 送信
+            const setupMsg = {
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
-                    generation_config: { response_modalities: ["AUDIO"], speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Puck" } } } },
-                    system_instruction: { parts: [{ text: `あなたはネル先生です。語尾は「にゃ」。短く話して。` }] }
+                    generation_config: {
+                        response_modalities: ["AUDIO"],
+                        speech_config: {
+                            voice_config: { prebuilt_voice_config: { voice_name: "Puck" } } // 猫っぽい声
+                        }
+                    },
+                    system_instruction: {
+                        parts: [{ 
+                            text: `あなたは『猫後市立ねこづか小学校』のネル先生です。
+                            語尾は必ず『〜にゃ』『〜だにゃ』をつけてください。
+                            小学生が相手なので、優しく、元気よく、短めの文章で話してください。
+                            会話の合間に『にゃ〜ん』と鳴き声を混ぜたり、喉を鳴らす音を入れたりして、猫らしさを全開にしてください。
+                            相手の話を遮って反応しても構いません。相槌を打ってください。` 
+                        }]
+                    }
                 }
-            }));
+            };
+            geminiWs.send(JSON.stringify(setupMsg));
         });
-        geminiWs.on('message', (data) => { if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data); });
-        geminiWs.on('error', (e) => console.error('Gemini WS Error:', e));
-        geminiWs.on('close', () => {});
-    } catch (e) { clientWs.close(); }
+
+        // 2. Geminiからの音声 -> クライアントへ
+        geminiWs.on('message', (data) => {
+            if (clientWs.readyState === WebSocket.OPEN) {
+                clientWs.send(data);
+            }
+        });
+
+        geminiWs.on('error', (e) => console.error('Gemini Error:', e));
+        geminiWs.on('close', () => console.log('Gemini Closed'));
+
+    } catch (e) {
+        console.error("Connection failed:", e);
+        clientWs.close();
+    }
+
+    // 3. クライアントからの音声 -> Geminiへ
     clientWs.on('message', (data) => {
         try {
             const parsed = JSON.parse(data);
             if (parsed.realtime_input && geminiWs && geminiWs.readyState === WebSocket.OPEN) {
                 geminiWs.send(JSON.stringify(parsed));
             }
-        } catch (e) {}
+        } catch (e) { /* 無視 */ }
     });
-    clientWs.on('close', () => { if (geminiWs && geminiWs.readyState === WebSocket.OPEN) geminiWs.close(); });
+
+    clientWs.on('close', () => {
+        if (geminiWs && geminiWs.readyState === WebSocket.OPEN) geminiWs.close();
+    });
 });
