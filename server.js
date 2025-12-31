@@ -4,7 +4,8 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { WebSocketServer } from 'ws'; // ★WebSocketServerをインポート★
+// ★修正点1：WebSocket をデフォルトインポートとして追加（これで new WebSocket が使えるようになります）
+import WebSocket, { WebSocketServer } from 'ws'; 
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,40 +15,41 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, '.')));
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const ttsClient = new textToSpeech.TextToSpeechClient({ 
-    credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON) 
-});
+// 認証情報の読み込みエラー対策
+let genAI;
+let ttsClient;
+try {
+    genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    ttsClient = new textToSpeech.TextToSpeechClient({ 
+        credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON) 
+    });
+} catch (e) {
+    console.error("Credentials Error:", e.message);
+    // 起動時に環境変数がなくても、サーバーだけは立ち上がるようにする（ログで気づけるように）
+}
 
-// SSML生成（ロボット声対策強化版）
+// SSML生成
 function createSSML(text, mood) {
     let rate = "1.0"; let pitch = "0.0";
     if (mood === "happy") { rate = "1.1"; pitch = "+2st"; }
-    if (mood === "thinking") { rate = "0.95"; pitch = "-1st"; }
-    if (mood === "gentle") { rate = "0.9"; pitch = "+1st"; }
     if (mood === "excited") { rate = "1.2"; pitch = "+4st"; }
+    if (mood === "thinking") { rate = "0.95"; pitch = "-1st"; }
     
     let cleanText = text.replace(/🐾|✨|⭐|🎵|🐟/g, '').replace(/⭕️/g, '正解').replace(/❌/g, '不正解');
 
-    // ★特別対策：教科選択メッセージはシンプルに
-    if (cleanText.includes("どの教科") && cleanText.includes("にするのかにゃ")) {
+    if (cleanText.includes("どの教科") || cleanText.includes("にするにゃ")) {
         return `<speak>${cleanText}</speak>`;
     }
 
-    cleanText = cleanText
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-
-    const processedText = cleanText
-        .replace(/……/g, '<break time="650ms"/>')
-        .replace(/にゃ/g, '<prosody pitch="+3st">にゃ</prosody>'); // プロソディタグを安定化のため個別に適用
+    cleanText = cleanText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const processedText = cleanText.replace(/……/g, '<break time="650ms"/>').replace(/にゃ/g, 'にゃ');
         
     return `<speak><prosody rate="${rate}" pitch="${pitch}">${processedText}</prosody></speak>`;
 }
 
 app.post('/synthesize', async (req, res) => {
     try {
+        if (!ttsClient) throw new Error("TTS Client not initialized");
         const { text, mood } = req.body;
         if (!text) return res.status(400).json({ error: "No text" });
 
@@ -59,24 +61,41 @@ app.post('/synthesize', async (req, res) => {
             });
             return res.json({ audioContent: response.audioContent.toString('base64') });
         } catch (innerErr) {
-            console.warn("TTS Rich Failed, retrying simple mode:", innerErr.message);
-            // 失敗したらシンプルなSSMLで再試行
+            console.warn("TTS Retry:", innerErr.message);
             const [retryRes] = await ttsClient.synthesizeSpeech({
-                input: { text: text.replace(/🐾|✨|⭐|🎵|🐟/g, '').replace(/⭕️/g, '正解').replace(/❌/g, '不正解') }, // タグなしテキスト
+                input: { text: text.replace(/🐾|✨|⭐|🎵|🐟/g, '') },
                 voice: { languageCode: 'ja-JP', name: 'ja-JP-Neural2-B' },
                 audioConfig: { audioEncoding: 'MP3' },
             });
             return res.json({ audioContent: retryRes.audioContent.toString('base64') });
         }
     } catch (err) { 
-        console.error("TTS Fatal Error:", err);
+        console.error("TTS Error:", err);
         res.status(500).send(err.message); 
     }
 });
 
-// 通常の分析エンドポイントは残す
+app.post('/chat', async (req, res) => {
+    try {
+        if (!genAI) throw new Error("GenAI not initialized");
+        const { message, grade, name } = req.body;
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+        
+        const prompt = `あなたは「ネル先生」。小学${grade}年生の「${name}」さんとの会話。
+        発言: ${message}
+        30文字以内、猫語（〜にゃ）で優しく返信。`;
+        
+        const result = await model.generateContent(prompt);
+        res.json({ reply: result.response.text() });
+    } catch (err) {
+        console.error("Chat Error:", err);
+        res.status(500).json({ error: "Chat Error" });
+    }
+});
+
 app.post('/analyze', async (req, res) => {
     try {
+        if (!genAI) throw new Error("GenAI not initialized");
         const { image, mode, grade, subject } = req.body;
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash", 
@@ -84,29 +103,16 @@ app.post('/analyze', async (req, res) => {
         });
         
         const hintInstruction = `
-        - "hints": 生徒が間違えた時に備えて、解き方を導くヒントを3つ作成してください。
-          1. 「考え方の入り口」
-          2. 「式のヒントや途中経過」
-          3. 「答えにかなり近づく大きなヒント（※ただし答えそのものは書かないでください）」
-          語尾は「〜だにゃ」「〜してね」等のネル先生口調にしてください。
+        - "hints": ヒント3つ。1.考え方 2.式 3.ほぼ答え。語尾は「〜にゃ」。
         `;
 
         let prompt = "";
         if (mode === 'explain') {
-            prompt = `あなたは「ネル先生」。小学${grade}年生の${subject}。画像から全問抽出。
-            1. "question": 問題文書き起こし。
-            2. "correct_answer": 正解。
-            3. ${hintInstruction}
-            4. 算数記号は×÷。JSON配列で出力。
-            `;
+            prompt = `ネル先生。小学${grade} ${subject}。全問抽出。
+            1."question":書き起こし 2."correct_answer":正解 3.${hintInstruction} 4.記号は×÷。JSON配列。`;
         } else {
-            prompt = `厳格な採点先生。小学${grade}年生の${subject}。
-            1. "question": 問題文書き起こし。
-            2. "correct_answer": 正解。
-            3. "student_answer": 手書き文字読み取り(空欄なら"")。
-            4. ${hintInstruction}
-            JSON配列で出力。
-            `;
+            prompt = `採点。小学${grade} ${subject}。
+            1."question":書き起こし 2."correct_answer":正解 3."student_answer":手書き読取 4.${hintInstruction} JSON配列。`;
         }
 
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
@@ -122,84 +128,80 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// ★★★ Gemini Live API用 WebSocketサーバー ★★★
+// ★★★ WebSocketサーバー ★★★
 const wss = new WebSocketServer({ server });
 
-wss.on('connection', async (ws) => {
-    console.log('Client connected to WebSocket for live chat');
-    
-    // Gemini Live APIへの接続
+wss.on('connection', (ws) => {
+    console.log('Client connected to WebSocket');
     let geminiWs = null;
 
-    // クライアントから初期設定を受け取る
-    ws.on('message', async (message) => {
-        const data = JSON.parse(message);
+    ws.on('message', (message) => {
+        try {
+            const data = JSON.parse(message);
 
-        if (data.type === 'init') {
-            const { grade, name } = data.payload;
-            
-            // Gemini Live APIのURL
-            const geminiLiveApiUrl = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidirectionalGenerateContent?key=" + process.env.GEMINI_API_KEY;
+            if (data.type === 'init') {
+                const { grade, name } = data.payload;
+                const geminiLiveApiUrl = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidirectionalGenerateContent?key=" + process.env.GEMINI_API_KEY;
 
-            geminiWs = new WebSocket(geminiLiveApiUrl);
+                // ★修正点2：ここで new WebSocket を使うために、冒頭の import WebSocket from 'ws' が必要でした
+                geminiWs = new WebSocket(geminiLiveApiUrl);
 
-            geminiWs.onopen = () => {
-                console.log('Connected to Gemini Live API');
-                // ネル先生の魂設定をGeminiに送信
-                const setupMessage = {
-                    "configure_session": {
-                        "model": "models/gemini-1.5-flash-preview-0514", // Live APIは専用モデル
-                        "generation_config": {
-                            "response_modalities": ["audio"],
-                            "speech_config": {
-                                "voice_config": { "prebuilt_voice_config": { "voice_name": "Puck" } } // 猫っぽい声
+                geminiWs.onopen = () => {
+                    console.log('Connected to Gemini Live API');
+                    const setupMessage = {
+                        "setup": { // ★Live APIの仕様に合わせてキー名を 'setup' に修正
+                            "model": "models/gemini-2.0-flash-exp", 
+                            "generation_config": {
+                                "response_modalities": ["AUDIO"], // 小文字ではなく大文字推奨の場合あり
+                                "speech_config": {
+                                    "voice_config": { "prebuilt_voice_config": { "voice_name": "Puck" } }
+                                }
+                            },
+                            "system_instruction": {
+                                "parts": [{ "text": `あなたはネル先生。相手は小学${grade}年生の${name}さん。語尾は「にゃ」。` }]
                             }
-                        },
-                        "system_instruction": {
-                            "parts": [{ "text": `あなたは『猫後市立ねこづか小学校』のネル先生です。相手は小学${grade}年生の「${name}」さんです。語尾は必ず『〜にゃ』にしてください。親切に、短く（30文字以内）、優しく、楽しくお話ししてください。子供の相談に乗ってあげてください。` }]
                         }
+                    };
+                    geminiWs.send(JSON.stringify(setupMessage));
+                };
+
+                geminiWs.onmessage = (event) => {
+                    try {
+                        const geminiData = JSON.parse(event.data);
+                        // 音声データがある場合
+                        if (geminiData.serverContent?.modelTurn?.parts?.[0]?.inlineData) {
+                             const audioData = geminiData.serverContent.modelTurn.parts[0].inlineData.data;
+                             ws.send(JSON.stringify({ type: 'audio', audioContent: audioData }));
+                        }
+                    } catch (e) {
+                        console.error("Gemini Msg Parse Error", e);
                     }
                 };
-                geminiWs.send(JSON.stringify(setupMessage));
-            };
+                
+                geminiWs.onerror = (err) => console.error("Gemini WS Error:", err);
+                geminiWs.onclose = () => console.log("Gemini WS Closed");
 
-            geminiWs.onmessage = (event) => {
-                // Geminiからのメッセージをそのままクライアントに転送
-                const geminiData = JSON.parse(event.data);
-                if (geminiData.generate_content_response?.candidates?.[0]?.audio) {
-                    ws.send(JSON.stringify({ type: 'audio', audioContent: geminiData.generate_content_response.candidates[0].audio.audio_bytes }));
-                } else if (geminiData.generate_content_response?.candidates?.[0]?.text) {
-                    // テキスト応答もクライアントに送る (デバッグ用や画面表示用)
-                    ws.send(JSON.stringify({ type: 'text', textContent: geminiData.generate_content_response.candidates[0].text.parts[0].text }));
+            } else if (data.type === 'audio') {
+                // クライアントからの音声を転送
+                if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+                    const audioMsg = {
+                        "realtime_input": {
+                            "media_chunks": [{
+                                "mime_type": "audio/pcm;rate=16000", // WebMではなくPCMが推奨されることが多いが一旦WebMで試行
+                                "data": data.audioChunk
+                            }]
+                        }
+                    };
+                    // Live APIは仕様が流動的なため、シンプルなcontent送信形式を使用
+                    geminiWs.send(JSON.stringify({ "client_content": { "turns": [{ "role": "user", "parts": [{ "inline_data": { "mime_type": "audio/webm", "data": data.audioChunk } }] }] } }));
                 }
-            };
-
-            geminiWs.onerror = (error) => {
-                console.error('Gemini Live API Error:', error);
-                ws.send(JSON.stringify({ type: 'error', message: 'Gemini Live APIでエラーが発生したにゃ。' }));
-                geminiWs.close();
-            };
-
-            geminiWs.onclose = () => {
-                console.log('Disconnected from Gemini Live API');
-            };
-
-        } else if (data.type === 'audio') {
-            // クライアントからの音声データを受け取り、Geminiへ転送
-            if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
-                geminiWs.send(JSON.stringify({ "stream_generate_content_request": { "audio_input": { "audio_chunk": data.audioChunk } } }));
             }
+        } catch (e) {
+            console.error("WS Message Error:", e);
         }
     });
 
     ws.on('close', () => {
-        console.log('Client disconnected from WebSocket');
-        if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
-            geminiWs.close();
-        }
+        if (geminiWs && geminiWs.readyState === WebSocket.OPEN) geminiWs.close();
     });
-
-    ws.onerror = (error) => {
-        console.error('Client WebSocket Error:', error);
-    };
 });
