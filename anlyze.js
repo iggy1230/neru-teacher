@@ -1,4 +1,4 @@
-// --- anlyze.js (確実に対話できる修正版) ---
+// --- anlyze.js (マイク・ロボット声修正版) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -8,7 +8,6 @@ let currentSubject = '';
 let currentMode = ''; 
 let lunchCount = 0; 
 
-// 教科ごとのアイコン
 const subjectImages = {
     'こくご': 'nell-kokugo.png', 'さんすう': 'nell-sansu.png',
     'りか': 'nell-rika.png', 'しゃかい': 'nell-shakai.png'
@@ -20,18 +19,9 @@ function selectMode(m) {
     currentMode = m; 
     switchScreen('screen-main'); 
 
-    // UIリセット
-    const ids = [
-        'subject-selection-view', 'upload-controls', 'thinking-view', 
-        'problem-selection-view', 'final-view', 'chalkboard',
-        'chat-view', 'lunch-view'
-    ];
-    ids.forEach(id => {
-        const el = document.getElementById(id);
-        if(el) el.classList.add('hidden');
-    });
+    const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'lunch-view'];
+    ids.forEach(id => document.getElementById(id).classList.add('hidden'));
 
-    // アイコンリセット
     const icon = document.querySelector('.nell-avatar-wrap img');
     if(icon) icon.src = defaultIcon;
 
@@ -41,29 +31,119 @@ function selectMode(m) {
     if (m === 'review') {
         renderMistakeSelection();
     } else if (m === 'chat') {
-        // ★こじんめんだんモード
+        // ★面談モード初期化
         document.getElementById('chat-view').classList.remove('hidden');
         updateNellMessage("悩み事があるのかにゃ？何でも聞いてあげるにゃ。", "gentle");
         
-        // ボタンの初期化
+        // ボタン状態リセット
         const btn = document.getElementById('mic-btn');
         btn.innerText = "🎤 おはなしする";
         btn.disabled = false;
+        btn.style.background = "#ff85a1"; // ピンクに戻す
         document.getElementById('user-speech-text').innerText = "...";
 
     } else if (m === 'lunch') {
-        // ★おいしい給食モード
         document.getElementById('lunch-view').classList.remove('hidden');
         lunchCount = 0; 
         updateNellMessage("お腹ペコペコだにゃ……カリカリ持ってる？", "thinking");
     } else {
-        // 通常モード
         document.getElementById('subject-selection-view').classList.remove('hidden');
-        updateNellMessage("どの教科にするのかにゃ？", "normal");
+        updateNellMessage("教科を選ぶにゃ", "normal");
     }
 }
 
-// 2. カリカリ・ハート演出
+// 2. ★修正版：音声認識（こじんめんだん）
+function startListening() {
+    // ブラウザ互換性チェック
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        return alert("ごめんにゃ、このブラウザだとマイクが使えないみたいにゃ……(Chrome推奨)");
+    }
+
+    const btn = document.getElementById('mic-btn');
+    const txt = document.getElementById('user-speech-text');
+    
+    // 前回の認識が残っていたら止めるための処理（念のため）
+    if (window.currentRecognition) {
+        try { window.currentRecognition.stop(); } catch(e){}
+    }
+
+    const recognition = new SpeechRecognition();
+    window.currentRecognition = recognition; // グローバルに保持
+
+    recognition.lang = 'ja-JP';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    // --- イベントハンドラ設定 ---
+    recognition.onstart = () => {
+        btn.innerText = "👂 聞いてるにゃ...";
+        btn.disabled = true;
+        btn.style.background = "#ff5252"; // 赤くして録音中をアピール
+        txt.innerText = "（お話ししてね……）";
+    };
+
+    recognition.onend = () => {
+        btn.innerText = "🎤 おはなしする";
+        btn.disabled = false;
+        btn.style.background = "#ff85a1"; // 元の色に戻す
+    };
+
+    recognition.onerror = (event) => {
+        console.error("Speech Error:", event.error);
+        btn.innerText = "🎤 おはなしする";
+        btn.disabled = false;
+        btn.style.background = "#ff85a1";
+        
+        if (event.error === 'not-allowed') {
+            alert("マイクの使用が許可されていないにゃ。ブラウザの設定を見てみてにゃ。");
+        } else if (event.error === 'no-speech') {
+            updateNellMessage("何も聞こえなかったにゃ……？", "thinking");
+        } else {
+            updateNellMessage("エラーだにゃ……。", "thinking");
+        }
+    };
+
+    recognition.onresult = async (event) => {
+        const speechResult = event.results[0][0].transcript;
+        txt.innerText = "「" + speechResult + "」";
+        
+        // サーバーへ送信
+        try {
+            updateNellMessage("考え中にゃ……", "thinking");
+            
+            const res = await fetch('/chat', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    message: speechResult,
+                    grade: currentUser.grade,
+                    name: currentUser.name
+                })
+            });
+            
+            if (!res.ok) throw new Error("Server Error");
+            const data = await res.json();
+            
+            // ネル先生の返答
+            updateNellMessage(data.reply, "gentle");
+            
+        } catch(e) {
+            console.error(e);
+            updateNellMessage("通信エラーだにゃ……もう一回言って？", "thinking");
+        }
+    };
+
+    // --- 録音開始 ---
+    try {
+        recognition.start();
+    } catch(e) {
+        console.error("Start Error:", e);
+        alert("マイクの起動に失敗したにゃ。ページをリロードしてみてにゃ。");
+    }
+}
+
+// 3. カリカリ・ハート演出
 function updateMiniKarikari() {
     if(currentUser) {
         document.getElementById('mini-karikari-count').innerText = currentUser.karikari;
@@ -97,118 +177,28 @@ function showKarikariEffect(amount = 5) {
     }
 }
 
-// 3. ★修正版：こじんめんだん（音声認識API使用）
-// ※HTMLのボタン onclick="startListening()" と名前を合わせました
-function startListening() {
-    // ブラウザの音声認識機能を確認
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-        return alert("ごめんにゃ、このブラウザだと耳が遠いみたいにゃ……(Chromeを使ってね)");
-    }
-
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'ja-JP';
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-
-    const btn = document.getElementById('mic-btn');
-    const txt = document.getElementById('user-speech-text');
-
-    // 録音開始
-    try {
-        recognition.start();
-        btn.innerText = "👂 聞いてるにゃ...";
-        btn.classList.add('mic-active'); // デザイン用クラス（任意）
-        btn.disabled = true;
-        updateNellMessage("うんうん、聞いてるにゃ。", "normal");
-    } catch(e) {
-        console.error(e);
-        btn.disabled = false;
-    }
-
-    recognition.onresult = async (event) => {
-        const speechResult = event.results[0][0].transcript;
-        txt.innerText = "「" + speechResult + "」";
-        
-        // サーバーのチャットAIに送る
-        try {
-            updateNellMessage("考え中にゃ……", "thinking");
-            
-            const res = await fetch('/chat', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    message: speechResult,
-                    grade: currentUser.grade,
-                    name: currentUser.name
-                })
-            });
-            
-            const data = await res.json();
-            // ネル先生が喋る
-            updateNellMessage(data.reply, "gentle");
-            
-        } catch(e) {
-            updateNellMessage("よく聞こえなかったにゃ……もう一回言って？", "thinking");
-        }
-    };
-
-    recognition.onend = () => {
-        btn.innerText = "🎤 おはなしする";
-        btn.classList.remove('mic-active');
-        btn.disabled = false;
-    };
-
-    recognition.onerror = (event) => {
-        console.error("Speech Error:", event.error);
-        btn.innerText = "🎤 おはなしする";
-        btn.disabled = false;
-        if (event.error === 'not-allowed') {
-            alert("マイクの使用を許可してほしいにゃ！");
-        } else {
-            updateNellMessage("うまく聞き取れなかったにゃ。", "thinking");
-        }
-    };
-}
-
-
 // 4. おいしい給食
 function giveLunch() {
     if (currentUser.karikari < 1) {
         return updateNellMessage("カリカリがないにゃ……。", "thinking");
     }
-    
     currentUser.karikari -= 1;
-    saveAndSync();
-    updateMiniKarikari();
-    showKarikariEffect(1);
-    
+    saveAndSync(); updateMiniKarikari(); showKarikariEffect(1);
     lunchCount++;
     
     let mood = "happy";
     let msg = "";
-    
-    if (lunchCount < 3) {
-        msg = "おいしいにゃ！";
-    } else if (lunchCount < 7) {
+    if (lunchCount < 3) { msg = "おいしいにゃ！"; } 
+    else if (lunchCount < 7) { mood = "excited"; msg = "もっと欲しいにゃ！カリカリ最高にゃ！"; } 
+    else {
         mood = "excited";
-        msg = "もっと欲しいにゃ！カリカリ最高にゃ！";
-    } else {
-        mood = "excited";
-        const talks = [
-            "うみゃいうみゃい！止まらないにゃ！",
-            "カリカリこそ正義だにゃ！もっともっと！",
-            "幸せだにゃ〜！勉強も捗るにゃ〜！",
-            "ネル先生、元気100倍だにゃ！"
-        ];
+        const talks = ["うみゃいうみゃい！", "幸せだにゃ〜！", "ネル先生、元気100倍だにゃ！", "もっともっと〜！"];
         msg = talks[Math.floor(Math.random() * talks.length)];
     }
-    
     updateNellMessage(msg, mood);
 }
 
-
-// 5. 各種ヘルパー関数（既存のまま）
+// 5. その他ヘルパー（既存のまま）
 function setSubject(s) {
     currentSubject = s; 
     if (currentUser) { currentUser.history[s] = (currentUser.history[s] || 0) + 1; saveAndSync(); }
