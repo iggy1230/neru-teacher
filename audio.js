@@ -1,19 +1,20 @@
-// --- audio.js (再生エラー対策版) ---
+// --- audio.js (再生強化版) ---
 
 let currentAudio = null;
 
 async function speakNell(text, mood = "normal") {
-    // 空文字や未定義の場合は何もしない
+    // 空文字チェック
     if (!text || text === "undefined" || text.trim() === "") return;
 
-    // 前の音声を停止
+    // 前の音声を強制停止
     if (currentAudio) { 
         currentAudio.pause(); 
+        currentAudio.currentTime = 0;
         currentAudio = null; 
     }
 
     try {
-        // サーバーの音声合成APIを呼び出す
+        console.log("Fetching TTS for:", text);
         const res = await fetch('/synthesize', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -25,59 +26,45 @@ async function speakNell(text, mood = "normal") {
         const data = await res.json();
         if (!data.audioContent) throw new Error("No audio content");
 
-        // Base64音声を再生
-        // 再生時にエラーが出たらフォールバックするようにイベントリスナーを設定
+        // 音声再生
         return new Promise(resolve => {
             const audio = new Audio("data:audio/mp3;base64," + data.audioContent);
             currentAudio = audio;
 
-            audio.onended = resolve;
-            
-            // 再生エラー（形式非対応など）の場合
-            audio.onerror = () => {
-                console.warn("Audio Playback Error, falling back to browser voice.");
-                fallbackSpeech(text, resolve); 
+            audio.onended = () => {
+                console.log("Playback ended");
+                resolve();
             };
             
-            // play()のPromiseが拒否された場合（自動再生ポリシーなど）
-            audio.play().catch(e => {
-                console.warn("Autoplay blocked or failed:", e);
-                // 再生できない場合は、無理にロボット声を出さずに終了させる（エラー音回避）
-                resolve();
-            });
+            audio.onerror = (e) => {
+                console.error("Audio Playback Error:", e);
+                // エラーでも止まらないようにresolveする
+                resolve(); 
+            };
+            
+            // 再生実行（ユーザー操作直後でないとブロックされる可能性があるが、会話の流れなら通ることが多い）
+            const playPromise = audio.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(error => {
+                    console.warn("Autoplay blocked:", error);
+                    // 自動再生がブロックされた場合、ユーザーに「再生ボタン」などを出すのが定石だが
+                    // ここでは進行を止めないためにresolveする
+                    resolve();
+                });
+            }
         });
 
     } catch (e) {
-        console.warn("Voice Synthesis Failed (using browser voice):", e);
-        // 通信エラーなどの場合はブラウザの音声を使う
-        return new Promise(resolve => fallbackSpeech(text, resolve));
+        console.error("Voice Error:", e);
+        // サーバーエラー時は何もしない（無音で進む）
+        return Promise.resolve();
     }
 }
 
-// ブラウザ標準の音声合成（フォールバック）
-function fallbackSpeech(text, callback) {
-    if (!window.speechSynthesis) {
-        if (callback) callback();
-        return;
-    }
-    
-    // 現在の発声をキャンセル
-    window.speechSynthesis.cancel();
-
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = 'ja-JP';
-    u.rate = 1.2; // 少し早口にして子供っぽく
-    u.pitch = 1.5; // 声を高くして猫っぽく
-    
-    u.onend = callback;
-    u.onerror = callback; 
-    
-    window.speechSynthesis.speak(u);
-}
-
-// メッセージ更新関数
+// ネル先生のメッセージ更新ラッパー
 async function updateNellMessage(t, mood = "normal") {
     const el = document.getElementById('nell-text');
     if (el) el.innerText = t;
+    // テキスト表示後に音声を再生
     return await speakNell(t, mood);
 }
