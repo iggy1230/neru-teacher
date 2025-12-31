@@ -24,30 +24,25 @@ try {
 } catch (e) { console.error("Init Error:", e.message); }
 
 // --- 音声合成 (SSML安定版) ---
-// 修正点: 入れ子構造を廃止し、エラー率をゼロに近づけました
 function createSSML(text, mood) {
-    let rate = "1.1"; // 基本的に少し早口で子供っぽく
-    let pitch = "+2st"; // 声を高く
+    let rate = "1.1"; 
+    let pitch = "+2st"; 
 
     if (mood === "thinking") { rate = "1.0"; pitch = "0st"; }
     if (mood === "gentle") { rate = "0.95"; pitch = "+1st"; }
     if (mood === "excited") { rate = "1.2"; pitch = "+4st"; }
     
-    // 記号削除とエスケープ
     let cleanText = text
         .replace(/[\u{1F600}-\u{1F6FF}]/gu, '')
         .replace(/🐾|✨|⭐|🎵|🐟|🎤|⭕️|❌/g, '')
         .replace(/&/g, 'と')
         .replace(/[<>"']/g, ' ');
 
-    // 短い文や特定のフレーズは安定性重視でタグなし（ただしVoice設定でキャラは保たれる）
     if (cleanText.length < 2 || cleanText.includes("どの教科")) {
         return `<speak>${cleanText}</speak>`;
     }
 
-    // 「……」を「間」に変換する処理だけ残し、他はシンプルに全体適用
     cleanText = cleanText.replace(/……/g, '<break time="500ms"/>');
-
     return `<speak><prosody rate="${rate}" pitch="${pitch}">${cleanText}</prosody></speak>`;
 }
 
@@ -60,14 +55,12 @@ app.post('/synthesize', async (req, res) => {
         try {
             const [response] = await ttsClient.synthesizeSpeech({
                 input: { ssml: createSSML(text, mood) },
-                // Voice設定: ここでキャラ性を担保
                 voice: { languageCode: 'ja-JP', name: 'ja-JP-Neural2-B' }, 
                 audioConfig: { audioEncoding: 'MP3' },
             });
             res.json({ audioContent: response.audioContent.toString('base64') });
         } catch (e) {
             console.warn("TTS Retry:", e.message);
-            // エラー時のリトライ（完全にタグなし）
             const [retry] = await ttsClient.synthesizeSpeech({
                 input: { text: text.replace(/[^a-zA-Z0-9\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/g, '') },
                 voice: { languageCode: 'ja-JP', name: 'ja-JP-Neural2-B' },
@@ -106,62 +99,58 @@ app.post('/analyze', async (req, res) => {
             generationConfig: { responseMimeType: "application/json" } 
         });
         
-        // 共通設定
         const role = `あなたは「ネル先生」という優秀な猫の先生です。小学${grade}年生の「${subject}」を教えています。`;
+        
+        // ★重要: 読み取り漏れを防ぐための強力な指示
+        const scanInstruction = `
+        【最重要】
+        画像の「最上部」から「最下部」まで、すべての問題を漏らさず抽出してください。
+        ヘッダー付近やフッター付近にある問題も見逃さないでください。
+        `;
+
+        // ★重要: 採点モードでもヒントを出させる指示
+        const hintInstruction = `
+        "hints": 生徒が復習するために、必ず3段階のヒントを作成してください（必須）。
+          1. 「考え方の入り口（〜してみようにゃ）」
+          2. 「式のヒントや注目点（〜に注目だにゃ）」
+          3. 「答えにかなり近づくヒント（〜計算するとどうなるかにゃ？）」※答えそのものは書かない
+        `;
         
         let prompt = "";
         
         if (mode === 'explain') {
-            // 【教えてネル先生】: 精度重視の詳細プロンプト
             prompt = `
             ${role}
-            提供された宿題の画像を詳しく分析し、全ての問題について以下のJSONデータを作成してください。
+            ${scanInstruction}
+            画像内の全ての問題について以下のJSONデータを作成してください。
             
-            # 出力フォーマット (JSON配列)
             [
               {
                 "id": 1,
-                "label": "問題番号(例: (1))",
-                "question": "画像内の問題文を一字一句正確に書き起こしてください。読み取れない場合は推測せず『読み取れませんでした』としてください。",
-                "correct_answer": "この問題の正解",
-                "hints": [
-                  "ヒント1: まずはどう考えるか、考え方の入り口を『〜してみようにゃ』という口調で。",
-                  "ヒント2: 式の立て方や、注目のポイントを『〜に注目だにゃ』という口調で。",
-                  "ヒント3: 答えにかなり近づく具体的なヒントを『〜計算するとどうなるかにゃ？』という口調で（※答えそのものは書かない）"
-                ]
+                "label": "問題番号",
+                "question": "問題文を正確に書き起こし",
+                "correct_answer": "正解",
+                ${hintInstruction}
               }
             ]
-            
-            # 制約事項
-            - 算数の記号は「×」「÷」を使用してください。
-            - 子供が理解できる言葉を選んでください。
-            - 語尾は必ず「にゃ」にしてください。
+            算数記号は「×」「÷」を使用。語尾は「にゃ」。
             `;
         } else {
-            // 【採点・復習】: 手書き認識重視
             prompt = `
             ${role}
             厳格な採点官として画像を分析してください。
+            ${scanInstruction}
             
-            # 出力フォーマット (JSON配列)
             [
               {
                 "id": 1,
                 "label": "問題番号",
                 "question": "問題文の正確な書き起こし",
                 "correct_answer": "正解（数字や単語のみ）",
-                "student_answer": "画像内の手書き文字から読み取った生徒の答え（空欄や読み取れない場合は空文字\"\"）",
-                "hints": [
-                   "考え方のヒント（〜にゃ）",
-                   "式のヒント（〜にゃ）",
-                   "答えに近いヒント（〜にゃ）"
-                ]
+                "student_answer": "手書き文字から読み取った生徒の答え（空欄なら空文字\"\"）",
+                ${hintInstruction}
               }
             ]
-            
-            # 制約事項
-            - student_answer は手書き文字を慎重に読み取ってください。
-            - 採点のため、correct_answer は余計な文字を含まないでください。
             `;
         }
 
@@ -179,33 +168,26 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- Live API Proxy (WebSocket) ---
+// --- Live API Proxy ---
 const wss = new WebSocketServer({ server });
-
 wss.on('connection', (clientWs) => {
     let geminiWs = null;
     const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidirectionalGenerateContent?key=${process.env.GEMINI_API_KEY}`;
-
     try {
         geminiWs = new WebSocket(GEMINI_URL);
         geminiWs.on('open', () => {
-            const setupMsg = {
+            geminiWs.send(JSON.stringify({
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
-                    generation_config: {
-                        response_modalities: ["AUDIO"],
-                        speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Puck" } } }
-                    },
+                    generation_config: { response_modalities: ["AUDIO"], speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Puck" } } } },
                     system_instruction: { parts: [{ text: `あなたはネル先生です。語尾は「にゃ」。短く話して。` }] }
                 }
-            };
-            geminiWs.send(JSON.stringify(setupMsg));
+            }));
         });
         geminiWs.on('message', (data) => { if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data); });
         geminiWs.on('error', (e) => console.error('Gemini WS Error:', e));
         geminiWs.on('close', () => {});
     } catch (e) { clientWs.close(); }
-
     clientWs.on('message', (data) => {
         try {
             const parsed = JSON.parse(data);

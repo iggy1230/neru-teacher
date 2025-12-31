@@ -7,37 +7,73 @@
 }
 
 body { 
-    margin: 0; padding: 0; min-height: 100vh; 
-    background-color: #fffaf0; background-image: url('nell-bg.png'); 
-    background-size: cover; background-attachment: fixed; background-position: top center; 
+    margin: 0; 
+    padding: 0; 
+    min-height: 100vh; 
+    background-color: #fffaf0; 
+    background-image: url('nell-bg.png'); 
+    background-size: cover; 
+    background-attachment: fixed; 
+    background-position: top center; 
     font-family: 'M PLUS Rounded 1c', sans-serif; 
-    color: var(--primary); overflow-x: hidden; 
+    color: var(--primary); 
+    overflow-x: hidden; 
 }
 
+/* 画面レイアウト */
 .screen { 
-    max-width: 480px; margin: 0 auto; padding: 10px 15px 80px; /* 下部に余裕を持たせる */
-    min-height: 100vh; display: flex; flex-direction: column; 
-    box-sizing: border-box; justify-content: flex-start; position: relative;
+    max-width: 480px; 
+    margin: 0 auto; 
+    padding: 10px 15px 80px; /* 下部に余裕を持たせる */
+    min-height: 100vh; 
+    display: flex; 
+    flex-direction: column; 
+    box-sizing: border-box; 
+    justify-content: flex-start; 
+    position: relative;
 }
+
 .hidden { display: none !important; }
 
-/* タイトル */
+/* タイトルデザイン (丸ゴシック・濃いピンク・白縁) */
 .school-title { 
-    text-align: center; color: #d81b60; font-family: 'M PLUS Rounded 1c', sans-serif; 
-    font-size: 2.8rem; line-height: 1.1; margin: 0 0 25px 0; font-weight: 900; 
-    -webkit-text-stroke: 5px white; paint-order: stroke fill; 
-    text-shadow: 2px 2px 4px rgba(0,0,0,0.1); padding-top: 10px; 
+    text-align: center; 
+    color: #d81b60; 
+    font-family: 'M PLUS Rounded 1c', sans-serif; 
+    font-size: 2.8rem; 
+    line-height: 1.1; 
+    margin: 0 0 25px 0; 
+    font-weight: 900; 
+    
+    /* 白縁を太く */
+    -webkit-text-stroke: 5px white; 
+    paint-order: stroke fill; 
+    
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.1); 
+    padding-top: 10px; 
 }
 
-/* 学生証など既存スタイル */
-.id-card-wrap { position: relative; width: 320px !important; height: 320px !important; margin: 0 auto 15px; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.15); border: 6px solid white; background: white; flex-shrink: 0; }
+/* 学生証（ID Card） */
+.id-card-wrap { 
+    position: relative; 
+    width: 320px !important; 
+    height: 320px !important; 
+    margin: 0 auto 15px; 
+    border-radius: 20px; 
+    overflow: hidden; 
+    box-shadow: 0 10px 30px rgba(0,0,0,0.15); 
+    border: 6px solid white; 
+    background: white; 
+    flex-shrink: 0; 
+}
 .mini-id { width: 220px !important; height: 220px !important; margin: 0 auto; }
 .id-base-img { width: 100%; height: 100%; object-fit: contain; }
 #id-photo-slot { position: absolute; top: 133px; left: 21px; width: 94px; height: 102px; overflow: hidden; }
 .id-text-overlay { position: absolute; left: 190px; font-weight: 900; color: #333; font-size: 1rem; pointer-events: none; }
-.id-grade-text { top: 137px; } .id-name-text { top: 177px; }
+.id-grade-text { top: 137px; } 
+.id-name-text { top: 177px; }
 
-/* ユーザーリスト */
+/* ユーザー選択・フォーム */
 .gate-layout { display: flex; justify-content: flex-end; width: 100%; }
 .right-user-list { display: flex; flex-direction: column; gap: 20px; width: 120px; margin-left: auto; }
 .user-card { background: rgba(255,255,255,0.95); padding: 5px; border-radius: 15px; border: 2px solid var(--accent-pink); cursor: pointer; text-align: center; transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); position: relative; }
@@ -46,44 +82,64 @@ body {
 .delete-student-btn { position: absolute; top: 2px; right: 2px; background: #999; color: white; border: none; width: 18px; height: 18px; border-radius: 50%; font-size: 10px; cursor: pointer; }
 .styled-input, .styled-select { width: 100%; padding: 12px; margin: 5px 0 15px; border: 2px solid #ddd; border-radius: 10px; font-size: 1rem; box-sizing: border-box; font-family: inherit; }
 
-/* ★ネル先生のチャットUI（円形廃止・拡大）★ */
+/* ★ネル先生のチャットUI（円形廃止・拡大版）★ */
 .nell-chat { 
-    display: flex; align-items: flex-end; /* 下揃えに変更 */
-    margin: 20px 0 10px; width: 100%; flex-shrink: 0; position: relative;
+    display: flex; 
+    align-items: flex-end; /* 下揃え */
+    margin: 20px 0 10px; 
+    width: 100%; 
+    flex-shrink: 0; 
+    position: relative;
 }
 
 .nell-avatar-wrap { 
-    width: 110px; /* サイズ拡大 */
-    height: 110px; 
+    width: 120px; /* サイズを大きく */
+    height: 120px; 
     background: transparent; /* 背景透明 */
-    border: none; /* 枠線削除 */
-    border-radius: 0; /* 丸み削除 */
+    border: none; /* 枠線を消す */
+    border-radius: 0; /* 丸みを消す */
     flex-shrink: 0; 
-    position: relative; z-index: 5; 
-    margin-right: -20px; /* 吹き出しと近づける */
-    overflow: visible; /* ハート演出のため */
+    position: relative; 
+    z-index: 5; 
+    margin-right: -25px; /* 吹き出しと近づける */
+    overflow: visible; /* ハート演出がはみ出るように */
 }
+
 .nell-avatar-wrap img.nell-img { 
-    width: 100%; height: 100%; 
+    width: 100%; 
+    height: 100%; 
     object-fit: contain; 
-    filter: drop-shadow(0 5px 10px rgba(0,0,0,0.2)); /* 影をつける */
+    filter: drop-shadow(0 5px 5px rgba(0,0,0,0.1)); /* 影をつけて浮き上がらせる */
 }
 
 .chat-bubble { 
-    background: white; border: 4px solid var(--accent-pink); 
-    padding: 15px 20px 15px 30px; 
-    border-radius: 30px 30px 30px 0; /* 吹き出しの形調整 */
+    background: white; 
+    border: 4px solid var(--accent-pink); 
+    padding: 15px 20px 15px 35px; /* 左の余白を多めに */
+    border-radius: 30px 30px 30px 0; /* 吹き出しっぽい形に */
     flex: 1; 
     box-shadow: 0 4px 10px rgba(0,0,0,0.05); 
-    position: relative; z-index: 1; 
-    min-height: 60px; display: flex; align-items: center;
+    position: relative; 
+    z-index: 1; 
+    min-height: 60px; 
+    display: flex; 
+    align-items: center;
 }
-.chat-bubble p { margin: 0; font-size: 1rem; line-height: 1.5; font-weight: 700; font-family: 'Kiwi Maru', serif; }
+
+.chat-bubble p { 
+    margin: 0; 
+    font-size: 1rem; 
+    line-height: 1.5; 
+    font-weight: 700; 
+    font-family: 'Kiwi Maru', serif; 
+}
 
 /* ★カリカリ常時表示（右上）★ */
 .mini-karikari-display {
-    position: fixed; top: 10px; right: 10px;
-    background: rgba(255,255,255,0.9);
+    position: fixed; 
+    top: 10px; 
+    right: 10px;
+    background: rgba(255,255,255,0.95);
     border: 3px solid #795548;
     border-radius: 50px;
     padding: 5px 15px;
@@ -91,21 +147,42 @@ body {
     color: #5d4037;
     box-shadow: 0 4px 10px rgba(0,0,0,0.1);
     z-index: 2000;
-    display: flex; align-items: center; gap: 5px;
+    display: flex; 
+    align-items: center; 
+    gap: 5px;
     font-size: 0.9rem;
 }
 
 /* ★演出用アニメーション★ */
-@keyframes floatUp { 0% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-50px); } }
-.floating-text {
-    position: absolute; color: #ff5252; font-weight: 900; font-size: 1.5rem;
-    text-shadow: 2px 2px 0 white; pointer-events: none; z-index: 9999;
-    animation: floatUp 1.5s ease-out forwards;
+@keyframes floatUp { 
+    0% { opacity: 1; transform: translateY(0) scale(1); } 
+    100% { opacity: 0; transform: translateY(-60px) scale(1.5); } 
 }
 
-@keyframes heartPop { 0% { transform: scale(0); opacity: 0; } 50% { transform: scale(1.2); opacity: 1; } 100% { transform: scale(1); opacity: 0; top: -50px; } }
+.floating-text {
+    position: absolute; 
+    font-weight: 900; 
+    font-size: 1.8rem; /* 大きく */
+    /* 文字の縁取り（読みやすくするため） */
+    text-shadow: 
+        2px 2px 0 white, -2px -2px 0 white, 
+        2px -2px 0 white, -2px 2px 0 white;
+    pointer-events: none; 
+    z-index: 9999;
+    animation: floatUp 1.2s ease-out forwards;
+}
+
+@keyframes heartPop { 
+    0% { transform: scale(0); opacity: 0; } 
+    50% { transform: scale(1.2); opacity: 1; } 
+    100% { transform: scale(1); opacity: 0; top: -80px; } 
+}
+
 .heart-particle {
-    position: absolute; font-size: 1.5rem; pointer-events: none; z-index: 10;
+    position: absolute; 
+    font-size: 1.8rem; 
+    pointer-events: none; 
+    z-index: 10;
     animation: heartPop 1s ease-out forwards;
 }
 
