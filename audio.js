@@ -1,39 +1,47 @@
-// --- audio.js (堅牢版) ---
-let audioCtx = null;
-let currentSource = null;
+// --- audio.js (独立再生版) ---
+
+let currentAudio = null;
 
 async function speakNell(text, mood = "normal") {
-    if (!text) return;
-    if (currentSource) { try { currentSource.stop(); } catch(e){} currentSource = null; }
+    if (!text || text === "") return;
 
-    // AudioContextシングルトン管理
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (audioCtx.state === 'suspended') await audioCtx.resume();
+    // 前の音声を止める
+    if (currentAudio) {
+        currentAudio.pause();
+        currentAudio = null;
+    }
 
     try {
         const res = await fetch('/synthesize', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text, mood })
         });
+
         if (!res.ok) throw new Error("TTS Error");
         const data = await res.json();
         
-        const binary = window.atob(data.audioContent);
-        const bytes = new Uint8Array(binary.length);
-        for(let i=0; i<binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        // 通常のHTML5 Audioで再生（これが一番干渉しにくい）
+        const audio = new Audio("data:audio/mp3;base64," + data.audioContent);
+        currentAudio = audio;
         
-        const buffer = await audioCtx.decodeAudioData(bytes.buffer);
-        const source = audioCtx.createBufferSource();
-        source.buffer = buffer;
-        source.connect(audioCtx.destination);
-        currentSource = source;
-        source.start(0);
-        return new Promise(r => source.onended = r);
-    } catch(e) { console.error(e); }
+        return new Promise(resolve => {
+            audio.onended = resolve;
+            audio.onerror = resolve;
+            audio.play().catch(e => {
+                console.warn("Autoplay blocked", e);
+                resolve();
+            });
+        });
+
+    } catch (e) {
+        console.error("Voice Error:", e);
+    }
 }
 
-async function updateNellMessage(t, m="normal") {
+async function updateNellMessage(t, mood = "normal") {
     const el = document.getElementById('nell-text');
-    if(el) el.innerText = t;
-    return await speakNell(t, m);
+    if (el) el.innerText = t;
+    // メッセージ表示後に音声を再生
+    return await speakNell(t, mood);
 }

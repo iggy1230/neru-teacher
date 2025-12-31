@@ -18,17 +18,22 @@ app.use(express.static(path.join(__dirname, '.')));
 let genAI, ttsClient;
 try {
     genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    ttsClient = new textToSpeech.TextToSpeechClient({ credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON) });
+    ttsClient = new textToSpeech.TextToSpeechClient({ 
+        credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON) 
+    });
 } catch (e) { console.error("Init Error:", e.message); }
 
-// 通常TTS
+// --- 通常のTTS (音声合成) ---
 function createSSML(text, mood) {
     let rate = "1.0", pitch = "0.0";
     if (mood === "happy") { rate = "1.1"; pitch = "+2st"; }
+    // 記号削除
     let clean = text.replace(/[\u{1F600}-\u{1F6FF}]/gu, '').replace(/🐾|✨|⭐|🎵|🐟|🎤/g, '');
-    if (clean.includes("どの教科")) return `<speak>${clean}</speak>`;
-    clean = clean.replace(/&/g, 'と');
-    return `<speak><prosody rate="${rate}" pitch="${pitch}">${clean.replace(/……/g, '<break time="650ms"/>').replace(/にゃ/g, '<prosody pitch="+3st">にゃ</prosody>')}</prosody></speak>`;
+    // 短い文はタグなしで安定化
+    if (clean.length < 5 || clean.includes("どの教科")) return `<speak>${clean}</speak>`;
+    
+    clean = clean.replace(/&/g, 'と').replace(/[<>]/g, ' ');
+    return `<speak><prosody rate="${rate}" pitch="${pitch}">${clean.replace(/……/g, '<break time="500ms"/>').replace(/にゃ/g, '<prosody pitch="+2st">にゃ</prosody>')}</prosody></speak>`;
 }
 
 app.post('/synthesize', async (req, res) => {
@@ -37,33 +42,44 @@ app.post('/synthesize', async (req, res) => {
         const { text, mood } = req.body;
         if (!text) return res.status(400).json({ error: "No text" });
         try {
-            const [r] = await ttsClient.synthesizeSpeech({ input: { ssml: createSSML(text, mood) }, voice: { languageCode: 'ja-JP', name: 'ja-JP-Neural2-B' }, audioConfig: { audioEncoding: 'MP3' } });
+            const [r] = await ttsClient.synthesizeSpeech({
+                input: { ssml: createSSML(text, mood) },
+                voice: { languageCode: 'ja-JP', name: 'ja-JP-Neural2-B' },
+                audioConfig: { audioEncoding: 'MP3' }
+            });
             res.json({ audioContent: r.audioContent.toString('base64') });
         } catch (e) {
-            const [r2] = await ttsClient.synthesizeSpeech({ input: { text: text.replace(/[^a-zA-Z0-9\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/g, '') }, voice: { languageCode: 'ja-JP', name: 'ja-JP-Neural2-B' }, audioConfig: { audioEncoding: 'MP3' } });
+            // エラー時は平文で再試行
+            const [r2] = await ttsClient.synthesizeSpeech({
+                input: { text: text.replace(/[^a-zA-Z0-9\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/g, '') },
+                voice: { languageCode: 'ja-JP', name: 'ja-JP-Neural2-B' },
+                audioConfig: { audioEncoding: 'MP3' }
+            });
             res.json({ audioContent: r2.audioContent.toString('base64') });
         }
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// 通常分析API
+// --- 通常の画像分析 ---
 app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { image, mode, grade, subject } = req.body;
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash", generationConfig: { responseMimeType: "application/json" } });
         const hint = `- "hints": ヒント3つ(1.考え方 2.式 3.ほぼ答え)。語尾は「〜にゃ」。`;
-        let prompt = mode === 'explain' ? `ネル先生。小学${grade}${subject}。1."question":書き起こし 2."correct_answer":正解 3.${hint} 4.記号は×÷。JSON配列。` : `採点。小学${grade}${subject}。1."question":書き起こし 2."correct_answer":正解 3."student_answer":手書き読取 4.${hint} JSON配列。`;
-        const r = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
-        res.json(JSON.parse(r.response.text().replace(/\*/g, '×').replace(/\//g, '÷')));
-    } catch (e) { res.status(500).json({ error: "AI Error" }); }
+        let prompt = mode === 'explain' 
+            ? `ネル先生。小学${grade}${subject}。1."question":書き起こし 2."correct_answer":正解 3.${hint} 4.記号は×÷。JSON配列。`
+            : `採点。小学${grade}${subject}。1."question":書き起こし 2."correct_answer":正解 3."student_answer":手書き読取(空欄なら"") 4.${hint} JSON配列。`;
+        const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
+        res.json(JSON.parse(result.response.text().replace(/\*/g, '×').replace(/\//g, '÷')));
+    } catch (err) { res.status(500).json({ error: "AI Error" }); }
 });
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// ★★★ Gemini Live Proxy ★★★
+// --- ★Live API Proxy (ここが重要) ---
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', (clientWs) => {
@@ -103,16 +119,9 @@ wss.on('connection', (clientWs) => {
     clientWs.on('message', (data) => {
         try {
             const parsed = JSON.parse(data);
-            if (parsed.type === 'audio' && geminiWs && geminiWs.readyState === WebSocket.OPEN) {
-                const audioMsg = {
-                    realtime_input: {
-                        media_chunks: [{
-                            mime_type: "audio/pcm;rate=16000",
-                            data: parsed.audioChunk
-                        }]
-                    }
-                };
-                geminiWs.send(JSON.stringify(audioMsg));
+            if (parsed.realtime_input && geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+                // クライアントから来たデータをそのままGeminiへ転送
+                geminiWs.send(JSON.stringify(parsed));
             }
         } catch (e) { console.error("Msg Error:", e); }
     });
