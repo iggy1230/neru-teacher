@@ -4,6 +4,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
+// WebSocketは今回使いませんが、エラー防止のため残しておきます
 import WebSocket, { WebSocketServer } from 'ws';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -65,7 +66,7 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- ★新設：給食リアクション生成API ---
+// --- ★修正：給食リアクションAPI ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
@@ -73,35 +74,40 @@ app.post('/lunch-reaction', async (req, res) => {
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
         
         let prompt = "";
-        const isSpecial = count % 10 === 0; // 10個ごとの節目
+        const isSpecial = count % 10 === 0;
 
         if (isSpecial) {
-            // 10, 20, 30...個目の特別演出
+            // 10個ごとの特別演出
             prompt = `
-            あなたは猫の先生「ネル先生」です。生徒の「${name}」さんから給食(カリカリ)をもらいました。
-            これで本日${count}個目です！お腹も心も満たされています。
+            あなたは猫の先生「ネル先生」です。生徒「${name}」さんから給食(カリカリ)をもらいました。
+            本日${count}個目の記念すべきカリカリです！
             
-            以下のどちらかのパターンで、40文字〜60文字程度の「熱いセリフ」を語ってください。
-            Aパターン: 生徒（${name}さん）を、神様かのように崇め奉り、大げさに褒めちぎる。
-            Bパターン: 「なぜカリカリはこんなに美味いのか」について、グルメレポーターのように哲学的に熱く語る。
+            以下のどちらかの内容で、感情豊かに熱く語ってください。
+            - 生徒への過剰な感謝と称賛
+            - カリカリの美味しさについての哲学的・情熱的な語り
             
-            語尾は必ず「にゃ」「だにゃ」にしてください。絵文字は使用禁止。
-            テンションは最高潮でお願いします。
+            【重要制約】
+            - 「Aパターン」「Bパターン」などの注釈や説明は絶対に出力しないでください。
+            - セリフの中身だけを出力してください。
+            - 語尾は「にゃ」。
+            - 60文字程度。
             `;
         } else {
-            // 通常時
+            // 通常時（必ず短く）
             prompt = `
             あなたは猫の先生「ネル先生」です。カリカリをもらって食べています。
-            20文字以内で、食べる音（カリッ、ポリポリなど）を交えながら、短く嬉しそうにリアクションしてください。
-            毎回違う表現で、美味しさを伝えてください。
-            語尾は「にゃ」。絵文字禁止。
+            
+            【重要制約】
+            - 「うみゃい！」「最高にゃ！」「たまらないにゃ〜」のような、一言二言の短いセリフにしてください。
+            - 15文字以内厳守。
+            - 毎回表現を少し変えてください。
+            - 語尾は「にゃ」。
             `;
         }
 
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text(), isSpecial: isSpecial });
     } catch (err) { 
-        console.error("Lunch Error:", err);
         res.status(500).json({ error: "Lunch Error" }); 
     }
 });
@@ -131,10 +137,9 @@ app.post('/analyze', async (req, res) => {
         const role = `あなたは「ネル先生」という優秀な猫の先生です。小学${grade}年生の「${subject}」を教えています。`;
         const scanInstruction = `画像の「最上部」から「最下部」まで、すべての問題を漏らさず抽出してください。問題文は一字一句正確に。`;
         const hintInstruction = `
-        "hints": 生徒が段階的に解けるよう、必ず3つのヒントを作成してください。
-        【重要】ヒントの中で「正解そのもの」は絶対に書かないでください。
-        ■漢字: 意味、部首、似ている字。
-        ■算数: 考え方、式、答えに近いヒント。
+        "hints": 生徒が段階的に解けるよう、必ず3つのヒントを作成してください。正解そのものは書かないでください。
+        ■漢字: 意味、部首、構成要素。
+        ■算数: 考え方、式、注目点。
         `;
         
         let prompt = "";
@@ -145,46 +150,10 @@ app.post('/analyze', async (req, res) => {
         }
 
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
-        const jsonStr = result.response.text().replace(/```json|```/g, '').replace(/\*/g, '×').replace(/\//g, '÷');
-        res.json(JSON.parse(jsonStr));
-        
-    } catch (err) { 
-        console.error("Analyze Error:", err);
-        res.status(500).json({ error: "AI Error" }); 
-    }
+        res.json(JSON.parse(result.response.text().replace(/\*/g, '×').replace(/\//g, '÷')));
+    } catch (err) { res.status(500).json({ error: "AI Error" }); }
 });
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
-const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
-// --- Live API Proxy ---
-const wss = new WebSocketServer({ server });
-wss.on('connection', (clientWs) => {
-    let geminiWs = null;
-    const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidirectionalGenerateContent?key=${process.env.GEMINI_API_KEY}`;
-    try {
-        geminiWs = new WebSocket(GEMINI_URL);
-        geminiWs.on('open', () => {
-            geminiWs.send(JSON.stringify({
-                setup: {
-                    model: "models/gemini-2.0-flash-exp",
-                    generation_config: { response_modalities: ["AUDIO"], speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Puck" } } } },
-                    system_instruction: { parts: [{ text: `あなたはネル先生です。語尾は「にゃ」。短く話して。` }] }
-                }
-            }));
-        });
-        geminiWs.on('message', (data) => { if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data); });
-        geminiWs.on('error', (e) => console.error('Gemini WS Error:', e));
-        geminiWs.on('close', () => {});
-    } catch (e) { clientWs.close(); }
-    clientWs.on('message', (data) => {
-        try {
-            const parsed = JSON.parse(data);
-            if (parsed.realtime_input && geminiWs && geminiWs.readyState === WebSocket.OPEN) {
-                geminiWs.send(JSON.stringify(parsed));
-            }
-        } catch (e) {}
-    });
-    clientWs.on('close', () => { if (geminiWs && geminiWs.readyState === WebSocket.OPEN) geminiWs.close(); });
-});
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
