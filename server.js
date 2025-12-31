@@ -53,11 +53,11 @@ app.post('/lunch-reaction', async (req, res) => {
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
         const isSpecial = count % 10 === 0;
         let prompt = isSpecial 
-            ? `あなたは猫の先生「ネル先生」。生徒「${name}」から給食(カリカリ)${count}個目をもらった。60文字程度で熱く感謝を語って。注釈禁止。語尾「にゃ」。`
-            : `あなたは猫の先生「ネル先生」。カリカリを1つ食べた。15文字以内で一言リアクション。「うみゃい！」など。語尾「にゃ」。`;
+            ? `ネル先生として、給食${count}個目の感謝を熱く語って。相手:${name}。60文字程度。注釈禁止。`
+            : `ネル先生として、給食を食べた一言感想。15文字以内。語尾にゃ。`;
         const result = await model.generateContent(prompt);
         let reply = result.response.text().trim();
-        if(!isSpecial) reply = reply.split('\n')[0];
+        if(!isSpecial && reply.includes('\n')) reply = reply.split('\n')[0];
         res.json({ reply, isSpecial });
     } catch (err) { res.status(500).json({ error: "Error" }); }
 });
@@ -80,20 +80,21 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// ★★★ Gemini Live API Proxy (URL修正済み) ★★★
+// ★★★ Live API Proxy ★★★
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', (clientWs) => {
     console.log('Client connected to Live Chat');
     let geminiWs = null;
-    // ★重要修正：Bidirectional -> Bidi に変更
     const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${process.env.GEMINI_API_KEY}`;
 
     try {
         geminiWs = new WebSocket(GEMINI_URL);
 
         geminiWs.on('open', () => {
-            console.log('Connected to Gemini');
+            console.log('Gemini Connected');
+            
+            // 1. 設定送信
             const setupMsg = {
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
@@ -101,21 +102,22 @@ wss.on('connection', (clientWs) => {
                         response_modalities: ["AUDIO"],
                         speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Puck" } } }
                     },
-                    system_instruction: { parts: [{ text: `あなたはネル先生です。語尾は「にゃ」。短く、明るく、子供と会話して。` }] }
+                    system_instruction: { parts: [{ text: `あなたはネル先生です。語尾は「にゃ」。` }] }
                 }
             };
             geminiWs.send(JSON.stringify(setupMsg));
+
+            // 2. ★重要：クライアントに「準備OK」を伝える
+            if (clientWs.readyState === WebSocket.OPEN) {
+                clientWs.send(JSON.stringify({ type: "server_ready" }));
+            }
         });
 
         geminiWs.on('message', (data) => {
             if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data);
         });
 
-        geminiWs.on('error', (e) => {
-            console.error('Gemini WS Error:', e.message);
-            // エラーでもクライアントを切断せず、ログだけ残す
-        });
-        
+        geminiWs.on('error', (e) => console.error('Gemini WS Error:', e.message));
         geminiWs.on('close', () => console.log('Gemini WS Closed'));
 
     } catch (e) {
@@ -126,8 +128,13 @@ wss.on('connection', (clientWs) => {
     clientWs.on('message', (data) => {
         try {
             const parsed = JSON.parse(data);
-            if (parsed.realtime_input && geminiWs && geminiWs.readyState === WebSocket.OPEN) {
-                geminiWs.send(JSON.stringify(parsed));
+            // 音声転送 (Geminiがつながっている時だけ)
+            if (parsed.type === 'audio' && geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+                geminiWs.send(JSON.stringify({
+                    realtime_input: {
+                        media_chunks: [{ mime_type: "audio/pcm;rate=16000", data: parsed.data }]
+                    }
+                }));
             }
         } catch (e) {}
     });

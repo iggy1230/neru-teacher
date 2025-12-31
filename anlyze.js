@@ -1,4 +1,4 @@
-// --- anlyze.js (Live API Blob対応・完全版) ---
+// --- anlyze.js (接続待機 & 音量可視化版) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -26,7 +26,6 @@ function selectMode(m) {
     currentMode = m; 
     switchScreen('screen-main'); 
     
-    // UIリセット
     const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'lunch-view'];
     ids.forEach(id => document.getElementById(id).classList.add('hidden'));
     
@@ -43,6 +42,7 @@ function selectMode(m) {
         updateNellMessage("「おはなしする」を押してね！", "gentle");
         const btn = document.getElementById('mic-btn');
         btn.innerText = "🎤 おはなしする";
+        btn.onclick = startLiveChat;
         btn.disabled = false;
         btn.style.background = "#ff85a1";
         document.getElementById('user-speech-text').innerText = "（リアルタイム対話）";
@@ -58,55 +58,50 @@ function selectMode(m) {
     }
 }
 
-// 2. ★Live Chat 機能 (修正版)
+// 2. Live Chat (接続待機ロジック追加)
 async function startLiveChat() {
     const btn = document.getElementById('mic-btn');
     if (liveSocket) { stopLiveChat(); return; }
 
     try {
-        updateNellMessage("接続してるにゃ……", "thinking");
+        updateNellMessage("ネル先生を呼んでるにゃ……", "thinking");
         btn.disabled = true;
 
-        // AudioContext作成
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         audioContext = new AudioCtx();
         await audioContext.resume();
         nextStartTime = audioContext.currentTime;
 
-        // WebSocket接続
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         liveSocket = new WebSocket(`${wsProtocol}//${window.location.host}`);
-        
-        // ★重要修正: バイナリデータ形式を指定
         liveSocket.binaryType = "blob";
 
-        liveSocket.onopen = async () => {
-            btn.innerText = "📞 通話中 (押すと終了)";
-            btn.style.background = "#ff5252";
-            btn.disabled = false;
-            updateNellMessage("つながったにゃ！話しかけてみて！", "happy");
-            await startMicrophone();
+        liveSocket.onopen = () => {
+            console.log("WS Open: Waiting for Gemini...");
         };
 
         liveSocket.onmessage = async (event) => {
-            let textData;
-            
-            // ★重要修正: Blobデータをテキストに変換
+            let data;
             if (event.data instanceof Blob) {
-                textData = await event.data.text();
+                const text = await event.data.text();
+                try { data = JSON.parse(text); } catch(e){ return; }
             } else {
-                textData = event.data;
+                try { data = JSON.parse(event.data); } catch(e){ return; }
             }
 
-            try {
-                const data = JSON.parse(textData);
-                // Geminiからの音声データ (PCM 24kHz) を再生
-                if (data.serverContent?.modelTurn?.parts?.[0]?.inlineData) {
-                    const base64Audio = data.serverContent.modelTurn.parts[0].inlineData.data;
-                    playPcmAudio(base64Audio);
-                }
-            } catch (e) {
-                console.error("JSON Parse Error:", e);
+            // ★サーバーからの準備完了合図
+            if (data.type === "server_ready") {
+                console.log("Gemini Ready!");
+                btn.innerText = "📞 つながった！(終了)";
+                btn.style.background = "#ff5252";
+                btn.disabled = false;
+                updateNellMessage("お待たせ！なんでも話してにゃ！", "happy");
+                await startMicrophone();
+            }
+
+            // 音声受信
+            if (data.serverContent?.modelTurn?.parts?.[0]?.inlineData) {
+                playPcmAudio(data.serverContent.modelTurn.parts[0].inlineData.data);
             }
         };
 
@@ -122,11 +117,7 @@ async function startLiveChat() {
 
 function stopLiveChat() {
     if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
-    if (workletNode) { 
-        workletNode.port.postMessage('stop');
-        workletNode.disconnect(); 
-        workletNode = null; 
-    }
+    if (workletNode) { workletNode.port.postMessage('stop'); workletNode.disconnect(); workletNode = null; }
     if (liveSocket) { liveSocket.close(); liveSocket = null; }
     if (audioContext) { audioContext.close(); audioContext = null; }
     
@@ -139,14 +130,13 @@ function stopLiveChat() {
     }
 }
 
-// ★マイク入力 (AudioWorklet)
+// マイク入力 (音量可視化追加)
 async function startMicrophone() {
     try {
         mediaStream = await navigator.mediaDevices.getUserMedia({ 
             audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true, noiseSuppression: true } 
         });
 
-        // Workletコード
         const processorCode = `
             class PcmProcessor extends AudioWorkletProcessor {
                 constructor() {
@@ -159,10 +149,12 @@ async function startMicrophone() {
                     const input = inputs[0];
                     if (input.length > 0) {
                         const channel = input[0];
+                        // データをバッファリング
                         for (let i = 0; i < channel.length; i++) {
                             this.buffer[this.index++] = channel[i];
                             if (this.index >= this.bufferSize) {
-                                this.port.postMessage(this.buffer);
+                                // コピーして送信 (Transferableではないが安全)
+                                this.port.postMessage(this.buffer.slice(0, this.bufferSize));
                                 this.index = 0;
                             }
                         }
@@ -175,7 +167,6 @@ async function startMicrophone() {
         
         const blob = new Blob([processorCode], { type: 'application/javascript' });
         const url = URL.createObjectURL(blob);
-        
         await audioContext.audioWorklet.addModule(url);
 
         const source = audioContext.createMediaStreamSource(mediaStream);
@@ -187,15 +178,27 @@ async function startMicrophone() {
             if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return;
             
             const inputData = event.data;
+
+            // ★音量ビジュアライザー
+            let sum = 0;
+            for(let i=0; i<inputData.length; i++) sum += inputData[i] * inputData[i];
+            const volume = Math.sqrt(sum / inputData.length);
+            
+            const btn = document.getElementById('mic-btn');
+            // 音を拾っているときだけボタンを明るくする
+            if (volume > 0.02) {
+                btn.style.boxShadow = "0 0 15px #ffeb3b";
+                btn.style.transform = "scale(1.05)";
+            } else {
+                btn.style.boxShadow = "none";
+                btn.style.transform = "scale(1)";
+            }
+
             const downsampled = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
             const pcm16 = floatTo16BitPCM(downsampled);
             const base64 = arrayBufferToBase64(pcm16);
             
-            // サーバーへ送信 (JSON形式)
-            liveSocket.send(JSON.stringify({ 
-                type: 'audio', 
-                data: base64 
-            }));
+            liveSocket.send(JSON.stringify({ type: 'audio', data: base64 }));
         };
 
     } catch(e) {
@@ -213,7 +216,6 @@ function giveLunch() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ count: lunchCount, name: currentUser.name })
     }).then(r=>r.json()).then(d=>{
-        // undefined対策
         const reply = d.reply || "おいしいにゃ！";
         updateNellMessage(reply, d.isSpecial ? "excited" : "happy");
     }).catch(e=>{ updateNellMessage("おいしいにゃ！", "happy"); });
@@ -229,45 +231,28 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
         const b64 = await shrinkImage(e.target.files[0]);
         const res = await fetch('/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: b64, mode: currentMode, grade: currentUser.grade, subject: currentSubject }) });
         if (!res.ok) throw new Error("Err"); const data = await res.json();
-        
         transcribedProblems = data.map((prob, index) => ({ ...prob, id: index + 1, student_answer: prob.student_answer || "", status: "unanswered" }));
-        
         transcribedProblems.forEach(p => {
             const n = v => v.toString().replace(/\s|[０-９]|cm|ｍ/g, s => s==='cm'||s==='ｍ'?'':String.fromCharCode(s.charCodeAt(0)-0xFEE0)).replace(/×/g,'*').replace(/÷/g,'/');
             if(p.student_answer && n(p.student_answer) === n(p.correct_answer)) p.status = 'correct';
             else if(p.student_answer) p.status = 'incorrect';
         });
-
         clearInterval(timer); updateProgress(100);
         setTimeout(() => { 
             document.getElementById('thinking-view').classList.add('hidden'); 
-            if (currentMode === 'explain' || currentMode === 'review') {
-                renderProblemSelection(); 
-                updateNellMessage("問題が読めたにゃ！", "happy");
-            } else { 
+            if (currentMode === 'explain' || currentMode === 'review') { renderProblemSelection(); updateNellMessage("問題が読めたにゃ！", "happy"); } 
+            else { 
                 showGradingView(); 
-                const total = transcribedProblems.length;
-                const correctCount = transcribedProblems.filter(p => p.status === 'correct').length;
-                const rate = correctCount / total;
-
-                if (correctCount === total) {
-                    currentUser.karikari += 100; 
-                    saveAndSync(); updateMiniKarikari(); showKarikariEffect(100);
-                    updateNellMessage("全問正解！ご褒美100個にゃ！✨", "excited");
-                    drawHanamaru();
-                } else if (rate >= 0.8) {
-                    currentUser.karikari += 50; 
-                    saveAndSync(); updateMiniKarikari(); showKarikariEffect(50);
-                    updateNellMessage("ほとんど正解！50個あげるにゃ🐾", "happy");
-                } else {
-                    updateNellMessage("採点したにゃ。間違えた所は「教えて」ボタンを使ってね。", "gentle");
-                }
+                const total = transcribedProblems.length; const correct = transcribedProblems.filter(p => p.status === 'correct').length; const rate = correct / total;
+                if (correct === total) { currentUser.karikari += 100; saveAndSync(); updateMiniKarikari(); showKarikariEffect(100); updateNellMessage("全問正解！ご褒美100個にゃ！✨", "excited"); drawHanamaru(); } 
+                else if (rate >= 0.8) { currentUser.karikari += 50; saveAndSync(); updateMiniKarikari(); showKarikariEffect(50); updateNellMessage("ほとんど正解！50個あげるにゃ🐾", "happy"); } 
+                else { updateNellMessage("採点したにゃ。間違えた所は「教えて」ボタンを使ってね。", "gentle"); }
             }
         }, 800);
     } catch (err) { clearInterval(timer); document.getElementById('thinking-view').classList.add('hidden'); document.getElementById('upload-controls').classList.remove('hidden'); updateNellMessage("エラーだにゃ", "thinking"); } finally { isAnalyzing = false; }
 });
 
-// 5. ヒント機能
+// 5. ヒント & UI
 function startHint(id) {
     selectedProblem = transcribedProblems.find(p => p.id == id); if (!selectedProblem) return updateNellMessage("データなし", "thinking");
     document.getElementById('problem-selection-view').classList.add('hidden'); document.getElementById('grade-sheet-container').classList.add('hidden'); document.getElementById('final-view').classList.remove('hidden'); document.getElementById('hint-detail-container').classList.remove('hidden'); 
@@ -277,7 +262,6 @@ function startHint(id) {
     nextBtn.innerText = "🍖 ネル先生にカリカリを5個あげてヒントをもらう"; nextBtn.classList.remove('hidden'); revealBtn.classList.add('hidden');
     nextBtn.onclick = showNextHint;
 }
-
 function showNextHint() {
     let cost = 0; if (hintIndex === 0) cost = 5; else if (hintIndex === 1) cost = 5; else if (hintIndex === 2) cost = 10;
     if (currentUser.karikari < cost) return updateNellMessage(`カリカリが足りないにゃ……あと${cost}個必要にゃ。`, "thinking");
