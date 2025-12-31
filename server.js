@@ -55,7 +55,6 @@ app.post('/synthesize', async (req, res) => {
             });
             res.json({ audioContent: response.audioContent.toString('base64') });
         } catch (e) {
-            // エラー時は平文リトライ
             const [retry] = await ttsClient.synthesizeSpeech({
                 input: { text: text.replace(/[^a-zA-Z0-9\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/g, '') },
                 voice: { languageCode: 'ja-JP', name: 'ja-JP-Neural2-B' },
@@ -78,7 +77,7 @@ app.post('/chat', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
-// --- 画像分析API (高精度化) ---
+// --- 画像分析API (ヒント精度向上版) ---
 app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
@@ -90,7 +89,6 @@ app.post('/analyze', async (req, res) => {
         
         const role = `あなたは「ネル先生」という優秀な猫の先生です。小学${grade}年生の「${subject}」を教えています。`;
         
-        // ★高精度読み取り指示（両モード共通）
         const scanInstruction = `
         【最重要】
         画像の「最上部」から「最下部」まで、すべての問題を漏らさず抽出してください。
@@ -98,17 +96,25 @@ app.post('/analyze', async (req, res) => {
         問題文は省略せず、一字一句正確に書き起こしてください。
         `;
 
+        // ★修正点：ヒントの指示を具体化
         const hintInstruction = `
         "hints": 生徒が段階的に解けるよう、必ず3つのヒントを作成してください。
-          1. 「考え方の入り口（〜してみようにゃ）」
-          2. 「式のヒントや注目点（〜に注目だにゃ）」
-          3. 「答えにかなり近づくヒント（〜計算するとどうなるかにゃ？）」※答えそのものは書かない
+        【重要】ヒントの中で「正解そのもの」は絶対に書かないでください。
+        
+        ■漢字の書き取り問題の場合：
+          ヒント1: 「意味」や「使い方の例」を教える
+          ヒント2: 「部首（へん・つくり）」や「構成要素（木が2つ、など）」を言葉で説明する
+          ヒント3: 「似ている漢字」や「画数」を教える（答えの漢字は書かない！）
+        
+        ■算数やその他の問題の場合：
+          ヒント1: 「考え方の入り口（〜してみようにゃ）」
+          ヒント2: 「式のヒントや注目点（〜に注目だにゃ）」
+          ヒント3: 「答えにかなり近づくヒント（〜計算するとどうなるかにゃ？）」
         `;
         
         let prompt = "";
         
         if (mode === 'explain') {
-            // 【教えてネル先生】採点モードと同じ厳格さで読み取り＋ヒント生成
             prompt = `
             ${role}
             ${scanInstruction}
@@ -126,7 +132,6 @@ app.post('/analyze', async (req, res) => {
             算数記号は「×」「÷」を使用。語尾は「にゃ」。
             `;
         } else {
-            // 【採点・復習】
             prompt = `
             ${role}
             厳格な採点官として画像を分析してください。

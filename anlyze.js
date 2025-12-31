@@ -1,4 +1,4 @@
-// --- anlyze.js (ヒントシステム刷新版) ---
+// --- anlyze.js (ヒントボタン文言修正版) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -26,7 +26,6 @@ function selectMode(m) {
     currentMode = m; 
     switchScreen('screen-main'); 
     
-    // UIリセット
     const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'lunch-view'];
     ids.forEach(id => document.getElementById(id).classList.add('hidden'));
     
@@ -235,90 +234,76 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
     } catch (err) { clearInterval(timer); document.getElementById('thinking-view').classList.add('hidden'); document.getElementById('upload-controls').classList.remove('hidden'); updateNellMessage("エラーだにゃ", "thinking"); } finally { isAnalyzing = false; }
 });
 
-// 5. ヒント機能（★刷新箇所）
+// 5. ヒント機能（★文言修正）
 function startHint(id) {
-    // まず問題データを探す
     selectedProblem = transcribedProblems.find(p => p.id == id); 
     if (!selectedProblem) return updateNellMessage("データが見つからないにゃ……", "thinking");
 
-    // 画面切り替え（まだカリカリは消費しない）
     document.getElementById('problem-selection-view').classList.add('hidden'); 
     document.getElementById('grade-sheet-container').classList.add('hidden'); 
     document.getElementById('final-view').classList.remove('hidden'); 
     document.getElementById('hint-detail-container').classList.remove('hidden'); 
     
-    // 黒板に問題文を表示
     document.getElementById('chalkboard').innerText = selectedProblem.question; 
     document.getElementById('chalkboard').classList.remove('hidden'); 
     document.getElementById('answer-display-area').classList.add('hidden');
     
-    // ヒント状態をリセット（0:未表示）
     hintIndex = 0;
     
-    // 最初の状態：まだヒントは見せない
     updateNellMessage("わからない時はヒントを使うにゃ？", "normal");
     document.getElementById('hint-step-label').innerText = "考え中...";
     
-    // ボタン設定：ヒント1への誘導
     const nextBtn = document.getElementById('next-hint-btn'); 
     const revealBtn = document.getElementById('reveal-answer-btn');
     
-    nextBtn.innerText = "🐟 カリカリ5個でヒント1";
+    // ★テキスト修正
+    nextBtn.innerText = "🐟 ネル先生にカリカリを5個あげてヒントをもらう";
     nextBtn.classList.remove('hidden');
     revealBtn.classList.add('hidden');
     
-    // ボタンの動作を「次のヒントを買う」関数に設定
     nextBtn.onclick = showNextHint;
 }
 
 function showNextHint() {
     let cost = 0;
-    
-    // 現在の状態に応じてコスト決定
-    if (hintIndex === 0) cost = 5;      // ヒント1をもらう
-    else if (hintIndex === 1) cost = 5; // ヒント2をもらう
-    else if (hintIndex === 2) cost = 10;// ヒント3をもらう
+    if (hintIndex === 0) cost = 5;      
+    else if (hintIndex === 1) cost = 5; 
+    else if (hintIndex === 2) cost = 10;
 
     if (currentUser.karikari < cost) {
         return updateNellMessage(`カリカリが足りないにゃ……あと${cost}個必要にゃ。`, "thinking");
     }
 
-    // 消費処理
     currentUser.karikari -= cost; 
     saveAndSync(); 
     updateMiniKarikari(); 
     showKarikariEffect(-cost);
 
-    // ヒントを表示（配列インデックスは 0, 1, 2）
     let hints = selectedProblem.hints;
     if (!hints || hints.length === 0) hints = ["よく読んでみてにゃ", "式を立てるにゃ", "先生と解くにゃ"];
     
     const currentHintText = hints[hintIndex] || "……";
     updateNellMessage(currentHintText, "thinking");
     
-    // ステップ表示更新
     document.getElementById('hint-step-label').innerText = `ヒント ${hintIndex + 1}`;
-    
-    // 次の段階へ進める
     hintIndex++; 
     
     const nextBtn = document.getElementById('next-hint-btn'); 
     const revealBtn = document.getElementById('reveal-answer-btn');
 
-    // ボタンの更新
+    // ★テキスト修正
     if (hintIndex === 1) {
-        nextBtn.innerText = "🐟 カリカリ5個でヒント2";
+        nextBtn.innerText = "🐟 さらにカリカリを5個あげてヒントをもらう";
     } else if (hintIndex === 2) {
-        nextBtn.innerText = "🐟 カリカリ10個でヒント3";
+        nextBtn.innerText = "🐟 さらにカリカリを10個あげてヒントをもらう";
     } else {
-        // ヒント3まで出し切った
         nextBtn.classList.add('hidden');
         revealBtn.classList.remove('hidden');
         revealBtn.innerText = "答えを見る";
     }
 }
 
-// その他の関数（省略なし）
+// その他の関数
 function revealAnswer() { document.getElementById('final-answer-text').innerText = selectedProblem.correct_answer; document.getElementById('answer-display-area').classList.remove('hidden'); document.getElementById('reveal-answer-btn').classList.add('hidden'); updateNellMessage("答えだにゃ", "gentle"); }
 function renderProblemSelection() { document.getElementById('problem-selection-view').classList.remove('hidden'); const l=document.getElementById('transcribed-problem-list'); l.innerHTML=""; transcribedProblems.forEach(p=>{ l.innerHTML += `<div class="prob-card"><div><span class="q-label">${p.label||'?'}</span>${p.question.substring(0,20)}...</div><button class="main-btn blue-btn" style="width:auto;padding:10px" onclick="startHint(${p.id})">教えて</button></div>`; }); }
 function showGradingView() { document.getElementById('final-view').classList.remove('hidden'); document.getElementById('grade-sheet-container').classList.remove('hidden'); renderWorksheet(); }
