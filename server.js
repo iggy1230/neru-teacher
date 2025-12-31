@@ -23,7 +23,7 @@ try {
     });
 } catch (e) { console.error("Init Error:", e.message); }
 
-// 通常TTS
+// --- 音声合成 ---
 function createSSML(text, mood) {
     let rate = "1.1", pitch = "+2st"; 
     if (mood === "thinking") { rate = "1.0"; pitch = "0st"; }
@@ -35,7 +35,9 @@ function createSSML(text, mood) {
         .replace(/🐾|✨|⭐|🎵|🐟|🎤|⭕️|❌/g, '')
         .replace(/&/g, 'と').replace(/[<>"']/g, ' ');
 
-    if (cleanText.length < 2 || cleanText.includes("どの教科")) return `<speak>${cleanText}</speak>`;
+    if (cleanText.length < 2 || cleanText.includes("どの教科") || cleanText.includes("おはなし")) {
+        return `<speak>${cleanText}</speak>`;
+    }
     cleanText = cleanText.replace(/……/g, '<break time="500ms"/>');
     return `<speak><prosody rate="${rate}" pitch="${pitch}">${cleanText}</prosody></speak>`;
 }
@@ -63,6 +65,48 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
+// --- ★新設：給食リアクション生成API ---
+app.post('/lunch-reaction', async (req, res) => {
+    try {
+        if (!genAI) throw new Error("GenAI not ready");
+        const { count, name } = req.body;
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+        
+        let prompt = "";
+        const isSpecial = count % 10 === 0; // 10個ごとの節目
+
+        if (isSpecial) {
+            // 10, 20, 30...個目の特別演出
+            prompt = `
+            あなたは猫の先生「ネル先生」です。生徒の「${name}」さんから給食(カリカリ)をもらいました。
+            これで本日${count}個目です！お腹も心も満たされています。
+            
+            以下のどちらかのパターンで、40文字〜60文字程度の「熱いセリフ」を語ってください。
+            Aパターン: 生徒（${name}さん）を、神様かのように崇め奉り、大げさに褒めちぎる。
+            Bパターン: 「なぜカリカリはこんなに美味いのか」について、グルメレポーターのように哲学的に熱く語る。
+            
+            語尾は必ず「にゃ」「だにゃ」にしてください。絵文字は使用禁止。
+            テンションは最高潮でお願いします。
+            `;
+        } else {
+            // 通常時
+            prompt = `
+            あなたは猫の先生「ネル先生」です。カリカリをもらって食べています。
+            20文字以内で、食べる音（カリッ、ポリポリなど）を交えながら、短く嬉しそうにリアクションしてください。
+            毎回違う表現で、美味しさを伝えてください。
+            語尾は「にゃ」。絵文字禁止。
+            `;
+        }
+
+        const result = await model.generateContent(prompt);
+        res.json({ reply: result.response.text(), isSpecial: isSpecial });
+    } catch (err) { 
+        console.error("Lunch Error:", err);
+        res.status(500).json({ error: "Lunch Error" }); 
+    }
+});
+
+// --- チャットAPI ---
 app.post('/chat', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
@@ -74,6 +118,7 @@ app.post('/chat', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
+// --- 画像分析API ---
 app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
@@ -83,31 +128,37 @@ app.post('/analyze', async (req, res) => {
             generationConfig: { responseMimeType: "application/json" } 
         });
         
-        const role = `あなたは「ネル先生」という猫の先生。小学${grade}年生の「${subject}」。`;
-        const scan = `画像の「最上部」から「最下部」まで全ての問題を漏らさず抽出。問題文は一字一句正確に。`;
-        const hints = `
-        "hints": 3つのヒントを作成(必須)。正解そのものは書かない。
-        - 漢字: 意味、部首、似ている字。
-        - 算数: 考え方、式、答えに近いヒント。
-        語尾は「にゃ」。`;
+        const role = `あなたは「ネル先生」という優秀な猫の先生です。小学${grade}年生の「${subject}」を教えています。`;
+        const scanInstruction = `画像の「最上部」から「最下部」まで、すべての問題を漏らさず抽出してください。問題文は一字一句正確に。`;
+        const hintInstruction = `
+        "hints": 生徒が段階的に解けるよう、必ず3つのヒントを作成してください。
+        【重要】ヒントの中で「正解そのもの」は絶対に書かないでください。
+        ■漢字: 意味、部首、似ている字。
+        ■算数: 考え方、式、答えに近いヒント。
+        `;
         
         let prompt = "";
         if (mode === 'explain') {
-            prompt = `${role} ${scan} 以下のJSON作成。 [{"id":1,"label":"(1)","question":"文","correct_answer":"答",${hints}}] 記号は×÷。`;
+            prompt = `${role} ${scanInstruction} 以下のJSON形式で出力。[{"id":1,"label":"問題番号","question":"文","correct_answer":"正解",${hintInstruction}}] 記号は×÷。語尾「にゃ」。`;
         } else {
-            prompt = `${role} 厳格採点。${scan} [{"id":1,"label":"①","question":"文","correct_answer":"答","student_answer":"読取",${hints}}]`;
+            prompt = `${role} 厳格な採点。${scanInstruction} [{"id":1,"label":"問題番号","question":"文","correct_answer":"正解","student_answer":"手書き読取(空欄なら\"\")",${hintInstruction}}]`;
         }
 
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
-        res.json(JSON.parse(result.response.text().replace(/\*/g, '×').replace(/\//g, '÷')));
-    } catch (err) { console.error("Analyze Error:", err); res.status(500).json({ error: "AI Error" }); }
+        const jsonStr = result.response.text().replace(/```json|```/g, '').replace(/\*/g, '×').replace(/\//g, '÷');
+        res.json(JSON.parse(jsonStr));
+        
+    } catch (err) { 
+        console.error("Analyze Error:", err);
+        res.status(500).json({ error: "AI Error" }); 
+    }
 });
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// Live API Proxy
+// --- Live API Proxy ---
 const wss = new WebSocketServer({ server });
 wss.on('connection', (clientWs) => {
     let geminiWs = null;
