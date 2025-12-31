@@ -1,4 +1,4 @@
-// --- anlyze.js (Live API対応版) ---
+// --- anlyze.js (Live API復活版) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -12,7 +12,7 @@ let lunchCount = 0;
 let liveSocket = null;
 let audioContext = null;
 let mediaStream = null;
-let processorNode = null;
+let processor = null;
 let nextStartTime = 0;
 
 const subjectImages = {
@@ -26,11 +26,10 @@ function selectMode(m) {
     currentMode = m; 
     switchScreen('screen-main'); 
     
-    // UIリセット
     const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'lunch-view'];
     ids.forEach(id => document.getElementById(id).classList.add('hidden'));
     
-    stopLiveChat();
+    stopLiveChat(); // 他モードのマイクを切る
 
     const icon = document.querySelector('.nell-avatar-wrap img');
     if(icon) icon.src = defaultIcon;
@@ -39,15 +38,15 @@ function selectMode(m) {
     updateMiniKarikari();
 
     if (m === 'chat') {
+        // ★こじんめんだん（Live Chat）
         document.getElementById('chat-view').classList.remove('hidden');
-        updateNellMessage("準備ができたら「おはなしする」を押してにゃ！", "normal");
-        
+        updateNellMessage("「おはなしする」を押してね！", "gentle");
         const btn = document.getElementById('mic-btn');
         btn.innerText = "🎤 おはなしする";
         btn.onclick = startLiveChat;
         btn.disabled = false;
         btn.style.background = "#ff85a1";
-        document.getElementById('user-speech-text').innerText = "（リアルタイム対話モード）";
+        document.getElementById('user-speech-text').innerText = "（リアルタイム対話）";
 
     } else if (m === 'lunch') {
         document.getElementById('lunch-view').classList.remove('hidden');
@@ -61,7 +60,7 @@ function selectMode(m) {
     }
 }
 
-// 2. ★リアルタイム音声対話 (Live Chat)
+// 2. ★Live Chat (Web Audio API & WebSocket)
 async function startLiveChat() {
     const btn = document.getElementById('mic-btn');
     if (liveSocket) { stopLiveChat(); return; }
@@ -70,156 +69,51 @@ async function startLiveChat() {
         updateNellMessage("接続してるにゃ……", "thinking");
         btn.disabled = true;
 
-        // 1. WebSocket接続
+        // AudioContext (出力用: 24kHz)
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        audioContext = new AudioCtx();
+        await audioContext.resume();
+        nextStartTime = audioContext.currentTime;
+
+        // WebSocket接続
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         liveSocket = new WebSocket(`${wsProtocol}//${window.location.host}`);
 
-        // 2. マイク & AudioContext準備 (16kHz指定でダウンサンプリングをブラウザに任せる)
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        audioContext = new AudioCtx({ sampleRate: 16000 }); // 入力用レート
-        
-        // マイク取得
-        mediaStream = await navigator.mediaDevices.getUserMedia({ 
-            audio: { 
-                sampleRate: 16000, 
-                channelCount: 1, 
-                echoCancellation: true, 
-                noiseSuppression: true 
-            } 
-        });
-
         liveSocket.onopen = async () => {
-            console.log("Live WS Connected");
             btn.innerText = "📞 通話中 (押すと終了)";
             btn.style.background = "#ff5252";
             btn.disabled = false;
-            updateNellMessage("つながったにゃ！なんでも話してにゃ！", "happy");
-            
-            // 録音 & 送信開始
-            startAudioProcessor();
+            updateNellMessage("つながったにゃ！話しかけてみて！", "happy");
+            await startMicrophone();
         };
 
         liveSocket.onmessage = async (event) => {
-            // 受信データの再生
-            try {
-                const data = JSON.parse(event.data);
-                if (data.serverContent?.modelTurn?.parts?.[0]?.inlineData) {
-                    const base64Audio = data.serverContent.modelTurn.parts[0].inlineData.data;
-                    playPcmAudio(base64Audio);
-                }
-            } catch(e) { console.error(e); }
+            const data = JSON.parse(event.data);
+            // Geminiからの音声 (PCM 24kHz) を再生
+            if (data.serverContent?.modelTurn?.parts?.[0]?.inlineData) {
+                const base64Audio = data.serverContent.modelTurn.parts[0].inlineData.data;
+                playPcmAudio(base64Audio);
+            }
         };
 
         liveSocket.onclose = () => stopLiveChat();
         liveSocket.onerror = (e) => { console.error(e); stopLiveChat(); };
 
     } catch (e) {
-        console.error("Live Chat Error:", e);
-        alert("エラーだにゃ: " + e.message);
+        console.error("Start Error:", e);
+        alert("エラー: " + e.message);
         stopLiveChat();
     }
 }
 
-// マイク音声をPCM16に変換して送信
-function startAudioProcessor() {
-    const source = audioContext.createMediaStreamSource(mediaStream);
-    // 2048サンプルごとに処理
-    processorNode = audioContext.createScriptProcessor(2048, 1, 1);
-
-    source.connect(processorNode);
-    processorNode.connect(audioContext.destination);
-
-    processorNode.onaudioprocess = (e) => {
-        if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return;
-
-        const inputData = e.inputBuffer.getChannelData(0);
-        
-        // Float32 -> Int16 PCM 変換
-        const pcmData = new Int16Array(inputData.length);
-        for (let i = 0; i < inputData.length; i++) {
-            // クリップ処理
-            let s = Math.max(-1, Math.min(1, inputData[i]));
-            // 16bit化
-            pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-        }
-
-        // Base64変換
-        let binary = '';
-        const bytes = new Uint8Array(pcmData.buffer);
-        for (let i = 0; i < bytes.byteLength; i++) {
-            binary += String.fromCharCode(bytes[i]);
-        }
-        const base64Audio = window.btoa(binary);
-
-        // Gemini Live API形式で送信
-        const msg = {
-            realtime_input: {
-                media_chunks: [{
-                    mime_type: "audio/pcm;rate=16000",
-                    data: base64Audio
-                }]
-            }
-        };
-        liveSocket.send(JSON.stringify(msg));
-    };
-}
-
-// 受信したPCM (24kHz) を再生
-async function playPcmAudio(base64String) {
-    // 再生用コンテキスト (もし入力用が16k固定で再生に不向きなら、別途作成するが今回は兼用で試行)
-    // 音質向上のため、再生時は出力デバイスのレートに合わせるのがベストだが、
-    // ここではシンプルに処理する。
-    
-    // Base64デコード
-    const binaryString = window.atob(base64String);
-    const len = binaryString.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-    }
-    
-    // Int16 -> Float32
-    const float32 = new Float32Array(len / 2);
-    const view = new DataView(bytes.buffer);
-    for (let i = 0; i < float32.length; i++) {
-        float32[i] = view.getInt16(i * 2, true) / 32768.0;
-    }
-
-    // Geminiからの音声は 24000Hz
-    const buffer = audioContext.createBuffer(1, float32.length, 24000);
-    buffer.copyToChannel(float32, 0);
-
-    const source = audioContext.createBufferSource();
-    source.buffer = buffer;
-    source.connect(audioContext.destination);
-
-    // 途切れないようにスケジュール再生
-    const currentTime = audioContext.currentTime;
-    if (nextStartTime < currentTime) nextStartTime = currentTime;
-    
-    source.start(nextStartTime);
-    nextStartTime += buffer.duration;
-}
-
 function stopLiveChat() {
-    if (mediaStream) { 
-        mediaStream.getTracks().forEach(t => t.stop()); 
-        mediaStream = null; 
-    }
-    if (processorNode) {
-        processorNode.disconnect();
-        processorNode = null;
-    }
-    if (liveSocket) { 
-        liveSocket.close(); 
-        liveSocket = null; 
-    }
-    if (audioContext) { 
-        audioContext.close(); 
-        audioContext = null; 
-    }
+    if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
+    if (processor) { processor.disconnect(); processor = null; }
+    if (liveSocket) { liveSocket.close(); liveSocket = null; }
+    if (audioContext) { audioContext.close(); audioContext = null; }
+    
     const btn = document.getElementById('mic-btn');
-    if(btn) {
+    if (btn) {
         btn.innerText = "🎤 おはなしする";
         btn.style.background = "#ff85a1";
         btn.disabled = false;
@@ -227,7 +121,100 @@ function stopLiveChat() {
     }
 }
 
-// 3. おいしい給食 (変更なし)
+// マイク入力＆送信
+async function startMicrophone() {
+    try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({ 
+            audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true } 
+        });
+        
+        const source = audioContext.createMediaStreamSource(mediaStream);
+        processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+        source.connect(processor);
+        processor.connect(audioContext.destination);
+
+        processor.onaudioprocess = (e) => {
+            if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return;
+
+            const inputData = e.inputBuffer.getChannelData(0);
+            const downsampled = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
+            const pcm16 = floatTo16BitPCM(downsampled);
+            const base64Audio = arrayBufferToBase64(pcm16);
+            
+            // Geminiへ送信
+            liveSocket.send(JSON.stringify({ 
+                realtime_input: { 
+                    media_chunks: [{ 
+                        mime_type: "audio/pcm;rate=16000", 
+                        data: base64Audio 
+                    }] 
+                } 
+            }));
+        };
+    } catch(e) {
+        console.error("Mic Error:", e);
+        updateNellMessage("マイクが使えないにゃ……", "thinking");
+    }
+}
+
+// PCM再生
+function playPcmAudio(base64String) {
+    if (!audioContext) return;
+    const binary = window.atob(base64String);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    
+    const float32 = new Float32Array(bytes.length / 2);
+    const view = new DataView(bytes.buffer);
+    for (let i = 0; i < float32.length; i++) float32[i] = view.getInt16(i * 2, true) / 32768.0;
+
+    const buffer = audioContext.createBuffer(1, float32.length, 24000);
+    buffer.copyToChannel(float32, 0);
+    const source = audioContext.createBufferSource();
+    source.buffer = buffer;
+    source.connect(audioContext.destination);
+    
+    const now = audioContext.currentTime;
+    if (nextStartTime < now) nextStartTime = now;
+    source.start(nextStartTime);
+    nextStartTime += buffer.duration;
+}
+
+// 音声処理ユーティリティ
+function downsampleBuffer(buffer, sampleRate, outSampleRate) {
+    if (outSampleRate === sampleRate) return buffer;
+    const ratio = sampleRate / outSampleRate;
+    const newLength = Math.round(buffer.length / ratio);
+    const result = new Float32Array(newLength);
+    let offsetResult = 0, offsetBuffer = 0;
+    while (offsetResult < result.length) {
+        const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio);
+        let accum = 0, count = 0;
+        for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
+            accum += buffer[i]; count++;
+        }
+        result[offsetResult] = accum / count;
+        offsetResult++; offsetBuffer = nextOffsetBuffer;
+    }
+    return result;
+}
+function floatTo16BitPCM(input) {
+    const output = new Int16Array(input.length);
+    for (let i = 0; i < input.length; i++) {
+        const s = Math.max(-1, Math.min(1, input[i]));
+        output[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+    return output.buffer;
+}
+function arrayBufferToBase64(buffer) {
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    for (let i = 0; i < bytes.byteLength; i++) { binary += String.fromCharCode(bytes[i]); }
+    return window.btoa(binary);
+}
+
+// 3. 給食 (AI生成対応・重複削除済み)
 async function giveLunch() {
     if (currentUser.karikari < 1) return updateNellMessage("カリカリがないにゃ……", "thinking");
     currentUser.karikari--; saveAndSync(); updateMiniKarikari(); showKarikariEffect(-1); lunchCount++;
@@ -239,11 +226,12 @@ async function giveLunch() {
         });
         if (!res.ok) throw new Error("API Error");
         const data = await res.json();
-        updateNellMessage(data.reply, data.isSpecial ? "excited" : "happy");
+        const replyText = data.reply || "おいしいにゃ！";
+        updateNellMessage(replyText, data.isSpecial ? "excited" : "happy");
     } catch (e) { updateNellMessage("おいしいにゃ！", "happy"); }
 }
 
-// 4. 分析 (変更なし)
+// 4. 分析 (既存のまま)
 document.getElementById('hw-input').addEventListener('change', async (e) => {
     if (isAnalyzing || !e.target.files[0]) return; isAnalyzing = true;
     document.getElementById('upload-controls').classList.add('hidden'); document.getElementById('thinking-view').classList.remove('hidden');
@@ -274,7 +262,7 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
     } catch (err) { clearInterval(timer); document.getElementById('thinking-view').classList.add('hidden'); document.getElementById('upload-controls').classList.remove('hidden'); updateNellMessage("エラーだにゃ", "thinking"); } finally { isAnalyzing = false; }
 });
 
-// 5. ヒント & UIヘルパー (変更なし)
+// 5. ヒント機能 & その他 (文言・アイコン修正済み)
 function startHint(id) {
     selectedProblem = transcribedProblems.find(p => p.id == id); if (!selectedProblem) return updateNellMessage("データなし", "thinking");
     document.getElementById('problem-selection-view').classList.add('hidden'); document.getElementById('grade-sheet-container').classList.add('hidden'); document.getElementById('final-view').classList.remove('hidden'); document.getElementById('hint-detail-container').classList.remove('hidden'); 
