@@ -23,11 +23,9 @@ try {
     });
 } catch (e) { console.error("Init Error:", e.message); }
 
-// --- 音声合成 (SSML安定版) ---
+// --- 音声合成 ---
 function createSSML(text, mood) {
-    let rate = "1.1"; 
-    let pitch = "+2st"; 
-
+    let rate = "1.1", pitch = "+2st"; 
     if (mood === "thinking") { rate = "1.0"; pitch = "0st"; }
     if (mood === "gentle") { rate = "0.95"; pitch = "+1st"; }
     if (mood === "excited") { rate = "1.2"; pitch = "+4st"; }
@@ -35,13 +33,11 @@ function createSSML(text, mood) {
     let cleanText = text
         .replace(/[\u{1F600}-\u{1F6FF}]/gu, '')
         .replace(/🐾|✨|⭐|🎵|🐟|🎤|⭕️|❌/g, '')
-        .replace(/&/g, 'と')
-        .replace(/[<>"']/g, ' ');
+        .replace(/&/g, 'と').replace(/[<>"']/g, ' ');
 
-    if (cleanText.length < 2 || cleanText.includes("どの教科")) {
+    if (cleanText.length < 2 || cleanText.includes("どの教科") || cleanText.includes("おはなし")) {
         return `<speak>${cleanText}</speak>`;
     }
-
     cleanText = cleanText.replace(/……/g, '<break time="500ms"/>');
     return `<speak><prosody rate="${rate}" pitch="${pitch}">${cleanText}</prosody></speak>`;
 }
@@ -51,7 +47,6 @@ app.post('/synthesize', async (req, res) => {
         if (!ttsClient) throw new Error("TTS not ready");
         const { text, mood } = req.body;
         if (!text) return res.status(400).json({ error: "No text" });
-
         try {
             const [response] = await ttsClient.synthesizeSpeech({
                 input: { ssml: createSSML(text, mood) },
@@ -60,7 +55,7 @@ app.post('/synthesize', async (req, res) => {
             });
             res.json({ audioContent: response.audioContent.toString('base64') });
         } catch (e) {
-            console.warn("TTS Retry:", e.message);
+            // エラー時は平文リトライ
             const [retry] = await ttsClient.synthesizeSpeech({
                 input: { text: text.replace(/[^a-zA-Z0-9\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/g, '') },
                 voice: { languageCode: 'ja-JP', name: 'ja-JP-Neural2-B' },
@@ -77,19 +72,13 @@ app.post('/chat', async (req, res) => {
         if (!genAI) throw new Error("GenAI not ready");
         const { message, grade, name } = req.body;
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-        
-        const prompt = `
-        あなたは小学校の猫の先生「ネル先生」です。相手は小学${grade}年生の「${name}」さんです。
-        以下の発言に対し、30文字以内で、優しく、語尾に「にゃ」をつけて返事してください。
-        絵文字は使用禁止です。
-        発言: ${message}`;
-        
+        const prompt = `あなたは「ネル先生」。相手は小学${grade}年生「${name}」。30文字以内、語尾「にゃ」。絵文字禁止。発言: ${message}`;
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text() });
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
-// --- 画像分析API (プロンプト強化版) ---
+// --- 画像分析API (高精度化) ---
 app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
@@ -101,16 +90,16 @@ app.post('/analyze', async (req, res) => {
         
         const role = `あなたは「ネル先生」という優秀な猫の先生です。小学${grade}年生の「${subject}」を教えています。`;
         
-        // ★重要: 読み取り漏れを防ぐための強力な指示
+        // ★高精度読み取り指示（両モード共通）
         const scanInstruction = `
         【最重要】
         画像の「最上部」から「最下部」まで、すべての問題を漏らさず抽出してください。
         ヘッダー付近やフッター付近にある問題も見逃さないでください。
+        問題文は省略せず、一字一句正確に書き起こしてください。
         `;
 
-        // ★重要: 採点モードでもヒントを出させる指示
         const hintInstruction = `
-        "hints": 生徒が復習するために、必ず3段階のヒントを作成してください（必須）。
+        "hints": 生徒が段階的に解けるよう、必ず3つのヒントを作成してください。
           1. 「考え方の入り口（〜してみようにゃ）」
           2. 「式のヒントや注目点（〜に注目だにゃ）」
           3. 「答えにかなり近づくヒント（〜計算するとどうなるかにゃ？）」※答えそのものは書かない
@@ -119,16 +108,17 @@ app.post('/analyze', async (req, res) => {
         let prompt = "";
         
         if (mode === 'explain') {
+            // 【教えてネル先生】採点モードと同じ厳格さで読み取り＋ヒント生成
             prompt = `
             ${role}
             ${scanInstruction}
-            画像内の全ての問題について以下のJSONデータを作成してください。
             
+            以下のJSON形式で出力してください。
             [
               {
                 "id": 1,
                 "label": "問題番号",
-                "question": "問題文を正確に書き起こし",
+                "question": "問題文の正確な書き起こし",
                 "correct_answer": "正解",
                 ${hintInstruction}
               }
@@ -136,6 +126,7 @@ app.post('/analyze', async (req, res) => {
             算数記号は「×」「÷」を使用。語尾は「にゃ」。
             `;
         } else {
+            // 【採点・復習】
             prompt = `
             ${role}
             厳格な採点官として画像を分析してください。
