@@ -1,5 +1,6 @@
-// --- anlyze.js (マイク・ロボット声修正版) ---
+// --- anlyze.js (マイクボタン修正版) ---
 
+// ... (前半の変数定義などはそのまま) ...
 let transcribedProblems = []; 
 let selectedProblem = null; 
 let hintIndex = 0; 
@@ -19,6 +20,7 @@ function selectMode(m) {
     currentMode = m; 
     switchScreen('screen-main'); 
 
+    // UIリセット
     const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'lunch-view'];
     ids.forEach(id => document.getElementById(id).classList.add('hidden'));
 
@@ -31,17 +33,13 @@ function selectMode(m) {
     if (m === 'review') {
         renderMistakeSelection();
     } else if (m === 'chat') {
-        // ★面談モード初期化
         document.getElementById('chat-view').classList.remove('hidden');
         updateNellMessage("悩み事があるのかにゃ？何でも聞いてあげるにゃ。", "gentle");
-        
-        // ボタン状態リセット
         const btn = document.getElementById('mic-btn');
         btn.innerText = "🎤 おはなしする";
         btn.disabled = false;
-        btn.style.background = "#ff85a1"; // ピンクに戻す
+        btn.style.background = "#ff85a1";
         document.getElementById('user-speech-text').innerText = "...";
-
     } else if (m === 'lunch') {
         document.getElementById('lunch-view').classList.remove('hidden');
         lunchCount = 0; 
@@ -52,41 +50,36 @@ function selectMode(m) {
     }
 }
 
-// 2. ★修正版：音声認識（こじんめんだん）
+// 2. ★修正：音声認識（初期化コード追加）
 function startListening() {
-    // ブラウザ互換性チェック
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-        return alert("ごめんにゃ、このブラウザだとマイクが使えないみたいにゃ……(Chrome推奨)");
+    // ★ここが重要：ボタンを押した瞬間にオーディオエンジンを起こす！
+    if (typeof initAudioEngine === 'function') {
+        initAudioEngine();
     }
 
-    const btn = document.getElementById('mic-btn');
-    const txt = document.getElementById('user-speech-text');
-    
-    // 前回の認識が残っていたら止めるための処理（念のため）
-    if (window.currentRecognition) {
-        try { window.currentRecognition.stop(); } catch(e){}
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        return alert("このブラウザではマイクが使えないにゃ……");
     }
 
     const recognition = new SpeechRecognition();
-    window.currentRecognition = recognition; // グローバルに保持
-
     recognition.lang = 'ja-JP';
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
 
-    // --- イベントハンドラ設定 ---
+    const btn = document.getElementById('mic-btn');
+    const txt = document.getElementById('user-speech-text');
+
     recognition.onstart = () => {
         btn.innerText = "👂 聞いてるにゃ...";
         btn.disabled = true;
-        btn.style.background = "#ff5252"; // 赤くして録音中をアピール
-        txt.innerText = "（お話ししてね……）";
+        btn.style.background = "#ff5252";
     };
 
     recognition.onend = () => {
         btn.innerText = "🎤 おはなしする";
         btn.disabled = false;
-        btn.style.background = "#ff85a1"; // 元の色に戻す
+        btn.style.background = "#ff85a1";
     };
 
     recognition.onerror = (event) => {
@@ -94,21 +87,13 @@ function startListening() {
         btn.innerText = "🎤 おはなしする";
         btn.disabled = false;
         btn.style.background = "#ff85a1";
-        
-        if (event.error === 'not-allowed') {
-            alert("マイクの使用が許可されていないにゃ。ブラウザの設定を見てみてにゃ。");
-        } else if (event.error === 'no-speech') {
-            updateNellMessage("何も聞こえなかったにゃ……？", "thinking");
-        } else {
-            updateNellMessage("エラーだにゃ……。", "thinking");
-        }
+        if (event.error === 'not-allowed') alert("マイクを許可してほしいにゃ！");
     };
 
     recognition.onresult = async (event) => {
         const speechResult = event.results[0][0].transcript;
         txt.innerText = "「" + speechResult + "」";
         
-        // サーバーへ送信
         try {
             updateNellMessage("考え中にゃ……", "thinking");
             
@@ -122,28 +107,24 @@ function startListening() {
                 })
             });
             
-            if (!res.ok) throw new Error("Server Error");
             const data = await res.json();
-            
-            // ネル先生の返答
+            // 音声再生（audio.jsのWeb Audio APIが使われる）
             updateNellMessage(data.reply, "gentle");
             
         } catch(e) {
-            console.error(e);
-            updateNellMessage("通信エラーだにゃ……もう一回言って？", "thinking");
+            updateNellMessage("通信エラーだにゃ……", "thinking");
         }
     };
 
-    // --- 録音開始 ---
     try {
         recognition.start();
     } catch(e) {
-        console.error("Start Error:", e);
-        alert("マイクの起動に失敗したにゃ。ページをリロードしてみてにゃ。");
+        console.error(e);
+        alert("マイクエラーだにゃ。リロードしてね。");
     }
 }
 
-// 3. カリカリ・ハート演出
+// 3. カリカリ・ハート・給食・その他（変更なし）
 function updateMiniKarikari() {
     if(currentUser) {
         document.getElementById('mini-karikari-count').innerText = currentUser.karikari;
@@ -151,54 +132,36 @@ function updateMiniKarikari() {
         if(k) k.innerText = currentUser.karikari;
     }
 }
-
 function showKarikariEffect(amount = 5) {
     const container = document.querySelector('.nell-avatar-wrap');
     if(container) {
         const floatText = document.createElement('div');
-        floatText.className = 'floating-text';
-        floatText.innerText = `-${amount}`;
-        floatText.style.right = '0px'; floatText.style.top = '0px';
-        container.appendChild(floatText);
+        floatText.className = 'floating-text'; floatText.innerText = `-${amount}`;
+        floatText.style.right = '0px'; floatText.style.top = '0px'; container.appendChild(floatText);
         setTimeout(() => floatText.remove(), 1500);
     }
     const heartCont = document.getElementById('heart-container');
     if(heartCont) {
         for(let i=0; i<8; i++) {
-            const heart = document.createElement('div');
-            heart.className = 'heart-particle';
-            heart.innerText = '💗';
-            heart.style.left = (Math.random()*80 + 10) + '%';
-            heart.style.top = (Math.random()*50 + 20) + '%';
-            heart.style.animationDelay = (Math.random()*0.5) + 's';
-            heartCont.appendChild(heart);
+            const heart = document.createElement('div'); heart.className = 'heart-particle'; heart.innerText = '💗';
+            heart.style.left = (Math.random()*80 + 10) + '%'; heart.style.top = (Math.random()*50 + 20) + '%';
+            heart.style.animationDelay = (Math.random()*0.5) + 's'; heartCont.appendChild(heart);
             setTimeout(() => heart.remove(), 1500);
         }
     }
 }
-
-// 4. おいしい給食
 function giveLunch() {
-    if (currentUser.karikari < 1) {
-        return updateNellMessage("カリカリがないにゃ……。", "thinking");
-    }
-    currentUser.karikari -= 1;
-    saveAndSync(); updateMiniKarikari(); showKarikariEffect(1);
-    lunchCount++;
-    
-    let mood = "happy";
-    let msg = "";
-    if (lunchCount < 3) { msg = "おいしいにゃ！"; } 
-    else if (lunchCount < 7) { mood = "excited"; msg = "もっと欲しいにゃ！カリカリ最高にゃ！"; } 
-    else {
-        mood = "excited";
-        const talks = ["うみゃいうみゃい！", "幸せだにゃ〜！", "ネル先生、元気100倍だにゃ！", "もっともっと〜！"];
-        msg = talks[Math.floor(Math.random() * talks.length)];
-    }
+    // 給食ボタンを押したときもオーディオエンジンを起こす
+    if (typeof initAudioEngine === 'function') initAudioEngine();
+
+    if (currentUser.karikari < 1) return updateNellMessage("カリカリがないにゃ……。", "thinking");
+    currentUser.karikari -= 1; saveAndSync(); updateMiniKarikari(); showKarikariEffect(1); lunchCount++;
+    let mood = "happy"; let msg = "";
+    if (lunchCount < 3) { msg = "おいしいにゃ！"; } else if (lunchCount < 7) { mood = "excited"; msg = "もっと欲しいにゃ！"; } 
+    else { mood = "excited"; const talks = ["うみゃい！", "幸せだにゃ〜！", "元気100倍！", "もっともっと！"]; msg = talks[Math.floor(Math.random() * talks.length)]; }
     updateNellMessage(msg, mood);
 }
-
-// 5. その他ヘルパー（既存のまま）
+// ...（以下、既存の analyze 関連コードはそのまま維持）...
 function setSubject(s) {
     currentSubject = s; 
     if (currentUser) { currentUser.history[s] = (currentUser.history[s] || 0) + 1; saveAndSync(); }
@@ -208,7 +171,6 @@ function setSubject(s) {
     document.getElementById('upload-controls').classList.remove('hidden');
     updateNellMessage(`${currentSubject}の問題をみせてにゃ！`, "happy");
 }
-
 async function shrinkImage(file) {
     return new Promise((resolve) => {
         const reader = new FileReader(); reader.readAsDataURL(file);
@@ -224,7 +186,6 @@ async function shrinkImage(file) {
         };
     });
 }
-
 document.getElementById('hw-input').addEventListener('change', async (e) => {
     if (isAnalyzing || !e.target.files[0]) return; isAnalyzing = true;
     document.getElementById('upload-controls').classList.add('hidden'); document.getElementById('thinking-view').classList.remove('hidden');
@@ -258,12 +219,14 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
         document.getElementById('thinking-view').classList.add('hidden'); document.getElementById('upload-controls').classList.remove('hidden'); 
     } finally { isAnalyzing = false; }
 });
-
 function renderMistakeSelection() {
     if (!currentUser.mistakes || currentUser.mistakes.length === 0) { updateNellMessage("ノートは空っぽにゃ！", "happy"); setTimeout(backToLobby, 2000); return; }
     transcribedProblems = currentUser.mistakes; renderProblemSelection(); updateNellMessage("復習するにゃ？", "excited");
 }
 function startHint(id) {
+    // ヒントボタンもユーザー操作なのでエンジンを起こす
+    if (typeof initAudioEngine === 'function') initAudioEngine();
+    
     if (currentUser.karikari < 5) return updateNellMessage("カリカリが足りないにゃ……。", "thinking");
     selectedProblem = transcribedProblems.find(p => p.id == id); if (!selectedProblem) return; hintIndex = 0;
     currentUser.karikari -= 5; saveAndSync(); updateMiniKarikari(); showKarikariEffect();
@@ -280,10 +243,12 @@ function showHintStep() {
     if(hintIndex < 2) { nextBtn.classList.remove('hidden'); revealBtn.classList.add('hidden'); } else { nextBtn.classList.add('hidden'); revealBtn.classList.remove('hidden'); }
 }
 function showNextHint() {
+    if (typeof initAudioEngine === 'function') initAudioEngine();
     if (currentUser.karikari < 5) return updateNellMessage("カリカリが足りないにゃ……。", "thinking");
     currentUser.karikari -= 5; saveAndSync(); updateMiniKarikari(); showKarikariEffect(); hintIndex++; showHintStep();
 }
 function revealAnswer() {
+    if (typeof initAudioEngine === 'function') initAudioEngine();
     document.getElementById('final-answer-text').innerText = selectedProblem.correct_answer; 
     document.getElementById('answer-display-area').classList.remove('hidden'); 
     document.getElementById('reveal-answer-btn').classList.add('hidden');
