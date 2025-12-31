@@ -4,7 +4,6 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-// WebSocketは今回使いませんが、エラー防止のため残しておきます
 import WebSocket, { WebSocketServer } from 'ws';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -24,7 +23,7 @@ try {
     });
 } catch (e) { console.error("Init Error:", e.message); }
 
-// --- 音声合成 ---
+// 音声合成 (SSML)
 function createSSML(text, mood) {
     let rate = "1.1", pitch = "+2st"; 
     if (mood === "thinking") { rate = "1.0"; pitch = "0st"; }
@@ -77,42 +76,50 @@ app.post('/lunch-reaction', async (req, res) => {
         const isSpecial = count % 10 === 0;
 
         if (isSpecial) {
-            // 10個ごとの特別演出
+            // 10個ごとの特別演出 (ランダムで内容を変える)
             prompt = `
             あなたは猫の先生「ネル先生」です。生徒「${name}」さんから給食(カリカリ)をもらいました。
-            本日${count}個目の記念すべきカリカリです！
+            本日${count}個目の記念すべきカリカリです！テンションMAXです！
             
-            以下のどちらかの内容で、感情豊かに熱く語ってください。
-            - 生徒への過剰な感謝と称賛
-            - カリカリの美味しさについての哲学的・情熱的な語り
+            以下のA, B, Cいずれかのパターンで、60文字程度の熱いセリフを1つだけ出力してください。
+            A: 生徒を神のように褒め称える。
+            B: カリカリの美味しさを詩的に語る。
+            C: 生徒との絆について熱く語る。
             
-            【重要制約】
-            - 「Aパターン」「Bパターン」などの注釈や説明は絶対に出力しないでください。
-            - セリフの中身だけを出力してください。
+            【制約】
+            - 出力は「セリフの中身」のみ。注釈禁止。
             - 語尾は「にゃ」。
-            - 60文字程度。
             `;
         } else {
-            // 通常時（必ず短く）
+            // 通常時 (絶対に短く、1つだけ)
             prompt = `
-            あなたは猫の先生「ネル先生」です。カリカリをもらって食べています。
+            あなたは猫の先生「ネル先生」です。カリカリを1つもらって食べています。
+            その瞬間の感想を「たった一言」だけ叫んでください。
             
-            【重要制約】
-            - 「うみゃい！」「最高にゃ！」「たまらないにゃ〜」のような、一言二言の短いセリフにしてください。
-            - 15文字以内厳守。
-            - 毎回表現を少し変えてください。
+            【絶対厳守の制約】
+            - 出力していいのは「1つの短いフレーズ」だけです。
+            - 複数のセリフを並べないでください。
+            - 15文字以内。
             - 語尾は「にゃ」。
+            - 例（これらをそのまま使わず毎回変えること）: 「うみゃい！」「最高にゃ！」「染みるにゃ〜」
             `;
         }
 
         const result = await model.generateContent(prompt);
-        res.json({ reply: result.response.text(), isSpecial: isSpecial });
+        // 万が一改行で複数が返ってきた場合、最初の1行だけを使う処理を追加
+        let replyText = result.response.text().trim();
+        if (!isSpecial && replyText.includes('\n')) {
+            replyText = replyText.split('\n')[0];
+        }
+
+        res.json({ reply: replyText, isSpecial: isSpecial });
     } catch (err) { 
+        console.error(err);
         res.status(500).json({ error: "Lunch Error" }); 
     }
 });
 
-// --- チャットAPI ---
+// チャットAPI
 app.post('/chat', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
@@ -124,7 +131,7 @@ app.post('/chat', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
-// --- 画像分析API ---
+// 画像分析API
 app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
@@ -156,4 +163,35 @@ app.post('/analyze', async (req, res) => {
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+// Live API Proxy
+const wss = new WebSocketServer({ server });
+wss.on('connection', (clientWs) => {
+    let geminiWs = null;
+    const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidirectionalGenerateContent?key=${process.env.GEMINI_API_KEY}`;
+    try {
+        geminiWs = new WebSocket(GEMINI_URL);
+        geminiWs.on('open', () => {
+            geminiWs.send(JSON.stringify({
+                setup: {
+                    model: "models/gemini-2.0-flash-exp",
+                    generation_config: { response_modalities: ["AUDIO"], speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Puck" } } } },
+                    system_instruction: { parts: [{ text: `あなたはネル先生です。語尾は「にゃ」。短く話して。` }] }
+                }
+            }));
+        });
+        geminiWs.on('message', (data) => { if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data); });
+        geminiWs.on('error', (e) => console.error('Gemini WS Error:', e));
+        geminiWs.on('close', () => {});
+    } catch (e) { clientWs.close(); }
+    clientWs.on('message', (data) => {
+        try {
+            const parsed = JSON.parse(data);
+            if (parsed.realtime_input && geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+                geminiWs.send(JSON.stringify(parsed));
+            }
+        } catch (e) {}
+    });
+    clientWs.on('close', () => { if (geminiWs && geminiWs.readyState === WebSocket.OPEN) geminiWs.close(); });
+});
