@@ -1,4 +1,4 @@
-// --- anlyze.js (デバッグ強化・AudioWorklet版) ---
+// --- anlyze.js (AudioWorklet対応版) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -89,7 +89,6 @@ async function startLiveChat() {
         liveSocket.onmessage = async (event) => {
             const data = JSON.parse(event.data);
             if (data.serverContent?.modelTurn?.parts?.[0]?.inlineData) {
-                console.log("Audio received from Gemini");
                 playPcmAudio(data.serverContent.modelTurn.parts[0].inlineData.data);
             }
         };
@@ -159,6 +158,7 @@ async function startMicrophone() {
         
         const blob = new Blob([processorCode], { type: 'application/javascript' });
         const url = URL.createObjectURL(blob);
+        
         await audioContext.audioWorklet.addModule(url);
 
         const source = audioContext.createMediaStreamSource(mediaStream);
@@ -170,23 +170,23 @@ async function startMicrophone() {
             if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return;
             
             const inputData = event.data;
-            
-            // ★デバッグ: 音量チェック
-            let sum = 0;
-            for(let i=0; i<inputData.length; i++) sum += inputData[i] * inputData[i];
-            const rms = Math.sqrt(sum / inputData.length);
-            if(rms > 0.05) console.log("Mic Input Volume:", rms); // 音が入っていればログが出る
-
             const downsampled = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
             const pcm16 = floatTo16BitPCM(downsampled);
             const base64 = arrayBufferToBase64(pcm16);
             
-            liveSocket.send(JSON.stringify({ type: 'audio', data: base64 }));
+            liveSocket.send(JSON.stringify({ 
+                realtime_input: { 
+                    media_chunks: [{ 
+                        mime_type: "audio/pcm;rate=16000", 
+                        data: base64 
+                    }] 
+                } 
+            }));
         };
 
     } catch(e) {
         console.error("Mic Worklet Error:", e);
-        updateNellMessage("マイクが使えないにゃ……", "thinking");
+        updateNellMessage("マイク設定エラーだにゃ……", "thinking");
     }
 }
 
@@ -203,7 +203,7 @@ function giveLunch() {
     }).catch(e=>{ updateNellMessage("おいしいにゃ！", "happy"); });
 }
 
-// 4. 分析
+// 4. 分析 (省略なし)
 document.getElementById('hw-input').addEventListener('change', async (e) => {
     if (isAnalyzing || !e.target.files[0]) return; isAnalyzing = true;
     document.getElementById('upload-controls').classList.add('hidden'); document.getElementById('thinking-view').classList.remove('hidden');
