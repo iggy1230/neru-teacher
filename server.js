@@ -80,7 +80,7 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// ★★★ Live API Proxy ★★★
+// ★★★ Live API Proxy (WebSocket) ★★★
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', (clientWs) => {
@@ -94,17 +94,17 @@ wss.on('connection', (clientWs) => {
         geminiWs.on('open', () => {
             console.log('Connected to Gemini');
             
-            // 設定送信（ここを変更しました）
+            // 1. 設定送信
             const setupMsg = {
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
                     generation_config: {
                         response_modalities: ["AUDIO"],
-                        speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoide" } } } // ★Aoideに変更
+                        // ★ここを変更: "Aoide" -> "Charon"
+                        speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Charon" } } }
                     },
                     system_instruction: { 
                         parts: [{ 
-                            // ★指示内容を変更
                             text: `君は『ねこご市立ねこづか小学校』のネル先生だにゃ。いつも元気で、語尾は必ず『〜にゃ』だにゃ。 いつもの授業と同じように、ゆっくり、優しいトーンで喋ってにゃ。給食(餌)のカリカリが大好物にゃ。必ずユーザーの学年に合わせて分かりやすいように話す` 
                         }] 
                     }
@@ -112,6 +112,7 @@ wss.on('connection', (clientWs) => {
             };
             geminiWs.send(JSON.stringify(setupMsg));
 
+            // 2. クライアントに準備OK通知
             if (clientWs.readyState === WebSocket.OPEN) {
                 clientWs.send(JSON.stringify({ type: "server_ready" }));
             }
