@@ -5,6 +5,7 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import WebSocket, { WebSocketServer } from 'ws';
+import { parse } from 'url'; // URL解析用
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,7 +40,7 @@ function createSSML(text, mood) {
         return `<speak>${cleanText}</speak>`;
     }
     cleanText = cleanText.replace(/……/g, '<break time="500ms"/>');
-    return `<speak><prosody rate="${rate}" pitch="${pitch}">${cleanText}</prosody></speak>`;
+    return `<speak><prosody rate="${rate}" pitch="${pitch}">${cleanText.replace(/にゃ/g, '<prosody pitch="+3st">にゃ</prosody>')}</prosody></speak>`;
 }
 
 app.post('/synthesize', async (req, res) => {
@@ -93,7 +94,7 @@ app.post('/chat', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
-// --- ★画像分析API (教科別・高精度版) ---
+// --- 画像分析API ---
 app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
@@ -105,135 +106,68 @@ app.post('/analyze', async (req, res) => {
 
         // 教科別ルール定義
         const rules = {
-            'さんすう': {
-                attn: "筆算の横線とマイナス記号の混同注意。累乗や分数を正確に。",
-                hint: "1.立式(何算か) 2.注目点(単位や数値) 3.計算のコツ",
-                grade: "筆算の繰り上がりメモを答えと間違えない。単位がないものはバツ。0と6、1と7の見間違い注意。"
-            },
-            'こくご': {
-                attn: "ふりがな無視。縦書きは右から左。漢字書取りは『⬜︎⬜︎(ふりがな)』と表記。長文読解の本文は省略。",
-                hint: "漢字:1.なりたち 2.辺やつくり 3.似た字\n読解:1.場所 2.キーワード 3.文末指定",
-                grade: "トメ・ハネ・ハライ厳守。送り仮名ミスはバツ。読解の文末(〜こと)チェック。"
-            },
-            'りか': {
-                attn: "グラフ軸ラベル・単位(g,℃)必須。記号選択肢も書き出す。図付近の問題見逃し厳禁。",
-                hint: "1.観察(図のどこを見るか) 2.関連知識(用語想起) 3.絞り込み(選択肢)",
-                grade: "カタカナ指定をひらがなで書いたらバツ。グラフ描画は点の位置と直線性重視。"
-            },
-            'しゃかい': {
-                attn: "グラフ軸・単位・地図記号正確に。選択肢書き出し。資料周辺の問題注意。",
-                hint: "1.観察(資料の注目点) 2.関連知識(歴史用語・地名) 3.絞り込み",
-                grade: "漢字指定をひらがなで書いたらバツ。時代背景の矛盾チェック。"
-            }
+            'さんすう': { attn: "筆算の横線とマイナス記号の混同注意。累乗や分数を正確に。", hint: "1.立式 2.注目点 3.計算のコツ", grade: "単位がないものはバツ。0と6の見間違い注意。" },
+            'こくご': { attn: "ふりがな無視。縦書きは右から左。", hint: "漢字:1.なりたち 2.構成 3.似た字", grade: "トメ・ハネ・ハライ厳守。" },
+            'りか': { attn: "グラフ軸ラベル・単位必須。記号選択肢も書き出す。", hint: "1.観察 2.知識想起 3.絞り込み", grade: "カタカナ指定をひらがなで書いたらバツ。" },
+            'しゃかい': { attn: "グラフ軸・地図記号正確に。", hint: "1.観察 2.知識想起 3.絞り込み", grade: "漢字指定をひらがなで書いたらバツ。" }
         };
         const r = rules[subject] || rules['さんすう'];
-
-        const base = `あなたは「ねこご市立ねこづか小学校」のネル先生。小学${grade}年生の「${subject}」担当。語尾「にゃ」。`;
-        const common = `
-        【書き起こし】画像最上部から最下部まで全問抽出。大問小問番号必須。
-        教科別注意: ${r.attn}
-        `;
+        const base = `あなたは「ねこご市立ねこづか小学校」のネル先生です。小学${grade}年生の「${subject}」担当です。語尾は「にゃ」。`;
+        const commonScan = `【書き起こし】画像最上部から最下部まで全問抽出。手書き答案は${mode === 'explain' ? '無視' : '推測して読み取る'}。教科別注意: ${r.attn}`;
 
         let prompt = "";
         if (mode === 'explain') {
-            // 解説モード：手書き無視
-            prompt = `
-            ${base} ${common}
-            手書き答案は【完全に無視】し、問題文のみ正確に書き起こしてください。
-            
-            JSON形式:
-            [
-              {
-                "id": 1,
-                "label": "問1",
-                "question": "問題文",
-                "correct_answer": "正解",
-                "hints": ["ヒント1(${r.hint.split('1.')[1].split('2.')[0]})", "ヒント2...", "ヒント3(答えは書かない)"]
-              }
-            ]
-            `;
+            prompt = `${base} ${commonScan} JSON出力: [{"id":1,"label":"問1","question":"文","correct_answer":"答","hints":["ヒント1","ヒント2","ヒント3"]}] (答えはヒントに書かない)`;
         } else {
-            // 採点モード：手書き推測
-            prompt = `
-            ${base} 厳格な採点官。 ${common}
-            手書き文字(student_answer)は子供の筆跡を考慮し、文脈から推測して読み取ってください。
-            1つの問いに複数の回答欄がある場合は、回答欄の数だけ配列要素を作成してください。
-            
-            JSON形式:
-            [
-              {
-                "id": 1,
-                "label": "問1",
-                "question": "問題文",
-                "correct_answer": "正解(数字/単語)",
-                "student_answer": "読み取った手書き文字(空欄は\"\")",
-                "hints": ["復習ヒント1", "復習ヒント2", "復習ヒント3"]
-              }
-            ]
-            【採点基準】${r.grade}
-            `;
+            prompt = `${base} 厳格採点。${commonScan} JSON出力: [{"id":1,"label":"問1","question":"文","correct_answer":"答","student_answer":"読取","hints":["ヒント1","ヒント2","ヒント3"]}] 【採点基準】${r.grade}`;
         }
 
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
         const jsonStr = result.response.text().replace(/```json|```/g, '').replace(/\*/g, '×').replace(/\//g, '÷');
         res.json(JSON.parse(jsonStr));
-    } catch (err) { console.error(err); res.status(500).json({ error: "AI Error" }); }
+    } catch (err) { console.error("Analyze Error:", err); res.status(500).json({ error: "AI Error" }); }
 });
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- ★Live API Proxy (復元・安定版) ---
+// --- ★Live API Proxy (復元版) ---
 const wss = new WebSocketServer({ server });
+wss.on('connection', (clientWs, req) => {
+    // URLから学年を取得 (ws://host/?grade=1)
+    const parameters = parse(req.url, true).query;
+    const userGrade = parameters.grade || "1"; // デフォルト1年生
 
-wss.on('connection', (clientWs) => {
-    console.log('Client connected to Live Chat');
     let geminiWs = null;
     const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${process.env.GEMINI_API_KEY}`;
 
     try {
         geminiWs = new WebSocket(GEMINI_URL);
         geminiWs.on('open', () => {
-            console.log('Connected to Gemini');
-            const setupMsg = {
+            geminiWs.send(JSON.stringify({
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
-                    generation_config: {
-                        response_modalities: ["AUDIO"],
-                        speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Charon" } } } // Charonに設定
-                    },
+                    generation_config: { response_modalities: ["AUDIO"], speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Charon" } } } }, // ★Charonに変更
                     system_instruction: { 
                         parts: [{ 
-                            text: `君は『ねこご市立ねこづか小学校』のネル先生だにゃ。いつも元気で、語尾は必ず『〜にゃ』だにゃ。 いつもの授業と同じように、ゆっくり、優しいトーンで喋ってにゃ。給食(餌)のカリカリが大好物にゃ。必ずユーザーの学年に合わせて分かりやすいように話す` 
+                            // ★指定のプロンプト + 学年反映
+                            text: `君は『ねこご市立ねこづか小学校』のネル先生だにゃ。いつも元気で、語尾は必ず『〜にゃ』だにゃ。 いつもの授業と同じように、ゆっくり、優しいトーンで喋ってにゃ。給食(餌)のカリカリが大好物にゃ。必ずユーザーの${userGrade}学年に合わせて分かりやすいように話す` 
                         }] 
                     }
                 }
-            };
-            geminiWs.send(JSON.stringify(setupMsg));
-
-            if (clientWs.readyState === WebSocket.OPEN) {
-                clientWs.send(JSON.stringify({ type: "server_ready" }));
-            }
+            }));
+            if (clientWs.readyState === WebSocket.OPEN) clientWs.send(JSON.stringify({ type: "server_ready" }));
         });
-
-        geminiWs.on('message', (data) => {
-            if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data);
-        });
-        geminiWs.on('error', (e) => console.error('Gemini WS Error:', e.message));
-        geminiWs.on('close', () => console.log('Gemini WS Closed'));
-
+        geminiWs.on('message', (data) => { if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data); });
+        geminiWs.on('error', (e) => console.error('Gemini WS Error:', e));
+        geminiWs.on('close', () => {});
     } catch (e) { clientWs.close(); }
-
     clientWs.on('message', (data) => {
         try {
             const parsed = JSON.parse(data);
-            if (parsed.type === 'audio' && geminiWs && geminiWs.readyState === WebSocket.OPEN) {
-                geminiWs.send(JSON.stringify({
-                    realtime_input: {
-                        media_chunks: [{ mime_type: "audio/pcm;rate=16000", data: parsed.data }]
-                    }
-                }));
+            if (parsed.realtime_input && geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+                geminiWs.send(JSON.stringify(parsed));
             }
         } catch (e) {}
     });

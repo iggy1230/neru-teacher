@@ -1,9 +1,9 @@
-// --- audio.js (口パク連携強化版) ---
+// --- audio.js (口パク連動版) ---
 
 let audioCtx = null;
 let currentSource = null;
 
-// ★口パク管理用のグローバル変数
+// 口パク用グローバル変数
 window.isNellSpeaking = false;
 
 async function speakNell(text, mood = "normal") {
@@ -15,7 +15,6 @@ async function speakNell(text, mood = "normal") {
         currentSource = null;
     }
 
-    // AudioContext準備
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if (audioCtx.state === 'suspended') await audioCtx.resume();
 
@@ -42,13 +41,14 @@ async function speakNell(text, mood = "normal") {
         
         currentSource = source;
         
-        // ★再生開始：口パクON
+        // ★口パク開始
         window.isNellSpeaking = true;
+        
         source.start(0);
 
         return new Promise(resolve => {
             source.onended = () => {
-                // ★再生終了：口パクOFF
+                // ★口パク終了
                 window.isNellSpeaking = false;
                 resolve();
             };
