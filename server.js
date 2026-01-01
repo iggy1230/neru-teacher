@@ -27,7 +27,7 @@ try {
 function createSSML(text, mood) {
     let rate = "1.1", pitch = "+2st"; 
     if (mood === "thinking") { rate = "1.0"; pitch = "0st"; }
-    let cleanText = text.replace(/[\u{1F600}-\u{1F6FF}]/gu, '').replace(/🐾|✨|⭐|🎵|🐟|🎤|⭕️|❌/g, '');
+    let cleanText = text.replace(/[\u{1F600}-\u{1F6FF}]/gu, '').replace(/🐾|✨|⭐|🎵|🐟|🎤|⭕️|❌/g, '').replace(/&/g, 'と').replace(/[<>"']/g, ' ');
     if (cleanText.length < 5) return `<speak>${cleanText}</speak>`;
     return `<speak><prosody rate="${rate}" pitch="${pitch}">${cleanText.replace(/……/g, '<break time="500ms"/>').replace(/にゃ/g, '<prosody pitch="+3st">にゃ</prosody>')}</prosody></speak>`;
 }
@@ -62,15 +62,26 @@ app.post('/lunch-reaction', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Error" }); }
 });
 
-// 分析API
+// 画像分析API (高精度版)
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject } = req.body;
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash", generationConfig: { responseMimeType: "application/json" } });
-        const hint = `"hints": 3つのヒントを作成(必須)。正解は書かない。`;
+        
+        const role = `あなたは「ネル先生」。小学${grade}年生の「${subject}」。`;
+        const scanInstruction = `【最重要】画像の「最上部」から「最下部」まで、すべての問題を漏らさず抽出してください。手書きの答案は無視し、問題文を正確に書き起こしてください。`;
+        
+        const hintInstruction = `
+        "hints": 生徒が段階的に解けるよう、必ず3つのヒントを作成してください。
+        【重要】ヒントの中で「正解そのもの」は絶対に書かないでください。
+        ■漢字: 1.なりたち・意味 2.部首・つくり 3.似ている漢字
+        ■算数: 1.考え方 2.式・注目点 3.答えに近いヒント
+        `;
+        
         let prompt = mode === 'explain' 
-            ? `ネル先生。小学${grade}${subject}。全問抽出。1."question":書き起こし 2."correct_answer":正解 3.${hint} 4.記号は×÷。JSON配列。`
-            : `採点。小学${grade}${subject}。1."question":書き起こし 2."correct_answer":正解 3."student_answer":手書き読取 4.${hint} JSON配列。`;
+            ? `${role} ${scanInstruction} 以下のJSON形式で出力。[{"id":1,"label":"(1)","question":"文","correct_answer":"正解",${hintInstruction}}] 記号は×÷。語尾「にゃ」。`
+            : `${role} 厳格な採点。${scanInstruction} [{"id":1,"label":"①","question":"文","correct_answer":"正解","student_answer":"手書き読取(空欄なら\"\")",${hintInstruction}}]`;
+
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
         res.json(JSON.parse(result.response.text().replace(/\*/g, '×').replace(/\//g, '÷')));
     } catch (err) { res.status(500).json({ error: "AI Error" }); }
@@ -93,14 +104,11 @@ wss.on('connection', (clientWs) => {
 
         geminiWs.on('open', () => {
             console.log('Connected to Gemini');
-            
-            // 1. 設定送信
             const setupMsg = {
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
                     generation_config: {
                         response_modalities: ["AUDIO"],
-                        // ★ここを変更: "Aoide" -> "Charon"
                         speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Charon" } } }
                     },
                     system_instruction: { 
@@ -112,7 +120,6 @@ wss.on('connection', (clientWs) => {
             };
             geminiWs.send(JSON.stringify(setupMsg));
 
-            // 2. クライアントに準備OK通知
             if (clientWs.readyState === WebSocket.OPEN) {
                 clientWs.send(JSON.stringify({ type: "server_ready" }));
             }
