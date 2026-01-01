@@ -23,7 +23,7 @@ try {
     });
 } catch (e) { console.error("Init Error:", e.message); }
 
-// --- 通常TTS (音声合成) ---
+// --- 音声合成 (SSML) ---
 function createSSML(text, mood) {
     let rate = "1.1", pitch = "+2st"; 
     if (mood === "thinking") { rate = "1.0"; pitch = "0st"; }
@@ -118,7 +118,7 @@ app.post('/lunch-reaction', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Lunch Error" }); }
 });
 
-// --- チャットAPI (Fallback) ---
+// --- チャットAPI (予備) ---
 app.post('/chat', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
@@ -142,9 +142,10 @@ app.post('/analyze', async (req, res) => {
         
         const role = `あなたは「ネル先生」という優秀な猫の先生です。小学${grade}年生の「${subject}」を教えています。`;
         const scanInstruction = `【最重要】画像の「最上部」から「最下部」まで、すべての問題を漏らさず抽出してください。手書きの答案は無視し、問題文を正確に書き起こしてください。`;
+        
         const hintInstruction = `
         "hints": 生徒が段階的に解けるよう、必ず3つのヒントを作成してください。
-        【絶対厳守】ヒントの中で「正解そのもの」は絶対に書かないでください。
+        【重要】ヒントの中で「正解そのもの」は絶対に書かないでください。
         ■漢字: 意味、部首、似ている字。
         ■算数: 考え方、式、注目点。
         `;
@@ -159,7 +160,7 @@ app.post('/analyze', async (req, res) => {
             `;
         } else {
             prompt = `
-            ${role} 厳格な採点官として画像を分析してください。 ${scanInstruction}
+            ${role} 厳格な採点。${scanInstruction}
             [{"id":1,"label":"問題番号","question":"問題文の正確な書き起こし","correct_answer":"正解","student_answer":"手書き読取(空欄なら\"\")",${hintInstruction}}]
             `;
         }
@@ -178,44 +179,56 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// ★★★ Live API Proxy ★★★
+// ★★★ Live API Proxy (復元・安定版) ★★★
 const wss = new WebSocketServer({ server });
+
 wss.on('connection', (clientWs) => {
+    console.log('Client connected to Live Chat');
     let geminiWs = null;
+    // ★重要: BidiGenerateContent を使用 (これが安定版のURL)
     const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${process.env.GEMINI_API_KEY}`;
+
     try {
         geminiWs = new WebSocket(GEMINI_URL);
+
         geminiWs.on('open', () => {
-            // ★ネル先生の人格設定と声の調整
-            geminiWs.send(JSON.stringify({
+            console.log('Connected to Gemini');
+            
+            // 1. 設定送信
+            const setupMsg = {
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
-                    generation_config: { 
-                        response_modalities: ["AUDIO", "TEXT"], 
-                        speech_config: { 
-                            voice_config: { prebuilt_voice_config: { voice_name: "Puck" } } // Puck: 元気で明るい子供向けの声
-                        } 
+                    generation_config: {
+                        response_modalities: ["AUDIO"],
+                        speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Puck" } } }
                     },
-                    system_instruction: { 
-                        parts: [{ 
-                            text: `君は『猫後市立ねこづか小学校』のネル先生だにゃ。いつも元気で、語尾は必ず『〜にゃ』だにゃ。いつもの授業と同じように、明るく、ゆっくり、優しいトーンで喋ってにゃ。` 
-                        }] 
-                    }
+                    system_instruction: { parts: [{ text: `あなたはネル先生です。語尾は「にゃ」。短く話して。` }] }
                 }
-            }));
-            
-            // クライアントへ準備完了通知
+            };
+            geminiWs.send(JSON.stringify(setupMsg));
+
+            // 2. ★重要：クライアントに「準備OK」を伝える
             if (clientWs.readyState === WebSocket.OPEN) {
                 clientWs.send(JSON.stringify({ type: "server_ready" }));
             }
         });
-        geminiWs.on('message', (data) => { if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data); });
-        geminiWs.on('error', (e) => console.error('Gemini WS Error:', e));
-        geminiWs.on('close', () => {});
-    } catch (e) { clientWs.close(); }
+
+        geminiWs.on('message', (data) => {
+            if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data);
+        });
+
+        geminiWs.on('error', (e) => console.error('Gemini WS Error:', e.message));
+        geminiWs.on('close', () => console.log('Gemini WS Closed'));
+
+    } catch (e) {
+        console.error("Connection failed:", e);
+        clientWs.close();
+    }
+
     clientWs.on('message', (data) => {
         try {
             const parsed = JSON.parse(data);
+            // 音声転送
             if (parsed.type === 'audio' && geminiWs && geminiWs.readyState === WebSocket.OPEN) {
                 geminiWs.send(JSON.stringify({
                     realtime_input: {
@@ -225,5 +238,8 @@ wss.on('connection', (clientWs) => {
             }
         } catch (e) {}
     });
-    clientWs.on('close', () => { if (geminiWs && geminiWs.readyState === WebSocket.OPEN) geminiWs.close(); });
+
+    clientWs.on('close', () => {
+        if (geminiWs && geminiWs.readyState === WebSocket.OPEN) geminiWs.close();
+    });
 });
