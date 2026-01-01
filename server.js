@@ -200,7 +200,7 @@ wss.on('connection', (clientWs) => {
                     model: "models/gemini-2.0-flash-exp",
                     generation_config: {
                         response_modalities: ["AUDIO"],
-                        speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Charon" } } }
+                        speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoide" } } }
                     },
                     system_instruction: { parts: [{ text: `君は『ねこご市立ねこづか小学校』のネル先生だにゃ。いつも元気で、語尾は必ず『〜にゃ』だにゃ。 餌『給食』のカリカリが大好物。いつもの授業と同じように、ゆっくり、優しいトーンで喋ってにゃ。` }] }
                 }
