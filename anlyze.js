@@ -1,4 +1,4 @@
-// --- anlyze.js (Live API復元・完全版) ---
+// --- anlyze.js (ゲーム機能復活・完全版) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -26,10 +26,12 @@ function selectMode(m) {
     currentMode = m; 
     switchScreen('screen-main'); 
     
+    // UIリセット
     const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'lunch-view'];
     ids.forEach(id => document.getElementById(id).classList.add('hidden'));
     
     stopLiveChat();
+    gameRunning = false; // ゲーム停止
 
     const icon = document.querySelector('.nell-avatar-wrap img');
     if(icon) icon.src = defaultIcon;
@@ -45,7 +47,6 @@ function selectMode(m) {
         btn.onclick = startLiveChat;
         btn.disabled = false;
         btn.style.background = "#ff85a1";
-        btn.style.boxShadow = "none";
         document.getElementById('user-speech-text').innerText = "（リアルタイム対話）";
     } else if (m === 'lunch') {
         document.getElementById('lunch-view').classList.remove('hidden');
@@ -59,7 +60,7 @@ function selectMode(m) {
     }
 }
 
-// 2. ★Live Chat (AudioWorklet + 接続待機) ※復元箇所
+// 2. Live Chat (AudioWorklet + 接続待機)
 async function startLiveChat() {
     const btn = document.getElementById('mic-btn');
     if (liveSocket) { stopLiveChat(); return; }
@@ -126,8 +127,6 @@ function stopLiveChat() {
     if (btn) {
         btn.innerText = "🎤 おはなしする";
         btn.style.background = "#ff85a1";
-        btn.style.boxShadow = "none";
-        btn.style.transform = "scale(1)";
         btn.disabled = false;
         btn.onclick = startLiveChat;
     }
@@ -207,7 +206,7 @@ async function startMicrophone() {
     }
 }
 
-// 3. 給食機能 (最新版を維持)
+// 3. 給食機能
 function giveLunch() {
     if (currentUser.karikari < 1) return updateNellMessage("カリカリがないにゃ……", "thinking");
     currentUser.karikari--; saveAndSync(); updateMiniKarikari(); showKarikariEffect(-1); lunchCount++;
@@ -216,13 +215,12 @@ function giveLunch() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ count: lunchCount, name: currentUser.name })
     }).then(r=>r.json()).then(d=>{
-        // undefined対策
         const reply = d.reply || "おいしいにゃ！";
         updateNellMessage(reply, d.isSpecial ? "excited" : "happy");
     }).catch(e=>{ updateNellMessage("おいしいにゃ！", "happy"); });
 }
 
-// 4. 分析 (最新版を維持)
+// 4. 分析
 document.getElementById('hw-input').addEventListener('change', async (e) => {
     if (isAnalyzing || !e.target.files[0]) return; isAnalyzing = true;
     document.getElementById('upload-controls').classList.add('hidden'); document.getElementById('thinking-view').classList.remove('hidden');
@@ -253,7 +251,7 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
     } catch (err) { clearInterval(timer); document.getElementById('thinking-view').classList.add('hidden'); document.getElementById('upload-controls').classList.remove('hidden'); updateNellMessage("エラーだにゃ", "thinking"); } finally { isAnalyzing = false; }
 });
 
-// 5. ヒント & UI (最新版を維持)
+// 5. ヒント & UI
 function startHint(id) {
     selectedProblem = transcribedProblems.find(p => p.id == id); if (!selectedProblem) return updateNellMessage("データなし", "thinking");
     document.getElementById('problem-selection-view').classList.add('hidden'); document.getElementById('grade-sheet-container').classList.add('hidden'); document.getElementById('final-view').classList.remove('hidden'); document.getElementById('hint-detail-container').classList.remove('hidden'); 
@@ -294,3 +292,150 @@ function downsampleBuffer(buffer, sampleRate, outSampleRate) { if (outSampleRate
 function floatTo16BitPCM(input) { const output = new Int16Array(input.length); for (let i = 0; i < input.length; i++) { const s = Math.max(-1, Math.min(1, input[i])); output[i] = s < 0 ? s * 0x8000 : s * 0x7FFF; } return output.buffer; }
 function arrayBufferToBase64(buffer) { let binary = ''; const bytes = new Uint8Array(buffer); for (let i = 0; i < bytes.byteLength; i++) { binary += String.fromCharCode(bytes[i]); } return window.btoa(binary); }
 function playPcmAudio(base64) { if (!audioContext) return; const binary = window.atob(base64); const bytes = new Uint8Array(binary.length); for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i); const float32 = new Float32Array(bytes.length / 2); const view = new DataView(bytes.buffer); for (let i = 0; i < float32.length; i++) float32[i] = view.getInt16(i * 2, true) / 32768.0; const buffer = audioContext.createBuffer(1, float32.length, 24000); buffer.copyToChannel(float32, 0); const source = audioContext.createBufferSource(); source.buffer = buffer; source.connect(audioContext.destination); const now = audioContext.currentTime; if (nextStartTime < now) nextStartTime = now; source.start(nextStartTime); nextStartTime += buffer.duration; }
+
+// ==========================================
+// ★ミニゲーム「カリカリ・キャッチ」復活
+// ==========================================
+let gameCanvas, ctx, ball, paddle, bricks, score, gameRunning = false;
+let gameAnimId = null;
+
+function showGame() {
+    switchScreen('screen-game');
+    document.getElementById('mini-karikari-display').classList.remove('hidden');
+    updateMiniKarikari();
+    initGame();
+    
+    const startBtn = document.getElementById('start-game-btn');
+    startBtn.onclick = () => {
+        if (!gameRunning) {
+            gameRunning = true;
+            startBtn.disabled = true;
+            drawGame();
+        }
+    };
+}
+
+function initGame() {
+    gameCanvas = document.getElementById('game-canvas');
+    ctx = gameCanvas.getContext('2d');
+    
+    paddle = { w: 80, h: 10, x: 120, speed: 7 };
+    ball = { x: 160, y: 350, dx: 3, dy: -3, r: 8 };
+    score = 0;
+    document.getElementById('game-score').innerText = score;
+    
+    bricks = [];
+    const cols = 5;
+    const rows = 4;
+    const padding = 10;
+    const brickW = (gameCanvas.width - (padding * (cols + 1))) / cols;
+    
+    for(let c=0; c<cols; c++) {
+        for(let r=0; r<rows; r++) {
+            bricks.push({ 
+                x: c * (brickW + padding) + padding, 
+                y: r * (25 + padding) + 40, 
+                status: 1 
+            });
+        }
+    }
+
+    gameCanvas.removeEventListener("mousemove", movePaddleHandler);
+    gameCanvas.removeEventListener("touchmove", touchPaddleHandler);
+    gameCanvas.addEventListener("mousemove", movePaddleHandler, false);
+    gameCanvas.addEventListener("touchmove", touchPaddleHandler, { passive: false });
+}
+
+function movePaddleHandler(e) {
+    const rect = gameCanvas.getBoundingClientRect();
+    const relativeX = e.clientX - rect.left;
+    if(relativeX > 0 && relativeX < gameCanvas.width) {
+        paddle.x = relativeX - paddle.w / 2;
+    }
+}
+
+function touchPaddleHandler(e) {
+    e.preventDefault();
+    const rect = gameCanvas.getBoundingClientRect();
+    const relativeX = e.touches[0].clientX - rect.left;
+    if(relativeX > 0 && relativeX < gameCanvas.width) {
+        paddle.x = relativeX - paddle.w / 2;
+    }
+}
+
+function drawGame() {
+    if (!gameRunning) return;
+
+    ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
+    
+    // ブロック
+    ctx.font = "20px serif";
+    bricks.forEach(b => {
+        if(b.status === 1) {
+            ctx.fillText("🍖", b.x + 10, b.y + 20);
+        }
+    });
+
+    // ボール
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
+    ctx.fillStyle = "#ff85a1";
+    ctx.fill();
+    ctx.closePath();
+
+    // パドル
+    ctx.fillStyle = "#4a90e2";
+    ctx.fillRect(paddle.x, gameCanvas.height - paddle.h - 10, paddle.w, paddle.h);
+
+    // 衝突
+    bricks.forEach(b => {
+        if(b.status === 1) {
+            if(ball.x > b.x && ball.x < b.x + 40 && ball.y > b.y && ball.y < b.y + 30) {
+                ball.dy *= -1;
+                b.status = 0;
+                score++;
+                document.getElementById('game-score').innerText = score;
+                if(score === bricks.length) {
+                    endGame(true);
+                    return;
+                }
+            }
+        }
+    });
+
+    if(ball.x + ball.dx > gameCanvas.width - ball.r || ball.x + ball.dx < ball.r) ball.dx *= -1;
+    if(ball.y + ball.dy < ball.r) ball.dy *= -1;
+    else if(ball.y + ball.dy > gameCanvas.height - ball.r - 20) {
+        if(ball.x > paddle.x && ball.x < paddle.x + paddle.w) {
+            ball.dy *= -1;
+            ball.dx = (ball.x - (paddle.x + paddle.w/2)) * 0.15;
+        } else if (ball.y + ball.dy > gameCanvas.height - ball.r) {
+            endGame(false);
+            return;
+        }
+    }
+
+    ball.x += ball.dx;
+    ball.y += ball.dy;
+    
+    gameAnimId = requestAnimationFrame(drawGame);
+}
+
+function endGame(isClear) {
+    gameRunning = false;
+    if (gameAnimId) cancelAnimationFrame(gameAnimId);
+    
+    const startBtn = document.getElementById('start-game-btn');
+    startBtn.disabled = false;
+    startBtn.innerText = "もう一回！";
+
+    let msg = isClear ? `すごい！全クリだにゃ！\nカリカリ ${score} 個ゲット！` : `おしい！\nカリカリ ${score} 個ゲット！`;
+    alert(msg);
+    
+    if (currentUser && score > 0) {
+        currentUser.karikari += score;
+        saveAndSync();
+        updateMiniKarikari();
+        showKarikariEffect(score);
+    }
+}

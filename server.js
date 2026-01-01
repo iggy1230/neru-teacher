@@ -23,11 +23,11 @@ try {
     });
 } catch (e) { console.error("Init Error:", e.message); }
 
-// --- 通常のTTS (音声合成) ---
+// 通常TTS
 function createSSML(text, mood) {
     let rate = "1.1", pitch = "+2st"; 
     if (mood === "thinking") { rate = "1.0"; pitch = "0st"; }
-    let cleanText = text.replace(/[\u{1F600}-\u{1F6FF}]/gu, '').replace(/🐾|✨|⭐|🎵|🐟|🎤|⭕️|❌/g, '').replace(/&/g, 'と').replace(/[<>"']/g, ' ');
+    let cleanText = text.replace(/[\u{1F600}-\u{1F6FF}]/gu, '').replace(/🐾|✨|⭐|🎵|🐟|🎤|⭕️|❌/g, '');
     if (cleanText.length < 5) return `<speak>${cleanText}</speak>`;
     return `<speak><prosody rate="${rate}" pitch="${pitch}">${cleanText.replace(/……/g, '<break time="500ms"/>').replace(/にゃ/g, '<prosody pitch="+3st">にゃ</prosody>')}</prosody></speak>`;
 }
@@ -46,7 +46,7 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- 給食リアクションAPI ---
+// 給食API
 app.post('/lunch-reaction', async (req, res) => {
     try {
         const { count, name } = req.body;
@@ -62,7 +62,7 @@ app.post('/lunch-reaction', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Error" }); }
 });
 
-// --- 画像分析API ---
+// 分析API
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject } = req.body;
@@ -80,7 +80,7 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// ★★★ Live API Proxy (復元・安定版) ★★★
+// ★★★ Live API Proxy ★★★
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', (clientWs) => {
@@ -94,20 +94,24 @@ wss.on('connection', (clientWs) => {
         geminiWs.on('open', () => {
             console.log('Connected to Gemini');
             
-            // 1. 設定送信
+            // 設定送信（ここを変更しました）
             const setupMsg = {
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
                     generation_config: {
                         response_modalities: ["AUDIO"],
-                        speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Puck" } } }
+                        speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoide" } } } // ★Aoideに変更
                     },
-                    system_instruction: { parts: [{ text: `あなたはネル先生です。語尾は「にゃ」。短く話して。` }] }
+                    system_instruction: { 
+                        parts: [{ 
+                            // ★指示内容を変更
+                            text: `君は『ねこご市立ねこづか小学校』のネル先生だにゃ。いつも元気で、語尾は必ず『〜にゃ』だにゃ。 いつもの授業と同じように、ゆっくり、優しいトーンで喋ってにゃ。給食(餌)のカリカリが大好物にゃ。必ずユーザーの学年に合わせて分かりやすいように話す` 
+                        }] 
+                    }
                 }
             };
             geminiWs.send(JSON.stringify(setupMsg));
 
-            // 2. ★重要：クライアントに「準備OK」を伝える
             if (clientWs.readyState === WebSocket.OPEN) {
                 clientWs.send(JSON.stringify({ type: "server_ready" }));
             }
@@ -128,7 +132,6 @@ wss.on('connection', (clientWs) => {
     clientWs.on('message', (data) => {
         try {
             const parsed = JSON.parse(data);
-            // 音声転送 (Geminiがつながっている時だけ)
             if (parsed.type === 'audio' && geminiWs && geminiWs.readyState === WebSocket.OPEN) {
                 geminiWs.send(JSON.stringify({
                     realtime_input: {
