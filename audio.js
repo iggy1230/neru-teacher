@@ -1,22 +1,11 @@
-// --- audio.js (口パク連動版) ---
+// --- audio.js (口パク連携強化版) ---
 
 let audioCtx = null;
 let currentSource = null;
 
-// グローバル変数として口パク状態を定義（初期値false）
+// ★口パク管理用のグローバル変数
 window.isNellSpeaking = false;
 
-// 1. オーディオエンジンの初期化
-function initAudioEngine() {
-    if (!audioCtx) {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    if (audioCtx.state === 'suspended') {
-        audioCtx.resume();
-    }
-}
-
-// 2. 音声再生メイン関数
 async function speakNell(text, mood = "normal") {
     if (!text || text === "") return;
 
@@ -26,7 +15,9 @@ async function speakNell(text, mood = "normal") {
         currentSource = null;
     }
 
-    initAudioEngine();
+    // AudioContext準備
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
 
     try {
         const res = await fetch('/synthesize', {
@@ -51,14 +42,13 @@ async function speakNell(text, mood = "normal") {
         
         currentSource = source;
         
-        // ★口パク開始
+        // ★再生開始：口パクON
         window.isNellSpeaking = true;
-        
         source.start(0);
 
         return new Promise(resolve => {
             source.onended = () => {
-                // ★口パク終了
+                // ★再生終了：口パクOFF
                 window.isNellSpeaking = false;
                 resolve();
             };
@@ -66,11 +56,10 @@ async function speakNell(text, mood = "normal") {
 
     } catch (e) {
         console.error("Audio Error:", e);
-        window.isNellSpeaking = false; // エラー時は止める
+        window.isNellSpeaking = false;
     }
 }
 
-// メッセージ更新ラッパー
 async function updateNellMessage(t, mood = "normal") {
     const el = document.getElementById('nell-text');
     if (el) el.innerText = t;
