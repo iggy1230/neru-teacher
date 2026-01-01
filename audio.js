@@ -1,15 +1,32 @@
-// --- audio.js (独立再生版) ---
+// --- audio.js (口パク連動版) ---
 
-let currentAudio = null;
+let audioCtx = null;
+let currentSource = null;
 
+// グローバル変数として口パク状態を定義（初期値false）
+window.isNellSpeaking = false;
+
+// 1. オーディオエンジンの初期化
+function initAudioEngine() {
+    if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+    }
+}
+
+// 2. 音声再生メイン関数
 async function speakNell(text, mood = "normal") {
     if (!text || text === "") return;
 
-    // 前の音声を止める
-    if (currentAudio) {
-        currentAudio.pause();
-        currentAudio = null;
+    // 前の音声を停止
+    if (currentSource) {
+        try { currentSource.stop(); } catch(e) {}
+        currentSource = null;
     }
+
+    initAudioEngine();
 
     try {
         const res = await fetch('/synthesize', {
@@ -21,27 +38,41 @@ async function speakNell(text, mood = "normal") {
         if (!res.ok) throw new Error("TTS Error");
         const data = await res.json();
         
-        // 通常のHTML5 Audioで再生（これが一番干渉しにくい）
-        const audio = new Audio("data:audio/mp3;base64," + data.audioContent);
-        currentAudio = audio;
+        const binary = window.atob(data.audioContent);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+        }
+
+        const buffer = await audioCtx.decodeAudioData(bytes.buffer);
+        const source = audioCtx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(audioCtx.destination);
         
+        currentSource = source;
+        
+        // ★口パク開始
+        window.isNellSpeaking = true;
+        
+        source.start(0);
+
         return new Promise(resolve => {
-            audio.onended = resolve;
-            audio.onerror = resolve;
-            audio.play().catch(e => {
-                console.warn("Autoplay blocked", e);
+            source.onended = () => {
+                // ★口パク終了
+                window.isNellSpeaking = false;
                 resolve();
-            });
+            };
         });
 
     } catch (e) {
-        console.error("Voice Error:", e);
+        console.error("Audio Error:", e);
+        window.isNellSpeaking = false; // エラー時は止める
     }
 }
 
+// メッセージ更新ラッパー
 async function updateNellMessage(t, mood = "normal") {
     const el = document.getElementById('nell-text');
     if (el) el.innerText = t;
-    // メッセージ表示後に音声を再生
     return await speakNell(t, mood);
 }
