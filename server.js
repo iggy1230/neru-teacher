@@ -23,7 +23,7 @@ try {
     });
 } catch (e) { console.error("Init Error:", e.message); }
 
-// --- 音声合成 (SSML) ---
+// --- 通常TTS (音声合成) ---
 function createSSML(text, mood) {
     let rate = "1.1", pitch = "+2st"; 
     if (mood === "thinking") { rate = "1.0"; pitch = "0st"; }
@@ -31,20 +31,13 @@ function createSSML(text, mood) {
     if (mood === "excited") { rate = "1.2"; pitch = "+4st"; }
     
     let cleanText = text
-        .replace(/[\u{1F600}-\u{1F6FF}]/gu, '') // 絵文字削除
-        .replace(/🐾|✨|⭐|🎵|🐟|🎤|⭕️|❌/g, '') // 特定記号削除
-        // ★修正点：読み上げの強制指定
-        .replace(/[（(]/g, ' かっこ ') // 開きカッコ
-        .replace(/[）)]/g, ' かっこ ') // 閉じカッコ
-        .replace(/[○〇]/g, 'まる')   // 記号の丸や漢数字のゼロを「まる」と読む
-        // --------------------------
-        .replace(/&/g, 'と').replace(/[<>"']/g, ' '); // SSMLエスケープ
+        .replace(/[\u{1F600}-\u{1F6FF}]/gu, '')
+        .replace(/🐾|✨|⭐|🎵|🐟|🎤|⭕️|❌/g, '')
+        .replace(/&/g, 'と').replace(/[<>"']/g, ' ');
 
-    // 短い文などはそのまま
     if (cleanText.length < 2 || cleanText.includes("どの教科") || cleanText.includes("おはなし")) {
         return `<speak>${cleanText}</speak>`;
     }
-    
     cleanText = cleanText.replace(/……/g, '<break time="500ms"/>');
     return `<speak><prosody rate="${rate}" pitch="${pitch}">${cleanText}</prosody></speak>`;
 }
@@ -62,7 +55,6 @@ app.post('/synthesize', async (req, res) => {
             });
             res.json({ audioContent: response.audioContent.toString('base64') });
         } catch (e) {
-            // エラー時は平文リトライ
             const [retry] = await ttsClient.synthesizeSpeech({
                 input: { text: text.replace(/[^a-zA-Z0-9\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/g, '') },
                 voice: { languageCode: 'ja-JP', name: 'ja-JP-Neural2-B' },
@@ -126,7 +118,7 @@ app.post('/lunch-reaction', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Lunch Error" }); }
 });
 
-// --- チャットAPI ---
+// --- チャットAPI (Fallback) ---
 app.post('/chat', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
@@ -149,54 +141,26 @@ app.post('/analyze', async (req, res) => {
         });
         
         const role = `あなたは「ネル先生」という優秀な猫の先生です。小学${grade}年生の「${subject}」を教えています。`;
-        
-        const scanInstruction = `
-        【最重要】
-        画像の「最上部」から「最下部」まで、すべての問題を漏らさず抽出してください。
-        ヘッダー付近やフッター付近にある問題も見逃さないでください。
-        問題文は省略せず、一字一句正確に書き起こしてください。
-        `;
-
+        const scanInstruction = `【最重要】画像の「最上部」から「最下部」まで、すべての問題を漏らさず抽出してください。手書きの答案は無視し、問題文を正確に書き起こしてください。`;
         const hintInstruction = `
         "hints": 生徒が段階的に解けるよう、必ず3つのヒントを作成してください。
-        【重要】ヒントの中で「正解そのもの」は絶対に書かないでください。
+        【絶対厳守】ヒントの中で「正解そのもの」は絶対に書かないでください。
         ■漢字: 意味、部首、似ている字。
         ■算数: 考え方、式、注目点。
         `;
         
         let prompt = "";
-        
         if (mode === 'explain') {
             prompt = `
-            ${role}
-            ${scanInstruction}
+            ${role} ${scanInstruction}
             以下のJSON形式で出力してください。
-            [
-              {
-                "id": 1,
-                "label": "問題番号",
-                "question": "問題文の正確な書き起こし",
-                "correct_answer": "正解",
-                ${hintInstruction}
-              }
-            ]
+            [{"id":1,"label":"問題番号","question":"問題文の正確な書き起こし","correct_answer":"正解",${hintInstruction}}]
             算数記号は「×」「÷」を使用。語尾は「にゃ」。
             `;
         } else {
             prompt = `
-            ${role}
-            厳格な採点官として画像を分析してください。
-            ${scanInstruction}
-            [
-              {
-                "id": 1,
-                "label": "問題番号",
-                "question": "問題文の正確な書き起こし",
-                "correct_answer": "正解（数字や単語のみ）",
-                "student_answer": "手書き文字から読み取った生徒の答え（空欄なら空文字\"\"）",
-                ${hintInstruction}
-              }
-            ]
+            ${role} 厳格な採点官として画像を分析してください。 ${scanInstruction}
+            [{"id":1,"label":"問題番号","question":"問題文の正確な書き起こし","correct_answer":"正解","student_answer":"手書き読取(空欄なら\"\")",${hintInstruction}}]
             `;
         }
 
@@ -214,21 +178,36 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- Live API Proxy ---
+// ★★★ Live API Proxy ★★★
 const wss = new WebSocketServer({ server });
 wss.on('connection', (clientWs) => {
     let geminiWs = null;
-    const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidirectionalGenerateContent?key=${process.env.GEMINI_API_KEY}`;
+    const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${process.env.GEMINI_API_KEY}`;
     try {
         geminiWs = new WebSocket(GEMINI_URL);
         geminiWs.on('open', () => {
+            // ★ネル先生の人格設定と声の調整
             geminiWs.send(JSON.stringify({
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
-                    generation_config: { response_modalities: ["AUDIO"], speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Puck" } } } },
-                    system_instruction: { parts: [{ text: `あなたはネル先生です。語尾は「にゃ」。短く話して。` }] }
+                    generation_config: { 
+                        response_modalities: ["AUDIO", "TEXT"], 
+                        speech_config: { 
+                            voice_config: { prebuilt_voice_config: { voice_name: "Puck" } } // Puck: 元気で明るい子供向けの声
+                        } 
+                    },
+                    system_instruction: { 
+                        parts: [{ 
+                            text: `君は『猫後市立ねこづか小学校』のネル先生だにゃ。いつも元気で、語尾は必ず『〜にゃ』だにゃ。いつもの授業と同じように、明るく、ゆっくり、優しいトーンで喋ってにゃ。` 
+                        }] 
+                    }
                 }
             }));
+            
+            // クライアントへ準備完了通知
+            if (clientWs.readyState === WebSocket.OPEN) {
+                clientWs.send(JSON.stringify({ type: "server_ready" }));
+            }
         });
         geminiWs.on('message', (data) => { if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data); });
         geminiWs.on('error', (e) => console.error('Gemini WS Error:', e));
@@ -237,8 +216,12 @@ wss.on('connection', (clientWs) => {
     clientWs.on('message', (data) => {
         try {
             const parsed = JSON.parse(data);
-            if (parsed.realtime_input && geminiWs && geminiWs.readyState === WebSocket.OPEN) {
-                geminiWs.send(JSON.stringify(parsed));
+            if (parsed.type === 'audio' && geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+                geminiWs.send(JSON.stringify({
+                    realtime_input: {
+                        media_chunks: [{ mime_type: "audio/pcm;rate=16000", data: parsed.data }]
+                    }
+                }));
             }
         } catch (e) {}
     });
