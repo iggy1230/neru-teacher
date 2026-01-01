@@ -5,6 +5,7 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import WebSocket, { WebSocketServer } from 'ws';
+import { parse } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,7 +40,7 @@ function createSSML(text, mood) {
         return `<speak>${cleanText}</speak>`;
     }
     cleanText = cleanText.replace(/……/g, '<break time="500ms"/>');
-    return `<speak><prosody rate="${rate}" pitch="${pitch}">${cleanText}</prosody></speak>`;
+    return `<speak><prosody rate="${rate}" pitch="${pitch}">${cleanText.replace(/にゃ/g, '<prosody pitch="+3st">にゃ</prosody>')}</prosody></speak>`;
 }
 
 app.post('/synthesize', async (req, res) => {
@@ -72,7 +73,7 @@ app.post('/lunch-reaction', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Error" }); }
 });
 
-// --- チャットAPI ---
+// --- チャットAPI (Fallback) ---
 app.post('/chat', async (req, res) => {
     try {
         const { message, grade, name } = req.body;
@@ -83,7 +84,7 @@ app.post('/chat', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
-// --- ★画像分析API (教科別ルール強化版) ---
+// --- ★画像分析API (教科別・超高精度版) ---
 app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
@@ -94,78 +95,39 @@ app.post('/analyze', async (req, res) => {
         });
 
         // ■ 教科別ルール定義
-        const subjectRules = {
+        const rules = {
             'さんすう': {
-                attention: `
-                - 筆算の横線とマイナス記号を混同しないこと。
-                - 累乗（2^2など）や分数を正確に書き起こすこと。`,
-                hints: `
-                - ヒント1（立式）: 「何算を使えばいいか」のヒント（例：全部でいくつ？と聞かれているから足し算にゃ）。
-                - ヒント2（注目点）: 「単位のひっかけ」や「図の数値」への誘導（例：cmをmに直すのを忘れてないかにゃ？）。
-                - ヒント3（計算のコツ）: 「計算の工夫」や「最終確認」（例：一の位から順番に計算してみるにゃ）。`,
-                grading: `
-                - 筆算の繰り上がりを「答え」と見間違えないように注意してにゃ。
-                - 単位（cm, Lなど）が問題で指定されている場合、単位がないものはバツにしてにゃ。
-                - 数字の「0」と「6」、「1」と「7」の見間違いに注意して、慎重に判定してにゃ。`
+                scan: "筆算の横線とマイナス記号の混同注意。累乗や分数を正確に。",
+                hint: "1.立式(何算か) 2.注目点(単位や数値) 3.計算のコツ",
+                grade: "筆算の繰り上がりメモを答えと間違えない。単位(cm,L)がないものはバツ。0と6、1と7の見間違い注意。"
             },
             'こくご': {
-                attention: `
-                - ふりがな（ルビ）は無視して、本文の漢字と送り仮名を正確に。
-                - 縦書きの場合は右から左へ読むこと。
-                - 漢字書取り問題は『⬜︎⬜︎(ふりがな)を出す』のように表記する。
-                - 読解問題の長い文章は書き起こししない。`,
-                hints: `
-                【漢字書き取りの場合】
-                - ヒント1: 「漢字のなりたち」を教える。
-                - ヒント2: 「辺やつくりや画数」を教える。
-                - ヒント3: 「似た漢字」を教える。
-                【読解問題の場合】
-                - ヒント1（場所）: 「答えがどこにあるか」を教える（例：2ページ目の3行目あたりを読んでみてにゃ）。
-                - ヒント2（キーワード）: 「注目すべき言葉」を教える（例：『しかし』のあとの文章が大事だにゃ）。
-                - ヒント3（答え方）: 「語尾の指定」など（例：『〜ということ』で終わるように書くにゃ）。`,
-                grading: `
-                - 漢字の「トメ・ハネ・ハライ」を厳しく見てにゃ。
-                - 送り仮名が間違っている場合はバツだにゃ。
-                - 読解問題では、解答の「文末」が適切か（〜のこと、〜から等）もチェックしてにゃ。`
+                scan: "ふりがな無視。縦書きは右から左。漢字書取りは『⬜︎⬜︎(ふりがな)』と表記。長文読解の本文は省略。",
+                hint: "漢字:1.なりたち 2.辺やつくり 3.似た字\n読解:1.場所 2.キーワード 3.文末指定",
+                grade: "トメ・ハネ・ハライ厳守。送り仮名ミスはバツ。読解は文末(〜から、〜こと)が適切かチェック。"
             },
             'りか': {
-                attention: `
-                - グラフの軸ラベルや単位（g, cm, ℃など）を落とさないこと。
-                - 記号選択問題（ア、イ、ウ）の選択肢も書き出すこと。
-                - 最初の問題が図や表と似た位置にある場合があるので見逃さないこと。`,
-                hints: `
-                - ヒント1（観察）: 「図や表のどこを見るか」（例：グラフが急に上がっているところを探してみてにゃ）。
-                - ヒント2（関連知識）: 「習った言葉の想起」（例：この実験で使った、あの青い液体の名前は何だったかにゃ？）。
-                - ヒント3（絞り込み）: 「選択肢のヒント」や「最初の1文字」。`,
-                grading: `
-                - カタカナ指定（例：ジョウロ、アルコールランプ）をひらがなで書いていたらバツにしてにゃ。
-                - グラフの描画問題は、点が正しい位置にあるか、線が真っ直ぐかを厳しく判定してにゃ。`
+                scan: "グラフ軸ラベル・単位(g,℃)必須。記号選択肢も書き出す。図付近の問題見逃し厳禁。",
+                hint: "1.観察(図のどこを見るか) 2.関連知識(用語想起) 3.絞り込み(選択肢)",
+                grade: "カタカナ指定をひらがなで書いたらバツ。グラフ描画は点の位置と直線性重視。"
             },
             'しゃかい': {
-                attention: `
-                - グラフの軸ラベルや単位（g, cm, ℃など）を落とさないこと。
-                - 記号選択問題（ア、イ、ウ）の選択肢も書き出すこと。
-                - 最初の問題が図や表と似た位置にある場合があるので見逃さないこと。`,
-                hints: `
-                - ヒント1（観察）: 「図や表のどこを見るか」（例：グラフが急に上がっているところを探してみてにゃ）。
-                - ヒント2（関連知識）: 「習った言葉の想起」（例：この実験で使った、あの青い液体の名前は何だったかにゃ？）。
-                - ヒント3（絞り込み）: 「選択肢のヒント」や「最初の1文字」（例：『平』から始まる4文字の時代にゃ）。`,
-                grading: `
-                - 漢字指定の用語（例：都道府県名）をひらがなで書いていたらバツにゃ。
-                - 時代背景が混ざっていないか（例：江戸時代なのに「士農工商」など）に注意してにゃ。`
+                scan: "グラフ軸・単位・地図記号正確に。選択肢書き出し。資料周辺の問題注意。",
+                hint: "1.観察(資料の注目点) 2.関連知識(歴史用語・地名) 3.絞り込み",
+                grade: "漢字指定をひらがなで書いたらバツ。時代背景の矛盾(江戸時代に明治の用語など)チェック。"
             }
         };
+        const r = rules[subject] || rules['さんすう'];
 
-        const rule = subjectRules[subject] || subjectRules['さんすう'];
         const baseRole = `あなたは「ねこご市立ねこづか小学校」のネル先生です。小学${grade}年生の「${subject}」担当です。語尾は「にゃ」。`;
         
+        // 共通の強力な書き起こし指示
         const commonScan = `
         【書き起こし絶対ルール】
-        1. 画像の「最上部」から「最下部」まで、大問・小問番号を含めてすべての数字や項目名を漏らさず書き起こしてください。
-        2. ${mode === 'explain' ? '画像内の手書きの答案は【完全に無視】し、問題文だけを抽出してください。' : '採点のため、生徒の手書き文字（student_answer）を読み取ってください。子供特有の筆跡を考慮して、前後の文脈から数字や文字を推測してください。'}
+        1. 画像の「最上部」から「最下部」まで、大問・小問番号を含めてすべての問題を漏らさず抽出してください。
+        2. ${mode === 'explain' ? '画像内の手書きの答案は【完全に無視】し、問題文だけを抽出してください。' : '採点のため、生徒の手書き文字（student_answer）を読み取ってください。子供特有の筆跡を考慮し、文脈から推測してください。'}
         3. 1つの問いに複数の回答が必要なときは、JSONデータの要素を分けて、必要な数だけ回答欄を設けてください（例: 問1(1)①, 問1(1)②）。
-        4. 【教科別注目ポイント】: ${rule.attention}
-        `;
+        4. 教科別注意: ${r.scan}`;
 
         let prompt = "";
 
@@ -184,17 +146,16 @@ app.post('/analyze', async (req, res) => {
                 "question": "問題文の正確な書き起こし",
                 "correct_answer": "正解",
                 "hints": [
-                    "ヒント1: ${rule.hints.split('\n')[1] || '考え方'}",
-                    "ヒント2: ${rule.hints.split('\n')[2] || '途中経過'}",
-                    "ヒント3: ${rule.hints.split('\n')[3] || '答えに近いヒント'}"
+                    "ヒント1: ${r.hint.split('\n').find(l=>l.includes('1.')) || '考え方'}",
+                    "ヒント2: ${r.hint.split('\n').find(l=>l.includes('2.')) || '途中経過'}",
+                    "ヒント3: ${r.hint.split('\n').find(l=>l.includes('3.')) || '答えに近いヒント'}"
                 ]
               }
             ]
             
             【重要】
             - ヒント配列は必ず3段階作成してください。
-            - **答えそのものは絶対に書かないでください。**
-            - 問題の種類（漢字か読解か等）を自動判定し、最適なヒントを出してください。
+            - **答えそのものは絶対にヒントに書かないでください。**
             `;
         } else {
             // 【採点・復習モード】
@@ -219,7 +180,7 @@ app.post('/analyze', async (req, res) => {
             ]
 
             【採点基準】
-            ${rule.grading}
+            ${r.grade}
             - 読み取りミス修正のため、student_answerは生の読み取り結果を返してください。
             - 答えそのものはヒントに書かないでください。
             `;
@@ -239,34 +200,58 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- ★Live API Proxy (安定版・Charon) ---
+// --- ★Live API Proxy (復元・安定版・Charon) ---
 const wss = new WebSocketServer({ server });
-wss.on('connection', (clientWs) => {
+
+wss.on('connection', (clientWs, req) => {
+    // URLから学年を取得
+    const parameters = parse(req.url, true).query;
+    const userGrade = parameters.grade || "1";
+
     let geminiWs = null;
     const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${process.env.GEMINI_API_KEY}`;
+
     try {
         geminiWs = new WebSocket(GEMINI_URL);
+
         geminiWs.on('open', () => {
-            geminiWs.send(JSON.stringify({
+            console.log('Connected to Gemini Live API');
+            
+            // 1. 設定送信
+            const setupMsg = {
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
-                    generation_config: { 
-                        response_modalities: ["AUDIO"], 
-                        speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Charon" } } } 
+                    generation_config: {
+                        response_modalities: ["AUDIO"],
+                        speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Charon" } } } // ★Charon指定
                     },
                     system_instruction: { 
                         parts: [{ 
-                            text: `君は『ねこご市立ねこづか小学校』のネル先生だにゃ。いつも元気で、語尾は必ず『〜にゃ』だにゃ。 いつもの授業と同じように、ゆっくり、優しいトーンで喋ってにゃ。給食(餌)のカリカリが大好物にゃ。必ずユーザーの学年に合わせて分かりやすいように話す` 
+                            text: `君は『ねこご市立ねこづか小学校』のネル先生だにゃ。いつも元気で、語尾は必ず『〜にゃ』だにゃ。 いつもの授業と同じように、ゆっくり、優しいトーンで喋ってにゃ。給食(餌)のカリカリが大好物にゃ。必ずユーザーの${userGrade}学年に合わせて分かりやすいように話す` 
                         }] 
                     }
                 }
-            }));
-            if (clientWs.readyState === WebSocket.OPEN) clientWs.send(JSON.stringify({ type: "server_ready" }));
+            };
+            geminiWs.send(JSON.stringify(setupMsg));
+
+            // 2. 準備OK通知
+            if (clientWs.readyState === WebSocket.OPEN) {
+                clientWs.send(JSON.stringify({ type: "server_ready" }));
+            }
         });
-        geminiWs.on('message', (data) => { if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data); });
-        geminiWs.on('error', (e) => console.error('Gemini WS Error:', e));
-        geminiWs.on('close', () => {});
-    } catch (e) { clientWs.close(); }
+
+        geminiWs.on('message', (data) => {
+            if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data);
+        });
+
+        geminiWs.on('error', (e) => console.error('Gemini WS Error:', e.message));
+        geminiWs.on('close', () => console.log('Gemini WS Closed'));
+
+    } catch (e) {
+        console.error("Connection failed:", e);
+        clientWs.close();
+    }
+
     clientWs.on('message', (data) => {
         try {
             const parsed = JSON.parse(data);
@@ -279,5 +264,8 @@ wss.on('connection', (clientWs) => {
             }
         } catch (e) {}
     });
-    clientWs.on('close', () => { if (geminiWs && geminiWs.readyState === WebSocket.OPEN) geminiWs.close(); });
+
+    clientWs.on('close', () => {
+        if (geminiWs && geminiWs.readyState === WebSocket.OPEN) geminiWs.close();
+    });
 });
