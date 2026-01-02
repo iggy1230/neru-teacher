@@ -36,11 +36,10 @@ function createSSML(text, mood) {
         .replace(/🐾|✨|⭐|🎵|🐟|🎤|⭕️|❌/g, '')
         .replace(/&/g, 'と').replace(/[<>"']/g, ' ');
 
-    // ゲーム実況などは短くハキハキと
-    if (cleanText.length < 10 || cleanText.includes("！")) {
-        return `<speak><prosody rate="1.2" pitch="+3st">${cleanText}</prosody></speak>`;
+    // ゲーム実況や短いセリフはタグなしで安定化
+    if (cleanText.length < 10 || cleanText.includes("ゲットして")) {
+        return `<speak>${cleanText}</speak>`;
     }
-
     cleanText = cleanText.replace(/……/g, '<break time="500ms"/>');
     return `<speak><prosody rate="${rate}" pitch="${pitch}">${cleanText.replace(/にゃ/g, '<prosody pitch="+3st">にゃ</prosody>')}</prosody></speak>`;
 }
@@ -59,54 +58,61 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- ★新設：ゲーム実況API ---
-app.post('/game-commentary', async (req, res) => {
+// --- ★新設: ゲーム実況API ---
+app.post('/game-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
-        const { situation, name } = req.body; // situation: start, hit, pinch, clear, fail
+        const { type, name, score } = req.body;
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
         
-        const prompt = `
-        あなたは猫の先生「ネル先生」です。生徒の「${name}」さんがブロック崩しゲームをしています。
-        今の状況に合わせて、10文字以内で一言だけ、実況または応援してください。
-        
-        状況: ${situation}
-        
-        【条件】
-        - 10文字以内（絶対に短く！）。
-        - 語尾は「にゃ」または「にゃ！」。
-        - 絵文字禁止。
-        - 状況別例（これを使わず毎回変えて）:
-          start -> 「始めるにゃ！」「いくよ！」
-          hit -> 「ナイスにゃ！」「いいぞ！」
-          pinch -> 「危ないにゃ！」「落ちるにゃ！」
-          clear -> 「すごいにゃ！」「天才にゃ！」
-          fail -> 「どんまいにゃ」「惜しいにゃ」
-        `;
+        let prompt = "";
+        let mood = "happy";
+
+        if (type === 'start') {
+            // 開始時のセリフ
+            prompt = `
+            あなたは「ねこご市立ねこづか小学校」のネル先生です。
+            生徒の「${name}」さんがミニゲーム「カリカリキャッチ」を始めます。
+            「${name}さん！カリカリいっぱいゲットしてにゃ！」と元気よく応援してください。
+            語尾は「にゃ」。絵文字禁止。
+            `;
+            mood = "excited";
+        } else {
+            // 終了時のセリフ（スコアに応じて変化）
+            prompt = `
+            あなたは「ねこご市立ねこづか小学校」のネル先生です。
+            生徒の「${name}」さんがゲームを終えました。獲得したカリカリは ${score} 個です（最大20個）。
+            個数に応じて、褒めるか、慰めるか、驚くかしてください。
+            
+            条件:
+            - 0〜5個: 励ます。
+            - 6〜15個: 褒める。
+            - 16〜20個: 大絶賛する。
+            
+            【厳守】
+            - 20文字以内で短く。
+            - 語尾は「にゃ」。
+            - 絵文字禁止。
+            `;
+            if (score > 15) mood = "excited";
+        }
 
         const result = await model.generateContent(prompt);
-        res.json({ reply: result.response.text().trim() });
-    } catch (err) { res.status(500).json({ error: "Game AI Error" }); }
+        res.json({ reply: result.response.text().trim(), mood: mood });
+    } catch (err) { 
+        res.status(500).json({ error: "Game AI Error" }); 
+    }
 });
 
 // --- 給食リアクションAPI ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
-        if (!genAI) throw new Error("GenAI not ready");
         const { count, name } = req.body;
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-        
-        let prompt = "";
         const isSpecial = count % 10 === 0;
-
-        if (isSpecial) {
-            const theme = ["生徒への過剰な感謝", "カリカリの美味しさの哲学", "生徒との絆"][Math.floor(Math.random()*3)];
-            prompt = `あなたは猫の先生「ネル先生」。生徒「${name}」から給食${count}個目をもらった。
-            テーマ:【${theme}】で60文字程度で熱く語って。注釈禁止。語尾「にゃ」。`;
-        } else {
-            prompt = `あなたは猫の先生「ネル先生」。カリカリを1つ食べた。15文字以内で一言リアクション。例:「うみゃい！」など。語尾「にゃ」。`;
-        }
-
+        let prompt = isSpecial 
+            ? `ネル先生として、給食${count}個目の感謝を熱く語って。相手:${name}。60文字程度。注釈禁止。語尾「にゃ」。`
+            : `ネル先生として、給食を食べた一言感想。15文字以内。語尾「にゃ」。`;
         const result = await model.generateContent(prompt);
         let reply = result.response.text().trim();
         reply = reply.replace(/^[A-C][:：]\s*/i, '').replace(/^テーマ[:：]\s*/, '');
@@ -115,66 +121,52 @@ app.post('/lunch-reaction', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Error" }); }
 });
 
-// --- 画像分析API ---
-app.post('/analyze', async (req, res) => {
-    try {
-        if (!genAI) throw new Error("GenAI not ready");
-        const { image, mode, grade, subject } = req.body;
-        const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.0-flash", 
-            generationConfig: { responseMimeType: "application/json" } 
-        });
-
-        const rules = {
-            'さんすう': { scan: "筆算の横線とマイナス記号の混同注意。累乗や分数を正確に。", hint: "1.立式 2.注目点 3.計算のコツ", grade: "筆算の繰り上がりメモを答えと間違えない。単位がないものはバツ。0と6の見間違い注意。" },
-            'こくご': { scan: "ふりがな無視。縦書きは右から左。", hint: "漢字:1.なりたち 2.構成 3.似た字", grade: "トメ・ハネ・ハライ厳守。" },
-            'りか': { scan: "グラフ軸ラベル・単位必須。記号選択肢も書き出す。", hint: "1.観察 2.知識想起 3.絞り込み", grade: "カタカナ指定をひらがなで書いたらバツ。" },
-            'しゃかい': { scan: "グラフ軸・地図記号正確に。", hint: "1.観察 2.知識想起 3.絞り込み", grade: "漢字指定をひらがなで書いたらバツ。" }
-        };
-        const r = rules[subject] || rules['さんすう'];
-        const baseRole = `あなたは「ねこご市立ねこづか小学校」のネル先生です。小学${grade}年生の「${subject}」担当です。語尾は「にゃ」。`;
-        
-        const commonScan = `
-        【書き起こし絶対ルール】
-        1. 画像の「最上部」から「最下部」まで、すべての問題を漏らさず抽出してください。
-        2. ${mode === 'explain' ? '手書き答案は無視し、問題文のみ抽出。' : '手書き文字（student_answer）を文脈から推測して読み取る。'}
-        3. 1つの問いに複数の回答が必要なときは要素を分ける（例: 問1(1)①, 問1(1)②）。
-        4. 教科別注意: ${r.scan}`;
-
-        let prompt = "";
-        if (mode === 'explain') {
-            prompt = `
-            ${baseRole} ${commonScan}
-            JSON出力: [{"id":1,"label":"問1","question":"文","correct_answer":"正解","hints":["ヒント1(${r.hint.split('1.')[1].split('2.')[0]})","ヒント2...","ヒント3(答えは書かない)"]}]
-            `;
-        } else {
-            prompt = `
-            ${baseRole} 厳格な採点官。 ${commonScan}
-            JSON出力: [{"id":1,"label":"問1","question":"文","correct_answer":"正解","student_answer":"読取","hints":["ヒント1","ヒント2","ヒント3"]}]
-            【採点基準】${r.grade}
-            `;
-        }
-
-        const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
-        res.json(JSON.parse(result.response.text().replace(/```json|```/g, '').replace(/\*/g, '×').replace(/\//g, '÷')));
-    } catch (err) { res.status(500).json({ error: "AI Error" }); }
-});
-
 // --- チャットAPI ---
 app.post('/chat', async (req, res) => {
     try {
         const { message, grade, name } = req.body;
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-        const result = await model.generateContent(`あなたは「ネル先生」。相手は小学${grade}年生「${name}」。30文字以内、語尾「にゃ」。絵文字禁止。発言: ${message}`);
+        const prompt = `あなたは「ネル先生」。相手は小学${grade}年生「${name}」。30文字以内、語尾「にゃ」。絵文字禁止。発言: ${message}`;
+        const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text() });
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
+});
+
+// --- 画像分析API (高精度版) ---
+app.post('/analyze', async (req, res) => {
+    try {
+        const { image, mode, grade, subject } = req.body;
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash", generationConfig: { responseMimeType: "application/json" } });
+
+        // 教科別ルール
+        const rules = {
+            'さんすう': { attn: "筆算の横線とマイナス記号の混同注意。累乗や分数を正確に。", hint: "1.立式 2.注目点 3.計算のコツ", grade: "筆算の繰り上がりメモを答えと間違えない。単位がないものはバツ。" },
+            'こくご': { attn: "ふりがな無視。縦書きは右から左。漢字書取りは『⬜︎⬜︎(ふりがな)』。", hint: "漢字:1.なりたち 2.構成 3.似た字", grade: "トメ・ハネ・ハライ厳守。送り仮名ミスはバツ。" },
+            'りか': { attn: "グラフ軸ラベル・単位必須。記号選択肢も書き出す。", hint: "1.観察 2.知識想起 3.絞り込み", grade: "カタカナ指定をひらがなで書いたらバツ。" },
+            'しゃかい': { attn: "グラフ軸・地図記号正確に。", hint: "1.観察 2.知識想起 3.絞り込み", grade: "漢字指定をひらがなで書いたらバツ。" }
+        };
+        const r = rules[subject] || rules['さんすう'];
+        const baseRole = `あなたは「ねこご市立ねこづか小学校」のネル先生です。小学${grade}年生の「${subject}」担当です。語尾は「にゃ」。`;
+        const commonScan = `【書き起こし】画像最上部から最下部まで全問抽出。手書き答案は${mode === 'explain' ? '無視' : '推測して読み取る'}。教科別注意: ${r.attn}`;
+
+        let prompt = "";
+        if (mode === 'explain') {
+            prompt = `${baseRole} ${commonScan} JSON出力: [{"id":1,"label":"(1)","question":"文","correct_answer":"正解","hints":["ヒント1","ヒント2","ヒント3"]}] (答えはヒントに書かない)`;
+        } else {
+            prompt = `${baseRole} 厳格採点。${commonScan} JSON出力: [{"id":1,"label":"①","question":"文","correct_answer":"正解","student_answer":"読取","hints":["ヒント1","ヒント2","ヒント3"]}] 【採点基準】${r.grade}`;
+        }
+
+        const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
+        const jsonStr = result.response.text().replace(/```json|```/g, '').replace(/\*/g, '×').replace(/\//g, '÷');
+        res.json(JSON.parse(jsonStr));
+    } catch (err) { res.status(500).json({ error: "AI Error" }); }
 });
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- Live API Proxy ---
+// --- Live API Proxy (安定版) ---
 const wss = new WebSocketServer({ server });
 wss.on('connection', (clientWs, req) => {
     const parameters = parse(req.url, true).query;
@@ -189,7 +181,11 @@ wss.on('connection', (clientWs, req) => {
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
                     generation_config: { response_modalities: ["AUDIO"], speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Charon" } } } },
-                    system_instruction: { parts: [{ text: `君は『ねこご市立ねこづか小学校』のネル先生だにゃ。いつも元気で、語尾は必ず『〜にゃ』だにゃ。ゆっくり、優しいトーンで喋ってにゃ。給食(餌)のカリカリが大好物にゃ。必ずユーザーの${userGrade}学年に合わせて分かりやすいように話す` }] }
+                    system_instruction: { 
+                        parts: [{ 
+                            text: `君は『ねこご市立ねこづか小学校』のネル先生だにゃ。いつも元気で、語尾は必ず『〜にゃ』だにゃ。 いつもの授業と同じように、ゆっくり、優しいトーンで喋ってにゃ。給食(餌)のカリカリが大好物にゃ。必ずユーザーの${userGrade}学年に合わせて分かりやすいように話す` 
+                        }] 
+                    }
                 }
             }));
             if (clientWs.readyState === WebSocket.OPEN) clientWs.send(JSON.stringify({ type: "server_ready" }));
