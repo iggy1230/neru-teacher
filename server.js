@@ -223,7 +223,7 @@ wss.on('connection', (clientWs, req) => {
                     model: "models/gemini-2.0-flash-exp",
                     generation_config: {
                         response_modalities: ["AUDIO"],
-                        speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Charon" } } } // ★Charon指定
+                        speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } } } // ★Charon指定
                     },
                     system_instruction: { 
                         parts: [{ 
