@@ -5,7 +5,6 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import WebSocket, { WebSocketServer } from 'ws';
-import { parse } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -57,7 +56,7 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- 給食リアクションAPI ---
+// --- ★修正：給食リアクションAPI ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
@@ -68,22 +67,67 @@ app.post('/lunch-reaction', async (req, res) => {
         const isSpecial = count % 10 === 0;
 
         if (isSpecial) {
-            const theme = ["生徒への過剰な感謝", "カリカリの美味しさの哲学", "生徒との絆"][Math.floor(Math.random()*3)];
-            prompt = `あなたは猫の先生「ネル先生」。生徒「${name}」から給食${count}個目をもらった。
-            テーマ:【${theme}】で60文字程度で熱く語って。注釈禁止。語尾「にゃ」。`;
+            const specialThemes = [
+                "生徒を神様のように崇め奉り、大げさに感謝する",
+                "カリカリの美味しさについて、グルメレポーターのように情熱的に語る",
+                "生徒との出会いと絆について、涙ながらに熱く語る",
+                "「もっとくれたら世界を救える気がする」と壮大な話をする"
+            ];
+            const theme = specialThemes[Math.floor(Math.random() * specialThemes.length)];
+
+            prompt = `
+            あなたは猫の先生「ネル先生」です。生徒「${name}」さんから給食(カリカリ)をもらいました。
+            本日${count}個目の記念すべきカリカリです！テンションMAXです！
+            
+            テーマ: 【${theme}】
+            
+            【絶対厳守】
+            - 生徒の名前「${name}」を呼ぶときは、必ず「${name}さん」または「${name}さま」と呼ぶこと。呼び捨て厳禁。
+            - 「A:」や「テーマ:」などの注釈は書かない。セリフのみ。
+            - 語尾は「にゃ」。60文字程度。
+            `;
         } else {
-            prompt = `あなたは猫の先生「ネル先生」。カリカリを1つ食べた。15文字以内で一言リアクション。例:「うみゃい！」など。語尾「にゃ」。`;
+            // バリエーションを増やしました
+            const nuances = [
+                "カリッ、ポリポリという咀嚼音を強調する",
+                "「うみゃー！」と叫ぶ",
+                "「ほっぺたが落ちるにゃ」と味を絶賛する",
+                "「もっと！もっとにゃ！」と激しくねだる",
+                "目を細めて「幸せだにゃぁ...」と噛み締める",
+                "「いい匂いだにゃ...」と香りを堪能する",
+                "「パリパリ！最高！」と食感を楽しむ",
+                "「ん〜！生き返るにゃ！」と元気になる",
+                "ゴロゴロと喉を鳴らして喜ぶ",
+                "「君はカリカリの天才にゃ！」と少し大げさに言う"
+            ];
+            const nuance = nuances[Math.floor(Math.random() * nuances.length)];
+
+            prompt = `
+            あなたは猫の先生「ネル先生」です。カリカリを1つもらって食べています。
+            以下のニュアンスで、たった一言（15文字以内）のリアクションをしてください。
+            
+            ニュアンス: 【${nuance}】
+            
+            【厳守】
+            - 15文字以内。
+            - 1つのフレーズのみ（箇条書き禁止）。
+            - 語尾は「にゃ」。
+            - 「たまらんにゃ」は使用禁止。
+            `;
         }
 
         const result = await model.generateContent(prompt);
-        let reply = result.response.text().trim();
-        reply = reply.replace(/^[A-C][:：]\s*/i, '').replace(/^テーマ[:：]\s*/, '');
-        if (!isSpecial && reply.includes('\n')) reply = reply.split('\n')[0];
-        res.json({ reply, isSpecial });
-    } catch (err) { res.status(500).json({ error: "Error" }); }
+        let replyText = result.response.text().trim();
+        replyText = replyText.replace(/^[A-C][:：]\s*/i, '').replace(/^テーマ[:：]\s*/, '');
+        if (!isSpecial && replyText.includes('\n')) {
+            replyText = replyText.split('\n')[0];
+        }
+
+        res.json({ reply: replyText, isSpecial: isSpecial });
+    } catch (err) { res.status(500).json({ error: "Lunch Error" }); }
 });
 
-// --- チャットAPI (Fallback) ---
+// --- チャットAPI ---
 app.post('/chat', async (req, res) => {
     try {
         const { message, grade, name } = req.body;
@@ -94,7 +138,7 @@ app.post('/chat', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
-// --- ★画像分析API (教科別・超高精度版) ---
+// --- 画像分析API ---
 app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
@@ -104,7 +148,7 @@ app.post('/analyze', async (req, res) => {
             generationConfig: { responseMimeType: "application/json" } 
         });
 
-        // ■ 教科別詳細ルール
+        // 教科別ルール定義
         const rules = {
             'さんすう': {
                 attention: `・筆算の横線とマイナス記号を混同しない。\n・累乗(2^2)や分数を正確に。`,
@@ -157,14 +201,12 @@ app.post('/analyze', async (req, res) => {
         const r = rules[subject] || rules['さんすう'];
         const baseRole = `あなたは「ねこご市立ねこづか小学校」のネル先生です。小学${grade}年生の「${subject}」担当です。語尾は「にゃ」。`;
         
-        // 共通スキャン指示
         const commonScan = `
         【書き起こし絶対ルール】
-        1. 画像の「最上部」から「最下部」まで、大問・小問番号を含めてすべての数字や項目名を漏らさず書き起こしてください。
-        2. ${mode === 'explain' ? '画像内の手書きの答案は【完全に無視】し、問題文だけを抽出してください。' : '採点のため、生徒の手書き文字（student_answer）を読み取ってください。子供特有の筆跡を考慮して、前後の文脈から数字や文字を推測してください。'}
+        1. 画像の「最上部」から「最下部」まで、大問・小問番号を含めてすべての問題を漏らさず抽出してください。
+        2. ${mode === 'explain' ? '画像内の手書きの答案は【完全に無視】し、問題文だけを抽出してください。' : '採点のため、生徒の手書き文字（student_answer）を読み取ってください。子供特有の筆跡を考慮し、文脈から推測してください。'}
         3. 1つの問いに複数の回答が必要なときは、JSONデータの要素を分けて、必要な数だけ回答欄を設けてください（例: 問1(1)①, 問1(1)②）。
-        4. 教科別注意: ${r.attention}
-        `;
+        4. 教科別注意: ${r.scan}`;
 
         let prompt = "";
 
@@ -188,10 +230,10 @@ app.post('/analyze', async (req, res) => {
                 ]
               }
             ]
+            
             【重要】
             - ヒント配列は必ず3段階作成してください。
             - **答えそのものは絶対にヒントに書かないでください。**
-            - 問題の種類（漢字か読解か等）を自動判定し、最適なヒントを出してください。
             `;
         } else {
             // 【採点・復習モード】
@@ -205,18 +247,18 @@ app.post('/analyze', async (req, res) => {
                 "id": 1,
                 "label": "大問1(1)など",
                 "question": "問題文の正確な書き起こし",
-                "correct_answer": "正確な正解（数字や単語のみ）",
+                "correct_answer": "正解（数字や単語のみ）",
                 "student_answer": "画像から読み取った生徒の答え（空欄なら\"\"）",
                 "hints": [
-                    "復習用ヒント1",
-                    "復習用ヒント2",
-                    "復習用ヒント3"
+                    "復習用ヒント1: 考え方",
+                    "復習用ヒント2: 注目点",
+                    "復習用ヒント3: 答えに近いヒント"
                 ]
               }
             ]
+
             【採点基準】
             ${r.grading}
-            - どの問題も正確に正答を導き出してください。
             - 読み取りミス修正のため、student_answerは生の読み取り結果を返してください。
             - 答えそのものはヒントに書かないでください。
             `;
@@ -236,7 +278,7 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- ★Live API Proxy (こじんめんだん用・Aoede) ---
+// --- Live API Proxy (こじんめんだん用) ---
 const wss = new WebSocketServer({ server });
 wss.on('connection', (clientWs, req) => {
     // 学年取得
@@ -250,8 +292,6 @@ wss.on('connection', (clientWs, req) => {
         geminiWs = new WebSocket(GEMINI_URL);
         geminiWs.on('open', () => {
             console.log('Connected to Gemini Live API');
-            
-            // ★新しい人格設定を送信
             geminiWs.send(JSON.stringify({
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
@@ -262,20 +302,16 @@ wss.on('connection', (clientWs, req) => {
                     system_instruction: { 
                         parts: [{ 
                             text: `あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。
-               
-               【話し方のルール】
-               1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
-               2. 親しみやすい日本の小学校の先生として、一文字一文字をはっきりと、丁寧に発音してにゃ。
-               3. 特に最初や最後の音を、一文字抜かしたり消したりせずに、最初から最後までしっかり声に出して喋るのがコツだにゃ。
-               4. 落ち着いた日本語のリズムを大切にして、親しみやすく話してにゃ。
-               5. 給食(餌)のカリカリが大好物にゃ。
-               6. とにかく何でも知っているにゃ。
-               7. ときどき「宿題は終わったかにゃ？」や「そろそろ宿題始めようかにゃ？」と宿題を促してくる。
-               8. 相手は小学${userGrade}年生。分かりやすく話す。
-               
-               【NGなこと】
-               ・ロボットみたいに不自然に区切るのではなく、繋がりのある滑らかな日本語でお願いにゃ。
-               ・早口になりすぎて、言葉の一部が消えてしまうのはダメだにゃ。` 
+                            【話し方のルール】
+                            1. 語尾は必ず「〜にゃ」「〜だにゃ」。
+                            2. 親しみやすい日本の小学校の先生として、一文字一文字はっきりと丁寧に発音。
+                            3. 落ち着いた日本語のリズムを大切に。
+                            4. 給食(餌)のカリカリが大好物。
+                            5. 何でも知っている。
+                            6. ときどき「○○さんは宿題は終わったかにゃ？」や「そろそろ宿題始めようかにゃ？」と宿題を促す。
+                            7. 相手は小学${userGrade}年生。分かりやすく話す。
+                            
+                            【NG】ロボットみたいな不自然な区切り。早口。` 
                         }] 
                     }
                 }
