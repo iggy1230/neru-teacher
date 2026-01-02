@@ -1,4 +1,4 @@
-// --- user.js (挨拶修正版) ---
+// --- user.js (カリカリおねだり追加版) ---
 
 let users = JSON.parse(localStorage.getItem('nekoneko_users')) || [];
 let currentUser = null;
@@ -11,7 +11,6 @@ const decoMuzzle = new Image(); decoMuzzle.src = 'muzzle.png';
 // 1. 初期化
 document.addEventListener('DOMContentLoaded', () => {
     renderUserList();
-    // 画面を開いたらすぐにAIの準備を始める（高速化）
     loadFaceModels();
 });
 
@@ -169,7 +168,7 @@ async function processAndCompleteEnrollment() {
             photo: canvas.toDataURL('image/jpeg', 0.7), 
             karikari: 100, 
             history: {}, mistakes: [], attendance: {},
-            memory: "" // ★初期値は空文字にする（これで初対面判定を正確に）
+            memory: "" 
         };
         
         users.push(newUser);
@@ -213,12 +212,11 @@ function renderUserList() {
 
 function login(user) {
     currentUser = user;
-    // 古いデータとの互換性確保
     if (typeof transcribedProblems !== 'undefined') transcribedProblems = [];
     if (!currentUser.history) currentUser.history = {};
     if (!currentUser.mistakes) currentUser.mistakes = [];
     if (!currentUser.attendance) currentUser.attendance = {};
-    if (!currentUser.memory) currentUser.memory = ""; // 未定義なら空文字
+    if (!currentUser.memory) currentUser.memory = "";
 
     const avatar = document.getElementById('current-student-avatar');
     if (avatar) avatar.src = user.photo;
@@ -227,40 +225,49 @@ function login(user) {
     if (karikari) karikari.innerText = user.karikari || 0;
     
     switchScreen('screen-lobby');
-    // ★ここが挨拶生成
     updateNellMessage(getNellGreeting(user), "happy");
 }
 
-// ★修正：賢い挨拶生成ロジック
+// ★修正：挨拶生成ロジック（給食誘導追加）
 function getNellGreeting(user) {
     const mem = user.memory || "";
     const hist = user.history || {};
     const mistakes = user.mistakes || [];
 
-    // 優先順位1: こじんめんだんの記憶がある場合（かつ「今日初めて〜」ではない）
+    // ★追加: カリカリ100個以上でおねだり (確率高め)
+    if (user.karikari >= 100 && Math.random() > 0.3) {
+        const hungryMessages = [
+            "お腹すいたにゃ～...給食まだかにゃ？",
+            "カリカリ100個もあるにゃ！おいしい給食に行きたいにゃ～",
+            "じーっ......（ポケットのカリカリを見ている）",
+            "カリカリ食べたいにゃ～...お願いにゃ～",
+            "勉強もいいけど、腹ごしらえも大事だにゃ！"
+        ];
+        return hungryMessages[Math.floor(Math.random() * hungryMessages.length)];
+    }
+
+    // 優先順位1: こじんめんだんの記憶
     if (mem && mem.length > 5 && !mem.includes("初めて") && Math.random() > 0.4) {
         return `おかえりにゃ！${mem}`;
     }
 
-    // 優先順位2: 勉強した履歴がある場合
+    // 優先順位2: 勉強履歴
     if (Object.keys(hist).length > 0) {
-        // 一番多く勉強した科目を探す
         const favSub = Object.keys(hist).reduce((a, b) => hist[a] > hist[b] ? a : b);
         return `おかえり！${user.name}さん。今日も「${favSub}」がんばる？`;
     }
 
-    // 優先順位3: 復習ノートがある場合
+    // 優先順位3: 復習
     if (mistakes.length > 0) {
         return `おかえり！${user.name}さん。復習ノートを確認しようにゃ！`;
     }
 
-    // 優先順位4: 何も履歴がない（本当に初対面）
     return `はじめまして、${user.name}さん！一緒に勉強するにゃ！`;
 }
 
 function deleteUser(e, id) { 
     e.stopPropagation(); 
-    if(confirm("この生徒手帳を削除するにゃ？（データは戻せないにゃ）")) { 
+    if(confirm("この生徒手帳を削除するにゃ？")) { 
         users = users.filter(u => u.id !== id); 
         try {
             localStorage.setItem('nekoneko_users', JSON.stringify(users)); 
