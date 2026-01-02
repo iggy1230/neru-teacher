@@ -1,9 +1,9 @@
-// --- audio.js (口パク連動版) ---
+// --- audio.js (口パク連動・完全版) ---
 
 let audioCtx = null;
 let currentSource = null;
 
-// 口パク用グローバル変数 (anlyze.jsと共有)
+// ★口パク管理用グローバル変数 (anlyze.jsと共有)
 window.isNellSpeaking = false;
 
 async function speakNell(text, mood = "normal") {
