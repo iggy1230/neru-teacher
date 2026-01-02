@@ -1,6 +1,5 @@
-// --- anlyze.js (教科別口パク・完全統合版) ---
+// --- anlyze.js (教科別口パク完全対応版) ---
 
-// --- グローバル変数 ---
 let transcribedProblems = []; 
 let selectedProblem = null; 
 let hintIndex = 0; 
@@ -15,12 +14,12 @@ let audioContext = null;
 let mediaStream = null;
 let workletNode = null;
 let nextStartTime = 0;
+// 口パク制御用
 let stopSpeakingTimer = null;
 
-// Game Variables
+// Game
 let gameCanvas, ctx, ball, paddle, bricks, score, gameRunning = false, gameAnimId = null;
 
-// 画像設定
 const subjectImages = {
     'こくご': 'nell-kokugo.png', 
     'さんすう': 'nell-sansu.png',
@@ -28,46 +27,46 @@ const subjectImages = {
     'しゃかい': 'nell-shakai.png'
 };
 const defaultIcon = 'nell-normal.png'; 
-const talkIcon = 'nell-talk.png';
+// ※ 教科別の口パク画像は nell-kokugo-talk.png のような命名規則を想定
 
 // ==========================================
 // ★口パクアニメーション (教科対応版)
 // ==========================================
 function startMouthAnimation() {
     let toggle = false;
+    
     setInterval(() => {
         const img = document.querySelector('.nell-avatar-wrap img');
         if (!img) return;
 
-        // 現在の状況に合わせて「基本の顔」と「喋る顔」を決定
-        let targetBase = defaultIcon;
-        let targetTalk = talkIcon;
+        // 現在の「基本の顔」と「喋る顔」を決定
+        let baseImage = defaultIcon;
+        let talkingImage = 'nell-talk.png';
 
-        // 教科選択中、または学習・採点・復習モードで、教科が決まっている場合
-        // かつ、チャットや給食モードではない場合
+        // 学習・採点・復習モードで、教科が選択されている場合
         if (currentSubject && subjectImages[currentSubject] && 
            (currentMode === 'explain' || currentMode === 'grade' || currentMode === 'review')) {
-            targetBase = subjectImages[currentSubject];
-            // ファイル名置換: nell-kokugo.png -> nell-kokugo-talk.png
-            targetTalk = targetBase.replace('.png', '-talk.png');
+            baseImage = subjectImages[currentSubject];
+            // ファイル名を置換して口開き画像にする (例: nell-kokugo.png -> nell-kokugo-talk.png)
+            talkingImage = baseImage.replace('.png', '-talk.png');
         }
 
-        // 喋っているかどうかの判定 (audio.js / playPcmAudio と連携)
+        // グローバル変数が true なら口パク
         if (window.isNellSpeaking) {
             toggle = !toggle;
             // 0.15秒ごとに画像を切り替え
-            img.src = toggle ? targetTalk : targetBase;
+            img.src = toggle ? talkingImage : baseImage;
         } else {
-            // 喋っていない時は、基本の顔に戻す
-            // (チラつき防止のため、違う画像になっている時だけ書き換え)
-            // URLフルパスが含まれる場合があるのでファイル名だけで比較するか、単純に上書き
-            const currentSrc = img.src.split('/').pop(); // ファイル名取得
-            if (currentSrc !== targetBase) {
-                img.src = targetBase;
+            // しゃべっていない時は基本の顔に戻す
+            // (無駄な読み込みを防ぐため、違う画像の時だけ更新)
+            const currentSrc = img.src.split('/').pop(); // URLからファイル名だけ抽出
+            if (currentSrc !== baseImage) {
+                img.src = baseImage;
             }
         }
     }, 150);
 }
+// アニメーション監視開始
 startMouthAnimation();
 
 // ==========================================
@@ -77,7 +76,6 @@ function selectMode(m) {
     currentMode = m; 
     switchScreen('screen-main'); 
     
-    // UIリセット
     const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'lunch-view'];
     ids.forEach(id => {
         const el = document.getElementById(id);
@@ -87,11 +85,12 @@ function selectMode(m) {
     stopLiveChat();
     gameRunning = false;
 
-    // アイコンリセット (アニメーションループが自動で更新するのですぐ反映されますが、念のため)
+    // アイコンリセット (アニメーションループが更新するが、念のため初期化)
     const icon = document.querySelector('.nell-avatar-wrap img');
     if(icon) icon.src = defaultIcon;
 
-    document.getElementById('mini-karikari-display').classList.remove('hidden');
+    const mk = document.getElementById('mini-karikari-display');
+    if(mk) mk.classList.remove('hidden');
     updateMiniKarikari();
 
     if (m === 'chat') {
@@ -125,7 +124,7 @@ function selectMode(m) {
 }
 
 // ==========================================
-// 2. Live Chat (AudioWorklet + 接続待機)
+// 2. Live Chat
 // ==========================================
 async function startLiveChat() {
     const btn = document.getElementById('mic-btn');
@@ -141,7 +140,7 @@ async function startLiveChat() {
         nextStartTime = audioContext.currentTime;
 
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        // 学年パラメータ
+        // 学年をパラメータで渡す
         const gradeParam = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.grade : "1";
         liveSocket = new WebSocket(`${wsProtocol}//${window.location.host}?grade=${gradeParam}`);
         liveSocket.binaryType = "blob";
@@ -188,6 +187,7 @@ function stopLiveChat() {
     if (liveSocket) { liveSocket.close(); liveSocket = null; }
     if (audioContext) { audioContext.close(); audioContext = null; }
     
+    // 強制停止
     window.isNellSpeaking = false;
     
     const btn = document.getElementById('mic-btn');
@@ -196,8 +196,6 @@ function stopLiveChat() {
         btn.style.background = "#ff85a1";
         btn.disabled = false;
         btn.onclick = startLiveChat;
-        btn.style.boxShadow = "none";
-        btn.style.transform = "scale(1)";
     }
 }
 
@@ -240,7 +238,7 @@ async function startMicrophone() {
             if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return;
             const inputData = event.data;
             
-            // 音量ビジュアライザー
+            // ビジュアライザー
             let sum = 0; for(let i=0; i<inputData.length; i++) sum += inputData[i] * inputData[i];
             const volume = Math.sqrt(sum / inputData.length);
             const btn = document.getElementById('mic-btn');
@@ -263,6 +261,7 @@ async function startMicrophone() {
     }
 }
 
+// ★Live Chat用 PCM再生 (口パク連動)
 function playPcmAudio(base64) { 
     if (!audioContext) return; 
     const binary = window.atob(base64); 
@@ -282,11 +281,12 @@ function playPcmAudio(base64) {
     source.start(nextStartTime); 
     nextStartTime += buffer.duration; 
 
-    // ★口パクON
+    // ★口パク開始
     window.isNellSpeaking = true;
     if (stopSpeakingTimer) { clearTimeout(stopSpeakingTimer); stopSpeakingTimer = null; }
 
     source.onended = () => {
+        // 余韻を持たせて口パク終了
         stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, 250);
     };
 }
@@ -309,7 +309,6 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
     if (isAnalyzing || !e.target.files[0]) return; isAnalyzing = true;
     const up = document.getElementById('upload-controls'); if(up) up.classList.add('hidden');
     const th = document.getElementById('thinking-view'); if(th) th.classList.remove('hidden');
-    
     updateNellMessage("準備中……", "thinking"); updateProgress(0); 
     let p = 0; const timer = setInterval(() => { if (p < 90) { p += 3; updateProgress(p); } }, 500);
     try {
@@ -325,16 +324,8 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
         clearInterval(timer); updateProgress(100);
         setTimeout(() => { 
             if(th) th.classList.add('hidden'); 
-            if (currentMode === 'explain' || currentMode === 'review') {
-                renderProblemSelection(); 
-                updateNellMessage("問題が読めたにゃ！", "happy");
-            } else { 
-                showGradingView(); 
-                const total = transcribedProblems.length; const correct = transcribedProblems.filter(p => p.status === 'correct').length; const rate = correct / total;
-                if (correct === total) { currentUser.karikari += 100; saveAndSync(); updateMiniKarikari(); showKarikariEffect(100); updateNellMessage("全問正解！ご褒美100個にゃ！✨", "excited"); drawHanamaru(); } 
-                else if (rate >= 0.8) { currentUser.karikari += 50; saveAndSync(); updateMiniKarikari(); showKarikariEffect(50); updateNellMessage("ほとんど正解！50個あげるにゃ🐾", "happy"); } 
-                else { updateNellMessage("採点したにゃ。間違えた所は「教えて」ボタンを使ってね。", "gentle"); }
-            }
+            if (currentMode === 'explain' || currentMode === 'review') { renderProblemSelection(); updateNellMessage("問題が読めたにゃ！", "happy"); } 
+            else { showGradingView(); const total = transcribedProblems.length; const correct = transcribedProblems.filter(p => p.status === 'correct').length; const rate = correct / total; if (correct === total) { currentUser.karikari += 100; saveAndSync(); updateMiniKarikari(); showKarikariEffect(100); updateNellMessage("全問正解！ご褒美100個にゃ！✨", "excited"); drawHanamaru(); } else if (rate >= 0.8) { currentUser.karikari += 50; saveAndSync(); updateMiniKarikari(); showKarikariEffect(50); updateNellMessage("ほとんど正解！50個あげるにゃ🐾", "happy"); } else { updateNellMessage("採点したにゃ。間違えた所は「教えて」ボタンを使ってね。", "gentle"); } }
         }, 800);
     } catch (err) { clearInterval(timer); document.getElementById('thinking-view').classList.add('hidden'); document.getElementById('upload-controls').classList.remove('hidden'); updateNellMessage("エラーだにゃ", "thinking"); } finally { isAnalyzing = false; e.target.value=''; }
 });
@@ -356,17 +347,15 @@ function startHint(id) {
     if(nextBtn) { nextBtn.innerText = "🍖 ネル先生にカリカリを5個あげてヒントをもらう"; nextBtn.classList.remove('hidden'); nextBtn.onclick = showNextHint; }
     if(revealBtn) revealBtn.classList.add('hidden');
 }
-
 function showNextHint() {
     let cost = 0; if (hintIndex === 0) cost = 5; else if (hintIndex === 1) cost = 5; else if (hintIndex === 2) cost = 10;
     if (currentUser.karikari < cost) return updateNellMessage(`カリカリが足りないにゃ……あと${cost}個必要にゃ。`, "thinking");
     currentUser.karikari -= cost; saveAndSync(); updateMiniKarikari(); showKarikariEffect(-cost);
     let hints = selectedProblem.hints; if (!hints || hints.length === 0) hints = ["よく読んでみてにゃ", "式を立てるにゃ", "先生と解くにゃ"];
-    updateNellMessage(hints[hintIndex] || "……", "thinking"); 
-    const hl = document.getElementById('hint-step-label'); if(hl) hl.innerText = `ヒント ${hintIndex + 1}`; hintIndex++; 
+    updateNellMessage(hints[hintIndex] || "……", "thinking"); document.getElementById('hint-step-label').innerText = `ヒント ${hintIndex + 1}`; hintIndex++; 
     const nextBtn = document.getElementById('next-hint-btn'); const revealBtn = document.getElementById('reveal-answer-btn');
-    if (hintIndex === 1 && nextBtn) nextBtn.innerText = "🍖 さらにカリカリを5個あげてヒントをもらう";
-    else if (hintIndex === 2 && nextBtn) nextBtn.innerText = "🍖 さらにカリカリを10個あげてヒントをもらう";
+    if (hintIndex === 1) nextBtn.innerText = "🍖 さらにカリカリを5個あげてヒントをもらう";
+    else if (hintIndex === 2) nextBtn.innerText = "🍖 さらにカリカリを10個あげてヒントをもらう";
     else { if(nextBtn) nextBtn.classList.add('hidden'); if(revealBtn) { revealBtn.classList.remove('hidden'); revealBtn.innerText = "答えを見る"; } }
 }
 
@@ -374,14 +363,8 @@ function showNextHint() {
 function setSubject(s) {
     currentSubject = s; 
     if(currentUser) { currentUser.history[s] = (currentUser.history[s] || 0) + 1; saveAndSync(); }
-    
-    // アイコン切り替え (口パクアニメーション側で管理されるのでここでは設定だけ)
-    
-    const sel = document.getElementById('subject-selection-view'); 
-    if(sel) sel.classList.add('hidden');
-    const up = document.getElementById('upload-controls'); 
-    if(up) up.classList.remove('hidden');
-    
+    const sel = document.getElementById('subject-selection-view'); if(sel) sel.classList.add('hidden');
+    const up = document.getElementById('upload-controls'); if(up) up.classList.remove('hidden');
     updateNellMessage(`${currentSubject}の問題をみせてにゃ！`, "happy");
 }
 
@@ -404,143 +387,10 @@ function floatTo16BitPCM(input) { const output = new Int16Array(input.length); f
 function arrayBufferToBase64(buffer) { let binary = ''; const bytes = new Uint8Array(buffer); for (let i = 0; i < bytes.byteLength; i++) { binary += String.fromCharCode(bytes[i]); } return window.btoa(binary); }
 function playPcmAudio(base64) { if (!audioContext) return; const binary = window.atob(base64); const bytes = new Uint8Array(binary.length); for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i); const float32 = new Float32Array(bytes.length / 2); const view = new DataView(bytes.buffer); for (let i = 0; i < float32.length; i++) float32[i] = view.getInt16(i * 2, true) / 32768.0; const buffer = audioContext.createBuffer(1, float32.length, 24000); buffer.copyToChannel(float32, 0); const source = audioContext.createBufferSource(); source.buffer = buffer; source.connect(audioContext.destination); const now = audioContext.currentTime; if (nextStartTime < now) nextStartTime = now; source.start(nextStartTime); nextStartTime += buffer.duration; window.isNellSpeaking = true; if (stopSpeakingTimer) { clearTimeout(stopSpeakingTimer); stopSpeakingTimer = null; } source.onended = () => { stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, 250); }; }
 
-// ==========================================
-// ★ミニゲーム「カリカリ・キャッチ」
-// ==========================================
-function showGame() {
-    switchScreen('screen-game');
-    document.getElementById('mini-karikari-display').classList.remove('hidden');
-    updateMiniKarikari();
-    initGame();
-    
-    const startBtn = document.getElementById('start-game-btn');
-    startBtn.onclick = () => {
-        if (!gameRunning) {
-            initGame(); // リセット
-            gameRunning = true;
-            startBtn.disabled = true;
-            drawGame();
-        }
-    };
-}
-
-function initGame() {
-    gameCanvas = document.getElementById('game-canvas');
-    if(!gameCanvas) return;
-    ctx = gameCanvas.getContext('2d');
-    
-    paddle = { w: 80, h: 10, x: 120, speed: 7 };
-    ball = { x: 160, y: 350, dx: 3, dy: -3, r: 8 };
-    score = 0;
-    document.getElementById('game-score').innerText = score;
-    
-    bricks = [];
-    const cols = 5;
-    const rows = 4;
-    const padding = 10;
-    const brickW = (gameCanvas.width - (padding * (cols + 1))) / cols;
-    
-    for(let c=0; c<cols; c++) {
-        for(let r=0; r<rows; r++) {
-            bricks.push({ 
-                x: c * (brickW + padding) + padding, 
-                y: r * (25 + padding) + 40, 
-                status: 1 
-            });
-        }
-    }
-
-    gameCanvas.removeEventListener("mousemove", movePaddleHandler);
-    gameCanvas.removeEventListener("touchmove", touchPaddleHandler);
-    gameCanvas.addEventListener("mousemove", movePaddleHandler, false);
-    gameCanvas.addEventListener("touchmove", touchPaddleHandler, { passive: false });
-}
-
-function movePaddleHandler(e) {
-    const rect = gameCanvas.getBoundingClientRect();
-    const relativeX = e.clientX - rect.left;
-    if(relativeX > 0 && relativeX < gameCanvas.width) {
-        paddle.x = relativeX - paddle.w / 2;
-    }
-}
-
-function touchPaddleHandler(e) {
-    e.preventDefault();
-    const rect = gameCanvas.getBoundingClientRect();
-    const relativeX = e.touches[0].clientX - rect.left;
-    if(relativeX > 0 && relativeX < gameCanvas.width) {
-        paddle.x = relativeX - paddle.w / 2;
-    }
-}
-
-function drawGame() {
-    if (!gameRunning) return;
-
-    ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
-    ctx.font = "20px serif";
-    bricks.forEach(b => {
-        if(b.status === 1) {
-            ctx.fillText("🍖", b.x + 10, b.y + 20);
-        }
-    });
-
-    ctx.beginPath();
-    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
-    ctx.fillStyle = "#ff85a1";
-    ctx.fill();
-    ctx.closePath();
-
-    ctx.fillStyle = "#4a90e2";
-    ctx.fillRect(paddle.x, gameCanvas.height - paddle.h - 10, paddle.w, paddle.h);
-
-    bricks.forEach(b => {
-        if(b.status === 1) {
-            if(ball.x > b.x && ball.x < b.x + 40 && ball.y > b.y && ball.y < b.y + 30) {
-                ball.dy *= -1;
-                b.status = 0;
-                score++;
-                document.getElementById('game-score').innerText = score;
-                if(score === bricks.length) {
-                    endGame(true);
-                    return;
-                }
-            }
-        }
-    });
-
-    if(ball.x + ball.dx > gameCanvas.width - ball.r || ball.x + ball.dx < ball.r) ball.dx *= -1;
-    if(ball.y + ball.dy < ball.r) ball.dy *= -1;
-    else if(ball.y + ball.dy > gameCanvas.height - ball.r - 20) {
-        if(ball.x > paddle.x && ball.x < paddle.x + paddle.w) {
-            ball.dy *= -1;
-            ball.dx = (ball.x - (paddle.x + paddle.w/2)) * 0.15;
-        } else if (ball.y + ball.dy > gameCanvas.height - ball.r) {
-            endGame(false);
-            return;
-        }
-    }
-
-    ball.x += ball.dx;
-    ball.y += ball.dy;
-    
-    gameAnimId = requestAnimationFrame(drawGame);
-}
-
-function endGame(isClear) {
-    gameRunning = false;
-    if (gameAnimId) cancelAnimationFrame(gameAnimId);
-    
-    const startBtn = document.getElementById('start-game-btn');
-    startBtn.disabled = false;
-    startBtn.innerText = "もう一回！";
-
-    let msg = isClear ? `すごい！全クリだにゃ！\nカリカリ ${score} 個ゲット！` : `おしい！\nカリカリ ${score} 個ゲット！`;
-    alert(msg);
-    
-    if (currentUser && score > 0) {
-        currentUser.karikari += score;
-        saveAndSync();
-        updateMiniKarikari();
-        showKarikariEffect(score);
-    }
-}
+// ミニゲーム (省略なし)
+function showGame() { switchScreen('screen-game'); document.getElementById('mini-karikari-display').classList.remove('hidden'); updateMiniKarikari(); initGame(); const s=document.getElementById('start-game-btn'); if(s) s.onclick = ()=>{ if(!gameRunning){ initGame(); gameRunning=true; s.disabled=true; drawGame(); } }; }
+function initGame() { gameCanvas=document.getElementById('game-canvas'); if(!gameCanvas)return; ctx=gameCanvas.getContext('2d'); paddle={w:80,h:10,x:120,speed:7}; ball={x:160,y:350,dx:3,dy:-3,r:8}; score=0; const s=document.getElementById('game-score'); if(s)s.innerText=score; bricks=[]; for(let c=0;c<5;c++)for(let r=0;r<4;r++)bricks.push({x:c*64+10,y:r*35+40,status:1}); gameCanvas.removeEventListener("mousemove",movePaddle); gameCanvas.removeEventListener("touchmove",touchPaddle); gameCanvas.addEventListener("mousemove",movePaddle,false); gameCanvas.addEventListener("touchmove",touchPaddle,{passive:false}); }
+function movePaddle(e) { const r=gameCanvas.getBoundingClientRect(), rx=e.clientX-r.left; if(rx>0&&rx<gameCanvas.width) paddle.x=rx-paddle.w/2; }
+function touchPaddle(e) { e.preventDefault(); const r=gameCanvas.getBoundingClientRect(), rx=e.touches[0].clientX-r.left; if(rx>0&&rx<gameCanvas.width) paddle.x=rx-paddle.w/2; }
+function drawGame() { if(!gameRunning)return; ctx.clearRect(0,0,gameCanvas.width,gameCanvas.height); ctx.font="20px serif"; bricks.forEach(b=>{if(b.status===1)ctx.fillText("🍖",b.x+10,b.y+20)}); ctx.beginPath(); ctx.arc(ball.x,ball.y,ball.r,0,Math.PI*2); ctx.fillStyle="#ff85a1"; ctx.fill(); ctx.closePath(); ctx.fillStyle="#4a90e2"; ctx.fillRect(paddle.x,gameCanvas.height-paddle.h-10,paddle.w,paddle.h); bricks.forEach(b=>{ if(b.status===1 && ball.x>b.x && ball.x<b.x+40 && ball.y>b.y && ball.y<b.y+30){ ball.dy*=-1; b.status=0; score++; document.getElementById('game-score').innerText=score; if(score===bricks.length)endGame(true); } }); if(ball.x+ball.dx>gameCanvas.width-ball.r||ball.x+ball.dx<ball.r)ball.dx*=-1; if(ball.y+ball.dy<ball.r)ball.dy*=-1; else if(ball.y+ball.dy>gameCanvas.height-ball.r-20){ if(ball.x>paddle.x&&ball.x<paddle.x+paddle.w){ ball.dy*=-1; ball.dx=(ball.x-(paddle.x+paddle.w/2))*0.15; } else if(ball.y+ball.dy>gameCanvas.height-ball.r) { endGame(false); return; } } ball.x+=ball.dx; ball.y+=ball.dy; gameAnimId=requestAnimationFrame(drawGame); }
+function endGame(c) { gameRunning=false; if(gameAnimId)cancelAnimationFrame(gameAnimId); const s=document.getElementById('start-game-btn'); if(s){s.disabled=false;s.innerText="もう一回！";} alert(c?`すごい！全クリだにゃ！\nカリカリ ${score} 個ゲット！`:`おしい！\nカリカリ ${score} 個ゲット！`); if(currentUser&&score>0){currentUser.karikari+=score;saveAndSync();updateMiniKarikari();showKarikariEffect(score);} }

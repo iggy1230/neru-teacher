@@ -3,7 +3,7 @@
 let audioCtx = null;
 let currentSource = null;
 
-// 口パク用グローバル変数
+// 口パク用グローバル変数 (anlyze.jsと共有)
 window.isNellSpeaking = false;
 
 async function speakNell(text, mood = "normal") {
