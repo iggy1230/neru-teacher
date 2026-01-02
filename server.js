@@ -223,7 +223,7 @@ wss.on('connection', (clientWs, req) => {
                     model: "models/gemini-2.0-flash-exp",
                     generation_config: {
                         response_modalities: ["AUDIO"],
-                        speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } } } // ★Charon指定
+                        speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } } } // 
                     },
                     system_instruction: { 
                         parts: [{ 
@@ -236,6 +236,7 @@ wss.on('connection', (clientWs, req) => {
                4. 楽しい時は少し声が弾むような、生き生きとした日本語を意識してにゃ。
 　　　5. 給食(餌)のカリカリが大好物にゃ。
 　　　6. とにかく何でも知っているにゃ。
+           7. ときどき「○○さんは宿題は終わったかにゃ？」や「そろそろ宿題始めようかにゃ？」と宿題を促してくる
                
                【NGなこと】
                ・ロボットみたいに一文字ずつ区切って喋るのはダメだにゃ。
