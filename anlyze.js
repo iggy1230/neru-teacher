@@ -1,6 +1,5 @@
-// --- anlyze.js (PC/スマホ完全対応版) ---
+// --- anlyze.js (口パク修正・ゲーム実況・学習統合版) ---
 
-// --- グローバル変数 ---
 let transcribedProblems = []; 
 let selectedProblem = null; 
 let hintIndex = 0; 
@@ -21,7 +20,7 @@ let stopSpeakingTimer = null;
 // Game
 let gameCanvas, ctx, ball, paddle, bricks, score, gameRunning = false, gameAnimId = null;
 
-// 画像設定
+// 画像ファイル名
 const subjectImages = {
     'こくご': 'nell-kokugo.png', 
     'さんすう': 'nell-sansu.png',
@@ -32,54 +31,51 @@ const defaultIcon = 'nell-normal.png';
 const talkIcon = 'nell-talk.png';
 
 // ==========================================
-// ★口パクアニメーション (PC/スマホ両対応)
+// ★口パクアニメーション (URL判定問題修正版)
 // ==========================================
 function startMouthAnimation() {
     let toggle = false;
     
     setInterval(() => {
-        // 画像要素を取得
+        // IDまたはクラスで画像を取得
         const img = document.getElementById('nell-face') || document.querySelector('.nell-avatar-wrap img');
         if (!img) return;
 
-        // 1. 今表示すべき「基本の顔（口閉じ）」を決定
-        let targetBase = defaultIcon;
-        
-        // 学習・採点・復習モードで、かつ教科が選ばれている場合
+        // 1. 今表示すべき「基本画像（口閉じ）」を決定
+        let base = defaultIcon;
+        // 学習系モードで教科が決まっているなら教科画像
         if (currentSubject && subjectImages[currentSubject] && 
            (currentMode === 'explain' || currentMode === 'grade' || currentMode === 'review')) {
-            targetBase = subjectImages[currentSubject];
+            base = subjectImages[currentSubject];
         }
 
-        // 2. 「喋る顔（口開き）」を決定
-        let targetTalk = talkIcon;
-        // 教科画像の場合は -talk をつける
-        if (targetBase !== defaultIcon) {
-            targetTalk = targetBase.replace('.png', '-talk.png');
+        // 2. 「口開き画像」を決定 (-talk.png)
+        let talk = talkIcon;
+        if (base !== defaultIcon) {
+            talk = base.replace('.png', '-talk.png');
         }
 
-        // 3. 最終的に表示する画像を決定
-        let finalImage = targetBase;
+        // 3. フラグを見て切り替え
         if (window.isNellSpeaking) {
             toggle = !toggle;
-            finalImage = toggle ? targetTalk : targetBase;
+            const target = toggle ? talk : base;
+            // ちらつき防止：srcの末尾が一致しない場合のみ書き換え
+            if (!img.src.endsWith(target)) {
+                img.src = target;
+            }
+        } else {
+            // 喋っていない時は基本画像に戻す
+            if (!img.src.endsWith(base)) {
+                img.src = base;
+            }
         }
-
-        // 4. 画像を適用 (重要: includesで部分一致判定)
-        // src属性には "http://localhost..." とフルのURLが入るため、
-        // 単純な === 比較ではPCで失敗することがある。
-        if (!img.src.includes(finalImage)) {
-            img.src = finalImage;
-        }
-
-    }, 150); // 0.15秒間隔
+    }, 150);
 }
-// ページ読み込み完了時にスタート
-window.addEventListener('load', startMouthAnimation);
+startMouthAnimation();
 
 
 // ==========================================
-// 1. モード選択
+// 1. モード選択 (安全装置付き)
 // ==========================================
 function selectMode(m) {
     currentMode = m; 
@@ -95,8 +91,9 @@ function selectMode(m) {
     stopLiveChat();
     gameRunning = false;
 
-    // 画像はアニメーションループが自動更新するので、ここでは無理に触らない
-    // (競合を防ぐため)
+    // アイコンリセット
+    const icon = document.querySelector('.nell-avatar-wrap img');
+    if(icon) icon.src = defaultIcon;
 
     const mk = document.getElementById('mini-karikari-display');
     if(mk) mk.classList.remove('hidden');
@@ -106,14 +103,12 @@ function selectMode(m) {
         const cv = document.getElementById('chat-view');
         if(cv) cv.classList.remove('hidden');
         updateNellMessage("「おはなしする」を押してね！", "gentle");
-        
         const btn = document.getElementById('mic-btn');
         if(btn) {
             btn.innerText = "🎤 おはなしする";
             btn.onclick = startLiveChat;
             btn.disabled = false;
             btn.style.background = "#ff85a1";
-            btn.style.boxShadow = "none";
         }
         const txt = document.getElementById('user-speech-text');
         if(txt) txt.innerText = "（リアルタイム対話）";
@@ -135,7 +130,7 @@ function selectMode(m) {
 }
 
 // ==========================================
-// 2. ★Live Chat (AudioWorklet + 接続待機)
+// 2. Live Chat (WebSocket + AudioWorklet)
 // ==========================================
 async function startLiveChat() {
     const btn = document.getElementById('mic-btn');
@@ -145,7 +140,7 @@ async function startLiveChat() {
         updateNellMessage("ネル先生を呼んでるにゃ……", "thinking");
         if(btn) btn.disabled = true;
 
-        if (window.initAudioContext) await window.initAudioContext();
+        if(window.initAudioContext) await window.initAudioContext();
         
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         audioContext = new AudioCtx();
@@ -153,7 +148,6 @@ async function startLiveChat() {
         nextStartTime = audioContext.currentTime;
 
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        // 学年パラメータ
         const gradeParam = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.grade : "1";
         liveSocket = new WebSocket(`${wsProtocol}//${window.location.host}?grade=${gradeParam}`);
         liveSocket.binaryType = "blob";
@@ -200,7 +194,6 @@ function stopLiveChat() {
     if (liveSocket) { liveSocket.close(); liveSocket = null; }
     if (audioContext) { audioContext.close(); audioContext = null; }
     
-    // 強制停止
     window.isNellSpeaking = false;
     
     const btn = document.getElementById('mic-btn');
@@ -210,7 +203,6 @@ function stopLiveChat() {
         btn.disabled = false;
         btn.onclick = startLiveChat;
         btn.style.boxShadow = "none";
-        btn.style.transform = "scale(1)";
     }
 }
 
@@ -301,7 +293,6 @@ function playPcmAudio(base64) {
     if (stopSpeakingTimer) { clearTimeout(stopSpeakingTimer); stopSpeakingTimer = null; }
 
     source.onended = () => {
-        // 余韻を持たせて口パクOFF
         stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, 250);
     };
 }
@@ -420,10 +411,19 @@ function playPcmAudio(base64) { if (!audioContext) return; const binary = window
     source.onended = () => { stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, 250); };
 }
 
-// ミニゲーム (省略なし)
-function showGame() { switchScreen('screen-game'); document.getElementById('mini-karikari-display').classList.remove('hidden'); updateMiniKarikari(); initGame(); const s=document.getElementById('start-game-btn'); if(s) s.onclick = ()=>{ if(!gameRunning){ initGame(); gameRunning=true; s.disabled=true; drawGame(); } }; }
+// ミニゲーム
+function showGame() { switchScreen('screen-game'); document.getElementById('mini-karikari-display').classList.remove('hidden'); updateMiniKarikari(); initGame(); fetchGameComment("start"); const s=document.getElementById('start-game-btn'); if(s) s.onclick = ()=>{ if(!gameRunning){ initGame(); gameRunning=true; s.disabled=true; drawGame(); } }; }
+// ★実況API呼び出し
+function fetchGameComment(type, score=0) {
+    fetch('/game-reaction', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, name: currentUser.name, score })
+    }).then(r=>r.json()).then(d=>{
+        updateNellMessage(d.reply, d.mood || "excited");
+    }).catch(e=>{});
+}
 function initGame() { gameCanvas=document.getElementById('game-canvas'); if(!gameCanvas)return; ctx=gameCanvas.getContext('2d'); paddle={w:80,h:10,x:120,speed:7}; ball={x:160,y:350,dx:3,dy:-3,r:8}; score=0; const s=document.getElementById('game-score'); if(s)s.innerText=score; bricks=[]; for(let c=0;c<5;c++)for(let r=0;r<4;r++)bricks.push({x:c*64+10,y:r*35+40,status:1}); gameCanvas.removeEventListener("mousemove",movePaddle); gameCanvas.removeEventListener("touchmove",touchPaddle); gameCanvas.addEventListener("mousemove",movePaddle,false); gameCanvas.addEventListener("touchmove",touchPaddle,{passive:false}); }
 function movePaddle(e) { const r=gameCanvas.getBoundingClientRect(), rx=e.clientX-r.left; if(rx>0&&rx<gameCanvas.width) paddle.x=rx-paddle.w/2; }
 function touchPaddle(e) { e.preventDefault(); const r=gameCanvas.getBoundingClientRect(), rx=e.touches[0].clientX-r.left; if(rx>0&&rx<gameCanvas.width) paddle.x=rx-paddle.w/2; }
-function drawGame() { if(!gameRunning)return; ctx.clearRect(0,0,gameCanvas.width,gameCanvas.height); ctx.font="20px serif"; bricks.forEach(b=>{if(b.status===1)ctx.fillText("🍖",b.x+10,b.y+20)}); ctx.beginPath(); ctx.arc(ball.x,ball.y,ball.r,0,Math.PI*2); ctx.fillStyle="#ff85a1"; ctx.fill(); ctx.closePath(); ctx.fillStyle="#4a90e2"; ctx.fillRect(paddle.x,gameCanvas.height-paddle.h-10,paddle.w,paddle.h); bricks.forEach(b=>{ if(b.status===1 && ball.x>b.x && ball.x<b.x+40 && ball.y>b.y && ball.y<b.y+30){ ball.dy*=-1; b.status=0; score++; document.getElementById('game-score').innerText=score; if(score===bricks.length)endGame(true); } }); if(ball.x+ball.dx>gameCanvas.width-ball.r||ball.x+ball.dx<ball.r)ball.dx*=-1; if(ball.y+ball.dy<ball.r)ball.dy*=-1; else if(ball.y+ball.dy>gameCanvas.height-ball.r-20){ if(ball.x>paddle.x&&ball.x<paddle.x+paddle.w){ ball.dy*=-1; ball.dx=(ball.x-(paddle.x+paddle.w/2))*0.15; } else if(ball.y+ball.dy>gameCanvas.height-ball.r) { endGame(false); return; } } ball.x+=ball.dx; ball.y+=ball.dy; gameAnimId=requestAnimationFrame(drawGame); }
-function endGame(c) { gameRunning=false; if(gameAnimId)cancelAnimationFrame(gameAnimId); const s=document.getElementById('start-game-btn'); if(s){s.disabled=false;s.innerText="もう一回！";} alert(c?`すごい！全クリだにゃ！\nカリカリ ${score} 個ゲット！`:`おしい！\nカリカリ ${score} 個ゲット！`); if(currentUser&&score>0){currentUser.karikari+=score;saveAndSync();updateMiniKarikari();showKarikariEffect(score);} }
+function drawGame() { if(!gameRunning)return; ctx.clearRect(0,0,gameCanvas.width,gameCanvas.height); ctx.font="20px serif"; bricks.forEach(b=>{if(b.status===1)ctx.fillText("🍖",b.x+10,b.y+20)}); ctx.beginPath(); ctx.arc(ball.x,ball.y,ball.r,0,Math.PI*2); ctx.fillStyle="#ff85a1"; ctx.fill(); ctx.closePath(); ctx.fillStyle="#4a90e2"; ctx.fillRect(paddle.x,gameCanvas.height-paddle.h-10,paddle.w,paddle.h); bricks.forEach(b=>{ if(b.status===1 && ball.x>b.x && ball.x<b.x+40 && ball.y>b.y && ball.y<b.y+30){ ball.dy*=-1; b.status=0; score++; document.getElementById('game-score').innerText=score; if(Math.random() > 0.7) fetchGameComment("hit"); if(score===bricks.length)endGame(true); } }); if(ball.x+ball.dx>gameCanvas.width-ball.r||ball.x+ball.dx<ball.r)ball.dx*=-1; if(ball.y+ball.dy<ball.r)ball.dy*=-1; else if(ball.y+ball.dy>gameCanvas.height-ball.r-20){ if(ball.x>paddle.x&&ball.x<paddle.x+paddle.w){ ball.dy*=-1; ball.dx=(ball.x-(paddle.x+paddle.w/2))*0.15; fetchGameComment("save"); } else if(ball.y+ball.dy>gameCanvas.height-ball.r) { endGame(false); return; } } else if(ball.y > gameCanvas.height - 100 && ball.dy > 0 && Math.random() > 0.5) fetchGameComment("pinch"); ball.x+=ball.dx; ball.y+=ball.dy; gameAnimId=requestAnimationFrame(drawGame); }
+function endGame(c) { gameRunning=false; if(gameAnimId)cancelAnimationFrame(gameAnimId); fetchGameComment("end", score); const s=document.getElementById('start-game-btn'); if(s){s.disabled=false;s.innerText="もう一回！";} setTimeout(()=>{alert(c?`すごい！全クリだにゃ！\nカリカリ ${score} 個ゲット！`:`おしい！\nカリカリ ${score} 個ゲット！`);if(currentUser&&score>0){currentUser.karikari+=score;saveAndSync();updateMiniKarikari();showKarikariEffect(score);}}, 500); }
