@@ -1,4 +1,4 @@
-// --- anlyze.js (完全復元・統合版) ---
+// --- anlyze.js (シンプル口パク復元版) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -20,54 +20,35 @@ let stopSpeakingTimer = null;
 // Game
 let gameCanvas, ctx, ball, paddle, bricks, score, gameRunning = false, gameAnimId = null;
 
-// 画像定義
-const subjectImages = {
-    'こくご': 'nell-kokugo.png', 
-    'さんすう': 'nell-sansu.png',
-    'りか': 'nell-rika.png', 
-    'しゃかい': 'nell-shakai.png'
-};
+// ★シンプル化: 画像は2枚だけを使用
 const defaultIcon = 'nell-normal.png'; 
 const talkIcon = 'nell-talk.png';
 
 // ==========================================
-// ★口パクアニメーション (教科対応)
+// ★口パクアニメーション (シンプル最強版)
 // ==========================================
 function startMouthAnimation() {
     let toggle = false;
     setInterval(() => {
-        // IDで確実に取得
-        const img = document.getElementById('nell-face') || document.querySelector('.nell-avatar-wrap img');
+        const img = document.querySelector('.nell-avatar-wrap img');
         if (!img) return;
 
-        // 1. 基本画像の決定
-        let base = defaultIcon;
-        if (currentSubject && subjectImages[currentSubject] && 
-           (currentMode === 'explain' || currentMode === 'grade' || currentMode === 'review')) {
-            base = subjectImages[currentSubject];
-        }
-
-        // 2. 口開き画像の決定
-        let talk = talkIcon;
-        if (base !== defaultIcon) {
-            talk = base.replace('.png', '-talk.png');
-        }
-
-        // 3. フラグ監視
+        // フラグを見て強制的に切り替え
         if (window.isNellSpeaking) {
             toggle = !toggle;
-            const target = toggle ? talk : base;
-            if (!img.src.endsWith(target)) img.src = target;
+            img.src = toggle ? talkIcon : defaultIcon;
         } else {
-            // 停止時は基本画像に戻す
-            if (!img.src.endsWith(base)) img.src = base;
+            // 喋っていない時は閉じる
+            if (!img.src.includes(defaultIcon)) {
+                img.src = defaultIcon;
+            }
         }
-    }, 150);
+    }, 150); // 0.15秒間隔
 }
 startMouthAnimation();
 
 // ==========================================
-// 1. モード選択 (安全装置付き)
+// 1. モード選択
 // ==========================================
 function selectMode(m) {
     currentMode = m; 
@@ -83,8 +64,8 @@ function selectMode(m) {
     stopLiveChat();
     gameRunning = false;
 
-    // アイコンリセット
-    const icon = document.getElementById('nell-face');
+    // 画像リセット
+    const icon = document.querySelector('.nell-avatar-wrap img');
     if(icon) icon.src = defaultIcon;
 
     const mk = document.getElementById('mini-karikari-display');
@@ -122,7 +103,7 @@ function selectMode(m) {
 }
 
 // ==========================================
-// 2. ★Live Chat (AudioWorklet + 接続待機 復元)
+// 2. ★Live Chat (AudioWorklet + 接続待機)
 // ==========================================
 async function startLiveChat() {
     const btn = document.getElementById('mic-btn');
@@ -132,8 +113,6 @@ async function startLiveChat() {
         updateNellMessage("ネル先生を呼んでるにゃ……", "thinking");
         if(btn) btn.disabled = true;
 
-        if (window.initAudioContext) await window.initAudioContext();
-        
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         audioContext = new AudioCtx();
         await audioContext.resume();
@@ -156,7 +135,6 @@ async function startLiveChat() {
                 try { data = JSON.parse(event.data); } catch(e){ return; }
             }
 
-            // ★接続待機: 準備完了シグナル受信
             if (data.type === "server_ready") {
                 if(btn) {
                     btn.innerText = "📞 つながった！(終了)";
@@ -167,7 +145,6 @@ async function startLiveChat() {
                 await startMicrophone();
             }
 
-            // 音声受信
             if (data.serverContent?.modelTurn?.parts?.[0]?.inlineData) {
                 playPcmAudio(data.serverContent.modelTurn.parts[0].inlineData.data);
             }
@@ -189,7 +166,7 @@ function stopLiveChat() {
     if (liveSocket) { liveSocket.close(); liveSocket = null; }
     if (audioContext) { audioContext.close(); audioContext = null; }
     
-    // ★停止時に口パクも強制停止
+    // 強制停止
     window.isNellSpeaking = false;
     
     const btn = document.getElementById('mic-btn');
@@ -199,6 +176,7 @@ function stopLiveChat() {
         btn.disabled = false;
         btn.onclick = startLiveChat;
         btn.style.boxShadow = "none";
+        btn.style.transform = "scale(1)";
     }
 }
 
@@ -247,9 +225,9 @@ async function startMicrophone() {
             const btn = document.getElementById('mic-btn');
             if (btn) {
                 if (volume > 0.02) {
-                    btn.style.boxShadow = "0 0 15px #ffeb3b";
+                    btn.style.boxShadow = "0 0 15px #ffeb3b"; btn.style.transform = "scale(1.05)";
                 } else {
-                    btn.style.boxShadow = "none";
+                    btn.style.boxShadow = "none"; btn.style.transform = "scale(1)";
                 }
             }
 
@@ -401,14 +379,9 @@ function renderMistakeSelection() { if (!currentUser.mistakes || currentUser.mis
 function downsampleBuffer(buffer, sampleRate, outSampleRate) { if (outSampleRate >= sampleRate) return buffer; const ratio = sampleRate / outSampleRate; const newLength = Math.round(buffer.length / ratio); const result = new Float32Array(newLength); let offsetResult = 0, offsetBuffer = 0; while (offsetResult < result.length) { const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio); let accum = 0, count = 0; for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) { accum += buffer[i]; count++; } result[offsetResult] = accum / count; offsetResult++; offsetBuffer = nextOffsetBuffer; } return result; }
 function floatTo16BitPCM(input) { const output = new Int16Array(input.length); for (let i = 0; i < input.length; i++) { const s = Math.max(-1, Math.min(1, input[i])); output[i] = s < 0 ? s * 0x8000 : s * 0x7FFF; } return output.buffer; }
 function arrayBufferToBase64(buffer) { let binary = ''; const bytes = new Uint8Array(buffer); for (let i = 0; i < bytes.byteLength; i++) { binary += String.fromCharCode(bytes[i]); } return window.btoa(binary); }
-function playPcmAudio(base64) { if (!audioContext) return; const binary = window.atob(base64); const bytes = new Uint8Array(binary.length); for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i); const float32 = new Float32Array(bytes.length / 2); const view = new DataView(bytes.buffer); for (let i = 0; i < float32.length; i++) float32[i] = view.getInt16(i * 2, true) / 32768.0; const buffer = audioContext.createBuffer(1, float32.length, 24000); buffer.copyToChannel(float32, 0); const source = audioContext.createBufferSource(); source.buffer = buffer; source.connect(audioContext.destination); const now = audioContext.currentTime; if (nextStartTime < now) nextStartTime = now; source.start(nextStartTime); nextStartTime += buffer.duration; 
+function playPcmAudio(base64) { if (!audioContext) return; const binary = window.atob(base64); const bytes = new Uint8Array(binary.length); for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i); const float32 = new Float32Array(bytes.length / 2); const view = new DataView(bytes.buffer); for (let i = 0; i < float32.length; i++) float32[i] = view.getInt16(i * 2, true) / 32768.0; const buffer = audioContext.createBuffer(1, float32.length, 24000); buffer.copyToChannel(float32, 0); const source = audioContext.createBufferSource(); source.buffer = buffer; source.connect(audioContext.destination); const now = audioContext.currentTime; if (nextStartTime < now) nextStartTime = now; source.start(nextStartTime); nextStartTime += buffer.duration; window.isNellSpeaking = true; if (stopSpeakingTimer) { clearTimeout(stopSpeakingTimer); stopSpeakingTimer = null; } source.onended = () => { stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, 250); }; }
 
-    window.isNellSpeaking = true;
-    if (stopSpeakingTimer) { clearTimeout(stopSpeakingTimer); stopSpeakingTimer = null; }
-    source.onended = () => { stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, 250); };
-}
-
-// ミニゲーム (省略なし)
+// ミニゲーム
 function showGame() { switchScreen('screen-game'); document.getElementById('mini-karikari-display').classList.remove('hidden'); updateMiniKarikari(); initGame(); const s=document.getElementById('start-game-btn'); if(s) s.onclick = ()=>{ if(!gameRunning){ initGame(); gameRunning=true; s.disabled=true; drawGame(); } }; }
 function initGame() { gameCanvas=document.getElementById('game-canvas'); if(!gameCanvas)return; ctx=gameCanvas.getContext('2d'); paddle={w:80,h:10,x:120,speed:7}; ball={x:160,y:350,dx:3,dy:-3,r:8}; score=0; const s=document.getElementById('game-score'); if(s)s.innerText=score; bricks=[]; for(let c=0;c<5;c++)for(let r=0;r<4;r++)bricks.push({x:c*64+10,y:r*35+40,status:1}); gameCanvas.removeEventListener("mousemove",movePaddle); gameCanvas.removeEventListener("touchmove",touchPaddle); gameCanvas.addEventListener("mousemove",movePaddle,false); gameCanvas.addEventListener("touchmove",touchPaddle,{passive:false}); }
 function movePaddle(e) { const r=gameCanvas.getBoundingClientRect(), rx=e.clientX-r.left; if(rx>0&&rx<gameCanvas.width) paddle.x=rx-paddle.w/2; }
