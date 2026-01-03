@@ -1,12 +1,12 @@
-// --- audio.js (口パクスイッチ完全連動版) ---
+// --- audio.js (口パク連動・完全版) ---
 
 let audioCtx = null;
 let currentSource = null;
 
-// ★世界共通の口パクスイッチ
+// ★重要: 口パク管理用グローバル変数 (anlyze.jsと共有)
 window.isNellSpeaking = false;
 
-// 外部から初期化
+// 外部から初期化可能にする
 window.initAudioContext = async function() {
     if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -20,12 +20,9 @@ async function speakNell(text, mood = "normal") {
     if (!text || text === "") return;
 
     // 前の音声を停止
-    if (currentSource) {
-        try { currentSource.stop(); } catch(e) {}
-        currentSource = null;
-    }
-    window.isNellSpeaking = false; // 一旦OFF
+    if (currentSource) { try { currentSource.stop(); } catch(e) {} currentSource = null; }
 
+    // AudioContext準備
     await window.initAudioContext();
 
     try {
@@ -34,32 +31,27 @@ async function speakNell(text, mood = "normal") {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text, mood })
         });
-
         if (!res.ok) throw new Error("TTS Error");
         const data = await res.json();
         
         const binary = window.atob(data.audioContent);
         const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) {
-            bytes[i] = binary.charCodeAt(i);
-        }
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
 
         const buffer = await audioCtx.decodeAudioData(bytes.buffer);
         const source = audioCtx.createBufferSource();
         source.buffer = buffer;
         source.connect(audioCtx.destination);
-        
         currentSource = source;
         
-        // ★再生開始：口パクON
+        // ★口パク開始
         window.isNellSpeaking = true;
         source.start(0);
 
         return new Promise(resolve => {
             source.onended = () => {
-                // ★再生終了：口パクOFF
+                // ★口パク終了
                 window.isNellSpeaking = false;
-                currentSource = null;
                 resolve();
             };
         });
