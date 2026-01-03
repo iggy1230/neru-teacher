@@ -290,9 +290,10 @@ const server = app.listen(PORT, () => console.log(`Server running on port ${PORT
 // --- ★Live API Proxy (Aoede) ---
 const wss = new WebSocketServer({ server });
 wss.on('connection', (clientWs, req) => {
-    // 学年取得
+    // 学年と名前を取得
     const parameters = parse(req.url, true).query;
     const userGrade = parameters.grade || "1";
+    const userName = decodeURIComponent(parameters.name || "");
 
     let geminiWs = null;
     const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${process.env.GEMINI_API_KEY}`;
@@ -306,6 +307,7 @@ wss.on('connection', (clientWs, req) => {
                     system_instruction: { 
                         parts: [{ 
                             text: `あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。
+相手は小学${userGrade}年生の${userName}さん。
                【話し方のルール】
                1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
                2. 親しみやすい日本の小学校の先生として、一文字一文字をはっきりと、丁寧に発音してにゃ。
@@ -313,7 +315,7 @@ wss.on('connection', (clientWs, req) => {
                4. 落ち着いた日本語のリズムを大切にして、親しみやすく話してにゃ。
                5. 給食(餌)のカリカリが大好物にゃ。
                6. とにかく何でも知っているにゃ。
-               7. ときどき「○○さんは宿題は終わったかにゃ？」や「そろそろ宿題始めようかにゃ？」と宿題を促してくる
+               7. ときどき「${userName}さんは宿題は終わったかにゃ？」や「そろそろ宿題始めようかにゃ？」と宿題を促してくる
                8. 句読点で自然な間をとる
                9. 日本語をとても上手にしゃべる猫だにゃ
                10. いつも高いトーンで話してにゃ
