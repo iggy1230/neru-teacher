@@ -1,10 +1,12 @@
-// --- audio.js (口パク連動・完全版) ---
+// --- audio.js (口パクデバッグ強化版) ---
 
 let audioCtx = null;
 let currentSource = null;
 
-// ★重要: 口パク管理用グローバル変数 (anlyze.jsと共有)
-window.isNellSpeaking = false;
+// ★重要: グローバル変数（初期化）
+if (typeof window.isNellSpeaking === 'undefined') {
+    window.isNellSpeaking = false;
+}
 
 // 外部から初期化可能にする
 window.initAudioContext = async function() {
@@ -19,6 +21,7 @@ window.initAudioContext = async function() {
 async function speakNell(text, mood = "normal") {
     if (!text || text === "") return;
 
+    // 前の音声を停止
     if (currentSource) { try { currentSource.stop(); } catch(e) {} currentSource = null; }
 
     await window.initAudioContext();
@@ -42,13 +45,15 @@ async function speakNell(text, mood = "normal") {
         source.connect(audioCtx.destination);
         currentSource = source;
         
-        // ★口パク開始
+        // ★口パク開始 (ログ出力付き)
+        console.log("Audio Start: LipSync ON");
         window.isNellSpeaking = true;
         source.start(0);
 
         return new Promise(resolve => {
             source.onended = () => {
                 // ★口パク終了
+                console.log("Audio End: LipSync OFF");
                 window.isNellSpeaking = false;
                 resolve();
             };
