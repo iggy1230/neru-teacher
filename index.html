@@ -5,28 +5,32 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>🐾猫後市立ねこづか小学校</title>
     <link rel="stylesheet" href="style.css">
+    <!-- フォント読み込み -->
     <link href="https://fonts.googleapis.com/css2?family=Sawarabi+Gothic&family=M+PLUS+Rounded+1c:wght@700;900&family=Kiwi+Maru:wght@900&display=swap" rel="stylesheet">
+    <!-- 顔認識AI -->
     <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 </head>
 <body>
+    <!-- 演出用キャンバス -->
     <canvas id="hanamaru-canvas"></canvas>
     <canvas id="deco-canvas" style="display:none;"></canvas>
     
+    <!-- カリカリ常時表示 (初期状態は非表示) -->
     <div id="mini-karikari-display" class="mini-karikari-display hidden">
         <span>🍖</span><span id="mini-karikari-count">0</span>
     </div>
 
-    <div class="version-tag">Build: v9.0.0-Final</div>
+    <div class="version-tag">Build: vFinal-Complete</div>
 
     <div id="app-container">
-        <!-- 画面1：校門 -->
+        <!-- 画面1：校門 (ユーザー選択) -->
         <section id="screen-gate" class="screen">
             <h1 class="school-title">猫後市立<br>ねこづか小学校</h1>
             <div class="gate-layout"><div id="user-list" class="right-user-list"></div></div>
             <button onclick="showEnrollment()" class="main-btn pink-btn">🐾 新しく入学するにゃ</button>
         </section>
 
-        <!-- 画面2：入学 -->
+        <!-- 画面2：入学 (学生証作成) -->
         <section id="screen-enrollment" class="screen hidden">
             <h2 class="section-title">🎒 入学手続き</h2>
             <div class="id-card-wrap">
@@ -47,7 +51,7 @@
             <div id="loading-models" style="text-align:center; font-size:0.7rem; margin-top:5px;"></div>
         </section>
 
-        <!-- 画面3：ロビー -->
+        <!-- 画面3：ロビー (モード選択) -->
         <section id="screen-lobby" class="screen hidden">
             <div class="lobby-top"><div class="id-card-wrap mini-id"><img id="current-student-avatar" class="id-base-img"></div></div>
             <div class="karikari-counter">🍖 カリカリ: <span id="karikari-count">0</span></div>
@@ -63,18 +67,23 @@
             </div>
         </section>
 
-        <!-- 画面4：教室 -->
+        <!-- 画面4：教室 (メイン機能) -->
         <section id="screen-main" class="screen hidden">
             <header><button onclick="backToLobby()" class="main-btn gray-btn" style="width:auto; padding:10px 20px;">←</button></header>
+            
             <div class="operation-layout">
+                <!-- ネル先生エリア -->
                 <div class="nell-chat">
                     <div class="nell-avatar-wrap">
-                        <!-- ★修正: ID付与、画像名nell-normal.png -->
+                        <!-- ★重要: id="nell-face" が口パクアニメーションに必須 -->
                         <img src="nell-normal.png" class="nell-img" id="nell-face">
+                        <!-- ハート演出用 -->
                         <div id="heart-container" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;"></div>
                     </div>
                     <div class="chat-bubble"><p id="nell-text"></p></div>
                 </div>
+
+                <!-- 1. 教科選択 -->
                 <div id="subject-selection-view" class="hidden">
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
                         <button onclick="setSubject('こくご')" class="main-btn pink-btn">こくご</button>
@@ -83,22 +92,35 @@
                         <button onclick="setSubject('しゃかい')" class="main-btn gray-btn">しゃかい</button>
                     </div>
                 </div>
+
+                <!-- 黒板 (問題表示) -->
                 <div id="chalkboard" class="chalkboard hidden"></div>
+
+                <!-- 作業エリア -->
                 <div class="work-area">
+                    <!-- 写真アップロード -->
                     <div id="upload-controls" class="hidden"><label class="camera-btn-large">📷 宿題をみせる<input type="file" id="hw-input" accept="image/*" style="display:none;"></label></div>
+                    
+                    <!-- AI考え中 -->
                     <div id="thinking-view" class="hidden">
                         <img src="nell-inspect.png" class="loader-inspect-img">
                         <div class="progress-container"><div id="progress-bar" class="progress-bar"></div></div>
                         <p id="thinking-status">考え中... <span id="progress-percent">0</span>%</p>
                     </div>
+
+                    <!-- 問題リスト (教えてモード) -->
                     <div id="problem-selection-view" class="hidden">
                         <div class="problem-selection-card">
                             <div class="problem-scroll-area" id="transcribed-problem-list"></div>
                             <button onclick="pressAllSolved()" class="main-btn orange-btn">✨ 全部おわったにゃ！</button>
                         </div>
                     </div>
+
+                    <!-- 解説・採点ビュー -->
                     <div id="final-view" class="hidden">
+                        <!-- 採点シート -->
                         <div id="grade-sheet-container" class="hidden"><div class="glass-card" id="problem-list-grade" style="background:white; border-radius:15px; padding:10px;"></div></div>
+                        <!-- ヒント詳細 -->
                         <div id="hint-detail-container" class="hidden">
                             <div class="hint-btns">
                                 <div class="hint-step-badge" id="hint-step-label">考え方</div>
@@ -110,6 +132,8 @@
                             <button onclick="backToProblemSelection()" class="main-btn gray-btn">他の問題へ</button>
                         </div>
                     </div>
+
+                    <!-- こじんめんだん (Live Chat) -->
                     <div id="chat-view" class="hidden">
                         <div class="glass-card" style="text-align:center; padding:20px;">
                             <p style="font-size:0.9rem; color:#666;">マイクを押して話しかけてね</p>
@@ -117,6 +141,8 @@
                             <p id="user-speech-text" style="margin-top:15px; font-weight:bold; min-height:1.5em;">...</p>
                         </div>
                     </div>
+
+                    <!-- おいしい給食 -->
                     <div id="lunch-view" class="hidden">
                         <div class="glass-card" style="text-align:center; padding:20px;">
                             <p style="font-size:1.2rem; font-weight:900;">ネル先生にお給食をあげる？</p>
@@ -125,10 +151,12 @@
                             <p style="margin-top:10px; font-size:0.8rem;">（カリカリが1つ減ります）</p>
                         </div>
                     </div>
+
                 </div>
             </div>
         </section>
         
+        <!-- 画面5：ミニゲーム -->
         <section id="screen-game" class="screen hidden">
             <h2 class="section-title">🍖 カリカリ・キャッチ</h2>
             <div class="game-container">
@@ -141,10 +169,11 @@
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">ロビーにもどる</button>
         </section>
 
-        <!-- 画面5：出席簿 -->
+        <!-- 画面6：出席簿 -->
         <section id="screen-attendance" class="screen hidden"><h2 class="section-title">📅 出席簿</h2><div class="glass-card"><div id="attendance-grid" class="attendance-grid"></div></div><button onclick="backToLobby()" class="main-btn pink-btn mt-20">教室にもどる</button></section>
     </div>
 
+    <!-- スクリプト (順番が重要) -->
     <script src="audio.js"></script>
     <script src="ui.js"></script>
     <script src="user.js"></script>
