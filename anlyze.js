@@ -1,4 +1,4 @@
-// --- anlyze.js (完全修正・最終版) ---
+// --- anlyze.js (口パク復元・完全版) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -27,46 +27,56 @@ const subjectImages = {
     'しゃかい': 'nell-shakai.png'
 };
 const defaultIcon = 'nell-normal.png'; 
-const talkIcon = 'nell-talk.png';
+// 口パク用は "-talk.png" を想定 (例: nell-normal-talk.png ではなく nell-talk.png)
+const defaultTalkIcon = 'nell-talk.png';
 
 // ==========================================
-// ★口パクアニメーション
+// ★口パクアニメーション (復元・強化版)
 // ==========================================
 function startMouthAnimation() {
     let toggle = false;
+    
     setInterval(() => {
         const img = document.querySelector('.nell-avatar-wrap img');
         if (!img) return;
 
-        // 1. 今表示すべき「基本の顔（口閉じ）」を決定
+        // 1. 基本となる画像（口閉じ）を決定
         let baseImage = defaultIcon;
-        // 教科選択中、または学習・採点・復習モードなら教科画像
+        
+        // 教科が選ばれていて、特定のモードなら教科画像
         if (currentSubject && subjectImages[currentSubject] && 
            (currentMode === 'explain' || currentMode === 'grade' || currentMode === 'review')) {
             baseImage = subjectImages[currentSubject];
         }
 
-        // 2. 対応する「喋る顔（口開き）」を決定
-        let targetTalkImage = talkIcon;
-        // もし教科画像なら、ファイル名を置換 (nell-kokugo.png -> nell-kokugo-talk.png)
+        // 2. 口開き画像を決定
+        let talkImage = defaultTalkIcon;
+        // 教科画像の場合、ファイル名を置換 (例: nell-kokugo.png -> nell-kokugo-talk.png)
         if (baseImage !== defaultIcon) {
-            targetTalkImage = baseImage.replace('.png', '-talk.png');
+            talkImage = baseImage.replace('.png', '-talk.png');
         }
 
-        // 3. フラグを見て切り替え
+        // 3. フラグを見て画像を切り替え
         if (window.isNellSpeaking) {
             toggle = !toggle;
-            img.src = toggle ? targetTalkImage : baseImage;
+            // 単純にsrcを書き換える
+            img.src = toggle ? talkImage : baseImage;
         } else {
             // 喋っていない時は基本画像に戻す
-            const currentSrc = img.src.split('/').pop(); 
-            if (currentSrc !== baseImage) {
+            // (現在が口開き画像なら戻す、という判定)
+            if (img.src.indexOf('-talk.png') !== -1 || img.src.indexOf('nell-talk.png') !== -1) {
                 img.src = baseImage;
             }
+            // 念のため、現在が基本画像でなければ戻す（モード切替時などの対策）
+            else if (!img.src.includes(baseImage)) {
+                 // パスが含まれるので includes で判定
+                 img.src = baseImage;
+            }
         }
-    }, 150);
+    }, 150); // 0.15秒間隔
 }
 startMouthAnimation();
+
 
 // ==========================================
 // 1. モード選択
@@ -82,20 +92,20 @@ function selectMode(m) {
         if (el) el.classList.add('hidden');
     });
     
-    // ★ここを修正しました (stopChatMode -> stopLiveChat)
-    stopLiveChat(); 
-    
+    stopLiveChat();
     gameRunning = false;
 
     // アイコンリセット
     const icon = document.querySelector('.nell-avatar-wrap img');
     if(icon) icon.src = defaultIcon;
 
-    document.getElementById('mini-karikari-display').classList.remove('hidden');
+    const mk = document.getElementById('mini-karikari-display');
+    if(mk) mk.classList.remove('hidden');
     updateMiniKarikari();
 
     if (m === 'chat') {
-        document.getElementById('chat-view').classList.remove('hidden');
+        const cv = document.getElementById('chat-view');
+        if(cv) cv.classList.remove('hidden');
         updateNellMessage("「おはなしする」を押してね！", "gentle");
         const btn = document.getElementById('mic-btn');
         if(btn) {
@@ -103,12 +113,14 @@ function selectMode(m) {
             btn.onclick = startLiveChat;
             btn.disabled = false;
             btn.style.background = "#ff85a1";
+            btn.style.boxShadow = "none";
         }
         const txt = document.getElementById('user-speech-text');
         if(txt) txt.innerText = "（リアルタイム対話）";
 
     } else if (m === 'lunch') {
-        document.getElementById('lunch-view').classList.remove('hidden');
+        const lv = document.getElementById('lunch-view');
+        if(lv) lv.classList.remove('hidden');
         lunchCount = 0;
         updateNellMessage("お腹ペコペコだにゃ……", "thinking");
 
@@ -116,7 +128,8 @@ function selectMode(m) {
         renderMistakeSelection();
 
     } else {
-        document.getElementById('subject-selection-view').classList.remove('hidden');
+        const sv = document.getElementById('subject-selection-view');
+        if(sv) sv.classList.remove('hidden');
         updateNellMessage("どの教科にするのかにゃ？", "normal");
     }
 }
@@ -138,6 +151,7 @@ async function startLiveChat() {
         nextStartTime = audioContext.currentTime;
 
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        // 学年をパラメータで渡す
         const gradeParam = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.grade : "1";
         liveSocket = new WebSocket(`${wsProtocol}//${window.location.host}?grade=${gradeParam}`);
         liveSocket.binaryType = "blob";
@@ -184,6 +198,7 @@ function stopLiveChat() {
     if (liveSocket) { liveSocket.close(); liveSocket = null; }
     if (audioContext) { audioContext.close(); audioContext = null; }
     
+    // ★停止時に口パクも強制停止
     window.isNellSpeaking = false;
     
     const btn = document.getElementById('mic-btn');
@@ -192,6 +207,8 @@ function stopLiveChat() {
         btn.style.background = "#ff85a1";
         btn.disabled = false;
         btn.onclick = startLiveChat;
+        btn.style.boxShadow = "none";
+        btn.style.transform = "scale(1)";
     }
 }
 
@@ -257,6 +274,7 @@ async function startMicrophone() {
     }
 }
 
+// ★Live Chat用 PCM再生 (口パク連動)
 function playPcmAudio(base64) { 
     if (!audioContext) return; 
     const binary = window.atob(base64); 
@@ -276,10 +294,12 @@ function playPcmAudio(base64) {
     source.start(nextStartTime); 
     nextStartTime += buffer.duration; 
 
+    // ★口パクON
     window.isNellSpeaking = true;
     if (stopSpeakingTimer) { clearTimeout(stopSpeakingTimer); stopSpeakingTimer = null; }
 
     source.onended = () => {
+        // 余韻を持たせて口パクOFF
         stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, 250);
     };
 }
