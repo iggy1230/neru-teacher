@@ -1,4 +1,4 @@
-// --- user.js (記憶機能対応版) ---
+// --- user.js (カリカリおねだり追加版) ---
 
 let users = JSON.parse(localStorage.getItem('nekoneko_users')) || [];
 let currentUser = null;
@@ -8,37 +8,46 @@ const idBase = new Image(); idBase.src = 'student-id-base.png';
 const decoEars = new Image(); decoEars.src = 'ears.png';
 const decoMuzzle = new Image(); decoMuzzle.src = 'muzzle.png';
 
+// 1. 初期化
 document.addEventListener('DOMContentLoaded', () => {
     renderUserList();
     loadFaceModels();
 });
 
+// 2. AIモデル読み込み
 async function loadFaceModels() {
     if (modelsLoaded) return;
+    
     const status = document.getElementById('loading-models');
     if(status) status.innerText = "猫化AIを準備中にゃ... 📷";
+    
     try {
         const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
         await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
         await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+        
         modelsLoaded = true;
         console.log("AI Models Loaded");
+        
         if(status) status.innerText = "準備完了にゃ！";
         const btn = document.getElementById('complete-btn');
         if(btn) btn.disabled = false;
+        
     } catch (e) {
         console.error("AI Load Error:", e);
-        if(status) status.innerText = "手動モードで入学できるにゃ🐾";
+        if(status) status.innerText = "AIの準備に失敗したにゃ（手動モード）";
         const btn = document.getElementById('complete-btn');
         if(btn) btn.disabled = false;
     }
 }
 
+// 3. 写真プレビュー
 const photoInput = document.getElementById('student-photo-input');
 if (photoInput) {
     photoInput.addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (!file) return;
+
         const reader = new FileReader();
         reader.onload = (event) => {
             const img = new Image();
@@ -58,6 +67,7 @@ if (photoInput) {
     });
 }
 
+// 4. 入学処理
 async function processAndCompleteEnrollment() {
     const name = document.getElementById('new-student-name').value;
     const grade = document.getElementById('new-student-grade').value;
@@ -65,11 +75,13 @@ async function processAndCompleteEnrollment() {
     const photoInput = document.getElementById('student-photo-input');
 
     if(!name || !grade) return alert("お名前と学年を入れてにゃ！");
+    
     btn.disabled = true;
     btn.innerText = "発行中にゃ...";
 
     try {
         if (!idBase.complete) await new Promise(r => idBase.onload = r);
+
         let sourceImg = null;
         if (photoInput.files && photoInput.files[0]) {
             sourceImg = await new Promise((resolve, reject) => {
@@ -87,6 +99,7 @@ async function processAndCompleteEnrollment() {
             await new Promise(r => sourceImg.onload = r);
         }
 
+        // 顔検出
         let sx = 0, sy = 0, sWidth = sourceImg.width, sHeight = sourceImg.height;
         let detection = null;
 
@@ -110,6 +123,7 @@ async function processAndCompleteEnrollment() {
             }
         }
 
+        // 描画
         const canvas = document.getElementById('deco-canvas');
         canvas.width = 800; canvas.height = 800;
         const ctx = canvas.getContext('2d');
@@ -128,11 +142,13 @@ async function processAndCompleteEnrollment() {
             const nose = landmarks.getNose()[3];
             const leftEyeBrow = landmarks.getLeftEyeBrow()[2];
             const rightEyeBrow = landmarks.getRightEyeBrow()[2];
+
             const noseX = (nose.x - sx) * scale + destX;
             const noseY = (nose.y - sy) * scale + destY;
             const muzW = detection.detection.box.width * 0.6 * scale;
             const muzH = muzW * 0.8;
             if (decoMuzzle.complete) ctx.drawImage(decoMuzzle, noseX - (muzW/2), noseY - (muzH/2.5), muzW, muzH);
+
             const browX = ((leftEyeBrow.x + rightEyeBrow.x) / 2 - sx) * scale + destX;
             const browY = ((leftEyeBrow.y + rightEyeBrow.y) / 2 - sy) * scale + destY;
             const earW = detection.detection.box.width * 1.8 * scale;
@@ -145,35 +161,42 @@ async function processAndCompleteEnrollment() {
         ctx.fillText(grade + "年生", 475, 375); 
         ctx.fillText(name, 475, 485);
 
-        // ★修正: memoryフィールドを追加
+        // データ保存
         const newUser = { 
             id: Date.now(), 
             name, grade, 
             photo: canvas.toDataURL('image/jpeg', 0.7), 
             karikari: 100, 
             history: {}, mistakes: [], attendance: {},
-            memory: "今日初めて会ったにゃ。よろしくにゃ！" // 初期メモリ
+            memory: "" 
         };
         
         users.push(newUser);
         localStorage.setItem('nekoneko_users', JSON.stringify(users)); 
         renderUserList(); 
+        
         document.getElementById('new-student-name').value = "";
         document.getElementById('new-student-grade').value = "";
         updateIDPreview();
-        alert(detection ? "入学おめでとうにゃ！🌸\n猫耳がついた学生証ができたにゃ！" : "入学おめでとうにゃ！🌸");
+        
+        const msg = detection ? "入学おめでとうにゃ！🌸\n猫耳がついた学生証ができたにゃ！" : "入学おめでとうにゃ！🌸";
+        alert(msg);
         switchScreen('screen-gate');
 
     } catch (err) {
         console.error("Enrollment Error:", err);
-        if (err.name === 'QuotaExceededError') alert("データがいっぱいで保存できなかったにゃ。整理してにゃ！");
-        else alert("エラーが発生したにゃ……\n" + err.message);
+        if (err.name === 'QuotaExceededError' || err.message.includes('quota')) {
+            alert("ごめんにゃ、データがいっぱいで保存できなかったにゃ。\n使っていない生徒さんを削除してから、もう一度試してほしいにゃ！");
+        } else {
+            alert("エラーが発生したにゃ……\n" + err.message);
+        }
     } finally {
         btn.disabled = false;
         btn.innerText = "入学する！";
     }
 }
 
+// 5. ログイン・挨拶・データ管理
 function renderUserList() {
     const list = document.getElementById('user-list');
     if(!list) return;
@@ -189,16 +212,15 @@ function renderUserList() {
 
 function login(user) {
     currentUser = user;
-    // 古いユーザーデータにmemoryがない場合の互換性維持
-    if (!currentUser.memory) currentUser.memory = "今日初めて会ったにゃ。";
-    
     if (typeof transcribedProblems !== 'undefined') transcribedProblems = [];
     if (!currentUser.history) currentUser.history = {};
     if (!currentUser.mistakes) currentUser.mistakes = [];
     if (!currentUser.attendance) currentUser.attendance = {};
+    if (!currentUser.memory) currentUser.memory = "";
 
     const avatar = document.getElementById('current-student-avatar');
     if (avatar) avatar.src = user.photo;
+    
     const karikari = document.getElementById('karikari-count');
     if (karikari) karikari.innerText = user.karikari || 0;
     
@@ -206,21 +228,51 @@ function login(user) {
     updateNellMessage(getNellGreeting(user), "happy");
 }
 
+// ★修正：挨拶生成ロジック（給食誘導追加）
 function getNellGreeting(user) {
-    // 記憶があればそれを挨拶に混ぜる
-    if (user.memory && user.memory.length > 5 && Math.random() > 0.5) {
-        return `おかえりにゃ！${user.memory}`;
+    const mem = user.memory || "";
+    const hist = user.history || {};
+    const mistakes = user.mistakes || [];
+
+    // ★追加: カリカリ100個以上でおねだり (確率高め)
+    if (user.karikari >= 100 && Math.random() > 0.3) {
+        const hungryMessages = [
+            "お腹すいたにゃ～...給食まだかにゃ？",
+            "カリカリ100個もあるにゃ！おいしい給食に行きたいにゃ～",
+            "じーっ......（ポケットのカリカリを見ている）",
+            "カリカリ食べたいにゃ～...お願いにゃ～",
+            "勉強もいいけど、腹ごしらえも大事だにゃ！"
+        ];
+        return hungryMessages[Math.floor(Math.random() * hungryMessages.length)];
     }
-    if (user.mistakes && user.mistakes.length > 0) return `おかえり！${user.name}さん。復習もしようにゃ！`;
-    return `おかえり！${user.name}さん！`;
+
+    // 優先順位1: こじんめんだんの記憶
+    if (mem && mem.length > 5 && !mem.includes("初めて") && Math.random() > 0.4) {
+        return `おかえりにゃ！${mem}`;
+    }
+
+    // 優先順位2: 勉強履歴
+    if (Object.keys(hist).length > 0) {
+        const favSub = Object.keys(hist).reduce((a, b) => hist[a] > hist[b] ? a : b);
+        return `おかえり！${user.name}さん。今日も「${favSub}」がんばる？`;
+    }
+
+    // 優先順位3: 復習
+    if (mistakes.length > 0) {
+        return `おかえり！${user.name}さん。復習ノートを確認しようにゃ！`;
+    }
+
+    return `はじめまして、${user.name}さん！一緒に勉強するにゃ！`;
 }
 
 function deleteUser(e, id) { 
     e.stopPropagation(); 
     if(confirm("この生徒手帳を削除するにゃ？")) { 
         users = users.filter(u => u.id !== id); 
-        localStorage.setItem('nekoneko_users', JSON.stringify(users)); 
-        renderUserList(); 
+        try {
+            localStorage.setItem('nekoneko_users', JSON.stringify(users)); 
+            renderUserList(); 
+        } catch(err) { alert("削除中にエラーが起きたにゃ"); }
     } 
 }
 
