@@ -1,4 +1,4 @@
-// --- anlyze.js (完全統合・教科別口パク版) ---
+// --- anlyze.js (完全修正・最終版) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -30,7 +30,7 @@ const defaultIcon = 'nell-normal.png';
 const talkIcon = 'nell-talk.png';
 
 // ==========================================
-// ★口パクアニメーション (教科対応版)
+// ★口パクアニメーション
 // ==========================================
 function startMouthAnimation() {
     let toggle = false;
@@ -48,6 +48,7 @@ function startMouthAnimation() {
 
         // 2. 対応する「喋る顔（口開き）」を決定
         let targetTalkImage = talkIcon;
+        // もし教科画像なら、ファイル名を置換 (nell-kokugo.png -> nell-kokugo-talk.png)
         if (baseImage !== defaultIcon) {
             targetTalkImage = baseImage.replace('.png', '-talk.png');
         }
@@ -58,7 +59,7 @@ function startMouthAnimation() {
             img.src = toggle ? targetTalkImage : baseImage;
         } else {
             // 喋っていない時は基本画像に戻す
-            const currentSrc = img.src.substring(img.src.lastIndexOf('/') + 1);
+            const currentSrc = img.src.split('/').pop(); 
             if (currentSrc !== baseImage) {
                 img.src = baseImage;
             }
@@ -68,33 +69,33 @@ function startMouthAnimation() {
 startMouthAnimation();
 
 // ==========================================
-// 1. モード選択 (安全装置付き)
+// 1. モード選択
 // ==========================================
 function selectMode(m) {
     currentMode = m; 
     switchScreen('screen-main'); 
     
-    // UIリセット (安全装置)
+    // UIリセット
     const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'lunch-view'];
     ids.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.classList.add('hidden');
     });
     
-    stopLiveChat();
+    // ★ここを修正しました (stopChatMode -> stopLiveChat)
+    stopLiveChat(); 
+    
     gameRunning = false;
 
     // アイコンリセット
     const icon = document.querySelector('.nell-avatar-wrap img');
     if(icon) icon.src = defaultIcon;
 
-    const mk = document.getElementById('mini-karikari-display');
-    if(mk) mk.classList.remove('hidden');
+    document.getElementById('mini-karikari-display').classList.remove('hidden');
     updateMiniKarikari();
 
     if (m === 'chat') {
-        const cv = document.getElementById('chat-view');
-        if(cv) cv.classList.remove('hidden');
+        document.getElementById('chat-view').classList.remove('hidden');
         updateNellMessage("「おはなしする」を押してね！", "gentle");
         const btn = document.getElementById('mic-btn');
         if(btn) {
@@ -102,14 +103,12 @@ function selectMode(m) {
             btn.onclick = startLiveChat;
             btn.disabled = false;
             btn.style.background = "#ff85a1";
-            btn.style.boxShadow = "none";
         }
         const txt = document.getElementById('user-speech-text');
         if(txt) txt.innerText = "（リアルタイム対話）";
 
     } else if (m === 'lunch') {
-        const lv = document.getElementById('lunch-view');
-        if(lv) lv.classList.remove('hidden');
+        document.getElementById('lunch-view').classList.remove('hidden');
         lunchCount = 0;
         updateNellMessage("お腹ペコペコだにゃ……", "thinking");
 
@@ -117,14 +116,13 @@ function selectMode(m) {
         renderMistakeSelection();
 
     } else {
-        const sv = document.getElementById('subject-selection-view');
-        if(sv) sv.classList.remove('hidden');
+        document.getElementById('subject-selection-view').classList.remove('hidden');
         updateNellMessage("どの教科にするのかにゃ？", "normal");
     }
 }
 
 // ==========================================
-// 2. ★Live Chat (AudioWorklet + 接続待機)
+// 2. Live Chat (AudioWorklet + 接続待機)
 // ==========================================
 async function startLiveChat() {
     const btn = document.getElementById('mic-btn');
@@ -140,7 +138,6 @@ async function startLiveChat() {
         nextStartTime = audioContext.currentTime;
 
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        // 学年をパラメータで渡す
         const gradeParam = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.grade : "1";
         liveSocket = new WebSocket(`${wsProtocol}//${window.location.host}?grade=${gradeParam}`);
         liveSocket.binaryType = "blob";
@@ -195,8 +192,6 @@ function stopLiveChat() {
         btn.style.background = "#ff85a1";
         btn.disabled = false;
         btn.onclick = startLiveChat;
-        btn.style.boxShadow = "none";
-        btn.style.transform = "scale(1)";
     }
 }
 
@@ -262,7 +257,6 @@ async function startMicrophone() {
     }
 }
 
-// ★Live Chat用 PCM再生 (口パク連動)
 function playPcmAudio(base64) { 
     if (!audioContext) return; 
     const binary = window.atob(base64); 
@@ -282,7 +276,6 @@ function playPcmAudio(base64) {
     source.start(nextStartTime); 
     nextStartTime += buffer.duration; 
 
-    // ★口パクON
     window.isNellSpeaking = true;
     if (stopSpeakingTimer) { clearTimeout(stopSpeakingTimer); stopSpeakingTimer = null; }
 
@@ -300,7 +293,8 @@ function giveLunch() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ count: lunchCount, name: currentUser.name })
     }).then(r=>r.json()).then(d=>{
-        updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy");
+        const reply = d.reply || "おいしいにゃ！";
+        updateNellMessage(reply, d.isSpecial ? "excited" : "happy");
     }).catch(e=>{ updateNellMessage("おいしいにゃ！", "happy"); });
 }
 
