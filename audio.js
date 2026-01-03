@@ -1,12 +1,12 @@
-// --- audio.js (口パク連携・完全版) ---
+// --- audio.js (口パクスイッチ完全連動版) ---
 
 let audioCtx = null;
 let currentSource = null;
 
-// ★重要: 口パク管理用の共通スイッチ
+// ★世界共通の口パクスイッチ（初期化）
 window.isNellSpeaking = false;
 
-// ★重要: 外部から呼べるように初期化関数を公開
+// 外部からオーディオエンジンを起動できるようにする
 window.initAudioContext = async function() {
     if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -24,8 +24,8 @@ async function speakNell(text, mood = "normal") {
         try { currentSource.stop(); } catch(e) {}
         currentSource = null;
     }
+    window.isNellSpeaking = false; // 一旦リセット
 
-    // エンジン起動
     await window.initAudioContext();
 
     try {
@@ -51,14 +51,15 @@ async function speakNell(text, mood = "normal") {
         
         currentSource = source;
         
-        // ★再生開始：スイッチON
+        // ★再生開始：口パクON
         window.isNellSpeaking = true;
         source.start(0);
 
         return new Promise(resolve => {
             source.onended = () => {
-                // ★再生終了：スイッチOFF
+                // ★再生終了：口パクOFF
                 window.isNellSpeaking = false;
+                currentSource = null;
                 resolve();
             };
         });
@@ -69,8 +70,10 @@ async function speakNell(text, mood = "normal") {
     }
 }
 
+// メッセージ更新ラッパー
 async function updateNellMessage(t, mood = "normal") {
     const el = document.getElementById('nell-text');
     if (el) el.innerText = t;
+    // テキスト表示後に音声再生
     return await speakNell(t, mood);
 }
