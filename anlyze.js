@@ -1,5 +1,6 @@
-// --- anlyze.js (PC/スマホ両対応・完全版) ---
+// --- anlyze.js (PC/スマホ完全対応版) ---
 
+// --- グローバル変数 ---
 let transcribedProblems = []; 
 let selectedProblem = null; 
 let hintIndex = 0; 
@@ -14,11 +15,13 @@ let audioContext = null;
 let mediaStream = null;
 let workletNode = null;
 let nextStartTime = 0;
+// 口パク制御用
 let stopSpeakingTimer = null;
 
 // Game
 let gameCanvas, ctx, ball, paddle, bricks, score, gameRunning = false, gameAnimId = null;
 
+// 画像設定
 const subjectImages = {
     'こくご': 'nell-kokugo.png', 
     'さんすう': 'nell-sansu.png',
@@ -29,44 +32,51 @@ const defaultIcon = 'nell-normal.png';
 const talkIcon = 'nell-talk.png';
 
 // ==========================================
-// ★口パクアニメーション (判定ロジック緩和版)
+// ★口パクアニメーション (PC/スマホ両対応)
 // ==========================================
 function startMouthAnimation() {
     let toggle = false;
     
     setInterval(() => {
-        // IDまたはクラスで画像を取得
+        // 画像要素を取得
         const img = document.getElementById('nell-face') || document.querySelector('.nell-avatar-wrap img');
         if (!img) return;
 
-        // 1. 今のモードに応じた「基本画像」と「口開き画像」を決める
-        let base = defaultIcon;
-        let talk = talkIcon;
-
+        // 1. 今表示すべき「基本の顔（口閉じ）」を決定
+        let targetBase = defaultIcon;
+        
+        // 学習・採点・復習モードで、かつ教科が選ばれている場合
         if (currentSubject && subjectImages[currentSubject] && 
            (currentMode === 'explain' || currentMode === 'grade' || currentMode === 'review')) {
-            base = subjectImages[currentSubject];
-            talk = base.replace('.png', '-talk.png');
+            targetBase = subjectImages[currentSubject];
         }
 
-        // 2. フラグ監視
+        // 2. 「喋る顔（口開き）」を決定
+        let targetTalk = talkIcon;
+        // 教科画像の場合は -talk をつける
+        if (targetBase !== defaultIcon) {
+            targetTalk = targetBase.replace('.png', '-talk.png');
+        }
+
+        // 3. 最終的に表示する画像を決定
+        let finalImage = targetBase;
         if (window.isNellSpeaking) {
             toggle = !toggle;
-            const target = toggle ? talk : base;
-            
-            // ★修正: srcにファイル名が含まれていなければ書き換える (部分一致)
-            if (!img.src.includes(target)) {
-                img.src = target;
-            }
-        } else {
-            // 停止時は基本画像
-            if (!img.src.includes(base)) {
-                img.src = base;
-            }
+            finalImage = toggle ? targetTalk : targetBase;
         }
-    }, 150);
+
+        // 4. 画像を適用 (重要: includesで部分一致判定)
+        // src属性には "http://localhost..." とフルのURLが入るため、
+        // 単純な === 比較ではPCで失敗することがある。
+        if (!img.src.includes(finalImage)) {
+            img.src = finalImage;
+        }
+
+    }, 150); // 0.15秒間隔
 }
-startMouthAnimation();
+// ページ読み込み完了時にスタート
+window.addEventListener('load', startMouthAnimation);
+
 
 // ==========================================
 // 1. モード選択
@@ -75,6 +85,7 @@ function selectMode(m) {
     currentMode = m; 
     switchScreen('screen-main'); 
     
+    // UIリセット
     const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'lunch-view'];
     ids.forEach(id => {
         const el = document.getElementById(id);
@@ -84,9 +95,8 @@ function selectMode(m) {
     stopLiveChat();
     gameRunning = false;
 
-    // アイコンリセット
-    const icon = document.getElementById('nell-face');
-    if(icon) icon.src = defaultIcon;
+    // 画像はアニメーションループが自動更新するので、ここでは無理に触らない
+    // (競合を防ぐため)
 
     const mk = document.getElementById('mini-karikari-display');
     if(mk) mk.classList.remove('hidden');
@@ -96,12 +106,14 @@ function selectMode(m) {
         const cv = document.getElementById('chat-view');
         if(cv) cv.classList.remove('hidden');
         updateNellMessage("「おはなしする」を押してね！", "gentle");
+        
         const btn = document.getElementById('mic-btn');
         if(btn) {
             btn.innerText = "🎤 おはなしする";
             btn.onclick = startLiveChat;
             btn.disabled = false;
             btn.style.background = "#ff85a1";
+            btn.style.boxShadow = "none";
         }
         const txt = document.getElementById('user-speech-text');
         if(txt) txt.innerText = "（リアルタイム対話）";
@@ -123,7 +135,7 @@ function selectMode(m) {
 }
 
 // ==========================================
-// 2. Live Chat (AudioWorklet + 接続待機)
+// 2. ★Live Chat (AudioWorklet + 接続待機)
 // ==========================================
 async function startLiveChat() {
     const btn = document.getElementById('mic-btn');
@@ -141,6 +153,7 @@ async function startLiveChat() {
         nextStartTime = audioContext.currentTime;
 
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        // 学年パラメータ
         const gradeParam = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.grade : "1";
         liveSocket = new WebSocket(`${wsProtocol}//${window.location.host}?grade=${gradeParam}`);
         liveSocket.binaryType = "blob";
@@ -187,6 +200,7 @@ function stopLiveChat() {
     if (liveSocket) { liveSocket.close(); liveSocket = null; }
     if (audioContext) { audioContext.close(); audioContext = null; }
     
+    // 強制停止
     window.isNellSpeaking = false;
     
     const btn = document.getElementById('mic-btn');
@@ -195,6 +209,8 @@ function stopLiveChat() {
         btn.style.background = "#ff85a1";
         btn.disabled = false;
         btn.onclick = startLiveChat;
+        btn.style.boxShadow = "none";
+        btn.style.transform = "scale(1)";
     }
 }
 
@@ -260,6 +276,7 @@ async function startMicrophone() {
     }
 }
 
+// ★Live Chat用 PCM再生 (口パク連動)
 function playPcmAudio(base64) { 
     if (!audioContext) return; 
     const binary = window.atob(base64); 
@@ -403,7 +420,7 @@ function playPcmAudio(base64) { if (!audioContext) return; const binary = window
     source.onended = () => { stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, 250); };
 }
 
-// ミニゲーム
+// ミニゲーム (省略なし)
 function showGame() { switchScreen('screen-game'); document.getElementById('mini-karikari-display').classList.remove('hidden'); updateMiniKarikari(); initGame(); const s=document.getElementById('start-game-btn'); if(s) s.onclick = ()=>{ if(!gameRunning){ initGame(); gameRunning=true; s.disabled=true; drawGame(); } }; }
 function initGame() { gameCanvas=document.getElementById('game-canvas'); if(!gameCanvas)return; ctx=gameCanvas.getContext('2d'); paddle={w:80,h:10,x:120,speed:7}; ball={x:160,y:350,dx:3,dy:-3,r:8}; score=0; const s=document.getElementById('game-score'); if(s)s.innerText=score; bricks=[]; for(let c=0;c<5;c++)for(let r=0;r<4;r++)bricks.push({x:c*64+10,y:r*35+40,status:1}); gameCanvas.removeEventListener("mousemove",movePaddle); gameCanvas.removeEventListener("touchmove",touchPaddle); gameCanvas.addEventListener("mousemove",movePaddle,false); gameCanvas.addEventListener("touchmove",touchPaddle,{passive:false}); }
 function movePaddle(e) { const r=gameCanvas.getBoundingClientRect(), rx=e.clientX-r.left; if(rx>0&&rx<gameCanvas.width) paddle.x=rx-paddle.w/2; }
