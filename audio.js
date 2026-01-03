@@ -1,19 +1,15 @@
-// --- audio.js (口パク連動強化版) ---
+// --- audio.js (口パク連動・完全版) ---
 
 let audioCtx = null;
 let currentSource = null;
 
-// ★口パク管理用グローバル変数 (anlyze.jsと共有)
+// ★重要: 口パク用グローバル変数 (anlyze.jsと共有)
 window.isNellSpeaking = false;
 
 async function speakNell(text, mood = "normal") {
     if (!text || text === "") return;
 
-    // 前の音声を停止
-    if (currentSource) {
-        try { currentSource.stop(); } catch(e) {}
-        currentSource = null;
-    }
+    if (currentSource) { try { currentSource.stop(); } catch(e) {} currentSource = null; }
 
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if (audioCtx.state === 'suspended') await audioCtx.resume();
@@ -24,31 +20,26 @@ async function speakNell(text, mood = "normal") {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text, mood })
         });
-
         if (!res.ok) throw new Error("TTS Error");
         const data = await res.json();
         
         const binary = window.atob(data.audioContent);
         const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) {
-            bytes[i] = binary.charCodeAt(i);
-        }
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
 
         const buffer = await audioCtx.decodeAudioData(bytes.buffer);
         const source = audioCtx.createBufferSource();
         source.buffer = buffer;
         source.connect(audioCtx.destination);
-        
         currentSource = source;
         
-        // ★再生開始：口パクON
+        // ★口パク開始
         window.isNellSpeaking = true;
-        
         source.start(0);
 
         return new Promise(resolve => {
             source.onended = () => {
-                // ★再生終了：口パクOFF
+                // ★口パク終了
                 window.isNellSpeaking = false;
                 resolve();
             };
