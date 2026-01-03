@@ -3,10 +3,10 @@
 let audioCtx = null;
 let currentSource = null;
 
-// ★世界共通の口パクスイッチ（初期化）
+// ★世界共通の口パクスイッチ
 window.isNellSpeaking = false;
 
-// 外部からオーディオエンジンを起動できるようにする
+// 外部から初期化
 window.initAudioContext = async function() {
     if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -24,7 +24,7 @@ async function speakNell(text, mood = "normal") {
         try { currentSource.stop(); } catch(e) {}
         currentSource = null;
     }
-    window.isNellSpeaking = false; // 一旦リセット
+    window.isNellSpeaking = false; // 一旦OFF
 
     await window.initAudioContext();
 
@@ -70,10 +70,8 @@ async function speakNell(text, mood = "normal") {
     }
 }
 
-// メッセージ更新ラッパー
 async function updateNellMessage(t, mood = "normal") {
     const el = document.getElementById('nell-text');
     if (el) el.innerText = t;
-    // テキスト表示後に音声再生
     return await speakNell(t, mood);
 }
