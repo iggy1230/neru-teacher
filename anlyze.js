@@ -1,5 +1,6 @@
-// --- anlyze.js (口パク復元・完全版) ---
+// --- anlyze.js (口パク完全修正版) ---
 
+// --- グローバル変数 ---
 let transcribedProblems = []; 
 let selectedProblem = null; 
 let hintIndex = 0; 
@@ -20,18 +21,20 @@ let stopSpeakingTimer = null;
 // Game
 let gameCanvas, ctx, ball, paddle, bricks, score, gameRunning = false, gameAnimId = null;
 
+// ★画像ファイル定義
 const subjectImages = {
     'こくご': 'nell-kokugo.png', 
     'さんすう': 'nell-sansu.png',
     'りか': 'nell-rika.png', 
     'しゃかい': 'nell-shakai.png'
 };
-const defaultIcon = 'nell-normal.png'; 
-// 口パク用は "-talk.png" を想定 (例: nell-normal-talk.png ではなく nell-talk.png)
-const defaultTalkIcon = 'nell-talk.png';
+
+// 通常時の画像
+const normalBase = 'nell-normal.png'; 
+const normalTalk = 'nell-talk.png';
 
 // ==========================================
-// ★口パクアニメーション (復元・強化版)
+// ★口パクアニメーション (ロジック完全修正)
 // ==========================================
 function startMouthAnimation() {
     let toggle = false;
@@ -40,46 +43,39 @@ function startMouthAnimation() {
         const img = document.querySelector('.nell-avatar-wrap img');
         if (!img) return;
 
-        // 1. 基本となる画像（口閉じ）を決定
-        let baseImage = defaultIcon;
+        // 1. 「今」のモードに合わせて、使うべき画像セットを決める
+        let targetBase = normalBase;
+        let targetTalk = normalTalk;
+
+        // 学習・採点・復習モードで、かつ教科が選ばれている場合
+        const isStudyMode = (currentMode === 'explain' || currentMode === 'grade' || currentMode === 'review');
         
-        // 教科が選ばれていて、特定のモードなら教科画像
-        if (currentSubject && subjectImages[currentSubject] && 
-           (currentMode === 'explain' || currentMode === 'grade' || currentMode === 'review')) {
-            baseImage = subjectImages[currentSubject];
+        if (isStudyMode && currentSubject && subjectImages[currentSubject]) {
+            targetBase = subjectImages[currentSubject]; // 例: nell-kokugo.png
+            // ファイル名置換ルール: .png を -talk.png に変える
+            targetTalk = targetBase.replace('.png', '-talk.png'); // 例: nell-kokugo-talk.png
         }
 
-        // 2. 口開き画像を決定
-        let talkImage = defaultTalkIcon;
-        // 教科画像の場合、ファイル名を置換 (例: nell-kokugo.png -> nell-kokugo-talk.png)
-        if (baseImage !== defaultIcon) {
-            talkImage = baseImage.replace('.png', '-talk.png');
-        }
+        // 2. 喋っているかどうかで画像を決定
+        let finalImage = targetBase;
 
-        // 3. フラグを見て画像を切り替え
         if (window.isNellSpeaking) {
             toggle = !toggle;
-            // 単純にsrcを書き換える
-            img.src = toggle ? talkImage : baseImage;
-        } else {
-            // 喋っていない時は基本画像に戻す
-            // (現在が口開き画像なら戻す、という判定)
-            if (img.src.indexOf('-talk.png') !== -1 || img.src.indexOf('nell-talk.png') !== -1) {
-                img.src = baseImage;
-            }
-            // 念のため、現在が基本画像でなければ戻す（モード切替時などの対策）
-            else if (!img.src.includes(baseImage)) {
-                 // パスが含まれるので includes で判定
-                 img.src = baseImage;
-            }
+            finalImage = toggle ? targetTalk : targetBase;
         }
+
+        // 3. 画像を適用 (現在と違う場合のみ書き換え)
+        // ※ endsWithを使うことで、フルパスURLの問題を回避
+        if (!img.src.endsWith(finalImage)) {
+            img.src = finalImage;
+        }
+
     }, 150); // 0.15秒間隔
 }
 startMouthAnimation();
 
-
 // ==========================================
-// 1. モード選択
+// 1. モード選択 (安全装置付き)
 // ==========================================
 function selectMode(m) {
     currentMode = m; 
@@ -95,9 +91,9 @@ function selectMode(m) {
     stopLiveChat();
     gameRunning = false;
 
-    // アイコンリセット
+    // アイコンリセット（アニメーションループが即座に上書きするが、初期化として）
     const icon = document.querySelector('.nell-avatar-wrap img');
-    if(icon) icon.src = defaultIcon;
+    if(icon) icon.src = normalBase;
 
     const mk = document.getElementById('mini-karikari-display');
     if(mk) mk.classList.remove('hidden');
@@ -107,6 +103,7 @@ function selectMode(m) {
         const cv = document.getElementById('chat-view');
         if(cv) cv.classList.remove('hidden');
         updateNellMessage("「おはなしする」を押してね！", "gentle");
+        
         const btn = document.getElementById('mic-btn');
         if(btn) {
             btn.innerText = "🎤 おはなしする";
@@ -135,7 +132,7 @@ function selectMode(m) {
 }
 
 // ==========================================
-// 2. Live Chat (AudioWorklet + 接続待機)
+// 2. ★Live Chat (AudioWorklet + 接続待機)
 // ==========================================
 async function startLiveChat() {
     const btn = document.getElementById('mic-btn');
@@ -198,7 +195,7 @@ function stopLiveChat() {
     if (liveSocket) { liveSocket.close(); liveSocket = null; }
     if (audioContext) { audioContext.close(); audioContext = null; }
     
-    // ★停止時に口パクも強制停止
+    // 強制停止
     window.isNellSpeaking = false;
     
     const btn = document.getElementById('mic-btn');
@@ -409,9 +406,8 @@ function renderMistakeSelection() { if (!currentUser.mistakes || currentUser.mis
 function downsampleBuffer(buffer, sampleRate, outSampleRate) { if (outSampleRate >= sampleRate) return buffer; const ratio = sampleRate / outSampleRate; const newLength = Math.round(buffer.length / ratio); const result = new Float32Array(newLength); let offsetResult = 0, offsetBuffer = 0; while (offsetResult < result.length) { const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio); let accum = 0, count = 0; for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) { accum += buffer[i]; count++; } result[offsetResult] = accum / count; offsetResult++; offsetBuffer = nextOffsetBuffer; } return result; }
 function floatTo16BitPCM(input) { const output = new Int16Array(input.length); for (let i = 0; i < input.length; i++) { const s = Math.max(-1, Math.min(1, input[i])); output[i] = s < 0 ? s * 0x8000 : s * 0x7FFF; } return output.buffer; }
 function arrayBufferToBase64(buffer) { let binary = ''; const bytes = new Uint8Array(buffer); for (let i = 0; i < bytes.byteLength; i++) { binary += String.fromCharCode(bytes[i]); } return window.btoa(binary); }
-function playPcmAudio(base64) { if (!audioContext) return; const binary = window.atob(base64); const bytes = new Uint8Array(binary.length); for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i); const float32 = new Float32Array(bytes.length / 2); const view = new DataView(bytes.buffer); for (let i = 0; i < float32.length; i++) float32[i] = view.getInt16(i * 2, true) / 32768.0; const buffer = audioContext.createBuffer(1, float32.length, 24000); buffer.copyToChannel(float32, 0); const source = audioContext.createBufferSource(); source.buffer = buffer; source.connect(audioContext.destination); const now = audioContext.currentTime; if (nextStartTime < now) nextStartTime = now; source.start(nextStartTime); nextStartTime += buffer.duration; window.isNellSpeaking = true; if (stopSpeakingTimer) { clearTimeout(stopSpeakingTimer); stopSpeakingTimer = null; } source.onended = () => { stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, 250); }; }
 
-// ミニゲーム (省略なし)
+// ミニゲーム
 function showGame() { switchScreen('screen-game'); document.getElementById('mini-karikari-display').classList.remove('hidden'); updateMiniKarikari(); initGame(); const s=document.getElementById('start-game-btn'); if(s) s.onclick = ()=>{ if(!gameRunning){ initGame(); gameRunning=true; s.disabled=true; drawGame(); } }; }
 function initGame() { gameCanvas=document.getElementById('game-canvas'); if(!gameCanvas)return; ctx=gameCanvas.getContext('2d'); paddle={w:80,h:10,x:120,speed:7}; ball={x:160,y:350,dx:3,dy:-3,r:8}; score=0; const s=document.getElementById('game-score'); if(s)s.innerText=score; bricks=[]; for(let c=0;c<5;c++)for(let r=0;r<4;r++)bricks.push({x:c*64+10,y:r*35+40,status:1}); gameCanvas.removeEventListener("mousemove",movePaddle); gameCanvas.removeEventListener("touchmove",touchPaddle); gameCanvas.addEventListener("mousemove",movePaddle,false); gameCanvas.addEventListener("touchmove",touchPaddle,{passive:false}); }
 function movePaddle(e) { const r=gameCanvas.getBoundingClientRect(), rx=e.clientX-r.left; if(rx>0&&rx<gameCanvas.width) paddle.x=rx-paddle.w/2; }
