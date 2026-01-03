@@ -1,4 +1,4 @@
-// --- ui.js (完全版) ---
+// --- ui.js (PC対応・音声強制起動版) ---
 
 function switchScreen(to) {
     document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
@@ -38,12 +38,9 @@ function backToLobby() {
 
 function backToProblemSelection() {
     if (typeof currentMode !== 'undefined' && currentMode === 'grade') {
-        // 採点モードなら採点シートを再表示
         showGradingView();
-        // ロボット声回避のため「～にゃ？」に統一
         updateNellMessage("他の問題もチェックするにゃ？", "normal");
     } else {
-        // 通常モードなら問題リストへ
         switchView('problem-selection-view');
         updateNellMessage("次はどの問題にするにゃ？", "normal");
     }
@@ -82,3 +79,10 @@ function updateProgress(p) {
     const txt = document.getElementById('progress-percent');
     if (txt) txt.innerText = Math.floor(p);
 }
+
+// ★重要: PCでの音声再生ブロックを防ぐため、クリック時にエンジンを起こす
+document.addEventListener('click', () => {
+    if (window.initAudioContext) {
+        window.initAudioContext().catch(e => console.log("Audio Init:", e));
+    }
+}, { once: true }); // 最初の一回だけ実行

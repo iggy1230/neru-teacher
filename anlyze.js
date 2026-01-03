@@ -1,6 +1,5 @@
-// --- anlyze.js (口パク強力補正・完全版) ---
+// --- anlyze.js (PC/スマホ両対応・完全版) ---
 
-// --- グローバル変数 ---
 let transcribedProblems = []; 
 let selectedProblem = null; 
 let hintIndex = 0; 
@@ -29,36 +28,18 @@ const subjectImages = {
 const defaultIcon = 'nell-normal.png'; 
 const talkIcon = 'nell-talk.png';
 
-// ★画像のプリロード (口を開けた瞬間のチラつき防止)
-const preloadList = [
-    defaultIcon, talkIcon, 
-    ...Object.values(subjectImages), 
-    ...Object.values(subjectImages).map(s => s.replace('.png', '-talk.png'))
-];
-preloadList.forEach(src => { const i = new Image(); i.src = src; });
-
 // ==========================================
-// ★口パクアニメーション (強力補正版)
+// ★口パクアニメーション (判定ロジック緩和版)
 // ==========================================
 function startMouthAnimation() {
     let toggle = false;
-
+    
     setInterval(() => {
-        // 1. 画像要素を執念深く探す
-        let img = document.getElementById('nell-face');
-        if (!img) {
-            // IDがない場合、クラスから探して無理やりIDをつける（安全策）
-            img = document.querySelector('.nell-avatar-wrap img');
-            if (img) img.id = 'nell-face';
-        }
+        // IDまたはクラスで画像を取得
+        const img = document.getElementById('nell-face') || document.querySelector('.nell-avatar-wrap img');
+        if (!img) return;
 
-        if (!img) {
-            // これでも見つからなければHTMLがおかしい
-            console.warn("⚠️ ネル先生の画像が見つからないにゃ！ index.htmlを確認して！");
-            return;
-        }
-
-        // 2. 基本画像の決定
+        // 1. 今のモードに応じた「基本画像」と「口開き画像」を決める
         let base = defaultIcon;
         let talk = talkIcon;
 
@@ -68,32 +49,24 @@ function startMouthAnimation() {
             talk = base.replace('.png', '-talk.png');
         }
 
-        // 3. フラグ監視 & 画像切り替え
+        // 2. フラグ監視
         if (window.isNellSpeaking) {
             toggle = !toggle;
             const target = toggle ? talk : base;
             
-            // ★判定を緩くする (includesを使用)
-            // フルパスURLの中にファイル名が含まれていればOKとする
+            // ★修正: srcにファイル名が含まれていなければ書き換える (部分一致)
             if (!img.src.includes(target)) {
                 img.src = target;
-                // デバッグログ (動作確認用: F12コンソールに出ます)
-                // console.log(`👄 口パク切り替え: ${target}`); 
             }
         } else {
-            // 停止時は口を閉じる
+            // 停止時は基本画像
             if (!img.src.includes(base)) {
                 img.src = base;
             }
         }
-    }, 150); // 0.15秒間隔
+    }, 150);
 }
-
-// ページ読み込み完了時にアニメーション監視を開始
-window.addEventListener('load', () => {
-    console.log("✅ アニメーション監視スタート");
-    startMouthAnimation();
-});
+startMouthAnimation();
 
 // ==========================================
 // 1. モード選択
@@ -102,7 +75,6 @@ function selectMode(m) {
     currentMode = m; 
     switchScreen('screen-main'); 
     
-    // UIリセット
     const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'lunch-view'];
     ids.forEach(id => {
         const el = document.getElementById(id);
@@ -113,7 +85,7 @@ function selectMode(m) {
     gameRunning = false;
 
     // アイコンリセット
-    const icon = document.querySelector('.nell-avatar-wrap img');
+    const icon = document.getElementById('nell-face');
     if(icon) icon.src = defaultIcon;
 
     const mk = document.getElementById('mini-karikari-display');
@@ -130,7 +102,6 @@ function selectMode(m) {
             btn.onclick = startLiveChat;
             btn.disabled = false;
             btn.style.background = "#ff85a1";
-            btn.style.boxShadow = "none";
         }
         const txt = document.getElementById('user-speech-text');
         if(txt) txt.innerText = "（リアルタイム対話）";
@@ -152,7 +123,7 @@ function selectMode(m) {
 }
 
 // ==========================================
-// 2. ★Live Chat (AudioWorklet + 接続待機)
+// 2. Live Chat (AudioWorklet + 接続待機)
 // ==========================================
 async function startLiveChat() {
     const btn = document.getElementById('mic-btn');
@@ -186,7 +157,6 @@ async function startLiveChat() {
             }
 
             if (data.type === "server_ready") {
-                console.log("Gemini Ready!");
                 if(btn) {
                     btn.innerText = "📞 つながった！(終了)";
                     btn.style.background = "#ff5252";
@@ -225,8 +195,6 @@ function stopLiveChat() {
         btn.style.background = "#ff85a1";
         btn.disabled = false;
         btn.onclick = startLiveChat;
-        btn.style.boxShadow = "none";
-        btn.style.transform = "scale(1)";
     }
 }
 
@@ -292,7 +260,6 @@ async function startMicrophone() {
     }
 }
 
-// ★Live Chat用 PCM再生 (口パク連動)
 function playPcmAudio(base64) { 
     if (!audioContext) return; 
     const binary = window.atob(base64); 
@@ -317,6 +284,7 @@ function playPcmAudio(base64) {
     if (stopSpeakingTimer) { clearTimeout(stopSpeakingTimer); stopSpeakingTimer = null; }
 
     source.onended = () => {
+        // 余韻を持たせて口パクOFF
         stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, 250);
     };
 }
@@ -435,7 +403,7 @@ function playPcmAudio(base64) { if (!audioContext) return; const binary = window
     source.onended = () => { stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, 250); };
 }
 
-// ミニゲーム (省略なし)
+// ミニゲーム
 function showGame() { switchScreen('screen-game'); document.getElementById('mini-karikari-display').classList.remove('hidden'); updateMiniKarikari(); initGame(); const s=document.getElementById('start-game-btn'); if(s) s.onclick = ()=>{ if(!gameRunning){ initGame(); gameRunning=true; s.disabled=true; drawGame(); } }; }
 function initGame() { gameCanvas=document.getElementById('game-canvas'); if(!gameCanvas)return; ctx=gameCanvas.getContext('2d'); paddle={w:80,h:10,x:120,speed:7}; ball={x:160,y:350,dx:3,dy:-3,r:8}; score=0; const s=document.getElementById('game-score'); if(s)s.innerText=score; bricks=[]; for(let c=0;c<5;c++)for(let r=0;r<4;r++)bricks.push({x:c*64+10,y:r*35+40,status:1}); gameCanvas.removeEventListener("mousemove",movePaddle); gameCanvas.removeEventListener("touchmove",touchPaddle); gameCanvas.addEventListener("mousemove",movePaddle,false); gameCanvas.addEventListener("touchmove",touchPaddle,{passive:false}); }
 function movePaddle(e) { const r=gameCanvas.getBoundingClientRect(), rx=e.clientX-r.left; if(rx>0&&rx<gameCanvas.width) paddle.x=rx-paddle.w/2; }
