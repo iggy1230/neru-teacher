@@ -1,4 +1,4 @@
-// --- anlyze.js (口パク確実化・画像管理刷新版) ---
+// --- anlyze.js (シンプル口パク強制版) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -14,60 +14,52 @@ let audioContext = null;
 let mediaStream = null;
 let workletNode = null;
 let nextStartTime = 0;
+// 口パク制御用
 let stopSpeakingTimer = null;
 
 // Game
 let gameCanvas, ctx, ball, paddle, bricks, score, gameRunning = false, gameAnimId = null;
 
-// ★画像管理用の変数 (ここを確実に切り替える)
-let currentBaseImg = 'nell-normal.png';
-let currentTalkImg = 'nell-talk.png';
-
-const subjectImages = {
-    'こくご': 'nell-kokugo.png', 
-    'さんすう': 'nell-sansu.png',
-    'りか': 'nell-rika.png', 
-    'しゃかい': 'nell-shakai.png'
-};
+// 画像ファイル名 (この2つだけを使います)
+const IMG_NORMAL = 'nell-normal.png'; 
+const IMG_TALK = 'nell-talk.png';
 
 // ==========================================
-// ★口パクアニメーション (シンプル最強版)
+// ★口パクアニメーション (超シンプル版)
 // ==========================================
 function startMouthAnimation() {
-    let toggle = false;
+    // 状態トグル用
+    let isOpen = false;
     
     setInterval(() => {
-        // IDで取得 (index.htmlにid="nell-face"が必要)
+        // IDで確実に画像要素を取得
         const img = document.getElementById('nell-face');
+        
+        // 画像が見つからなければ何もしない
         if (!img) return;
 
+        // 音声再生中フラグ (audio.js / playPcmAudio で操作)
         if (window.isNellSpeaking) {
-            // 喋っている：変数を交互に適用
-            toggle = !toggle;
-            img.src = toggle ? currentTalkImg : currentBaseImg;
+            isOpen = !isOpen; // 開閉を切り替え
+            
+            // フラグに応じて画像をセット
+            if (isOpen) {
+                // フルパス対策のため、単純に代入
+                img.src = IMG_TALK;
+            } else {
+                img.src = IMG_NORMAL;
+            }
         } else {
-            // 喋っていない：口閉じ画像を強制適用
-            // (チラつき防止のため、パスの末尾が一致しない場合のみ書き換え)
-            if (!img.src.endsWith(currentBaseImg)) {
-                img.src = currentBaseImg;
+            // 喋っていない時
+            // 現在が normal でない場合のみ上書き（チラつき防止）
+            if (!img.src.includes(IMG_NORMAL)) {
+                img.src = IMG_NORMAL;
             }
         }
     }, 150); // 0.15秒間隔
 }
+// 起動
 startMouthAnimation();
-
-// ★画像をセットする関数
-function setNellImage(baseName) {
-    currentBaseImg = baseName;
-    currentTalkImg = baseName.replace('.png', '-talk.png');
-    
-    // 即座に反映
-    const img = document.getElementById('nell-face');
-    if (img) img.src = currentBaseImg;
-    
-    // プリロード（読み込み遅延防止）
-    const preload = new Image(); preload.src = currentTalkImg;
-}
 
 // ==========================================
 // 1. モード選択
@@ -76,6 +68,7 @@ function selectMode(m) {
     currentMode = m; 
     switchScreen('screen-main'); 
     
+    // UIリセット
     const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'lunch-view'];
     ids.forEach(id => {
         const el = document.getElementById(id);
@@ -85,16 +78,15 @@ function selectMode(m) {
     stopLiveChat();
     gameRunning = false;
 
-    // ★モード切り替え時は、一旦「通常服」に戻す
-    setNellImage('nell-normal.png');
+    // アイコンリセット
+    const icon = document.getElementById('nell-face');
+    if(icon) icon.src = IMG_NORMAL;
 
-    const mk = document.getElementById('mini-karikari-display');
-    if(mk) mk.classList.remove('hidden');
+    document.getElementById('mini-karikari-display').classList.remove('hidden');
     updateMiniKarikari();
 
     if (m === 'chat') {
-        const cv = document.getElementById('chat-view');
-        if(cv) cv.classList.remove('hidden');
+        document.getElementById('chat-view').classList.remove('hidden');
         updateNellMessage("「おはなしする」を押してね！", "gentle");
         const btn = document.getElementById('mic-btn');
         if(btn) {
@@ -102,14 +94,12 @@ function selectMode(m) {
             btn.onclick = startLiveChat;
             btn.disabled = false;
             btn.style.background = "#ff85a1";
-            btn.style.boxShadow = "none";
         }
         const txt = document.getElementById('user-speech-text');
         if(txt) txt.innerText = "（リアルタイム対話）";
 
     } else if (m === 'lunch') {
-        const lv = document.getElementById('lunch-view');
-        if(lv) lv.classList.remove('hidden');
+        document.getElementById('lunch-view').classList.remove('hidden');
         lunchCount = 0;
         updateNellMessage("お腹ペコペコだにゃ……", "thinking");
 
@@ -117,14 +107,13 @@ function selectMode(m) {
         renderMistakeSelection();
 
     } else {
-        const sv = document.getElementById('subject-selection-view');
-        if(sv) sv.classList.remove('hidden');
+        document.getElementById('subject-selection-view').classList.remove('hidden');
         updateNellMessage("どの教科にするのかにゃ？", "normal");
     }
 }
 
 // ==========================================
-// 2. Live Chat (AudioWorklet)
+// 2. Live Chat (AudioWorklet + 接続待機)
 // ==========================================
 async function startLiveChat() {
     const btn = document.getElementById('mic-btn');
@@ -186,6 +175,7 @@ function stopLiveChat() {
     if (liveSocket) { liveSocket.close(); liveSocket = null; }
     if (audioContext) { audioContext.close(); audioContext = null; }
     
+    // 強制停止
     window.isNellSpeaking = false;
     
     const btn = document.getElementById('mic-btn');
@@ -261,6 +251,7 @@ async function startMicrophone() {
     }
 }
 
+// ★Live Chat用 PCM再生 (口パク連動)
 function playPcmAudio(base64) { 
     if (!audioContext) return; 
     const binary = window.atob(base64); 
@@ -285,7 +276,8 @@ function playPcmAudio(base64) {
     if (stopSpeakingTimer) { clearTimeout(stopSpeakingTimer); stopSpeakingTimer = null; }
 
     source.onended = () => {
-        stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, 250);
+        // 余韻を持たせて口パクOFF
+        stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, 300);
     };
 }
 
@@ -308,7 +300,6 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
     if (isAnalyzing || !e.target.files[0]) return; isAnalyzing = true;
     const up = document.getElementById('upload-controls'); if(up) up.classList.add('hidden');
     const th = document.getElementById('thinking-view'); if(th) th.classList.remove('hidden');
-    
     updateNellMessage("準備中……", "thinking"); updateProgress(0); 
     let p = 0; const timer = setInterval(() => { if (p < 90) { p += 3; updateProgress(p); } }, 500);
     try {
@@ -340,6 +331,7 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
 
 // 5. ヒント & UI
 function startHint(id) {
+    if (window.initAudioContext) window.initAudioContext();
     selectedProblem = transcribedProblems.find(p => p.id == id); if (!selectedProblem) return updateNellMessage("データなし", "thinking");
     const uiIds = ['problem-selection-view', 'grade-sheet-container', 'final-view', 'hint-detail-container', 'chalkboard', 'answer-display-area'];
     uiIds.forEach(i => { const el = document.getElementById(i); if(el) el.classList.add('hidden'); });
@@ -357,6 +349,7 @@ function startHint(id) {
 }
 
 function showNextHint() {
+    if (window.initAudioContext) window.initAudioContext();
     let cost = 0; if (hintIndex === 0) cost = 5; else if (hintIndex === 1) cost = 5; else if (hintIndex === 2) cost = 10;
     if (currentUser.karikari < cost) return updateNellMessage(`カリカリが足りないにゃ……あと${cost}個必要にゃ。`, "thinking");
     currentUser.karikari -= cost; saveAndSync(); updateMiniKarikari(); showKarikariEffect(-cost);
@@ -373,12 +366,6 @@ function showNextHint() {
 function setSubject(s) {
     currentSubject = s; 
     if(currentUser) { currentUser.history[s] = (currentUser.history[s] || 0) + 1; saveAndSync(); }
-    
-    // ★教科選択時に画像をセット
-    if (subjectImages[s]) {
-        setNellImage(subjectImages[s]);
-    }
-
     const sel = document.getElementById('subject-selection-view'); if(sel) sel.classList.add('hidden');
     const up = document.getElementById('upload-controls'); if(up) up.classList.remove('hidden');
     updateNellMessage(`${currentSubject}の問題をみせてにゃ！`, "happy");
@@ -401,6 +388,12 @@ function renderMistakeSelection() { if (!currentUser.mistakes || currentUser.mis
 function downsampleBuffer(buffer, sampleRate, outSampleRate) { if (outSampleRate >= sampleRate) return buffer; const ratio = sampleRate / outSampleRate; const newLength = Math.round(buffer.length / ratio); const result = new Float32Array(newLength); let offsetResult = 0, offsetBuffer = 0; while (offsetResult < result.length) { const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio); let accum = 0, count = 0; for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) { accum += buffer[i]; count++; } result[offsetResult] = accum / count; offsetResult++; offsetBuffer = nextOffsetBuffer; } return result; }
 function floatTo16BitPCM(input) { const output = new Int16Array(input.length); for (let i = 0; i < input.length; i++) { const s = Math.max(-1, Math.min(1, input[i])); output[i] = s < 0 ? s * 0x8000 : s * 0x7FFF; } return output.buffer; }
 function arrayBufferToBase64(buffer) { let binary = ''; const bytes = new Uint8Array(buffer); for (let i = 0; i < bytes.byteLength; i++) { binary += String.fromCharCode(bytes[i]); } return window.btoa(binary); }
+function playPcmAudio(base64) { if (!audioContext) return; const binary = window.atob(base64); const bytes = new Uint8Array(binary.length); for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i); const float32 = new Float32Array(bytes.length / 2); const view = new DataView(bytes.buffer); for (let i = 0; i < float32.length; i++) float32[i] = view.getInt16(i * 2, true) / 32768.0; const buffer = audioContext.createBuffer(1, float32.length, 24000); buffer.copyToChannel(float32, 0); const source = audioContext.createBufferSource(); source.buffer = buffer; source.connect(audioContext.destination); const now = audioContext.currentTime; if (nextStartTime < now) nextStartTime = now; source.start(nextStartTime); nextStartTime += buffer.duration; 
+
+    window.isNellSpeaking = true;
+    if (stopSpeakingTimer) { clearTimeout(stopSpeakingTimer); stopSpeakingTimer = null; }
+    source.onended = () => { stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, 250); };
+}
 
 // ミニゲーム (省略なし)
 function showGame() { switchScreen('screen-game'); document.getElementById('mini-karikari-display').classList.remove('hidden'); updateMiniKarikari(); initGame(); const s=document.getElementById('start-game-btn'); if(s) s.onclick = ()=>{ if(!gameRunning){ initGame(); gameRunning=true; s.disabled=true; drawGame(); } }; }
