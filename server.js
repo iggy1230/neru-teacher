@@ -19,18 +19,18 @@ app.use(express.static(path.join(__dirname, '.')));
 let genAI, ttsClient;
 try {
     genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    ttsClient = new textToSpeech.TextToSpeechClient({ 
-        credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON) 
+    ttsClient = new textToSpeech.TextToSpeechClient({
+        credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON)
     });
 } catch (e) { console.error("Init Error:", e.message); }
 
 // --- 音声合成 (SSML) ---
 function createSSML(text, mood) {
-    let rate = "1.1", pitch = "+2st"; 
+    let rate = "1.1", pitch = "+2st";
     if (mood === "thinking") { rate = "1.0"; pitch = "0st"; }
     if (mood === "gentle") { rate = "0.95"; pitch = "+1st"; }
     if (mood === "excited") { rate = "1.2"; pitch = "+4st"; }
-    
+
     let cleanText = text
         .replace(/[\u{1F600}-\u{1F6FF}]/gu, '')
         .replace(/🐾|✨|⭐|🎵|🐟|🎤|⭕️|❌/g, '')
@@ -51,7 +51,7 @@ app.post('/synthesize', async (req, res) => {
         if (!text) return res.status(400).json({ error: "No text" });
         const [response] = await ttsClient.synthesizeSpeech({
             input: { ssml: createSSML(text, mood) },
-            voice: { languageCode: 'ja-JP', name: 'ja-JP-Neural2-B' }, 
+            voice: { languageCode: 'ja-JP', name: 'ja-JP-Neural2-B' },
             audioConfig: { audioEncoding: 'MP3' },
         });
         res.json({ audioContent: response.audioContent.toString('base64') });
@@ -64,7 +64,7 @@ app.post('/game-reaction', async (req, res) => {
         if (!genAI) throw new Error("GenAI not ready");
         const { type, name, score } = req.body;
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-        
+
         let prompt = "";
         let mood = "excited";
 
@@ -94,8 +94,8 @@ app.post('/game-reaction', async (req, res) => {
 
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text().trim(), mood: mood });
-    } catch (err) { 
-        res.json({ reply: "がんばれにゃ！", mood: "excited" }); 
+    } catch (err) {
+        res.json({ reply: "がんばれにゃ！", mood: "excited" });
     }
 });
 
@@ -105,7 +105,7 @@ app.post('/lunch-reaction', async (req, res) => {
         if (!genAI) throw new Error("GenAI not ready");
         const { count, name } = req.body;
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-        
+
         let prompt = "";
         const isSpecial = count % 10 === 0;
 
@@ -150,70 +150,64 @@ app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { image, mode, grade, subject } = req.body;
-        const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.0-flash", 
-            generationConfig: { responseMimeType: "application/json" } 
+        const model = genAI.getGenerativeModel({
+            model: "gemini-2.0-flash",
+            generationConfig: { responseMimeType: "application/json" }
         });
 
         // ■ 教科別詳細ルール
         const rules = {
             'さんすう': {
-                attention: `・筆算の横線とマイナス記号を混同しない。\n・累乗(2^2)や分数を正確に。`,
+                attention: `・筆算の横線とマイナス記号を混同しないこと。\n・累乗（2^2など）や分数を正確に。`,
                 hints: `
-                  1. 立式: 「何算を使えばいいか」(例:全部でいくつだから足し算にゃ)。
-                  2. 注目点: 「単位のひっかけ」や「図の数値」への誘導(例:cmをmに直すのを忘れてないかにゃ？)。
-                  3. 計算のコツ: 「計算の工夫」や「最終確認」(例:一の位から順番に計算にゃ)。`,
+                  1. 立式: 「何算を使えばいいか」のヒント（例：全部でいくつ？と聞かれているから足し算にゃ）。
+                  2. 注目点: 「単位のひっかけ」や「図の数値」への誘導（例：cmをmに直すのを忘れてないかにゃ？）。
+                  3. 計算のコツ: 「計算の工夫」や「最終確認」（例：一の位から順番に計算してみるにゃ）。`,
                 grading: `
-                  ・筆算の繰り上がりを「答え」と見間違えない。
-                  ・単位(cm, L)が必要な問題で、単位がない場合はバツ。
-                  ・数字の「0」と「6」、「1」と「7」の見間違いに注意し、文脈から判断。`
+                  ・筆算の繰り上がりを「答え」と見間違えないように注意してにゃ。
+                  ・単位（cm, Lなど）が問題で指定されている場合、単位がないものはバツにしてにゃ。
+                  ・数字の「0」と「6」、「1」と「7」の見間違いに注意して、慎重に判定してにゃ。`
             },
             'こくご': {
-                attention: `・ふりがな(ルビ)は無視し、本文の漢字と送り仮名を正確に。\n・縦書きは右から左へ。\n・漢字書取りは『⬜︎⬜︎(ふりがな)』と表記。\n・読解の長文は書き起こし不要(設問のみ)。`,
+                attention: `・ふりがな（ルビ）は無視して、本文の漢字と送り仮名を正確に。\n・縦書きの場合は右から左へ読むこと。\n・読解問題の長い文章は書き起こししない。`,
                 hints: `
-                  【漢字問題の場合】
-                  1. なりたち: 漢字の由来や意味。
-                  2. 構成: 辺やつくり、画数。
-                  3. 似た漢字: 形が似ている字との違い。
-                  【読解問題の場合】
-                  1. 場所: 答えが文章のどこにあるか(例:2ページ目の3行目)。
-                  2. キーワード: 注目すべき言葉(例:『しかし』の後)。
-                  3. 答え方: 文末の指定(〜こと、等)。`,
+                  1. 場所: 「答えがどこにあるか」を教える（例：2ページ目の3行目あたりを読んでみてにゃ）。
+                  2. キーワード: 「注目すべき言葉」を教える（例：『しかし』のあとの文章が大事だにゃ）。
+                  3. 答え方: 「語尾の指定」など（例：『〜ということ』で終わるように書くにゃ）。`,
                 grading: `
-                  ・漢字の「トメ・ハネ・ハライ」を厳しく判定。
-                  ・送り仮名ミスはバツ。
-                  ・読解は文末(〜から、〜こと)が適切かチェック。`
+                  ・送り仮名が間違っている場合はバツだにゃ。
+                  ・読解問題では、解答の「文末」が適切か（〜のこと、〜から等）もチェックしてにゃ。`
             },
             'りか': {
-                attention: `・グラフの軸ラベルや単位(g, cm, ℃)を落とさない。\n・記号選択(ア、イ)の選択肢も書き出す。\n・図や表の近くにある最初の問題を見逃さない。`,
+                attention: `・グラフの軸ラベルや単位（g, cm, ℃など）を落とさないこと。\n・記号選択問題（ア、イ、ウ）の選択肢も書き出すこと。\n・最初の問題が図や表と似た位置にある場合があるので見逃さないこと。`,
                 hints: `
-                  1. 観察: 図や表のどこを見るか(例:グラフの急な変化)。
-                  2. 関連知識: 習った言葉や実験器具の名前の想起。
-                  3. 絞り込み: 選択肢のヒントや頭文字(例:『平』から始まる4文字)。`,
+                  1. 観察: 「図や表のどこを見るか」（例：グラフが急に上がっているところを探してみてにゃ）。
+                  2. 関連知識: 「習った言葉の想起」（例：この実験で使った、あの青い液体の名前は何だったかにゃ？）。
+                  3. 絞り込み: 「選択肢のヒント」や「最初の1文字」（例：『平』から始まる4文字の時代にゃ）。`,
                 grading: `
-                  ・カタカナ指定(ジョウロ等)をひらがなで書いたらバツ。
-                  ・グラフ描画は点の位置や直線性も厳しく判定。`
+                  ・カタカナ指定（例：ジョウロ、アルコールランプ）をひらがなで書いていたらバツにしてにゃ。
+                  ・グラフの描画問題は、点が正しい位置にあるか、線が真っ直ぐかを厳しく判定してにゃ。`
             },
             'しゃかい': {
-                attention: `・グラフの軸ラベルや単位、地図記号を落とさない。\n・記号選択の選択肢も書き出す。\n・資料周辺の問題を見逃さない。`,
+                attention: `・グラフの軸ラベルや単位（g, cm, ℃など）を落とさないこと。\n・記号選択問題（ア、イ、ウ）の選択肢も書き出すこと。\n・最初の問題が図や表と似た位置にある場合があるので見逃さないこと。`,
                 hints: `
-                  1. 観察: 図や表のどこを見るか。
-                  2. 関連知識: 歴史用語や地名の想起。
-                  3. 絞り込み: 選択肢のヒントや頭文字。`,
+                  1. 観察: 「図や表のどこを見るか」（例：グラフが急に上がっているところを探してみてにゃ）。
+                  2. 関連知識: 「習った言葉の想起」（例：この実験で使った、あの青い液体の名前は何だったかにゃ？）。
+                  3. 絞り込み: 「選択肢のヒント」や「最初の1文字」（例：『平』から始まる4文字の時代にゃ）。`,
                 grading: `
-                  ・漢字指定(都道府県名等)をひらがなで書いたらバツ。
-                  ・時代背景の混同(江戸時代に明治の用語など)に注意。`
+                  ・漢字指定の用語（例：都道府県名）をひらがなで書いていたらバツにゃ。
+                  ・時代背景が混ざっていないか（例：江戸時代なのに「士農工商」など）に注意してにゃ。`
             }
         };
         const r = rules[subject] || rules['さんすう'];
         const baseRole = `あなたは「ねこご市立ねこづか小学校」のネル先生です。小学${grade}年生の「${subject}」担当です。語尾は「にゃ」。`;
-        
+
         // 共通スキャン指示
         const commonScan = `
         【書き起こし絶対ルール】
-        1. 画像の「最上部」から「最下部」まで、大問・小問番号を含めてすべての数字や項目名を漏らさず書き起こしてください。
+        1. 画像の「最上部」から「最下部」まで、大問・小問番号を含めてすべての数字や項目名を可能な限り書き起こしてください。
         2. ${mode === 'explain' ? '画像内の手書きの答案は【完全に無視】し、問題文だけを抽出してください。' : '採点のため、生徒の手書き文字（student_answer）を読み取ってください。子供特有の筆跡を考慮して、前後の文脈から数字や文字を推測してください。'}
-        3. 1つの問いに複数の回答が必要なときは、JSONデータの要素を分けて、必要な数だけ回答欄を設けてください（例: 問1(1)①, 問1(1)②）。
+        3. 1つの問いの中に複数の回答が必要なときは、JSONデータの要素を分けて、必要な数だけ回答欄を設けてください（例: 問1(1)①, 問1(1)②）。
         4. 教科別注意: ${r.attention}
         `;
 
@@ -223,7 +217,7 @@ app.post('/analyze', async (req, res) => {
             prompt = `
             ${baseRole}
             ${commonScan}
-            
+
             提供された画像を分析し、以下のJSON形式で出力してください。
             [
               {
@@ -232,13 +226,13 @@ app.post('/analyze', async (req, res) => {
                 "question": "問題文の正確な書き起こし",
                 "correct_answer": "正解",
                 "hints": [
-                    "ヒント1: ${r.hints.split('\n').find(l=>l.includes('1')) || '考え方'}",
-                    "ヒント2: ${r.hints.split('\n').find(l=>l.includes('2')) || '途中経過'}",
-                    "ヒント3: ${r.hints.split('\n').find(l=>l.includes('3')) || '答えに近いヒント'}"
+                    "ヒント1: ${r.hints.split('\n').find(l => l.includes('1')) || '考え方'}",
+                    "ヒント2: ${r.hints.split('\n').find(l => l.includes('2')) || '途中経過'}",
+                    "ヒント3: ${r.hints.split('\n').find(l => l.includes('3')) || '答えに近いヒント'}"
                 ]
               }
             ]
-            
+
             【重要】
             - ヒント配列は必ず3段階作成してください。
             - **答えそのものは絶対にヒントに書かないでください。**
@@ -249,7 +243,7 @@ app.post('/analyze', async (req, res) => {
             prompt = `
             ${baseRole} 厳格な採点官として振る舞ってください。
             ${commonScan}
-            
+
             以下のJSON形式で出力してください。
             [
               {
@@ -276,10 +270,10 @@ app.post('/analyze', async (req, res) => {
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
         const jsonStr = result.response.text().replace(/```json|```/g, '').replace(/\*/g, '×').replace(/\//g, '÷');
         res.json(JSON.parse(jsonStr));
-        
-    } catch (err) { 
+
+    } catch (err) {
         console.error("Analyze Error:", err);
-        res.status(500).json({ error: "AI Error" }); 
+        res.status(500).json({ error: "AI Error" });
     }
 });
 
@@ -304,8 +298,8 @@ wss.on('connection', (clientWs, req) => {
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
                     generation_config: { response_modalities: ["AUDIO"], speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } } } }, // ★Aoede
-                    system_instruction: { 
-                        parts: [{ 
+                    system_instruction: {
+                        parts: [{
                             text: `あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。
 相手は小学${userGrade}年生の${userName}さん。
                【話し方のルール】
@@ -323,8 +317,8 @@ wss.on('connection', (clientWs, req) => {
                【NGなこと】
                ・ロボットみたいに不自然に区切るのではなく、繋がりのある滑らかな日本語でお願いにゃ。
                ・早口になりすぎて、言葉の一部が消えてしまうのはダメだにゃ。
-               ・相手の学年(小学${userGrade}年生)に合わせた言葉選びをしてにゃ。` 
-                        }] 
+               ・相手の学年(小学${userGrade}年生)に合わせた言葉選びをしてにゃ。`
+                        }]
                     }
                 }
             }));
