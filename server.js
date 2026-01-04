@@ -141,7 +141,7 @@ app.post('/chat', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
-// --- ★画像分析API (教科別ルール完全対応版) ---
+// --- ★画像分析API (共通ロジック統合版) ---
 app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
@@ -151,7 +151,7 @@ app.post('/analyze', async (req, res) => {
             generationConfig: { responseMimeType: "application/json" }
         });
 
-        // ■ 教科別詳細ルール
+        // 1. 教科別ルール（全モード共通）
         const rules = {
             'さんすう': {
                 attention: `・筆算の横線とマイナス記号を混同しないこと。\n・累乗（2^2など）や分数を正確に。`,
@@ -208,75 +208,53 @@ app.post('/analyze', async (req, res) => {
                   ・時代背景が混ざっていないか（例：江戸時代なのに「士農工商」など）に注意してにゃ。`
             }
         };
+        
         const r = rules[subject] || rules['さんすう'];
         const baseRole = `あなたは「ねこご市立ねこづか小学校」のネル先生です。小学${grade}年生の「${subject}」担当です。語尾は「にゃ」。`;
 
-        // 共通スキャン指示
-        const commonScan = `
-        【書き起こし絶対ルール】
-        1. 画像全体を解析し、大問・小問番号を含めて問題を抽出してください。
-        2. 【超重要】「解答欄（□、括弧、下線、空欄）」が存在しないテキスト（例題、説明文、タイトル）は、問題（question）として出力しないでください。
-        3. ${mode === 'explain' ? '画像内の手書きの答案は【完全に無視】し、問題文だけを抽出してください。' : '採点のため、生徒の手書き文字（student_answer）を読み取ってください。子供特有の筆跡を考慮し、文脈から推測してください。'}
-        4. １つの問いの中に複数の回答が必要なときは、JSONデータの要素を分けて、必要な数だけ回答欄を設けてください。
-        5. 教科別注意: ${r.attention}
-        `;
+        // 2. モードによる差異（手書き文字の扱いのみ）
+        const handwritingInstruction = mode === 'explain' 
+            ? `・画像内の手書きの答案（生徒が書いた文字）は【完全に無視】し、印刷された問題文だけを対象としてください。\n・出力JSONの "student_answer" は空文字 "" にしてください。`
+            : `・採点のため、生徒の手書き文字を可能な限り読み取り、出力JSONの "student_answer" に格納してください。\n・子供特有の筆跡を考慮し、前後の文脈から推測してください。`;
 
-        let prompt = "";
-        if (mode === 'explain') {
-            // 【教えてネル先生モード】
-            prompt = `
+        // 3. 統合プロンプト（共通ロジック）
+        const prompt = `
             ${baseRole}
-            ${commonScan}
+            
+            【タスク】
+            提供された画像を分析し、問題文、正解、ヒント、(採点モードなら)生徒の答えを抽出・生成してください。
 
-            提供された画像を分析し、以下のJSON形式で出力してください。
+            【書き起こし・抽出の絶対ルール】
+            1. 画像全体を解析し、大問・小問番号を含めてすべての問題を漏らさず抽出してください。
+            2. 【超重要】「解答欄（□、括弧、下線、空欄）」が存在しないテキスト（例題、説明文、タイトル）は、問題（question）として出力しないでください。
+            3. ${handwritingInstruction}
+            4. １つの問いの中に複数の回答が必要なときは、JSONデータの要素を分けて、必要な数だけ回答欄を設けてください。
+            5. 教科別注意: ${r.attention}
+
+            【ヒント生成ルール】
+            以下の指針に従い、必ず3段階のヒントを作成してください。答えそのものはヒントに書かないでください。
+            ${r.hints}
+
+            【出力フォーマット】
+            以下のJSON形式のみを出力してください。Markdownのコードブロックは不要です。
             
             [
               {
                 "id": 1,
                 "label": "①", 
-                "question": "問題文の正確な書き起こし。※国語の漢字問題の場合、必ず『(ふりがな)』という形式で読み仮名を含めること。",
+                "question": "問題文。※国語の漢字問題の場合、必ず『(ふりがな)』という形式で読み仮名を含めること。",
                 "correct_answer": "正解",
+                "student_answer": "生徒の答え（解説モードなら空文字）",
                 "hints": [
-                    "ヒント1: ${r.hints.split('\n').find(l => l.includes('1')) || '考え方'}",
-                    "ヒント2: ${r.hints.split('\n').find(l => l.includes('2')) || '注目点'}",
-                    "ヒント3: ${r.hints.split('\n').find(l => l.includes('3')) || '答えに近いヒント'}"
+                    "ヒント1: ...",
+                    "ヒント2: ...",
+                    "ヒント3: ..."
                 ]
               }
             ]
-
-            【重要】
-            - 縦書きの文章が隣の行と混ざらないように注意してください。
-            - 解答欄のない場所を問題として認識しないでください。
-            - ヒント配列は必ず3段階作成してください。
-            - 答えそのものはヒントに書かないでください。
-            `;
-        } else {
-            // 【採点・復習モード】
-            prompt = `
-            ${baseRole} 厳格な採点官として振る舞ってください。
-            ${commonScan}
-
-            以下のJSON形式で出力してください。
-            [
-              {
-                "id": 1,
-                "label": "①",
-                "question": "問題文の正確な書き起こし。※国語の漢字問題の場合、必ず『(ふりがな)』という形式で読み仮名を含めること。",
-                "correct_answer": "正確な正解",
-                "student_answer": "画像から読み取った生徒の答え（空欄なら\"\"）",
-                "hints": [
-                    "ヒント1: 考え方",
-                    "ヒント2: 注目点",
-                    "ヒント3: 答えに近いヒント"
-                ]
-              }
-            ]
-            【採点基準】
-            ${r.grading}
-            - どの問題も正確に正答を導き出してください。
-            - 読み取りミス修正のため、student_answerは生の読み取り結果を返してください。
-            `;
-        }
+            
+            ${mode === 'grade' ? `【採点基準】\n${r.grading}` : ''}
+        `;
 
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
         const jsonStr = result.response.text().replace(/```json|```/g, '').replace(/\*/g, '×').replace(/\//g, '÷');
@@ -295,6 +273,7 @@ const server = app.listen(PORT, () => console.log(`Server running on port ${PORT
 // --- ★Live API Proxy (Aoede) ---
 const wss = new WebSocketServer({ server });
 wss.on('connection', (clientWs, req) => {
+    // 学年と名前を取得
     const parameters = parse(req.url, true).query;
     const userGrade = parameters.grade || "1";
     const userName = decodeURIComponent(parameters.name || "");
