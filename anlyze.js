@@ -168,7 +168,7 @@ async function startMicrophone() {
         source.connect(workletNode);
         
         workletNode.port.onmessage = (event) => {
-            // ★音声データの送信を250ms遅らせる（最初の音切れ対策）
+            // ★修正: 最初の音が切れないように500ms遅延させる
             setTimeout(() => {
                 if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return;
                 const inputData = event.data;
@@ -176,7 +176,7 @@ async function startMicrophone() {
                 const pcm16 = floatTo16BitPCM(downsampled);
                 const base64 = arrayBufferToBase64(pcm16);
                 liveSocket.send(JSON.stringify({ type: 'audio', data: base64 }));
-            }, 250);
+            }, 500);
         };
     } catch(e) { updateNellMessage("マイクエラー", "thinking"); }
 }
