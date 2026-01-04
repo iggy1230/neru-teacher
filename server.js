@@ -1,5 +1,7 @@
+// --- server.js (完全版) ---
+
 import textToSpeech from '@google-cloud/text-to-speech';
-import { GoogleGenerativeAI } from "@google/generative_ai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
@@ -36,7 +38,6 @@ function createSSML(text, mood) {
         .replace(/🐾|✨|⭐|🎵|🐟|🎤|⭕️|❌/g, '')
         .replace(/&/g, 'と').replace(/[<>"']/g, ' ');
 
-    // 短い文は安定性重視
     if (cleanText.length < 5 || cleanText.includes("どの教科")) {
         return `<speak>${cleanText}</speak>`;
     }
@@ -58,7 +59,7 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- ★修正：ゲーム実況API ---
+// --- ゲーム実況API ---
 app.post('/game-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
@@ -69,21 +70,18 @@ app.post('/game-reaction', async (req, res) => {
         let mood = "excited";
 
         if (type === 'start') {
-            // ★開始時は短く応援
             prompt = `
             あなたは「ねこご市立ねこづか小学校」のネル先生です。
             生徒「${name}」さんがゲームを開始します。
             「${name}さん！カリカリいっぱいゲットしてにゃ！」とだけ言ってください。余計な言葉は不要。
             `;
         } else if (type === 'end') {
-            // ★開始時は短く応援
             prompt = `
             あなたはネル先生です。ゲーム終了。スコア${score}個(最大20)。
             スコアに応じて褒めるか励ましてください。
             【厳守】20文字以内。語尾「にゃ」。絵文字禁止。
             `;
         } else {
-            // プレイ中実況 (hit, pinch, save)
             prompt = `
             ネル先生の実況。状況: ${type}。
             【厳守】
@@ -129,7 +127,6 @@ app.post('/lunch-reaction', async (req, res) => {
 
         const result = await model.generateContent(prompt);
         let reply = result.response.text().trim();
-        reply = reply.replace(/^[A-C][:：]\s*/i, '').replace(/^テーマ[:：]\s*/, '');
         if (!isSpecial && reply.includes('\n')) reply = reply.split('\n')[0];
         res.json({ reply, isSpecial });
     } catch (err) { res.status(500).json({ error: "Lunch Error" }); }
@@ -156,7 +153,6 @@ app.post('/analyze', async (req, res) => {
             generationConfig: { responseMimeType: "application/json" }
         });
 
-        // ■ 教科別詳細ルール
         const rules = {
             'さんすう': {
                 attention: `・筆算の横線とマイナス記号を混同しないこと。\n・累乗（2^2など）や分数を正確に。`,
@@ -203,18 +199,16 @@ app.post('/analyze', async (req, res) => {
         const r = rules[subject] || rules['さんすう'];
         const baseRole = `あなたは「ねこご市立ねこづか小学校」のネル先生です。小学${grade}年生の「${subject}」担当です。語尾は「にゃ」。`;
 
-        // 共通スキャン指示
         const commonScan = `
         【書き起こし絶対ルール】
         1. 画像の「最上部」から「最下部」まで、大問・小問番号を含めてすべての数字や項目名を可能な限り書き起こしてください。
         2. ${mode === 'explain' ? '画像内の手書きの答案は【完全に無視】し、問題文だけを抽出してください。' : '採点のため、生徒の手書き文字（student_answer）を読み取ってください。子供特有の筆跡を考慮して、前後の文脈から数字や文字を推測してください。'}
-        3. 1つの問いに複数の回答が必要なときは、JSONデータの要素を分けて、必要な数だけ回答欄を設けてください（例: 問1(1)①, 問1(1)②）。
+        3. 1つの問いの中に複数の回答が必要なときは、JSONデータの要素を分けて、必要な数だけ回答欄を設けてください（例: 問1(1)①, 問1(1)②）。
         4. 教科別注意: ${r.attention}
         `;
 
         let prompt = "";
         if (mode === 'explain') {
-            // 【教えてネル先生モード】
             prompt = `
             ${baseRole}
             ${commonScan}
@@ -240,7 +234,6 @@ app.post('/analyze', async (req, res) => {
             - 十分に検証して必ず正答を導き出してください。
             `;
         } else {
-            // 【採点・復習モード】
             prompt = `
             ${baseRole} 厳格な採点官として振る舞ってください。
             ${commonScan}
@@ -285,7 +278,6 @@ const server = app.listen(PORT, () => console.log(`Server running on port ${PORT
 // --- ★Live API Proxy (Aoede) ---
 const wss = new WebSocketServer({ server });
 wss.on('connection', (clientWs, req) => {
-    // 学年と名前を取得
     const parameters = parse(req.url, true).query;
     const userGrade = parameters.grade || "1";
     const userName = decodeURIComponent(parameters.name || "");
@@ -298,7 +290,7 @@ wss.on('connection', (clientWs, req) => {
             geminiWs.send(JSON.stringify({
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
-                    generation_config: { response_modalities: ["AUDIO"], speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } } } }, // ★Aoede
+                    generation_config: { response_modalities: ["AUDIO"], speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } } } }, 
                     system_instruction: {
                         parts: [{
                             text: `あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。
