@@ -1,5 +1,3 @@
-// --- server.js (完全版) ---
-
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import express from 'express';
@@ -175,18 +173,20 @@ app.post('/analyze', async (req, res) => {
                 2. 問題の区切りを正確に認識してください。
                    - 丸数字（①, ②...）や括弧付き数字（(1), (2)...）は新しい問題の開始合図です。
                    - 隣り合う列や行の文字を混同しないよう、罫線や余白を意識して分離してください。
-                3. ふりがな（ルビ）の扱い
-                   - 漢字の問題では、対象の漢字や空白の横にある小さな文字（ふりがな）を、その問題の一部として認識してください。
+                3. 【最重要】ふりがな（ルビ）の統合
+                   - 漢字書き取り問題の空欄の横にある小さな文字（ふりがな）は、必ずその問題の読み仮名として認識してください。
+                   - 出力する「question」フィールドには、必ず『問題文(ふりがな)』という形式で読み仮名を括弧書きで含めてください。（例：『(はこ)の中』）
                 `,
                 hints: `
-                  【漢字問題の場合】
-                  1. ヒント1: 「漢字のなりたち」や「意味」を教える。
-                  2. ヒント2: 「部首」や「画数」を教える。
-                  3. ヒント3: 「答えに近いヒント」や「対義語・類義語」。
+                  【漢字の書き取り問題の場合】
+                  1. ヒント1: 漢字の「意味」や「なりたち」を教えてください。（例：木がたくさんある様子だにゃ）
+                  2. ヒント2: 漢字の「部首」や「構成要素」を具体的に教えてください。（例：「きへん」に「林」だにゃ）
+                  3. ヒント3: 答えに近いヒントや対義語。（例：「森」という字にゃ）
+                  
                   【読解問題の場合】
-                  1. ヒント1（場所）: 「答えが文章のどのあたりにあるか」を教える。
-                  2. ヒント2（キーワード）: 「注目すべき言葉（接続詞など）」を教える。
-                  3. ヒント3（答え方）: 「文末の指定（〜こと、〜から）」を教える。`,
+                  1. ヒント1: 「答えが文章のどのあたりにあるか」
+                  2. ヒント2: 「注目すべき言葉（接続詞など）」
+                  3. ヒント3: 「文末の指定（〜こと、〜から）」`,
                 grading: `
                   ・送り仮名のミスはバツだにゃ。
                   ・読解問題は、指定された文字数や文末（〜こと、〜から）が合っているかもチェックするにゃ。`
@@ -237,7 +237,7 @@ app.post('/analyze', async (req, res) => {
               {
                 "id": 1,
                 "label": "①", 
-                "question": "問題文の正確な書き起こし（読み仮名がある場合は()に入れる）",
+                "question": "問題文の正確な書き起こし。※国語の漢字問題の場合、必ず『(ふりがな)』という形式で読み仮名を含めること。",
                 "correct_answer": "正解",
                 "hints": [
                     "ヒント1: ${r.hints.split('\n').find(l => l.includes('1')) || '考え方'}",
@@ -263,7 +263,7 @@ app.post('/analyze', async (req, res) => {
               {
                 "id": 1,
                 "label": "①",
-                "question": "問題文の正確な書き起こし",
+                "question": "問題文の正確な書き起こし。※国語の漢字問題の場合、必ず『(ふりがな)』という形式で読み仮名を含めること。",
                 "correct_answer": "正確な正解",
                 "student_answer": "画像から読み取った生徒の答え（空欄なら\"\"）",
                 "hints": [
@@ -297,7 +297,6 @@ const server = app.listen(PORT, () => console.log(`Server running on port ${PORT
 // --- ★Live API Proxy (Aoede) ---
 const wss = new WebSocketServer({ server });
 wss.on('connection', (clientWs, req) => {
-    // 学年と名前を取得
     const parameters = parse(req.url, true).query;
     const userGrade = parameters.grade || "1";
     const userName = decodeURIComponent(parameters.name || "");
