@@ -170,12 +170,15 @@ async function startMicrophone() {
         workletNode = new AudioWorkletNode(audioContext, 'pcm-processor');
         source.connect(workletNode);
         workletNode.port.onmessage = (event) => {
-            if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return;
-            const inputData = event.data;
-            const downsampled = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
-            const pcm16 = floatTo16BitPCM(downsampled);
-            const base64 = arrayBufferToBase64(pcm16);
-            liveSocket.send(JSON.stringify({ type: 'audio', data: base64 }));
+            // ★修正：データ送信開始を遅らせる
+            setTimeout(() => {
+                if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return;
+                const inputData = event.data;
+                const downsampled = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
+                const pcm16 = floatTo16BitPCM(downsampled);
+                const base64 = arrayBufferToBase64(pcm16);
+                liveSocket.send(JSON.stringify({ type: 'audio', data: base64 }));
+            }, 250); // 250ミリ秒遅延
         };
     } catch(e) { updateNellMessage("マイクエラー", "thinking"); }
 }
@@ -235,7 +238,7 @@ function drawGame() {
     ctx.fillStyle = "#4a90e2"; ctx.fillRect(paddle.x, gameCanvas.height - paddle.h - 10, paddle.w, paddle.h);
     bricks.forEach(b => {
         if(b.status === 1 && ball.x>b.x && ball.x<b.x+40 && ball.y>b.y && ball.y<b.y+30){
-            ball.dy*=-1; b.status=0; score++; document.getElementById('game-score').innerText=score;
+            ball.dy*=-1; b.status=0; score++; document.getElementById('game-score').innerText = score;
 
             // ★即答実況 (APIを使わずローカルでランダム再生)
             if (Math.random() > 0.7 && !window.isNellSpeaking) {
@@ -265,7 +268,11 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
     if (isAnalyzing || !e.target.files[0]) return; isAnalyzing = true;
     const up = document.getElementById('upload-controls'); if(up) up.classList.add('hidden');
     const th = document.getElementById('thinking-view'); if(th) th.classList.remove('hidden');
-    updateNellMessage("ちょっと待っててにゃ…ふむふむ…", "thinking"); // ★修正: 読み込みメッセージ変更
+    let loadingMessage = "ちょっと待っててにゃ…ふむふむ…";
+    if (currentUser && currentSubject) {
+        loadingMessage = `ちょっと待っててにゃ…ふむふむ…${currentUser.grade}年生の${currentSubject}の問題だにゃ…`;
+    }
+    updateNellMessage(loadingMessage, "thinking"); // ★修正: 読み込みメッセージ変更
     updateProgress(0);
     let p = 0; const timer = setInterval(() => { if (p < 90) { p += 3; updateProgress(p); } }, 500);
     try {
@@ -358,4 +365,4 @@ function renderMistakeSelection() { if (!currentUser.mistakes || currentUser.mis
 function downsampleBuffer(buffer, sampleRate, outSampleRate) { if (outSampleRate >= sampleRate) return buffer; const ratio = sampleRate / outSampleRate; const newLength = Math.round(buffer.length / ratio); const result = new Float32Array(newLength); let offsetResult = 0, offsetBuffer = 0; while (offsetResult < result.length) { const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio); let accum = 0, count = 0; for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) { accum += buffer[i]; count++; } result[offsetResult] = accum / count; offsetResult++; offsetBuffer = nextOffsetBuffer; } return result; }
 function floatTo16BitPCM(input) { const output = new Int16Array(input.length); for (let i = 0; i < input.length; i++) { const s = Math.max(-1, Math.min(1, input[i])); output[i] = s < 0 ? s * 0x8000 : s * 0x7FFF; } return output.buffer; }
 function arrayBufferToBase64(buffer) { let binary = ''; const bytes = new Uint8Array(buffer); for (let i = 0; i < bytes.byteLength; i++) { binary += String.fromCharCode(bytes[i]); } return window.btoa(binary); }
-function playPcmAudio(base64) { if (!audioContext) return; const binary = window.atob(base64); const bytes = new Uint8Array(binary.length); for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i); const float32 = new Float32Array(bytes.length / 2); const view = new DataView(bytes.buffer); for (let i = 0; i < float32.length; i++) float32[i] = view.getInt16(i * 2, true) / 32768.0; const buffer = audioContext.createBuffer(1, float32.length, 24000); buffer.copyToChannel(float32, 0); const source = audioContext.createBufferSource(); source.buffer = buffer; source.connect(audioContext.destination); const now = audioContext.currentTime; if (nextStartTime < now) nextStartTime = now; source.start(nextStartTime); nextStartTime += buffer.duration; window.isNellSpeaking = true; if (stopSpeakingTimer) { clearTimeout(stopSpeakingTimer); stopSpeakingTimer = null; } source.onended = () => { stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, 250); }; }
+function playPcmAudio(base64) { if (!audioContext) return; const binary = window.atob(base64); const bytes = new Uint8Array(binary.length); for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i); const float32 = new Float32Array(bytes.length / 2); const view = new DataView(bytes.buffer); for (let i = 0; i < float32.length; i++) float32[i] = view.getInt16(i * 2, true) / 32768.0; const buffer = audioContext.createBuffer(1, float32.length, 24000); buffer.copyToChannel(float32, 0); const source = audioContext.createBufferSource(); source.buffer = buffer; source.connect(audioContext.destination); const now = audioContext.currentTime; if (nextStartTime < now) nextStartTime = now; source.start(nextStartTime); nextStartTime += buffer
