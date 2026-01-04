@@ -179,9 +179,9 @@ app.post('/analyze', async (req, res) => {
                 `,
                 hints: `
                   【漢字の書き取り問題の場合】
-                  1. ヒント1: 漢字の「意味」や「なりたち」を教えてください。（例：木がたくさんある様子だにゃ）
-                  2. ヒント2: 漢字の「部首」や「構成要素」を具体的に教えてください。（例：「きへん」に「林」だにゃ）
-                  3. ヒント3: 答えに近いヒントや対義語。（例：「森」という字にゃ）
+                  1. ヒント1: 「漢字のなりたち」を教える
+                  2. ヒント2: 「辺や部首や画数」を教える
+                  3. ヒント3: 「似た漢字」を教える
                   
                   【読解問題の場合】
                   1. ヒント1: 「答えが文章のどのあたりにあるか」
@@ -297,6 +297,7 @@ const server = app.listen(PORT, () => console.log(`Server running on port ${PORT
 // --- ★Live API Proxy (Aoede) ---
 const wss = new WebSocketServer({ server });
 wss.on('connection', (clientWs, req) => {
+    // 学年と名前を取得
     const parameters = parse(req.url, true).query;
     const userGrade = parameters.grade || "1";
     const userName = decodeURIComponent(parameters.name || "");
