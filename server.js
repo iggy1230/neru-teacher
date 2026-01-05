@@ -62,8 +62,8 @@ app.post('/game-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { type, name, score } = req.body;
-        // ゲーム実況は速度優先なのでFlashのまま
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+        // ★修正: 実在する高速モデルを使用
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
         let prompt = "";
         let mood = "excited";
@@ -102,7 +102,8 @@ app.post('/lunch-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { count, name } = req.body;
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+        // ★修正: 実在する高速モデルを使用
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
         let prompt = "";
         const isSpecial = count % 10 === 0;
@@ -135,7 +136,8 @@ app.post('/lunch-reaction', async (req, res) => {
 app.post('/chat', async (req, res) => {
     try {
         const { message, grade, name } = req.body;
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+        // ★修正: 実在する高速モデルを使用
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         const prompt = `あなたは「ネル先生」。相手は小学${grade}年生「${name}」。30文字以内、語尾「にゃ」。絵文字禁止。発言: ${message}`;
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text() });
@@ -148,8 +150,7 @@ app.post('/analyze', async (req, res) => {
         if (!genAI) throw new Error("GenAI not ready");
         const { image, mode, grade, subject } = req.body;
         
-        // ★修正: 画像認識・推論精度を上げるため "gemini-1.5-pro" を使用
-        // (Flashは速いが、複雑な縦書きレイアウトの認識で劣る場合があるため)
+        // ★修正: 実在する最高精度モデル gemini-1.5-pro を使用
         const model = genAI.getGenerativeModel({
             model: "gemini-1.5-pro",
             generationConfig: { responseMimeType: "application/json" }
@@ -170,13 +171,14 @@ app.post('/analyze', async (req, res) => {
             },
             'こくご': {
                 attention: `
-                【最重要：縦書きレイアウト認識ルール】
-                1. 読む方向: この画像は「縦書き」です。「右上」からスタートし、「下」へ読み進め、行が変わったら「左の列」へ移動してください。
-                2. 問題の独立性: 「③」や「④」などの丸数字は、それぞれの問題の開始点です。
-                   - ⚠️注意: ③の問題文の中に、隣の列（④）の文字が混ざらないように、垂直方向のラインを意識して区切ってください。
-                3. 空欄の書式: 漢字書き取り問題の空欄（□）は、その横にあるルビ（読み仮名）とセットです。
-                   - 必ず『□(読み仮名)』という形式で書き起こしてください。（例: □(なみ)がよせる。）
-                4. 「なみ」と「みなと」の混同注意: ③は「なみ（波）」、④は「みなと（港）」です。隣り合っていますが別の問題です。
+                【レイアウト認識と抽出の絶対ルール】
+                1. 縦書き認識: この画像は基本的に「縦書き」です。必ず「右上」から「左下」に向かって読んでください。
+                2. 問題の分離: 丸数字（①, ②...）は新しい問題の開始合図です。
+                3. 【最重要】漢字書き取り問題のフォーマット
+                   - 解答すべき空欄（□）は、必ず『□(読み仮名)』という形式で書き起こしてください。
+                   - 既に漢字が印刷されている部分は、そのまま漢字で記述してください。
+                   - 例: 画像に「(はこ) の中」とあり、「はこ」が書き取り対象の場合 → 『□(はこ)の中。』と出力。
+                   - 例: 画像に「みどりの木々」とあり、「みどり」が書き取り対象の場合 → 『□(みどり)の木々。』と出力。
                 `,
                 hints: `
                   【漢字の書き取り問題の場合】
@@ -290,7 +292,7 @@ wss.on('connection', (clientWs, req) => {
         geminiWs.on('open', () => {
             geminiWs.send(JSON.stringify({
                 setup: {
-                    // ★Live API用には 2.0 Flash Exp が現状最適かつ動作確実
+                    // ★修正: 実在するLive API用モデルを使用
                     model: "models/gemini-2.0-flash-exp",
                     generation_config: { response_modalities: ["AUDIO"], speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } } } }, 
                     system_instruction: {
