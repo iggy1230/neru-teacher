@@ -119,7 +119,6 @@ async function startLiveChat() {
 
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const gradeParam = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.grade : "1";
-        // 名前もパラメータで送る
         const nameParam = (typeof currentUser !== 'undefined' && currentUser) ? encodeURIComponent(currentUser.name) : "";
         
         liveSocket = new WebSocket(`${wsProtocol}//${window.location.host}?grade=${gradeParam}&name=${nameParam}`);
@@ -141,7 +140,11 @@ async function startLiveChat() {
                 playPcmAudio(data.serverContent.modelTurn.parts[0].inlineData.data);
             }
         };
-        liveSocket.onclose = () => stopLiveChat();
+        liveSocket.onclose = () => {
+            stopLiveChat();
+            const btn = document.getElementById('mic-btn');
+            if(btn) btn.innerText = "接続切れちゃった…";
+        };
         liveSocket.onerror = (e) => { console.error(e); stopLiveChat(); };
     } catch (e) { alert("エラー: " + e.message); stopLiveChat(); }
 }
@@ -153,7 +156,7 @@ function stopLiveChat() {
     if (audioContext) { audioContext.close(); audioContext = null; }
     window.isNellSpeaking = false;
     const btn = document.getElementById('mic-btn');
-    if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; }
+    if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; btn.style.boxShadow = "none"; btn.style.transform = "scale(1)"; }
 }
 
 async function startMicrophone() {
@@ -168,10 +171,21 @@ async function startMicrophone() {
         source.connect(workletNode);
         
         workletNode.port.onmessage = (event) => {
-            // ★修正: 最初の音が切れないように500ms遅延させる
+            const inputData = event.data;
+            
+            // ★マイク入力インジケーター（音量でボタンが光る）
+            let sum = 0; for(let i=0; i<inputData.length; i++) sum += inputData[i] * inputData[i];
+            const volume = Math.sqrt(sum / inputData.length);
+            const btn = document.getElementById('mic-btn');
+            if (btn && volume > 0.01) {
+                btn.style.boxShadow = `0 0 ${10 + volume * 500}px #ffeb3b`;
+            } else if(btn) {
+                btn.style.boxShadow = "none";
+            }
+
+            // ★500ms遅延送信
             setTimeout(() => {
                 if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return;
-                const inputData = event.data;
                 const downsampled = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
                 const pcm16 = floatTo16BitPCM(downsampled);
                 const base64 = arrayBufferToBase64(pcm16);
@@ -300,7 +314,6 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
         });
         if (!res.ok) throw new Error("Err"); const data = await res.json();
         
-        // IDやステータスの初期化
         transcribedProblems = data.map((prob, index) => ({ ...prob, id: prob.id || index + 1, student_answer: prob.student_answer || "", status: "unanswered" }));
 
         // 採点自動判定（AIのstudent_answerを使って初期判定）

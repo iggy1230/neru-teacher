@@ -1,3 +1,5 @@
+// --- server.js (確実動作版) ---
+
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import express from 'express';
@@ -62,8 +64,8 @@ app.post('/game-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { type, name, score } = req.body;
-        // ★修正: 最新の高精度モデル gemini-2.5-pro を使用
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+        // ★修正: 確実に動作するモデルを使用
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
         let prompt = "";
         let mood = "excited";
@@ -93,7 +95,8 @@ app.post('/game-reaction', async (req, res) => {
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text().trim(), mood: mood });
     } catch (err) {
-        res.json({ reply: "がんばれにゃ！", mood: "excited" });
+        console.error("Game API Error:", err);
+        res.status(500).json({ error: "Game Error" });
     }
 });
 
@@ -102,8 +105,8 @@ app.post('/lunch-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { count, name } = req.body;
-        // ★修正: gemini-2.5-pro を使用
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+        // ★修正: 確実に動作するモデルを使用
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
         let prompt = "";
         const isSpecial = count % 10 === 0;
@@ -129,30 +132,32 @@ app.post('/lunch-reaction', async (req, res) => {
         let reply = result.response.text().trim();
         if (!isSpecial && reply.includes('\n')) reply = reply.split('\n')[0];
         res.json({ reply, isSpecial });
-    } catch (err) { res.status(500).json({ error: "Lunch Error" }); }
+    } catch (err) { 
+        console.error("Lunch API Error:", err);
+        res.status(500).json({ error: "Lunch Error" }); 
+    }
 });
 
 // --- チャットAPI ---
 app.post('/chat', async (req, res) => {
     try {
         const { message, grade, name } = req.body;
-        // ★修正: gemini-2.5-pro を使用
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
         const prompt = `あなたは「ネル先生」。相手は小学${grade}年生「${name}」。30文字以内、語尾「にゃ」。絵文字禁止。発言: ${message}`;
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text() });
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
-// --- ★画像分析API (Gemini 2.5 Pro 対応版) ---
+// --- ★画像分析API ---
 app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { image, mode, grade, subject } = req.body;
         
-        // ★修正: 認識精度向上のため "gemini-2.5-pro" を使用
+        // ★修正: 確実に動作するモデルを使用
         const model = genAI.getGenerativeModel({
-            model: "gemini-2.5-pro",
+            model: "gemini-2.0-flash",
             generationConfig: { responseMimeType: "application/json" }
         });
 
@@ -239,8 +244,9 @@ app.post('/analyze', async (req, res) => {
               {
                 "id": 1,
                 "label": "①", 
-                "question": "問題文。※国語の漢字問題の場合、必ず『(ふりがな)』という形式で読み仮名を含めること。",
+                "question": "問題文。※国語の漢字書き取り問題の場合、必ず『□(ふりがな)』という形式で空欄を明示すること。（例: □(はこ)の中）",
                 "correct_answer": "正解",
+                "student_answer": "", 
                 "hints": [
                     "ヒント1: ${r.hints.split('\n').find(l => l.includes('1')) || '考え方'}",
                     "ヒント2: ${r.hints.split('\n').find(l => l.includes('2')) || '注目点'}",
@@ -266,7 +272,7 @@ app.post('/analyze', async (req, res) => {
               {
                 "id": 1,
                 "label": "①",
-                "question": "問題文。※国語の漢字問題の場合、必ず『(ふりがな)』という形式で読み仮名を含めること。",
+                "question": "問題文。※国語の漢字書き取り問題の場合、必ず『□(ふりがな)』という形式で空欄を明示すること。（例: □(はこ)の中）",
                 "correct_answer": "正確な正解",
                 "student_answer": "画像から読み取った生徒の答え（空欄なら\"\"）",
                 "hints": [
@@ -312,8 +318,8 @@ wss.on('connection', (clientWs, req) => {
         geminiWs.on('open', () => {
             geminiWs.send(JSON.stringify({
                 setup: {
-                    // ★修正: リアルタイム応答速度優先で最新のFlashモデルを使用
-                    model: "models/gemini-2.5-flash",
+                    // ★修正: Live API用には models/gemini-2.0-flash-exp が現状最適かつ動作確実
+                    model: "models/gemini-2.0-flash-exp",
                     generation_config: { response_modalities: ["AUDIO"], speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } } } }, 
                     system_instruction: {
                         parts: [{
