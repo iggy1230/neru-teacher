@@ -1,4 +1,4 @@
-// --- anlyze.js (1つ前のバージョン) ---
+// --- anlyze.js (音声遅延対策 + マイク可視化版) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -19,7 +19,6 @@ let stopSpeakingTimer = null;
 // Game Variables
 let gameCanvas, ctx, ball, paddle, bricks, score, gameRunning = false, gameAnimId = null;
 
-// ゲーム実況用セリフ
 const gameHitComments = [
     "うまいにゃ！", "すごいにゃ！", "さすがにゃ！", "がんばれにゃ！", 
     "その調子にゃ！", "ナイスにゃ！", "お見事にゃ！", "いい音だにゃ！"
@@ -57,7 +56,6 @@ function startMouthAnimation() {
 }
 startMouthAnimation();
 
-// メッセージ更新ラッパー
 async function updateNellMessage(t, mood = "normal") {
     let targetId = 'nell-text';
     if (!document.getElementById('screen-game').classList.contains('hidden')) {
@@ -94,6 +92,7 @@ function selectMode(m) {
             btn.onclick = startLiveChat; 
             btn.disabled = false; 
             btn.style.background = "#ff85a1"; 
+            btn.style.boxShadow = "none";
         }
         const txt = document.getElementById('user-speech-text'); if(txt) txt.innerText = "（リアルタイム対話）";
     } else if (m === 'lunch') {
@@ -145,7 +144,10 @@ async function startLiveChat() {
                 playPcmAudio(data.serverContent.modelTurn.parts[0].inlineData.data);
             }
         };
-        liveSocket.onclose = () => stopLiveChat();
+        liveSocket.onclose = () => {
+            stopLiveChat();
+            if(btn) btn.innerText = "接続切れちゃった…";
+        };
         liveSocket.onerror = (e) => { console.error(e); stopLiveChat(); };
     } catch (e) { alert("エラー: " + e.message); stopLiveChat(); }
 }
@@ -161,7 +163,8 @@ function stopLiveChat() {
         btn.innerText = "🎤 おはなしする"; 
         btn.style.background = "#ff85a1"; 
         btn.disabled = false; 
-        btn.onclick = startLiveChat; 
+        btn.onclick = startLiveChat;
+        btn.style.boxShadow = "none";
     }
 }
 
@@ -177,15 +180,25 @@ async function startMicrophone() {
         source.connect(workletNode);
         
         workletNode.port.onmessage = (event) => {
-            // ★以前の状態（250ms遅延）に戻す
+            const inputData = event.data;
+            
+            // マイク入力インジケーター（音量でボタンが光る）
+            let sum = 0; for(let i=0; i<inputData.length; i++) sum += inputData[i] * inputData[i];
+            const volume = Math.sqrt(sum / inputData.length);
+            const btn = document.getElementById('mic-btn');
+            if (btn) {
+                if (volume > 0.01) btn.style.boxShadow = `0 0 ${10 + volume * 500}px #ffeb3b`;
+                else btn.style.boxShadow = "none";
+            }
+
+            // ★500ms遅延送信（音切れ対策）
             setTimeout(() => {
                 if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return;
-                const inputData = event.data;
                 const downsampled = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
                 const pcm16 = floatTo16BitPCM(downsampled);
                 const base64 = arrayBufferToBase64(pcm16);
                 liveSocket.send(JSON.stringify({ type: 'audio', data: base64 }));
-            }, 250);
+            }, 500);
         };
     } catch(e) { updateNellMessage("マイクエラー", "thinking"); }
 }
@@ -280,14 +293,23 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
     const up = document.getElementById('upload-controls'); if(up) up.classList.add('hidden');
     const th = document.getElementById('thinking-view'); if(th) th.classList.remove('hidden');
     
-    updateNellMessage("ちょっと待っててにゃ…ふむふむ…", "thinking"); 
+    // ★学年と教科を反映したローディングメッセージ
+    let loadingMessage = "ちょっと待っててにゃ…ふむふむ…";
+    if (currentUser && currentSubject) {
+        loadingMessage = `ちょっと待っててにゃ…ふむふむ…${currentUser.grade}年生の${currentSubject}の問題だにゃ…`;
+    }
+    updateNellMessage(loadingMessage, "thinking"); 
+    
     updateProgress(0); 
     let p = 0; const timer = setInterval(() => { if (p < 90) { p += 3; updateProgress(p); } }, 500);
     try {
         const b64 = await shrinkImage(e.target.files[0]);
         const res = await fetch('/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: b64, mode: currentMode, grade: currentUser.grade, subject: currentSubject }) });
         
-        if (!res.ok) throw new Error("サーバーエラー");
+        if (!res.ok) {
+            const errText = await res.json().catch(() => ({error: "不明なエラー"}));
+            throw new Error(errText.error || "サーバーエラー");
+        }
         
         const data = await res.json();
         transcribedProblems = data.map((prob, index) => ({ ...prob, id: index + 1, student_answer: prob.student_answer || "", status: "unanswered" }));

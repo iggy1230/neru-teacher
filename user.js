@@ -1,4 +1,4 @@
-// --- user.js (1つ前のバージョン: Android対策のみ) ---
+// --- user.js (完全版: Android対策 + 出席ボーナス) ---
 
 let users = JSON.parse(localStorage.getItem('nekoneko_users')) || [];
 let currentUser = null;
@@ -40,6 +40,7 @@ async function resizeImageForProcessing(img, maxSize = 1024) {
     return new Promise((resolve) => {
         let width = img.width;
         let height = img.height;
+        // サイズが大きい場合のみ縮小
         if (width > maxSize || height > maxSize) {
             if (width > height) {
                 height *= maxSize / width;
@@ -120,6 +121,7 @@ async function processAndCompleteEnrollment() {
             await new Promise(r => originalImg.onload = r);
         }
 
+        // ★リサイズ実行
         const sourceImg = await resizeImageForProcessing(originalImg, 1024);
 
         let sx = 0, sy = 0, sWidth = sourceImg.width, sHeight = sourceImg.height;
@@ -145,6 +147,7 @@ async function processAndCompleteEnrollment() {
                     sHeight = size;
                 }
             } catch (e) {
+                console.warn("Face detection fallback", e);
                 const size = Math.min(sourceImg.width, sourceImg.height) * 0.8;
                 sx = (sourceImg.width - size) / 2;
                 sy = (sourceImg.height - size) / 2;
@@ -211,7 +214,7 @@ async function processAndCompleteEnrollment() {
 
     } catch (err) {
         console.error("Enrollment Error:", err);
-        if (err.name === 'QuotaExceededError') alert("データがいっぱいで保存できなかったにゃ。");
+        if (err.name === 'QuotaExceededError') alert("データがいっぱいで保存できなかったにゃ。古い生徒手帳を消してにゃ。");
         else alert("エラーが発生したにゃ……\n" + err.message);
     } finally {
         btn.disabled = false;
@@ -234,21 +237,56 @@ function renderUserList() {
 
 function login(user) {
     currentUser = user;
+    if (!currentUser.attendance) currentUser.attendance = {};
     if (!currentUser.memory) currentUser.memory = "";
     if (typeof transcribedProblems !== 'undefined') transcribedProblems = [];
     if (!currentUser.history) currentUser.history = {};
     if (!currentUser.mistakes) currentUser.mistakes = [];
-    if (!currentUser.attendance) currentUser.attendance = {};
 
     const avatar = document.getElementById('current-student-avatar');
     if (avatar) avatar.src = user.photo;
     const karikari = document.getElementById('karikari-count');
     if (karikari) karikari.innerText = user.karikari || 0;
     
-    // 出席ボーナスロジックは削除済み
+    // --- ★出席・ボーナスロジック ---
+    const today = new Date().toISOString().split('T')[0];
+    let isBonus = false;
+
+    if (!currentUser.attendance[today]) {
+        currentUser.attendance[today] = true;
+        
+        // 連続日数（Streak）を計算
+        let streak = 1; // 今日分
+        let d = new Date();
+        while (true) {
+            d.setDate(d.getDate() - 1); // 前日へ
+            const key = d.toISOString().split('T')[0];
+            if (currentUser.attendance[key]) {
+                streak++;
+            } else {
+                break;
+            }
+        }
+
+        // 3日以上連続ならボーナス
+        if (streak >= 3) {
+            currentUser.karikari += 100;
+            isBonus = true;
+        }
+        saveAndSync();
+    }
+    // ----------------------------
 
     switchScreen('screen-lobby');
-    updateNellMessage(getNellGreeting(user), "happy");
+    
+    // ボーナスがある場合は特別なメッセージ
+    if (isBonus) {
+        updateNellMessage("連続出席ボーナス！カリカリ100個プレゼントだにゃ！", "excited");
+        showKarikariEffect(100);
+        updateMiniKarikari();
+    } else {
+        updateNellMessage(getNellGreeting(user), "happy");
+    }
 }
 
 function getNellGreeting(user) {
