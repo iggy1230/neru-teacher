@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版) ---
+// --- anlyze.js (完全版: リアルタイム判定強化) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -163,7 +163,6 @@ function stopLiveChat() {
         btn.disabled = false; 
         btn.onclick = startLiveChat;
         btn.style.boxShadow = "none";
-        btn.style.transform = "scale(1)";
     }
 }
 
@@ -180,8 +179,6 @@ async function startMicrophone() {
         
         workletNode.port.onmessage = (event) => {
             const inputData = event.data;
-            
-            // マイク入力インジケーター（音量でボタンが光る）
             let sum = 0; for(let i=0; i<inputData.length; i++) sum += inputData[i] * inputData[i];
             const volume = Math.sqrt(sum / inputData.length);
             const btn = document.getElementById('mic-btn');
@@ -194,8 +191,6 @@ async function startMicrophone() {
                     btn.style.transform = "scale(1)";
                 }
             }
-
-            // ★修正: 遅延を1000ms(1秒)に設定して、冒頭の音切れを確実に防ぐ
             setTimeout(() => {
                 if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return;
                 const downsampled = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
@@ -222,21 +217,12 @@ function playPcmAudio(base64) {
 // 3. 給食機能
 function giveLunch() {
     if (currentUser.karikari < 1) return updateNellMessage("カリカリがないにゃ……", "thinking");
-    
-    // ★修正: 先に「もぐもぐ」と言って間を持たせる
     updateNellMessage("もぐもぐ……", "normal");
-    
-    currentUser.karikari--; 
-    saveAndSync(); 
-    updateMiniKarikari(); 
-    showKarikariEffect(-1); 
-    lunchCount++;
-
+    currentUser.karikari--; saveAndSync(); updateMiniKarikari(); showKarikariEffect(-1); lunchCount++;
     fetch('/lunch-reaction', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ count: lunchCount, name: currentUser.name })
     }).then(r=>r.json()).then(d=>{
-        // 1.5秒待ってからAPIの返答（感想）を言う
         setTimeout(() => {
             updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy");
         }, 1500); 
@@ -308,7 +294,6 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
     const up = document.getElementById('upload-controls'); if(up) up.classList.add('hidden');
     const th = document.getElementById('thinking-view'); if(th) th.classList.remove('hidden');
     
-    // ★学年と教科を反映した具体的なローディングメッセージ
     let loadingMessage = "ちょっと待っててにゃ…ふむふむ…";
     if (currentUser && currentSubject) {
         loadingMessage = `ちょっと待っててにゃ…ふむふむ…${currentUser.grade}年生の${currentSubject}の問題だにゃ…`;
@@ -321,7 +306,6 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
         const b64 = await shrinkImage(e.target.files[0]);
         const res = await fetch('/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: b64, mode: currentMode, grade: currentUser.grade, subject: currentSubject }) });
         
-        // JSONパースエラー対策
         if (!res.ok) {
             const errText = await res.json().catch(() => ({error: "不明なエラー"}));
             throw new Error(errText.error || "サーバーエラー");
@@ -330,6 +314,7 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
         const data = await res.json();
         transcribedProblems = data.map((prob, index) => ({ ...prob, id: index + 1, student_answer: prob.student_answer || "", status: "unanswered" }));
         
+        // 初期判定
         transcribedProblems.forEach(p => {
              const n = v => v.toString().replace(/\s/g, '').replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0));
              if (p.student_answer && n(p.student_answer) === n(p.correct_answer)) p.status = 'correct';
@@ -399,6 +384,41 @@ function revealAnswer() { document.getElementById('final-answer-text').innerText
 function renderProblemSelection() { document.getElementById('problem-selection-view').classList.remove('hidden'); const l=document.getElementById('transcribed-problem-list'); l.innerHTML=""; transcribedProblems.forEach(p=>{ l.innerHTML += `<div class="prob-card"><div><span class="q-label">${p.label||'?'}</span>${p.question.substring(0,20)}...</div><button class="main-btn blue-btn" style="width:auto;padding:10px" onclick="startHint(${p.id})">教えて</button></div>`; }); }
 function showGradingView() { document.getElementById('final-view').classList.remove('hidden'); document.getElementById('grade-sheet-container').classList.remove('hidden'); renderWorksheet(); }
 function renderWorksheet() { const l=document.getElementById('problem-list-grade'); if(!l)return; l.innerHTML=""; transcribedProblems.forEach((p,i)=>{ l.innerHTML+=`<div class="problem-row"><div><span class="q-label">${p.label||'?'}</span>${p.question}</div><div style="display:flex;gap:5px"><input class="student-ans-input" value="${p.student_answer}" onchange="updateAns(${i},this.value)"><div class="judgment-mark ${p.status}">${p.status==='correct'?'⭕️':p.status==='incorrect'?'❌':''}</div><button class="mini-teach-btn" onclick="startHint(${p.id})">教えて</button></div></div>`; }); const f=document.createElement('div'); f.style.textAlign="center"; f.style.marginTop="20px"; f.innerHTML=`<button onclick="finishGrading()" class="main-btn orange-btn">✨ 全部わかった！</button>`; l.appendChild(f); }
+
+// ★修正: リアルタイム判定ロジック強化
+function updateAns(i, v) { 
+    transcribedProblems[i].student_answer = v; 
+    
+    // 正規化関数（全角数字→半角、スペース削除、単位削除、記号統一）
+    const n = val => val.toString()
+        .replace(/\s/g, '') // スペース削除
+        .replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0)) // 全角数字→半角
+        .replace(/cm|ｍ|ｍｍ|円|個|L/g, '') // 単位削除
+        .replace(/[×＊]/g, '*')
+        .replace(/[÷／]/g, '/');
+
+    // 判定
+    if (n(v) === n(transcribedProblems[i].correct_answer) && v !== "") { 
+        transcribedProblems[i].status = 'correct'; 
+        updateNellMessage("正解にゃ！修正ありがとうにゃ。", "happy"); 
+        
+        // 苦手リストから削除
+        if (currentUser.mistakes) {
+            currentUser.mistakes = currentUser.mistakes.filter(m => m.question !== transcribedProblems[i].question);
+        }
+    } else { 
+        transcribedProblems[i].status = 'incorrect'; 
+        updateNellMessage("まだ違うみたいだにゃ……", "thinking"); 
+        
+        // 苦手リストに追加（重複チェック）
+        if (!currentUser.mistakes.some(m => m.question === transcribedProblems[i].question)) {
+            currentUser.mistakes.push({...transcribedProblems[i], subject: currentSubject});
+        }
+    } 
+    saveAndSync(); 
+    renderWorksheet(); // 画面再描画（ここで⭕️❌が更新される）
+}
+
 async function finishGrading() { await updateNellMessage("よくがんばったにゃ！お疲れさまにゃ✨", "excited"); if (currentUser) { currentUser.karikari += 100; saveAndSync(); updateMiniKarikari(); showKarikariEffect(100); } setTimeout(backToLobby, 2000); }
 function pressAllSolved() { currentUser.karikari+=100; saveAndSync(); backToLobby(); showKarikariEffect(100); }
 function pressThanks() { if(currentMode==='grade') showGradingView(); else backToProblemSelection(); }
