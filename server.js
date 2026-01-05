@@ -62,8 +62,7 @@ app.post('/game-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { type, name, score } = req.body;
-        // 安定動作のためFlashモデルを使用
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
         let prompt = "";
         let mood = "excited";
@@ -88,7 +87,7 @@ app.post('/lunch-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { count, name } = req.body;
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
         let prompt = "";
         const isSpecial = count % 10 === 0;
@@ -110,26 +109,26 @@ app.post('/lunch-reaction', async (req, res) => {
 app.post('/chat', async (req, res) => {
     try {
         const { message, grade, name } = req.body;
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         const prompt = `あなたは「ネル先生」。相手は小学${grade}年生「${name}」。30文字以内、語尾「にゃ」。絵文字禁止。発言: ${message}`;
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text() });
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
-// --- ★画像分析API (プロンプト強化版) ---
+// --- ★画像分析API (2.5 Pro 固定 + 強力エラーハンドリング) ---
 app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { image, mode, grade, subject } = req.body;
         
-        // ★修正: 安定動作する 1.5-flash を維持
+        // ★ご指定の gemini-2.5-pro を使用
         const model = genAI.getGenerativeModel({
-            model: "gemini-1.5-flash",
-            // JSONモード強制はせず、テキスト生成後に抽出する方式をとる
+            model: "gemini-2.5-pro",
+            generationConfig: { responseMimeType: "application/json" }
         });
 
-        // ■ 教科別詳細ルール (プロンプトのみ強化)
+        // ■ 教科別詳細ルール
         const rules = {
             'さんすう': {
                 attention: `・筆算の横線とマイナス記号を混同しないこと。\n・累乗（2^2など）や分数を正確に。`,
@@ -143,15 +142,14 @@ app.post('/analyze', async (req, res) => {
                   ・数字の「0」と「6」、「1」と「7」の見間違いに注意して、慎重に判定してにゃ。`
             },
             'こくご': {
-                // ★修正: 縦書き認識とフォーマット指定を強化
                 attention: `
                 【最重要：縦書きレイアウトと書き起こしルール】
-                1. 縦書き認識: この画像は縦書きです。必ず「右上」からスタートし、「丸数字の真下」にある文章を垂直方向に読み進めてください。行が終わったら左の列へ移動します。
-                2. 隣の列との分離: 丸数字（①, ②...）は問題の開始点です。隣の列（例: ①の行と②の行）の文字を絶対に混ぜないでください。
-                3. 【絶対ルール】書き起こしフォーマット
-                   - 解答すべき空欄（□）は、その横にあるルビ（読み仮名）とセットです。
-                   - 必ず『□(読み仮名)』という形式で書き起こしてください。（例: 「(はこ)の中」→ 『□(はこ)の中』）
-                   - 漢字がすでに印刷されている部分は、そのまま漢字で記述してください（空欄にしないでください）。
+                1. 縦書き認識: この画像は基本的に「縦書き」です。必ず「右上」から「左下」に向かって読んでください。
+                2. 問題の分離: 丸数字（①, ②...）は新しい問題の開始合図です。
+                3. 【最重要】漢字書き取り問題のフォーマット
+                   - 解答すべき空欄（□）は、必ず『□(読み仮名)』という形式で書き起こしてください。
+                   - 例: 画像に「(はこ) の中」とあり、「はこ」が書き取り対象の場合 → 『□(はこ)の中。』と出力。
+                   - 例: 画像に「みどりの木々」とあり、「みどり」が書き取り対象の場合 → 『□(みどり)の木々。』と出力。
                 `,
                 hints: `
                   【漢字の書き取り問題の場合】
@@ -191,12 +189,10 @@ app.post('/analyze', async (req, res) => {
         const r = rules[subject] || rules['さんすう'];
         const baseRole = `あなたは「ねこご市立ねこづか小学校」のネル先生です。小学${grade}年生の「${subject}」担当です。語尾は「にゃ」。`;
 
-        // 共通ロジック統合プロンプト
         const studentAnswerInstruction = mode === 'explain' 
             ? `・画像内の手書き文字（生徒の答え）は【完全に無視】してください。\n・出力JSONの "student_answer" は空文字 "" にしてください。`
             : `・採点のため、生徒の手書き文字を可能な限り読み取り、出力JSONの "student_answer" に格納してください。\n・子供特有の筆跡を考慮し、前後の文脈から推測してください。`;
 
-        // ★修正: 国語のフォーマット指定を共通プロンプトにも追加
         const prompt = `
             ${baseRole}
             
@@ -239,7 +235,8 @@ app.post('/analyze', async (req, res) => {
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
         let textResponse = result.response.text();
 
-        // JSON抽出ロジック（エラー対策）
+        // 500エラー対策: JSON抽出ロジック（強化版）
+        // Geminiがマークダウン（```json ... ```）を含めて返すケースと、素のJSONを返すケースの両方に対応
         const firstBracket = textResponse.indexOf('[');
         const lastBracket = textResponse.lastIndexOf(']');
         
@@ -247,7 +244,7 @@ app.post('/analyze', async (req, res) => {
             textResponse = textResponse.substring(firstBracket, lastBracket + 1);
         } else {
             console.error("Invalid JSON format from Gemini:", textResponse);
-            throw new Error("AIが有効なデータを生成できませんでした。");
+            throw new Error("AIからの応答が正しいJSON形式ではありませんでした。");
         }
 
         // 全角記号の補正
@@ -257,6 +254,7 @@ app.post('/analyze', async (req, res) => {
 
     } catch (err) {
         console.error("Analyze Error Details:", err);
+        // エラー詳細をクライアントに返し、原因（モデル名間違いなど）を特定しやすくする
         res.status(500).json({ error: "AI分析エラー: " + err.message });
     }
 });
@@ -265,10 +263,9 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- ★Live API Proxy (Aoede / 安定版) ---
+// --- ★Live API Proxy (Aoede) ---
 const wss = new WebSocketServer({ server });
 wss.on('connection', (clientWs, req) => {
-    // 学年と名前を取得
     const parameters = parse(req.url, true).query;
     const userGrade = parameters.grade || "1";
     const userName = decodeURIComponent(parameters.name || "");
@@ -280,7 +277,7 @@ wss.on('connection', (clientWs, req) => {
         geminiWs.on('open', () => {
             geminiWs.send(JSON.stringify({
                 setup: {
-                    // ★Live API用には 2.0 Flash Exp が現状最適かつ動作確実
+                    // ★Live API用には 2.0 Flash Exp が現状最適
                     model: "models/gemini-2.0-flash-exp",
                     generation_config: { response_modalities: ["AUDIO"], speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } } } }, 
                     system_instruction: {
