@@ -62,7 +62,8 @@ app.post('/game-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { type, name, score } = req.body;
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+        // ゲーム実況は速度重視でFlash
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
         let prompt = "";
         let mood = "excited";
@@ -101,7 +102,8 @@ app.post('/lunch-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { count, name } = req.body;
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+        // 給食リアクションも速度重視
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
         let prompt = "";
         const isSpecial = count % 10 === 0;
@@ -134,18 +136,20 @@ app.post('/lunch-reaction', async (req, res) => {
 app.post('/chat', async (req, res) => {
     try {
         const { message, grade, name } = req.body;
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         const prompt = `あなたは「ネル先生」。相手は小学${grade}年生「${name}」。30文字以内、語尾「にゃ」。絵文字禁止。発言: ${message}`;
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text() });
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
-// --- ★画像分析API (共通ロジック完全統一・強化版) ---
+// --- ★画像分析API (2.5 Pro + 共通ロジック完全統一版) ---
 app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { image, mode, grade, subject } = req.body;
+        
+        // ★修正: 分析には最高精度の 2.5 Pro を使用
         const model = genAI.getGenerativeModel({
             model: "gemini-2.5-pro",
             generationConfig: { responseMimeType: "application/json" }
@@ -244,7 +248,7 @@ app.post('/analyze', async (req, res) => {
               {
                 "id": 1,
                 "label": "①", 
-                "question": "問題文。※国語の漢字書き取り問題の場合、必ず『□(読み仮名)』という形式で空欄を明示すること。（例: □(はこ)の中）",
+                "question": "問題文。※国語の漢字書き取り問題の場合、必ず『□(ふりがな)』という形式で空欄を明示すること。（例: □(はこ)の中）",
                 "correct_answer": "正解",
                 "student_answer": "生徒の答え（解説モードなら空文字）",
                 "hints": [
@@ -275,6 +279,7 @@ const server = app.listen(PORT, () => console.log(`Server running on port ${PORT
 // --- ★Live API Proxy (Aoede) ---
 const wss = new WebSocketServer({ server });
 wss.on('connection', (clientWs, req) => {
+    // 学年と名前を取得
     const parameters = parse(req.url, true).query;
     const userGrade = parameters.grade || "1";
     const userName = decodeURIComponent(parameters.name || "");
@@ -286,8 +291,8 @@ wss.on('connection', (clientWs, req) => {
         geminiWs.on('open', () => {
             geminiWs.send(JSON.stringify({
                 setup: {
-                    // ★最新のFlashモデルを使用
-                    model: "models/gemini-2.5-flash",
+                    // ★修正: 安定板 Live用モデル
+                    model: "models/gemini-2.0-flash-exp",
                     generation_config: { response_modalities: ["AUDIO"], speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } } } }, 
                     system_instruction: {
                         parts: [{
