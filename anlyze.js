@@ -1,4 +1,4 @@
-// --- anlyze.js (音声遅延対策 + マイク可視化版) ---
+// --- anlyze.js (完全版) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -19,6 +19,7 @@ let stopSpeakingTimer = null;
 // Game Variables
 let gameCanvas, ctx, ball, paddle, bricks, score, gameRunning = false, gameAnimId = null;
 
+// ゲーム実況用セリフ
 const gameHitComments = [
     "うまいにゃ！", "すごいにゃ！", "さすがにゃ！", "がんばれにゃ！", 
     "その調子にゃ！", "ナイスにゃ！", "お見事にゃ！", "いい音だにゃ！"
@@ -144,10 +145,7 @@ async function startLiveChat() {
                 playPcmAudio(data.serverContent.modelTurn.parts[0].inlineData.data);
             }
         };
-        liveSocket.onclose = () => {
-            stopLiveChat();
-            if(btn) btn.innerText = "接続切れちゃった…";
-        };
+        liveSocket.onclose = () => { stopLiveChat(); if(btn) btn.innerText = "接続切れちゃった…"; };
         liveSocket.onerror = (e) => { console.error(e); stopLiveChat(); };
     } catch (e) { alert("エラー: " + e.message); stopLiveChat(); }
 }
@@ -165,6 +163,7 @@ function stopLiveChat() {
         btn.disabled = false; 
         btn.onclick = startLiveChat;
         btn.style.boxShadow = "none";
+        btn.style.transform = "scale(1)";
     }
 }
 
@@ -187,18 +186,23 @@ async function startMicrophone() {
             const volume = Math.sqrt(sum / inputData.length);
             const btn = document.getElementById('mic-btn');
             if (btn) {
-                if (volume > 0.01) btn.style.boxShadow = `0 0 ${10 + volume * 500}px #ffeb3b`;
-                else btn.style.boxShadow = "none";
+                if (volume > 0.01) {
+                    btn.style.boxShadow = `0 0 ${10 + volume * 500}px #ffeb3b`;
+                    btn.style.transform = "scale(1.05)";
+                } else {
+                    btn.style.boxShadow = "none";
+                    btn.style.transform = "scale(1)";
+                }
             }
 
-            // ★500ms遅延送信（音切れ対策）
+            // ★修正: 遅延を1000ms(1秒)に設定して、冒頭の音切れを確実に防ぐ
             setTimeout(() => {
                 if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return;
                 const downsampled = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
                 const pcm16 = floatTo16BitPCM(downsampled);
                 const base64 = arrayBufferToBase64(pcm16);
                 liveSocket.send(JSON.stringify({ type: 'audio', data: base64 }));
-            }, 500);
+            }, 1000);
         };
     } catch(e) { updateNellMessage("マイクエラー", "thinking"); }
 }
@@ -218,13 +222,24 @@ function playPcmAudio(base64) {
 // 3. 給食機能
 function giveLunch() {
     if (currentUser.karikari < 1) return updateNellMessage("カリカリがないにゃ……", "thinking");
-    currentUser.karikari--; saveAndSync(); updateMiniKarikari(); showKarikariEffect(-1); lunchCount++;
+    
+    // ★修正: 先に「もぐもぐ」と言って間を持たせる
     updateNellMessage("もぐもぐ……", "normal");
+    
+    currentUser.karikari--; 
+    saveAndSync(); 
+    updateMiniKarikari(); 
+    showKarikariEffect(-1); 
+    lunchCount++;
+
     fetch('/lunch-reaction', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ count: lunchCount, name: currentUser.name })
     }).then(r=>r.json()).then(d=>{
-        updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy");
+        // 1.5秒待ってからAPIの返答（感想）を言う
+        setTimeout(() => {
+            updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy");
+        }, 1500); 
     }).catch(e=>{ updateNellMessage("おいしいにゃ！", "happy"); });
 }
 
@@ -293,7 +308,7 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
     const up = document.getElementById('upload-controls'); if(up) up.classList.add('hidden');
     const th = document.getElementById('thinking-view'); if(th) th.classList.remove('hidden');
     
-    // ★学年と教科を反映したローディングメッセージ
+    // ★学年と教科を反映した具体的なローディングメッセージ
     let loadingMessage = "ちょっと待っててにゃ…ふむふむ…";
     if (currentUser && currentSubject) {
         loadingMessage = `ちょっと待っててにゃ…ふむふむ…${currentUser.grade}年生の${currentSubject}の問題だにゃ…`;
@@ -306,6 +321,7 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
         const b64 = await shrinkImage(e.target.files[0]);
         const res = await fetch('/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: b64, mode: currentMode, grade: currentUser.grade, subject: currentSubject }) });
         
+        // JSONパースエラー対策
         if (!res.ok) {
             const errText = await res.json().catch(() => ({error: "不明なエラー"}));
             throw new Error(errText.error || "サーバーエラー");
@@ -330,7 +346,7 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
         clearInterval(timer); 
         document.getElementById('thinking-view').classList.add('hidden'); 
         document.getElementById('upload-controls').classList.remove('hidden'); 
-        updateNellMessage("エラーだにゃ…", "thinking"); 
+        updateNellMessage("エラーだにゃ…もう一回試してにゃ", "thinking"); 
     } finally { isAnalyzing = false; e.target.value=''; }
 });
 

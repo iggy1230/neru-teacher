@@ -82,16 +82,15 @@ app.post('/game-reaction', async (req, res) => {
     }
 });
 
-// --- 給食リアクションAPI (高速化修正) ---
+// --- 給食リアクションAPI ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { count, name } = req.body;
         
-        // ★修正: 最速モデル & トークン制限で高速化
         const model = genAI.getGenerativeModel({ 
             model: "gemini-1.5-flash",
-            generationConfig: { maxOutputTokens: 50 } 
+            generationConfig: { maxOutputTokens: 60 } 
         });
 
         let prompt = "";
@@ -100,7 +99,10 @@ app.post('/lunch-reaction', async (req, res) => {
         if (isSpecial) {
             prompt = `ネル先生として給食${count}個目の感謝を熱く語る。相手:${name}。60文字程度。語尾にゃ。`;
         } else {
-            prompt = `ネル先生として給食を食べた一言感想。10文字以内。語尾にゃ。即答して。`;
+            // バリエーションが出るように指示
+            const themes = ["味を絶賛", "食感を楽しむ", "おかわりを要求", "幸せな気分", "栄養について"];
+            const theme = themes[Math.floor(Math.random() * themes.length)];
+            prompt = `ネル先生として給食のカリカリを食べた一言感想。テーマ：${theme}。15文字以内。語尾にゃ。`;
         }
 
         const result = await model.generateContent(prompt);
@@ -121,15 +123,15 @@ app.post('/chat', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
-// --- ★画像分析API (国語プロンプト強化版) ---
+// --- ★画像分析API (Flashモデル + 安全装置) ---
 app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { image, mode, grade, subject } = req.body;
         
-        // 高精度モデルを使用
+        // ★修正: 500エラー回避のため安定のFlashモデルを使用
         const model = genAI.getGenerativeModel({
-            model: "gemini-1.5-pro",
+            model: "gemini-1.5-flash",
             generationConfig: { responseMimeType: "application/json" }
         });
 
@@ -148,13 +150,12 @@ app.post('/analyze', async (req, res) => {
             'こくご': {
                 attention: `
                 【最重要：縦書きレイアウトと書き起こしルール】
-                1. 物理的配置の認識: この画像は縦書きです。必ず「右上の列」から開始し、「丸数字の真下」にある文章を垂直方向に読み進めてください。行が終わったら、左側の次の列へ移動します。
-                2. 列の混同禁止: 隣り合う列（例: ①の行と②の行）は物理的に離れています。絶対に文字を混ぜないでください。
+                1. 縦書きの読み方: この画像は縦書きです。必ず「右上」からスタートし、「丸数字の真下」にある文章を垂直方向に読み進めてください。
+                2. 隣の列との分離: 丸数字（①, ②...）は問題の開始点です。隣の列の文字を絶対に混ぜないでください。
                 3. 【絶対ルール】書き起こしフォーマット
-                   - 問題文中の「答えを入れるべき空欄」は、必ず『□(読み仮名)』という形式に統一して書き起こしてください。
-                   - 例: 画像に「(はこ)の中」とあり、「はこ」が空欄の場合 → 『□(はこ)の中』
-                   - 例: 画像に「(みどり)の木々」とあり、「みどり」が空欄の場合 → 『□(みどり)の木々』
-                   - すでに漢字が印刷されている箇所は、そのまま漢字で記述してください（空欄にしないでください）。
+                   - 解答すべき空欄（□）は、その横にあるルビ（読み仮名）とセットです。
+                   - 必ず『□(読み仮名)』という形式で書き起こしてください。（例: 「(はこ)の中」→ 『□(はこ)の中』）
+                   - 漢字がすでに印刷されている部分は、そのまま漢字で記述してください。
                 `,
                 hints: `
                   【漢字の書き取り問題の場合】
@@ -240,13 +241,20 @@ app.post('/analyze', async (req, res) => {
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
         let textResponse = result.response.text();
 
+        // 500エラー対策: JSON抽出
         const firstBracket = textResponse.indexOf('[');
         const lastBracket = textResponse.lastIndexOf(']');
         
         if (firstBracket !== -1 && lastBracket !== -1) {
             textResponse = textResponse.substring(firstBracket, lastBracket + 1);
         } else {
-            throw new Error("AIが有効なデータを生成できませんでした。");
+            console.error("Invalid JSON:", textResponse);
+            // サーバーを落とさずにダミーデータを返す
+            res.json([{
+                id: 1, label: "?", question: "読み取りに失敗したにゃ。もう一度試してにゃ。", 
+                correct_answer: "", student_answer: "", hints: ["ごめんにゃ", "写真を変えてみて", "もう一回！"]
+            }]);
+            return;
         }
 
         textResponse = textResponse.replace(/\*/g, '×').replace(/\//g, '÷');
@@ -262,7 +270,7 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- ★Live API Proxy (Aoede / 言語指示強化) ---
+// --- ★Live API Proxy (トーン指示強化) ---
 const wss = new WebSocketServer({ server });
 wss.on('connection', (clientWs, req) => {
     const parameters = parse(req.url, true).query;
@@ -280,15 +288,14 @@ wss.on('connection', (clientWs, req) => {
                     generation_config: { response_modalities: ["AUDIO"], speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } } } }, 
                     system_instruction: {
                         parts: [{
-                            // ★修正: 英語禁止・抑揚指示を追加
                             text: `あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。
             相手は小学${userGrade}年生の${userName}さん。
                
               【重要：話し方のルール】
                1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
                2. 【絶対に日本語のみ】で話してください。英語は禁止です。
-               3. 「Aoede」の声色は平坦になりがちなので、意識して「感情豊かに」「抑揚をつけて」話してください。
-               4. 子供に話しかけるように、優しく、ゆっくり、はっきりとした口調で話してください。
+               3. 【高い声のトーン】を意識し、元気で明るい子供向けの口調で話してください。
+               4. ゆっくり、はっきり、感情を込めて話してください。
                5. 特に最初の音を、絶対に抜かしたり消したりせずに、最初から最後までしっかり声に出して喋るのがコツだにゃ！
                6. 給食(餌)のカリカリが大好物にゃ。
                7. ときどき「${userName}さんは宿題は終わったかにゃ？」や「そろそろ宿題始めようかにゃ？」と宿題を促してくる`
