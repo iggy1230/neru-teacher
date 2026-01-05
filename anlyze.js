@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版: 音声遅延対策 + メッセージ詳細化) ---
+// --- anlyze.js (1つ前のバージョン) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -94,7 +94,6 @@ function selectMode(m) {
             btn.onclick = startLiveChat; 
             btn.disabled = false; 
             btn.style.background = "#ff85a1"; 
-            btn.style.boxShadow = "none";
         }
         const txt = document.getElementById('user-speech-text'); if(txt) txt.innerText = "（リアルタイム対話）";
     } else if (m === 'lunch') {
@@ -146,10 +145,7 @@ async function startLiveChat() {
                 playPcmAudio(data.serverContent.modelTurn.parts[0].inlineData.data);
             }
         };
-        liveSocket.onclose = () => {
-            stopLiveChat();
-            if(btn) btn.innerText = "接続切れちゃった…";
-        };
+        liveSocket.onclose = () => stopLiveChat();
         liveSocket.onerror = (e) => { console.error(e); stopLiveChat(); };
     } catch (e) { alert("エラー: " + e.message); stopLiveChat(); }
 }
@@ -165,8 +161,7 @@ function stopLiveChat() {
         btn.innerText = "🎤 おはなしする"; 
         btn.style.background = "#ff85a1"; 
         btn.disabled = false; 
-        btn.onclick = startLiveChat;
-        btn.style.boxShadow = "none";
+        btn.onclick = startLiveChat; 
     }
 }
 
@@ -182,25 +177,15 @@ async function startMicrophone() {
         source.connect(workletNode);
         
         workletNode.port.onmessage = (event) => {
-            const inputData = event.data;
-            
-            // マイク入力インジケーター（音量でボタンが光る）
-            let sum = 0; for(let i=0; i<inputData.length; i++) sum += inputData[i] * inputData[i];
-            const volume = Math.sqrt(sum / inputData.length);
-            const btn = document.getElementById('mic-btn');
-            if (btn) {
-                if (volume > 0.01) btn.style.boxShadow = `0 0 ${10 + volume * 500}px #ffeb3b`;
-                else btn.style.boxShadow = "none";
-            }
-
-            // ★500ms遅延送信（音切れ対策）
+            // ★以前の状態（250ms遅延）に戻す
             setTimeout(() => {
                 if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return;
+                const inputData = event.data;
                 const downsampled = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
                 const pcm16 = floatTo16BitPCM(downsampled);
                 const base64 = arrayBufferToBase64(pcm16);
                 liveSocket.send(JSON.stringify({ type: 'audio', data: base64 }));
-            }, 500);
+            }, 250);
         };
     } catch(e) { updateNellMessage("マイクエラー", "thinking"); }
 }
@@ -295,29 +280,18 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
     const up = document.getElementById('upload-controls'); if(up) up.classList.add('hidden');
     const th = document.getElementById('thinking-view'); if(th) th.classList.remove('hidden');
     
-    // ★読み込みメッセージの詳細化
-    let loadingMessage = "ちょっと待っててにゃ…ふむふむ…";
-    if (currentUser && currentSubject) {
-        loadingMessage = `ちょっと待っててにゃ…ふむふむ…${currentUser.grade}年生の${currentSubject}の問題だにゃ…`;
-    }
-    updateNellMessage(loadingMessage, "thinking"); 
-    
+    updateNellMessage("ちょっと待っててにゃ…ふむふむ…", "thinking"); 
     updateProgress(0); 
     let p = 0; const timer = setInterval(() => { if (p < 90) { p += 3; updateProgress(p); } }, 500);
     try {
         const b64 = await shrinkImage(e.target.files[0]);
         const res = await fetch('/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: b64, mode: currentMode, grade: currentUser.grade, subject: currentSubject }) });
         
-        // ★エラーハンドリング強化（JSONパースエラー時）
-        if (!res.ok) {
-            const errText = await res.json().catch(() => ({error: "不明なエラー"}));
-            throw new Error(errText.error || "サーバーエラー");
-        }
+        if (!res.ok) throw new Error("サーバーエラー");
         
         const data = await res.json();
         transcribedProblems = data.map((prob, index) => ({ ...prob, id: index + 1, student_answer: prob.student_answer || "", status: "unanswered" }));
         
-        // 採点判定
         transcribedProblems.forEach(p => {
              const n = v => v.toString().replace(/\s/g, '').replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0));
              if (p.student_answer && n(p.student_answer) === n(p.correct_answer)) p.status = 'correct';
@@ -334,7 +308,7 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
         clearInterval(timer); 
         document.getElementById('thinking-view').classList.add('hidden'); 
         document.getElementById('upload-controls').classList.remove('hidden'); 
-        updateNellMessage(err.message.includes("AI") ? "AIが疲れちゃったみたいにゃ…もう一回試して？" : "エラーだにゃ…", "thinking"); 
+        updateNellMessage("エラーだにゃ…", "thinking"); 
     } finally { isAnalyzing = false; e.target.value=''; }
 });
 

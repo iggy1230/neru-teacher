@@ -1,4 +1,4 @@
-// --- user.js (完全版: Android対策 + 出席ボーナス) ---
+// --- user.js (1つ前のバージョン: Android対策のみ) ---
 
 let users = JSON.parse(localStorage.getItem('nekoneko_users')) || [];
 let currentUser = null;
@@ -40,7 +40,6 @@ async function resizeImageForProcessing(img, maxSize = 1024) {
     return new Promise((resolve) => {
         let width = img.width;
         let height = img.height;
-        // サイズが大きい場合のみ縮小
         if (width > maxSize || height > maxSize) {
             if (width > height) {
                 height *= maxSize / width;
@@ -90,7 +89,7 @@ if (photoInput) {
     });
 }
 
-// 入学手続き（画像生成・保存）
+// 入学手続き
 async function processAndCompleteEnrollment() {
     const name = document.getElementById('new-student-name').value;
     const grade = document.getElementById('new-student-grade').value;
@@ -121,7 +120,6 @@ async function processAndCompleteEnrollment() {
             await new Promise(r => originalImg.onload = r);
         }
 
-        // ★リサイズ実行
         const sourceImg = await resizeImageForProcessing(originalImg, 1024);
 
         let sx = 0, sy = 0, sWidth = sourceImg.width, sHeight = sourceImg.height;
@@ -140,7 +138,6 @@ async function processAndCompleteEnrollment() {
                     sWidth = cropSize;
                     sHeight = cropSize;
                 } else {
-                    // 顔が見つからない場合は中央クロップ
                     const size = Math.min(sourceImg.width, sourceImg.height) * 0.8;
                     sx = (sourceImg.width - size) / 2;
                     sy = (sourceImg.height - size) / 2;
@@ -148,7 +145,6 @@ async function processAndCompleteEnrollment() {
                     sHeight = size;
                 }
             } catch (e) {
-                console.warn("Face detection fallback", e);
                 const size = Math.min(sourceImg.width, sourceImg.height) * 0.8;
                 sx = (sourceImg.width - size) / 2;
                 sy = (sourceImg.height - size) / 2;
@@ -177,13 +173,11 @@ async function processAndCompleteEnrollment() {
             const nose = landmarks.getNose()[3];
             const leftEyeBrow = landmarks.getLeftEyeBrow()[2];
             const rightEyeBrow = landmarks.getRightEyeBrow()[2];
-            
             const noseX = (nose.x - sx) * scale + destX;
             const noseY = (nose.y - sy) * scale + destY;
             const muzW = detection.detection.box.width * 0.6 * scale;
             const muzH = muzW * 0.8;
             if (decoMuzzle.complete) ctx.drawImage(decoMuzzle, noseX - (muzW/2), noseY - (muzH/2.5), muzW, muzH);
-            
             const browX = ((leftEyeBrow.x + rightEyeBrow.x) / 2 - sx) * scale + destX;
             const browY = ((leftEyeBrow.y + rightEyeBrow.y) / 2 - sy) * scale + destY;
             const earW = detection.detection.box.width * 1.8 * scale;
@@ -217,7 +211,7 @@ async function processAndCompleteEnrollment() {
 
     } catch (err) {
         console.error("Enrollment Error:", err);
-        if (err.name === 'QuotaExceededError') alert("データがいっぱいで保存できなかったにゃ。古い生徒手帳を消してにゃ。");
+        if (err.name === 'QuotaExceededError') alert("データがいっぱいで保存できなかったにゃ。");
         else alert("エラーが発生したにゃ……\n" + err.message);
     } finally {
         btn.disabled = false;
@@ -240,7 +234,6 @@ function renderUserList() {
 
 function login(user) {
     currentUser = user;
-    // データ初期化
     if (!currentUser.memory) currentUser.memory = "";
     if (typeof transcribedProblems !== 'undefined') transcribedProblems = [];
     if (!currentUser.history) currentUser.history = {};
@@ -252,59 +245,20 @@ function login(user) {
     const karikari = document.getElementById('karikari-count');
     if (karikari) karikari.innerText = user.karikari || 0;
     
-    // --- ★出席・ボーナスロジック ---
-    const today = new Date().toISOString().split('T')[0];
-    let isBonus = false;
-
-    // 今日まだ出席していない場合
-    if (!currentUser.attendance[today]) {
-        currentUser.attendance[today] = true;
-        
-        // 連続日数（Streak）を計算
-        let streak = 1; // 今日分
-        let d = new Date();
-        while (true) {
-            d.setDate(d.getDate() - 1); // 前日へ
-            const key = d.toISOString().split('T')[0];
-            if (currentUser.attendance[key]) {
-                streak++;
-            } else {
-                break;
-            }
-        }
-
-        // 3日以上連続ならボーナス
-        if (streak >= 3) {
-            currentUser.karikari += 100;
-            isBonus = true;
-        }
-        saveAndSync();
-    }
-    // ----------------------------
+    // 出席ボーナスロジックは削除済み
 
     switchScreen('screen-lobby');
-    
-    // ボーナスがある場合は特別なメッセージ、なければ通常挨拶
-    if (isBonus) {
-        updateNellMessage("連続出席ボーナス！カリカリ100個プレゼントだにゃ！", "excited");
-        showKarikariEffect(100);
-        updateMiniKarikari();
-    } else {
-        updateNellMessage(getNellGreeting(user), "happy");
-    }
+    updateNellMessage(getNellGreeting(user), "happy");
 }
 
 function getNellGreeting(user) {
     const mem = user.memory || "";
-    // カリカリ100個以上でおねだり
     if (user.karikari >= 100 && Math.random() > 0.3) {
         return ["お腹すいたにゃ～...給食まだかにゃ？", "カリカリ100個もあるにゃ！給食行こうにゃ～"][Math.floor(Math.random()*2)];
     }
-    // 記憶があれば優先
     if (mem && mem.length > 5 && !mem.includes("初めて") && Math.random() > 0.4) {
         return `おかえりにゃ！${mem}`;
     }
-    // 勉強履歴
     const hist = user.history || {};
     if (Object.keys(hist).length > 0) {
         const favSub = Object.keys(hist).reduce((a, b) => hist[a] > hist[b] ? a : b);
