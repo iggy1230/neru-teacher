@@ -1,4 +1,4 @@
-// --- user.js (完全版: Android対策 + 出席ボーナス) ---
+// --- user.js (完全版: セリフ修正 + スタンプ色変更) ---
 
 let users = JSON.parse(localStorage.getItem('nekoneko_users')) || [];
 let currentUser = null;
@@ -13,7 +13,6 @@ document.addEventListener('DOMContentLoaded', () => {
     loadFaceModels();
 });
 
-// 顔認識モデルの読み込み
 async function loadFaceModels() {
     if (modelsLoaded) return;
     const status = document.getElementById('loading-models');
@@ -35,37 +34,24 @@ async function loadFaceModels() {
     }
 }
 
-// Androidメモリ不足対策: 画像リサイズ処理
 async function resizeImageForProcessing(img, maxSize = 1024) {
     return new Promise((resolve) => {
         let width = img.width;
         let height = img.height;
-        // サイズが大きい場合のみ縮小
         if (width > maxSize || height > maxSize) {
-            if (width > height) {
-                height *= maxSize / width;
-                width = maxSize;
-            } else {
-                width *= maxSize / height;
-                height = maxSize;
-            }
-        } else {
-            return resolve(img);
-        }
-
+            if (width > height) { height *= maxSize / width; width = maxSize; } 
+            else { width *= maxSize / height; height = maxSize; }
+        } else { return resolve(img); }
         const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
+        canvas.width = width; canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
-        
         const resizedImg = new Image();
         resizedImg.onload = () => resolve(resizedImg);
         resizedImg.src = canvas.toDataURL('image/jpeg', 0.8);
     });
 }
 
-// 写真選択時のプレビュー
 const photoInput = document.getElementById('student-photo-input');
 if (photoInput) {
     photoInput.addEventListener('change', (e) => {
@@ -90,7 +76,6 @@ if (photoInput) {
     });
 }
 
-// 入学手続き
 async function processAndCompleteEnrollment() {
     const name = document.getElementById('new-student-name').value;
     const grade = document.getElementById('new-student-grade').value;
@@ -103,7 +88,6 @@ async function processAndCompleteEnrollment() {
 
     try {
         if (!idBase.complete) await new Promise(r => idBase.onload = r);
-        
         let originalImg = null;
         if (photoInput.files && photoInput.files[0]) {
             originalImg = await new Promise((resolve, reject) => {
@@ -121,12 +105,10 @@ async function processAndCompleteEnrollment() {
             await new Promise(r => originalImg.onload = r);
         }
 
-        // ★リサイズ実行
         const sourceImg = await resizeImageForProcessing(originalImg, 1024);
 
         let sx = 0, sy = 0, sWidth = sourceImg.width, sHeight = sourceImg.height;
         let detection = null;
-
         if (modelsLoaded) {
             try {
                 detection = await faceapi.detectSingleFace(sourceImg).withFaceLandmarks();
@@ -137,31 +119,23 @@ async function processAndCompleteEnrollment() {
                     const cropSize = Math.max(box.width, box.height) * 1.8;
                     sx = faceCenterX - (cropSize / 2);
                     sy = faceCenterY - (cropSize / 2);
-                    sWidth = cropSize;
-                    sHeight = cropSize;
+                    sWidth = cropSize; sHeight = cropSize;
                 } else {
                     const size = Math.min(sourceImg.width, sourceImg.height) * 0.8;
-                    sx = (sourceImg.width - size) / 2;
-                    sy = (sourceImg.height - size) / 2;
-                    sWidth = size;
-                    sHeight = size;
+                    sx = (sourceImg.width - size) / 2; sy = (sourceImg.height - size) / 2;
+                    sWidth = size; sHeight = size;
                 }
             } catch (e) {
-                console.warn("Face detection fallback", e);
                 const size = Math.min(sourceImg.width, sourceImg.height) * 0.8;
-                sx = (sourceImg.width - size) / 2;
-                sy = (sourceImg.height - size) / 2;
-                sWidth = size;
-                sHeight = size;
+                sx = (sourceImg.width - size) / 2; sy = (sourceImg.height - size) / 2;
+                sWidth = size; sHeight = size;
             }
         }
 
         const canvas = document.getElementById('deco-canvas');
         canvas.width = 800; canvas.height = 800;
         const ctx = canvas.getContext('2d');
-        
         ctx.drawImage(idBase, 0, 0, 800, 800);
-        
         const destX = 52, destY = 332, destW = 235, destH = 255;
         ctx.save();
         ctx.beginPath();
@@ -204,17 +178,14 @@ async function processAndCompleteEnrollment() {
         users.push(newUser);
         localStorage.setItem('nekoneko_users', JSON.stringify(users)); 
         renderUserList(); 
-        
         document.getElementById('new-student-name').value = "";
         document.getElementById('new-student-grade').value = "";
         updateIDPreview();
-        
         alert(detection ? "入学おめでとうにゃ！🌸\n猫耳がついた学生証ができたにゃ！" : "入学おめでとうにゃ！🌸");
         switchScreen('screen-gate');
-
     } catch (err) {
         console.error("Enrollment Error:", err);
-        if (err.name === 'QuotaExceededError') alert("データがいっぱいで保存できなかったにゃ。古い生徒手帳を消してにゃ。");
+        if (err.name === 'QuotaExceededError') alert("データがいっぱいで保存できなかったにゃ。");
         else alert("エラーが発生したにゃ……\n" + err.message);
     } finally {
         btn.disabled = false;
@@ -248,38 +219,32 @@ function login(user) {
     const karikari = document.getElementById('karikari-count');
     if (karikari) karikari.innerText = user.karikari || 0;
     
-    // --- ★出席・ボーナスロジック ---
+    // --- 出席・ボーナス処理 ---
     const today = new Date().toISOString().split('T')[0];
     let isBonus = false;
 
     if (!currentUser.attendance[today]) {
         currentUser.attendance[today] = true;
         
-        // 連続日数（Streak）を計算
-        let streak = 1; // 今日分
+        let streak = 1;
         let d = new Date();
         while (true) {
-            d.setDate(d.getDate() - 1); // 前日へ
+            d.setDate(d.getDate() - 1);
             const key = d.toISOString().split('T')[0];
-            if (currentUser.attendance[key]) {
-                streak++;
-            } else {
-                break;
-            }
+            if (currentUser.attendance[key]) streak++;
+            else break;
         }
 
-        // 3日以上連続ならボーナス
         if (streak >= 3) {
             currentUser.karikari += 100;
             isBonus = true;
         }
         saveAndSync();
     }
-    // ----------------------------
+    // -------------------------
 
     switchScreen('screen-lobby');
     
-    // ボーナスがある場合は特別なメッセージ
     if (isBonus) {
         updateNellMessage("連続出席ボーナス！カリカリ100個プレゼントだにゃ！", "excited");
         showKarikariEffect(100);
@@ -292,7 +257,8 @@ function login(user) {
 function getNellGreeting(user) {
     const mem = user.memory || "";
     if (user.karikari >= 100 && Math.random() > 0.3) {
-        return ["お腹すいたにゃ～...給食まだかにゃ？", "カリカリ100個もあるにゃ！給食行こうにゃ～"][Math.floor(Math.random()*2)];
+        // ★修正: 実際の数を言うように変更
+        return [`お腹すいたにゃ～...給食まだかにゃ？`, `カリカリ${user.karikari}個もあるにゃ！給食行こうにゃ～`][Math.floor(Math.random()*2)];
     }
     if (mem && mem.length > 5 && !mem.includes("初めて") && Math.random() > 0.4) {
         return `おかえりにゃ！${mem}`;
