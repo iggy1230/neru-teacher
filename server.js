@@ -62,8 +62,8 @@ app.post('/game-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { type, name, score } = req.body;
-        // 安定動作のため Flash
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        // ★修正: 最新の 2.0 Flash Exp を使用
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
 
         let prompt = "";
         let mood = "excited";
@@ -102,8 +102,8 @@ app.post('/lunch-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { count, name } = req.body;
-        // 安定動作のため Flash
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        // ★修正: 最新の 2.0 Flash Exp を使用
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
 
         let prompt = "";
         const isSpecial = count % 10 === 0;
@@ -136,23 +136,23 @@ app.post('/lunch-reaction', async (req, res) => {
 app.post('/chat', async (req, res) => {
     try {
         const { message, grade, name } = req.body;
-        // 安定動作のため Flash
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        // ★修正: 最新の 2.0 Flash Exp を使用
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         const prompt = `あなたは「ネル先生」。相手は小学${grade}年生「${name}」。30文字以内、語尾「にゃ」。絵文字禁止。発言: ${message}`;
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text() });
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
-// --- ★画像分析API (指定モデル: gemini-2.0-pro-exp-02-05) ---
+// --- ★画像分析API (2.0 Flash Exp + 共通ロジック完全統一版) ---
 app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { image, mode, grade, subject } = req.body;
         
-        // ★修正: 指定された実験的プロモデルを使用
+        // ★修正: 分析には最新かつ高性能な 2.0 Flash Exp を使用
         const model = genAI.getGenerativeModel({
-            model: "gemini-2.0-pro-exp-02-05",
+            model: "gemini-2.0-flash-exp",
             generationConfig: { responseMimeType: "application/json" }
         });
 
@@ -171,7 +171,7 @@ app.post('/analyze', async (req, res) => {
             },
             'こくご': {
                 attention: `
-                【レイアウト認識と抽出の絶対ルール】
+                【最重要：縦書きレイアウトと書き起こしルール】
                 1. 縦書き認識: この画像は基本的に「縦書き」です。必ず「右上」から「左下」に向かって読んでください。
                 2. 問題の分離: 丸数字（①, ②...）は新しい問題の開始合図です。
                 3. 【最重要】漢字書き取り問題のフォーマット
@@ -218,6 +218,8 @@ app.post('/analyze', async (req, res) => {
         const r = rules[subject] || rules['さんすう'];
         const baseRole = `あなたは「ねこご市立ねこづか小学校」のネル先生です。小学${grade}年生の「${subject}」担当です。語尾は「にゃ」。`;
 
+        // 2. 統合プロンプト（共通ロジック）
+        // 手書き文字の扱いだけを変数化し、それ以外は完全に同一にする
         const studentAnswerInstruction = mode === 'explain' 
             ? `・画像内の手書き文字（生徒の答え）は【完全に無視】してください。\n・出力JSONの "student_answer" は空文字 "" にしてください。`
             : `・採点のため、生徒の手書き文字を可能な限り読み取り、出力JSONの "student_answer" に格納してください。\n・子供特有の筆跡を考慮し、前後の文脈から推測してください。`;
@@ -237,7 +239,7 @@ app.post('/analyze', async (req, res) => {
 
             【ヒント生成ルール（答えのネタバレ厳禁）】
             以下の指針に従い、3段階のヒントを作成してください。
-            ⚠️重要: ヒント3であっても、「正解の漢字そのもの」や「答えの単語」は絶対に含まないでください。
+            ⚠️重要: ヒント3であっても、「正解の漢字そのもの」や「答えの単語」は絶対に含まないでください。「答えに近いヒント」とは、答えを連想させる情報のことです。
             ${r.hints}
 
             【出力フォーマット】
@@ -275,7 +277,9 @@ app.post('/analyze', async (req, res) => {
             throw new Error("AIが有効なデータを生成できませんでした。");
         }
 
+        // 全角記号の補正
         textResponse = textResponse.replace(/\*/g, '×').replace(/\//g, '÷');
+
         res.json(JSON.parse(textResponse));
 
     } catch (err) {
@@ -291,6 +295,7 @@ const server = app.listen(PORT, () => console.log(`Server running on port ${PORT
 // --- ★Live API Proxy (Aoede) ---
 const wss = new WebSocketServer({ server });
 wss.on('connection', (clientWs, req) => {
+    // 学年と名前を取得
     const parameters = parse(req.url, true).query;
     const userGrade = parameters.grade || "1";
     const userName = decodeURIComponent(parameters.name || "");
@@ -302,7 +307,7 @@ wss.on('connection', (clientWs, req) => {
         geminiWs.on('open', () => {
             geminiWs.send(JSON.stringify({
                 setup: {
-                    // Live API用には 2.0 Flash Exp を使用
+                    // ★最新の 2.0 Flash Exp を使用
                     model: "models/gemini-2.0-flash-exp",
                     generation_config: { response_modalities: ["AUDIO"], speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } } } }, 
                     system_instruction: {
