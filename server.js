@@ -12,7 +12,6 @@ const __dirname = path.dirname(__filename);
 const app = express();
 
 app.use(cors());
-// 画像データが大きい場合に対応するため制限を緩和
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, '.')));
 
@@ -118,19 +117,19 @@ app.post('/chat', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
-// --- ★画像分析API (安定版 + プロンプト強化) ---
+// --- ★画像分析API (プロンプト強化版) ---
 app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { image, mode, grade, subject } = req.body;
         
-        // 安定動作のため gemini-1.5-flash を使用
+        // ★修正: 安定動作する 1.5-flash を維持
         const model = genAI.getGenerativeModel({
             model: "gemini-1.5-flash",
             // JSONモード強制はせず、テキスト生成後に抽出する方式をとる
         });
 
-        // ■ 教科別詳細ルール
+        // ■ 教科別詳細ルール (プロンプトのみ強化)
         const rules = {
             'さんすう': {
                 attention: `・筆算の横線とマイナス記号を混同しないこと。\n・累乗（2^2など）や分数を正確に。`,
@@ -144,6 +143,7 @@ app.post('/analyze', async (req, res) => {
                   ・数字の「0」と「6」、「1」と「7」の見間違いに注意して、慎重に判定してにゃ。`
             },
             'こくご': {
+                // ★修正: 縦書き認識とフォーマット指定を強化
                 attention: `
                 【最重要：縦書きレイアウトと書き起こしルール】
                 1. 縦書き認識: この画像は縦書きです。必ず「右上」からスタートし、「丸数字の真下」にある文章を垂直方向に読み進めてください。行が終わったら左の列へ移動します。
@@ -196,6 +196,7 @@ app.post('/analyze', async (req, res) => {
             ? `・画像内の手書き文字（生徒の答え）は【完全に無視】してください。\n・出力JSONの "student_answer" は空文字 "" にしてください。`
             : `・採点のため、生徒の手書き文字を可能な限り読み取り、出力JSONの "student_answer" に格納してください。\n・子供特有の筆跡を考慮し、前後の文脈から推測してください。`;
 
+        // ★修正: 国語のフォーマット指定を共通プロンプトにも追加
         const prompt = `
             ${baseRole}
             
@@ -211,7 +212,7 @@ app.post('/analyze', async (req, res) => {
 
             【ヒント生成ルール（答えのネタバレ厳禁）】
             以下の指針に従い、3段階のヒントを作成してください。
-            ⚠️重要: ヒント3であっても、「正解の漢字そのもの」や「答えの単語」は絶対に含まないでください。「答えに近いヒント」とは、答えを連想させる情報のことです。
+            ⚠️重要: ヒント3であっても、「正解の漢字そのもの」や「答えの単語」は絶対に含まないでください。
             ${r.hints}
 
             【出力フォーマット】
@@ -238,7 +239,7 @@ app.post('/analyze', async (req, res) => {
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
         let textResponse = result.response.text();
 
-        // 500エラー対策: JSON抽出ロジック
+        // JSON抽出ロジック（エラー対策）
         const firstBracket = textResponse.indexOf('[');
         const lastBracket = textResponse.lastIndexOf(']');
         
