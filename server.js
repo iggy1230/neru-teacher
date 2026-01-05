@@ -62,17 +62,32 @@ app.post('/game-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { type, name, score } = req.body;
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        // 安定動作のため Flash
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
         let prompt = "";
         let mood = "excited";
 
         if (type === 'start') {
-            prompt = `あなたは「ねこご市立ねこづか小学校」のネル先生です。生徒「${name}」さんがゲームを開始。「${name}さん！カリカリいっぱいゲットしてにゃ！」とだけ言って。`;
+            prompt = `
+            あなたは「ねこご市立ねこづか小学校」のネル先生です。
+            生徒「${name}」さんがゲームを開始します。
+            「${name}さん！カリカリいっぱいゲットしてにゃ！」とだけ言ってください。余計な言葉は不要。
+            `;
         } else if (type === 'end') {
-            prompt = `あなたはネル先生。ゲーム終了。スコア${score}個(最大20)。20文字以内で褒めて。語尾「にゃ」。`;
+            prompt = `
+            あなたはネル先生です。ゲーム終了。スコア${score}個(最大20)。
+            スコアに応じて褒めるか励ましてください。
+            【厳守】20文字以内。語尾「にゃ」。絵文字禁止。
+            `;
         } else {
-            prompt = `ネル先生の実況。状況:${type}。「うまい！」「あぶない！」など一言だけ。語尾「にゃ」。`;
+            prompt = `
+            ネル先生の実況。状況: ${type}。
+            【厳守】
+            - 「うまい！」「あぶない！」「すごい！」など、5〜8文字程度の単語レベルで叫んでください。
+            - 語尾「にゃ」。
+            - 1フレーズのみ。
+            `;
         }
 
         const result = await model.generateContent(prompt);
@@ -87,15 +102,27 @@ app.post('/lunch-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { count, name } = req.body;
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        // 安定動作のため Flash
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
         let prompt = "";
         const isSpecial = count % 10 === 0;
 
         if (isSpecial) {
-            prompt = `ネル先生として給食${count}個目の感謝を熱く語る。相手:${name}。60文字程度。語尾にゃ。`;
+            const theme = ["生徒への過剰な感謝", "カリカリの美味しさの哲学", "生徒との絆"][Math.floor(Math.random()*3)];
+            prompt = `
+            あなたは猫の先生「ネル先生」です。生徒「${name}」さんから給食${count}個目をもらいました。
+            テーマ:【${theme}】で60文字程度で熱く語ってください。
+            【厳守】「${name}さん」または「${name}さま」と呼ぶこと(呼び捨て禁止)。注釈禁止。語尾「にゃ」。
+            `;
         } else {
-            prompt = `ネル先生として給食を食べた一言感想。15文字以内。語尾にゃ。`;
+            const nuances = ["咀嚼音強調", "味を絶賛", "もっとねだる", "幸せアピール", "香り堪能", "食感楽しむ", "元気になる", "喉を鳴らす", "褒める", "詩的に"];
+            const nuance = nuances[Math.floor(Math.random() * nuances.length)];
+            prompt = `
+            あなたは猫の先生「ネル先生」です。カリカリを1つ食べました。
+            ニュアンス:【${nuance}】
+            【厳守】15文字以内の一言のみ。語尾「にゃ」。
+            `;
         }
 
         const result = await model.generateContent(prompt);
@@ -109,22 +136,23 @@ app.post('/lunch-reaction', async (req, res) => {
 app.post('/chat', async (req, res) => {
     try {
         const { message, grade, name } = req.body;
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        // 安定動作のため Flash
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         const prompt = `あなたは「ネル先生」。相手は小学${grade}年生「${name}」。30文字以内、語尾「にゃ」。絵文字禁止。発言: ${message}`;
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text() });
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
-// --- ★画像分析API (2.5 Pro 固定 + 強力エラーハンドリング) ---
+// --- ★画像分析API (指定モデル: gemini-2.0-pro-exp-02-05) ---
 app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { image, mode, grade, subject } = req.body;
         
-        // ★ご指定の gemini-2.5-pro を使用
+        // ★修正: 指定された実験的プロモデルを使用
         const model = genAI.getGenerativeModel({
-            model: "gemini-2.5-pro",
+            model: "gemini-2.0-pro-exp-02-05",
             generationConfig: { responseMimeType: "application/json" }
         });
 
@@ -143,11 +171,12 @@ app.post('/analyze', async (req, res) => {
             },
             'こくご': {
                 attention: `
-                【最重要：縦書きレイアウトと書き起こしルール】
+                【レイアウト認識と抽出の絶対ルール】
                 1. 縦書き認識: この画像は基本的に「縦書き」です。必ず「右上」から「左下」に向かって読んでください。
                 2. 問題の分離: 丸数字（①, ②...）は新しい問題の開始合図です。
                 3. 【最重要】漢字書き取り問題のフォーマット
                    - 解答すべき空欄（□）は、必ず『□(読み仮名)』という形式で書き起こしてください。
+                   - 既に漢字が印刷されている部分は、そのまま漢字で記述してください。
                    - 例: 画像に「(はこ) の中」とあり、「はこ」が書き取り対象の場合 → 『□(はこ)の中。』と出力。
                    - 例: 画像に「みどりの木々」とあり、「みどり」が書き取り対象の場合 → 『□(みどり)の木々。』と出力。
                 `,
@@ -235,8 +264,7 @@ app.post('/analyze', async (req, res) => {
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
         let textResponse = result.response.text();
 
-        // 500エラー対策: JSON抽出ロジック（強化版）
-        // Geminiがマークダウン（```json ... ```）を含めて返すケースと、素のJSONを返すケースの両方に対応
+        // 500エラー対策: JSON抽出ロジック
         const firstBracket = textResponse.indexOf('[');
         const lastBracket = textResponse.lastIndexOf(']');
         
@@ -244,17 +272,14 @@ app.post('/analyze', async (req, res) => {
             textResponse = textResponse.substring(firstBracket, lastBracket + 1);
         } else {
             console.error("Invalid JSON format from Gemini:", textResponse);
-            throw new Error("AIからの応答が正しいJSON形式ではありませんでした。");
+            throw new Error("AIが有効なデータを生成できませんでした。");
         }
 
-        // 全角記号の補正
         textResponse = textResponse.replace(/\*/g, '×').replace(/\//g, '÷');
-
         res.json(JSON.parse(textResponse));
 
     } catch (err) {
         console.error("Analyze Error Details:", err);
-        // エラー詳細をクライアントに返し、原因（モデル名間違いなど）を特定しやすくする
         res.status(500).json({ error: "AI分析エラー: " + err.message });
     }
 });
@@ -277,7 +302,7 @@ wss.on('connection', (clientWs, req) => {
         geminiWs.on('open', () => {
             geminiWs.send(JSON.stringify({
                 setup: {
-                    // ★Live API用には 2.0 Flash Exp が現状最適
+                    // Live API用には 2.0 Flash Exp を使用
                     model: "models/gemini-2.0-flash-exp",
                     generation_config: { response_modalities: ["AUDIO"], speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } } } }, 
                     system_instruction: {
