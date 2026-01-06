@@ -69,11 +69,25 @@ app.post('/game-reaction', async (req, res) => {
         let mood = "excited";
 
         if (type === 'start') {
-            prompt = `あなたは「ねこご市立ねこづか小学校」のネル先生。生徒「${name}」がゲーム開始。「${name}さん！カリカリいっぱいゲットしてにゃ！」とだけ言って。`;
+            prompt = `
+            あなたは「ねこご市立ねこづか小学校」のネル先生です。
+            生徒「${name}」さんがゲームを開始します。
+            「${name}さん！カリカリいっぱいゲットしてにゃ！」とだけ言ってください。余計な言葉は不要。
+            `;
         } else if (type === 'end') {
-            prompt = `あなたはネル先生。ゲーム終了。スコア${score}個(最大20)。20文字以内で褒めて。語尾「にゃ」。`;
+            prompt = `
+            あなたはネル先生です。ゲーム終了。スコア${score}個(最大20)。
+            スコアに応じて褒めるか励ましてください。
+            【厳守】20文字以内。語尾「にゃ」。絵文字禁止。
+            `;
         } else {
-            prompt = `ネル先生の実況。状況:${type}。「うまい！」「あぶない！」など一言だけ。語尾「にゃ」。`;
+            prompt = `
+            ネル先生の実況。状況: ${type}。
+            【厳守】
+            - 「うまい！」「あぶない！」「すごい！」など、5〜8文字程度の単語レベルで叫んでください。
+            - 語尾「にゃ」。
+            - 1フレーズのみ。
+            `;
         }
 
         const result = await model.generateContent(prompt);
@@ -88,7 +102,6 @@ app.post('/lunch-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { count, name } = req.body;
-        
         // ★修正: 2.0 Flash Exp に統一
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp",
@@ -220,7 +233,7 @@ app.post('/analyze', async (req, res) => {
 
             【ヒント生成ルール（答えのネタバレ厳禁）】
             以下の指針に従い、3段階のヒントを作成してください。
-            ⚠️重要: ヒント3であっても、「正解の漢字そのもの」や「答えの単語」は絶対に含まないでください。「答えに近いヒント」とは、答えを連想させる情報のことです。
+            ⚠️重要: ヒント3であっても、「正解の漢字そのもの」や「答えの単語」は絶対に含まないでください。
             ${r.hints}
 
             【出力フォーマット】
@@ -231,7 +244,7 @@ app.post('/analyze', async (req, res) => {
                 "id": 1,
                 "label": "①", 
                 "question": "問題文。※国語の漢字書き取り問題の場合、必ず『□(ふりがな)』という形式で空欄を明示すること。（例: □(はこ)の中）",
-                "correct_answer": "正解（※必須。絶対に空欄にしないこと。画像に答えがなくても文脈から推測して解くこと。）",
+                "correct_answer": "正解",
                 "student_answer": "生徒の答え（解説モードなら空文字）",
                 "hints": [
                     "ヒント1: ...",
@@ -247,22 +260,20 @@ app.post('/analyze', async (req, res) => {
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
         let textResponse = result.response.text();
 
-        // 500エラー対策: JSON抽出
+        // 500エラー対策: JSON抽出ロジック
         const firstBracket = textResponse.indexOf('[');
         const lastBracket = textResponse.lastIndexOf(']');
         
         if (firstBracket !== -1 && lastBracket !== -1) {
             textResponse = textResponse.substring(firstBracket, lastBracket + 1);
         } else {
-            console.error("Invalid JSON:", textResponse);
-            res.json([{
-                id: 1, label: "?", question: "読み取りに失敗したにゃ。もう一度試してにゃ。", 
-                correct_answer: "", student_answer: "", hints: ["ごめんにゃ", "写真を変えてみて", "もう一回！"]
-            }]);
-            return;
+            console.error("Invalid JSON format from Gemini:", textResponse);
+            throw new Error("AIが有効なデータを生成できませんでした。");
         }
 
+        // 全角記号の補正
         textResponse = textResponse.replace(/\*/g, '×').replace(/\//g, '÷');
+
         res.json(JSON.parse(textResponse));
 
     } catch (err) {
@@ -278,7 +289,6 @@ const server = app.listen(PORT, () => console.log(`Server running on port ${PORT
 // --- ★Live API Proxy (Aoede) ---
 const wss = new WebSocketServer({ server });
 wss.on('connection', (clientWs, req) => {
-    // 学年と名前を取得
     const parameters = parse(req.url, true).query;
     const userGrade = parameters.grade || "1";
     const userName = decodeURIComponent(parameters.name || "");
@@ -290,9 +300,15 @@ wss.on('connection', (clientWs, req) => {
         geminiWs.on('open', () => {
             geminiWs.send(JSON.stringify({
                 setup: {
-                    // ★Live APIは 2.0 Flash Exp (変更なし)
+                    // ★修正: Live APIも 2.0 Flash Exp に統一
                     model: "models/gemini-2.0-flash-exp",
-                    generation_config: { response_modalities: ["AUDIO"], speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } } } }, 
+                    generation_config: { 
+                        response_modalities: ["AUDIO"], 
+                        speech_config: { 
+                            voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } },
+                            language_code: "ja-JP"
+                        } 
+                    }, 
                     system_instruction: {
                         parts: [{
                             text: `あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。
