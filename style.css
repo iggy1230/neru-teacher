@@ -4,15 +4,12 @@ body {
     padding: 0;
     width: 100%;
     min-height: 100vh;
-    background-color: #fce4ec; /* 画像読み込み前の予備色 */
-    
-    /* ★修正: 背景画像を有効化 */
+    background-color: #fce4ec;
     background-image: url('classroom-bg.png');
-    
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
-    background-attachment: fixed; /* スクロールしても背景を固定 */
+    background-attachment: fixed;
     color: #333;
     -webkit-font-smoothing: antialiased;
     box-sizing: border-box;
@@ -58,30 +55,52 @@ button { font-family: inherit; }
     gap: 10px; min-height: 300px;
 }
 .right-user-list {
-    width: 100%; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    width: 100%; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
     gap: 15px; padding: 10px;
 }
-.user-card {
-    background: rgba(255,255,255,0.95); border-radius: 12px; padding: 8px;
-    text-align: center; cursor: pointer; position: relative;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-    transition: transform 0.1s;
-}
-.user-card:active { transform: scale(0.98); }
 
-/* 学生証の表示スタイル */
+/* ★修正: ユーザーカードのデザイン（透明化・枠なし） */
+.user-card {
+    background: transparent; /* 透明 */
+    padding: 5px;
+    text-align: center; cursor: pointer; position: relative;
+    transition: transform 0.1s;
+    /* 影削除 */
+    box-shadow: none;
+}
+.user-card:active { transform: scale(0.95); }
+
+/* 学生証画像 */
 .user-card img { 
     width: 100%; 
     height: auto; 
-    border-radius: 6px;
+    border-radius: 8px;
     object-fit: contain; 
-    border: 2px solid #ff85a1; 
+    /* 画像自体の枠線も必要なければ削除、ここでは学生証っぽさを出すため残すか調整 */
+    box-shadow: 0 4px 8px rgba(0,0,0,0.3); /* 画像自体に影をつける */
     display: block;
-    background: #fff;
+}
+
+/* ★追加: 左下のカリカリ表示 */
+.card-karikari-badge {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    background: rgba(255, 255, 255, 0.9);
+    color: #d84315;
+    font-size: 0.8rem;
+    font-weight: bold;
+    padding: 2px 8px;
+    border-radius: 10px;
+    border: 1px solid #ffab91;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    pointer-events: none; /* クリックを透過 */
 }
 
 .delete-student-btn {
-    position: absolute; top: -8px; right: -8px; width: 28px; height: 28px;
+    position: absolute; top: 0; right: 0; width: 28px; height: 28px;
     border-radius: 50%; background: #ff5252; color: white; border: 2px solid white; 
     font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center;
     box-shadow: 0 2px 4px rgba(0,0,0,0.2);
@@ -91,7 +110,8 @@ button { font-family: inherit; }
 /* 入学手続き */
 .id-card-wrap {
     position: relative; width: 300px; height: 180px; margin: 0 auto 20px;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.1); border-radius: 10px; overflow: hidden;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3); border-radius: 10px; overflow: hidden;
+    background: white;
 }
 .id-base-img { width: 100%; height: 100%; object-fit: cover; }
 #id-photo-slot {
@@ -99,7 +119,7 @@ button { font-family: inherit; }
     background: #eee; overflow: hidden;
 }
 #id-photo-preview-canvas { width: 100%; height: 100%; object-fit: cover; }
-.id-text-overlay { position: absolute; color: #333; font-weight: bold; font-family: sans-serif; }
+.id-text-overlay { position: absolute; color: #333; font-weight: bold; font-family: sans-serif; pointer-events: none; }
 .id-grade-text { top: 90px; left: 178px; font-size: 16px; width: 100px; text-align: center; }
 .id-name-text { top: 128px; left: 178px; font-size: 18px; width: 100px; text-align: center; }
 
@@ -149,12 +169,10 @@ button { font-family: inherit; }
 }
 .camera-btn-large:active { transform: translateY(2px); box-shadow: 0 2px 0 #388e3c; }
 
-/* アップロードボタンレイアウト */
 .upload-buttons-container {
     display: flex; flex-direction: column; gap: 10px; width: 100%;
 }
 
-/* 復習ノート・採点結果 */
 .problem-selection-card { height: 400px; display: flex; flex-direction: column; }
 .problem-scroll-area { flex: 1; overflow-y: auto; padding: 5px; }
 .prob-card {
@@ -165,7 +183,6 @@ button { font-family: inherit; }
 }
 .q-label { font-weight: bold; color: #e91e63; margin-right: 5px; }
 
-/* 採点シート */
 .problem-row {
     background: #fff; padding: 10px; margin-bottom: 8px; border-radius: 8px;
     border-bottom: 2px solid #eee;
@@ -181,14 +198,12 @@ button { font-family: inherit; }
     padding: 5px 10px; font-size: 0.8rem; margin-left: auto;
 }
 
-/* ミニカリカリ表示 */
 .mini-karikari-display {
     position: fixed; top: 10px; right: 10px; background: rgba(255,255,255,0.95);
     padding: 5px 10px; border-radius: 20px; font-weight: bold; color: #d84315;
     box-shadow: 0 2px 5px rgba(0,0,0,0.2); z-index: 100; display: flex; align-items: center; gap: 5px;
 }
 
-/* 出席簿 */
 .glass-card { background: rgba(255,255,255,0.9); border-radius: 15px; padding: 15px; }
 .attendance-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
 .day-box {
@@ -196,7 +211,6 @@ button { font-family: inherit; }
     font-size: 0.8rem; aspect-ratio: 1; display: flex; flex-direction: column; justify-content: center;
 }
 
-/* エフェクト */
 .floating-text {
     position: absolute; font-weight: bold; font-size: 1.5rem;
     animation: floatUp 1.5s ease-out forwards; pointer-events: none;
@@ -208,7 +222,6 @@ button { font-family: inherit; }
 }
 @keyframes popHeart { 0% { transform: scale(0); } 50% { transform: scale(1.2); } 100% { transform: scale(1); opacity: 0; } }
 
-/* ローディング */
 .loader-inspect-img {
     width: 120px; display: block; margin: 0 auto;
     animation: bounce 1s infinite alternate;

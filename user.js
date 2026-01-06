@@ -1,8 +1,9 @@
-// --- user.js (完全版) ---
+// --- user.js (完全版: 入学カメラ対応 + カリカリ表示) ---
 
 let users = JSON.parse(localStorage.getItem('nekoneko_users')) || [];
 let currentUser = null;
 let modelsLoaded = false;
+let enrollFile = null; // 入学用の一時ファイル保持
 
 const idBase = new Image(); idBase.src = 'student-id-base.png';
 const decoEars = new Image(); decoEars.src = 'ears.png';
@@ -11,6 +12,7 @@ const decoMuzzle = new Image(); decoMuzzle.src = 'muzzle.png';
 document.addEventListener('DOMContentLoaded', () => {
     renderUserList();
     loadFaceModels();
+    setupEnrollmentPhotoInputs();
 });
 
 async function loadFaceModels() {
@@ -19,11 +21,9 @@ async function loadFaceModels() {
     if(status) status.innerText = "猫化AIを準備中にゃ... 📷";
     try {
         const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
-        // Androidでの軽量化のためSSDを使用しつつ、処理はタイムアウトさせる
         await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
         await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
         modelsLoaded = true;
-        console.log("AI Models Loaded");
         if(status) status.innerText = "準備完了にゃ！";
         const btn = document.getElementById('complete-btn');
         if(btn) btn.disabled = false;
@@ -35,95 +35,154 @@ async function loadFaceModels() {
     }
 }
 
-// Androidメモリ不足対策: 強力リサイズ (600px)
+// 画像リサイズ
 async function resizeImageForProcessing(img, maxSize = 600) {
     return new Promise((resolve) => {
         let width = img.width;
         let height = img.height;
         if (width > maxSize || height > maxSize) {
-            if (width > height) {
-                height *= maxSize / width;
-                width = maxSize;
-            } else {
-                width *= maxSize / height;
-                height = maxSize;
-            }
-        } else {
-            return resolve(img);
-        }
-
+            if (width > height) { height *= maxSize / width; width = maxSize; }
+            else { width *= maxSize / height; height = maxSize; }
+        } else { return resolve(img); }
         const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
+        canvas.width = width; canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
-        
         const resizedImg = new Image();
         resizedImg.onload = () => resolve(resizedImg);
-        // 画質を落としてメモリ節約
         resizedImg.src = canvas.toDataURL('image/jpeg', 0.7);
     });
 }
 
-const photoInput = document.getElementById('student-photo-input');
-if (photoInput) {
-    photoInput.addEventListener('change', (e) => {
-        const file = e.target.files[0];
+// プレビュー描画共通関数
+function drawPreview(img) {
+    const canvas = document.getElementById('id-photo-preview-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const size = Math.min(img.width, img.height);
+    const sx = (img.width - size) / 2;
+    const sy = (img.height - size) / 2;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, sx, sy, size, size, 0, 0, canvas.width, canvas.height);
+}
+
+// 入学用写真入力の設定
+function setupEnrollmentPhotoInputs() {
+    const handleFile = (file) => {
         if (!file) return;
+        enrollFile = file; // グローバルに保持
         const reader = new FileReader();
-        reader.onload = (event) => {
+        reader.onload = (e) => {
             const img = new Image();
-            img.onload = () => {
-                const canvas = document.getElementById('id-photo-preview-canvas');
-                if (!canvas) return;
-                const ctx = canvas.getContext('2d');
-                const size = Math.min(img.width, img.height);
-                const sx = (img.width - size) / 2;
-                const sy = (img.height - size) / 2;
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                ctx.drawImage(img, sx, sy, size, size, 0, 0, canvas.width, canvas.height);
-            };
-            img.src = event.target.result;
+            img.onload = () => drawPreview(img);
+            img.src = e.target.result;
         };
         reader.readAsDataURL(file);
-    });
+    };
+
+    // 1. Webカメラ (アプリ内)
+    const webCamBtn = document.getElementById('enroll-webcam-btn');
+    if (webCamBtn) {
+        webCamBtn.addEventListener('click', () => {
+            // anlyze.jsのstartWebCameraを呼び出すが、完了後のコールバックが必要
+            // 簡易的にanlyze.jsの関数をフックする形にするか、ここで実装するか。
+            // ここでは user.js 内で完結するようにWebカメラ処理を呼び出す
+            startEnrollmentWebCamera(handleFile);
+        });
+    }
+
+    // 2. 標準カメラ
+    const camInput = document.getElementById('student-photo-input-camera');
+    if (camInput) camInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
+
+    // 3. アルバム
+    const albInput = document.getElementById('student-photo-input-album');
+    if (albInput) albInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
+    
+    // 旧
+    const oldInput = document.getElementById('student-photo-input');
+    if (oldInput) oldInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
+}
+
+// 入学用Webカメラ処理 (anlyze.jsとは独立して動作させる)
+let enrollStream = null;
+async function startEnrollmentWebCamera(callback) {
+    const modal = document.getElementById('camera-modal');
+    const video = document.getElementById('camera-video');
+    const shutter = document.getElementById('camera-shutter-btn');
+    const cancel = document.getElementById('camera-cancel-btn');
+    
+    if (!modal || !video) return;
+
+    try {
+        // 自撮り優先
+        const constraints = { video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } } };
+        enrollStream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = enrollStream;
+        video.onloadedmetadata = () => { video.play(); };
+        modal.classList.remove('hidden');
+
+        // シャッター動作定義
+        const takePic = () => {
+            const canvas = document.getElementById('camera-canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0);
+            
+            canvas.toBlob((blob) => {
+                const file = new File([blob], "enroll_capture.jpg", { type: "image/jpeg" });
+                closeEnrollCamera();
+                callback(file);
+            }, 'image/jpeg', 0.9);
+        };
+
+        // イベント上書き (removeEventListenerが面倒なのでonclick使用)
+        shutter.onclick = takePic;
+        cancel.onclick = closeEnrollCamera;
+
+    } catch (err) {
+        alert("カメラ起動エラー: " + err.message);
+        closeEnrollCamera();
+    }
+}
+
+function closeEnrollCamera() {
+    const modal = document.getElementById('camera-modal');
+    const video = document.getElementById('camera-video');
+    if (enrollStream) {
+        enrollStream.getTracks().forEach(t => t.stop());
+        enrollStream = null;
+    }
+    if (video) video.srcObject = null;
+    if (modal) modal.classList.add('hidden');
 }
 
 async function processAndCompleteEnrollment() {
     const name = document.getElementById('new-student-name').value;
     const grade = document.getElementById('new-student-grade').value;
     const btn = document.getElementById('complete-btn');
-    const photoInput = document.getElementById('student-photo-input');
 
     if(!name || !grade) return alert("お名前と学年を入れてにゃ！");
+    if(!enrollFile && !document.getElementById('id-photo-preview-canvas')) return alert("写真を選んでにゃ！");
     
     btn.disabled = true;
-    btn.innerText = "作成中にゃ(動かないでね)...";
-    
-    // UI更新のために一瞬待つ
+    btn.innerText = "作成中にゃ...";
     await new Promise(r => setTimeout(r, 100));
 
     try {
         if (!idBase.complete) await new Promise(r => idBase.onload = r);
         
-        let originalImg = null;
-        if (photoInput.files && photoInput.files[0]) {
-            originalImg = await new Promise((resolve, reject) => {
-                const img = new Image();
-                const reader = new FileReader();
-                reader.onload = (e) => { img.src = e.target.result; };
-                img.onload = () => resolve(img);
-                img.onerror = reject;
-                reader.readAsDataURL(photoInput.files[0]);
-            });
+        // 画像取得
+        let originalImg = new Image();
+        if (enrollFile) {
+            originalImg.src = URL.createObjectURL(enrollFile);
         } else {
-            const pCanvas = document.getElementById('id-photo-preview-canvas');
-            originalImg = new Image();
-            originalImg.src = pCanvas.toDataURL();
-            await new Promise(r => originalImg.onload = r);
+            // ファイルがない場合はプレビューCanvasから取得
+            originalImg.src = document.getElementById('id-photo-preview-canvas').toDataURL();
         }
+        await new Promise(r => originalImg.onload = r);
 
-        // リサイズ実行
+        // リサイズ
         const sourceImg = await resizeImageForProcessing(originalImg, 600);
 
         let sx = 0, sy = 0, sWidth = sourceImg.width, sHeight = sourceImg.height;
@@ -131,12 +190,8 @@ async function processAndCompleteEnrollment() {
 
         if (modelsLoaded) {
             try {
-                // 3秒でタイムアウト（フリーズ回避）
-                const timeoutPromise = new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error("Timeout")), 3000)
-                );
+                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 3000));
                 const detectionPromise = faceapi.detectSingleFace(sourceImg).withFaceLandmarks();
-
                 detection = await Promise.race([detectionPromise, timeoutPromise]);
                 
                 if (detection) {
@@ -148,16 +203,15 @@ async function processAndCompleteEnrollment() {
                     sy = faceCenterY - (cropSize / 2);
                     sWidth = cropSize; sHeight = cropSize;
                 } else {
-                    const size = Math.min(sourceImg.width, sourceImg.height) * 0.8;
-                    sx = (sourceImg.width - size) / 2; sy = (sourceImg.height - size) / 2;
-                    sWidth = size; sHeight = size;
+                     // 中央クロップ
+                     const size = Math.min(sourceImg.width, sourceImg.height) * 0.8;
+                     sx = (sourceImg.width - size) / 2; sy = (sourceImg.height - size) / 2;
+                     sWidth = size; sHeight = size;
                 }
             } catch (e) {
-                console.warn("Face detection skipped/failed:", e);
-                const size = Math.min(sourceImg.width, sourceImg.height) * 0.8;
-                sx = (sourceImg.width - size) / 2; sy = (sourceImg.height - size) / 2;
-                sWidth = size; sHeight = size;
-                detection = null;
+                 const size = Math.min(sourceImg.width, sourceImg.height) * 0.8;
+                 sx = (sourceImg.width - size) / 2; sy = (sourceImg.height - size) / 2;
+                 sWidth = size; sHeight = size;
             }
         }
 
@@ -211,16 +265,14 @@ async function processAndCompleteEnrollment() {
         
         document.getElementById('new-student-name').value = "";
         document.getElementById('new-student-grade').value = "";
+        enrollFile = null;
         updateIDPreview();
         
-        const msg = detection ? "入学おめでとうにゃ！🌸\n猫耳がついた学生証ができたにゃ！" : "入学おめでとうにゃ！🌸\n(顔が見つからなかったから猫耳はなしだにゃ)";
-        alert(msg);
+        alert(detection ? "入学おめでとうにゃ！🌸" : "入学おめでとうにゃ！🌸\n(お顔が見つからなかったから猫耳はなしだにゃ)");
         switchScreen('screen-gate');
 
     } catch (err) {
-        console.error("Enrollment Error:", err);
-        if (err.name === 'QuotaExceededError') alert("データがいっぱいで保存できなかったにゃ。古い生徒手帳を消してにゃ。");
-        else alert("エラーが発生したにゃ……\n" + err.message);
+        alert("エラーが発生したにゃ……\n" + err.message);
     } finally {
         btn.disabled = false;
         btn.innerText = "入学する！";
@@ -234,7 +286,12 @@ function renderUserList() {
     users.forEach(user => {
         const div = document.createElement('div');
         div.className = "user-card";
-        div.innerHTML = `<img src="${user.photo}"><button class="delete-student-btn" onclick="deleteUser(event, ${user.id})">×</button>`;
+        // ★修正: カリカリ所持数を表示
+        div.innerHTML = `
+            <img src="${user.photo}">
+            <div class="card-karikari-badge">🍖${user.karikari || 0}</div>
+            <button class="delete-student-btn" onclick="deleteUser(event, ${user.id})">×</button>
+        `;
         div.onclick = () => login(user);
         list.appendChild(div);
     });
@@ -253,6 +310,7 @@ function login(user) {
     const karikari = document.getElementById('karikari-count');
     if (karikari) karikari.innerText = user.karikari || 0;
     
+    // 出席ボーナス
     const today = new Date().toISOString().split('T')[0];
     let isBonus = false;
 
@@ -266,7 +324,6 @@ function login(user) {
             if (currentUser.attendance[key]) streak++;
             else break;
         }
-
         if (streak >= 3) {
             currentUser.karikari += 100;
             isBonus = true;

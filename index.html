@@ -6,7 +6,6 @@
     <title>🐾猫後市立ねこづか小学校</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Sawarabi+Gothic&family=M+PLUS+Rounded+1c:wght@700;900&family=Kiwi+Maru:wght@900&display=swap" rel="stylesheet">
-    <!-- 顔認識ライブラリ -->
     <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 </head>
 <body>
@@ -15,7 +14,7 @@
     
     <div id="mini-karikari-display" class="mini-karikari-display hidden"><span>🍖</span><span id="mini-karikari-count">0</span></div>
 
-    <div class="version-tag">Build: v12.1.0-Fixed</div>
+    <div class="version-tag">Build: v13.0.0-UIComplete</div>
 
     <div id="app-container">
         <!-- 1. 校門 -->
@@ -36,11 +35,23 @@
             </div>
             
             <p style="text-align:center; margin-bottom:5px;">写真を選んでにゃ！</p>
-            <!-- Android対応: 標準のファイル選択を使用 (カメラ/ファイル選択が出る) -->
-            <label class="main-btn blue-btn">
-                📸 写真を撮る・選ぶ
-                <input type="file" id="student-photo-input" accept="image/*" style="display:none;">
-            </label>
+            
+            <!-- ★追加: 入学用の3つのボタン -->
+            <div class="upload-buttons-container">
+                <button id="enroll-webcam-btn" class="camera-btn-large" style="background:#ff9800; box-shadow:0 6px 0 #e65100; font-size:1rem; padding:10px;">
+                    📹 アプリで撮影
+                </button>
+                <div style="display:flex; gap:10px;">
+                    <label class="camera-btn-large" style="flex:1; font-size:0.9rem; padding:10px;">
+                        📷 標準カメラ
+                        <input type="file" id="student-photo-input-camera" accept="image/*" style="display:none;">
+                    </label>
+                    <label class="camera-btn-large" style="flex:1; font-size:0.9rem; padding:10px; background:#4a90e2; box-shadow:0 6px 0 #2c5f96;">
+                        📁 アルバム
+                        <input type="file" id="student-photo-input-album" accept="image/*" style="display:none;">
+                    </label>
+                </div>
+            </div>
 
             <input type="text" id="new-student-name" class="styled-input" placeholder="おなまえ" oninput="updateIDPreview()">
             <select id="new-student-grade" class="styled-select" onchange="updateIDPreview()">
@@ -76,6 +87,7 @@
             </header>
             
             <div class="operation-layout">
+                <!-- ネル先生エリア -->
                 <div class="nell-chat">
                     <div class="nell-avatar-wrap">
                         <img src="nell-normal.png" class="nell-img" id="nell-face">
@@ -97,7 +109,7 @@
                 <div id="chalkboard" class="chalkboard hidden"></div>
 
                 <div class="work-area">
-                    <!-- 宿題アップロード -->
+                    <!-- 宿題アップロード (3ボタン) -->
                     <div id="upload-controls" class="hidden">
                         <p style="text-align:center; margin-bottom:10px;">宿題をみせてね！</p>
                         <div class="upload-buttons-container">
@@ -114,8 +126,6 @@
                                     <input type="file" id="hw-input-album" accept="image/*" style="display:none;">
                                 </label>
                             </div>
-                            <!-- 古いIDとの互換性用 -->
-                            <input type="file" id="hw-input" accept="image/*" style="display:none;">
                         </div>
                     </div>
 
@@ -200,7 +210,7 @@
     <div id="camera-modal" class="camera-modal hidden">
         <div class="camera-container">
             <video id="camera-video" autoplay playsinline></video>
-            <div class="camera-guide-box"><p>ここに宿題を合わせてにゃ</p></div>
+            <div class="camera-guide-box"><p>ここに宿題/顔を合わせてにゃ</p></div>
         </div>
         <div class="camera-controls">
             <button id="camera-cancel-btn" class="main-btn gray-btn" style="width:100px;">やめる</button>
