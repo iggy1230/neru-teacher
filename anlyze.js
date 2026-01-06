@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版: v11.4 Android対応) ---
+// --- anlyze.js (完全版: Webカメラ対応 v12.0) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -18,7 +18,10 @@ let currentTtsSource = null;
 
 let gameCanvas, ctx, ball, paddle, bricks, score, gameRunning = false, gameAnimId = null;
 
-// ★効果音の読み込み
+// Webカメラ用
+let videoStream = null;
+
+// 効果音
 const sfxBori = new Audio('boribori.mp3');
 const sfxHit = new Audio('cat1c.mp3');
 const sfxOver = new Audio('gameover.mp3');
@@ -59,7 +62,7 @@ function startMouthAnimation() {
 }
 startMouthAnimation();
 
-// メッセージ更新ラッパー（TTS同期・SE再生）
+// メッセージ更新ラッパー
 async function updateNellMessage(t, mood = "normal") {
     let targetId = 'nell-text';
     if (!document.getElementById('screen-game').classList.contains('hidden')) {
@@ -67,7 +70,6 @@ async function updateNellMessage(t, mood = "normal") {
     }
     const el = document.getElementById(targetId);
 
-    // AudioContext準備
     if (!audioContext) {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         audioContext = new AudioCtx();
@@ -76,26 +78,22 @@ async function updateNellMessage(t, mood = "normal") {
         await audioContext.resume().catch(()=>{});
     }
 
-    // 前の音声を停止
     if (currentTtsSource) {
         try { currentTtsSource.stop(); } catch(e){}
         currentTtsSource = null;
     }
     window.isNellSpeaking = false;
 
-    // ★効果音再生: 「もぐもぐ」が含まれていたら再生
     if (t && t.includes("もぐもぐ")) {
         try { sfxBori.currentTime = 0; sfxBori.play(); } catch(e){}
     }
 
-    // 即時表示対象（TTSなし）
     if (!t || t === "..." || t.includes("ちょっと待ってて") || t.includes("もぐもぐ")) {
         if (el) el.innerText = t;
         return;
     }
 
     try {
-        // 1. 音声合成リクエスト
         const response = await fetch('/synthesize', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -105,14 +103,12 @@ async function updateNellMessage(t, mood = "normal") {
         if (!response.ok) throw new Error("TTS Error");
         const data = await response.json();
         
-        // 2. 音声データデコード
         const binaryString = window.atob(data.audioContent);
         const len = binaryString.length;
         const bytes = new Uint8Array(len);
         for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
         const decodedBuffer = await audioContext.decodeAudioData(bytes.buffer);
 
-        // 3. テキスト表示と音声を同時に開始
         if (el) el.innerText = t;
 
         const source = audioContext.createBufferSource();
@@ -130,8 +126,6 @@ async function updateNellMessage(t, mood = "normal") {
         };
 
     } catch (e) {
-        console.error("Msg Error:", e);
-        // エラー時はテキストだけ表示
         if (el) el.innerText = t;
         window.isNellSpeaking = false;
     }
@@ -146,7 +140,6 @@ function selectMode(m) {
     const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'lunch-view'];
     ids.forEach(id => { const el = document.getElementById(id); if (el) el.classList.add('hidden'); });
     
-    // ★重要: モード選択直後は「ロビーに戻る」ボタンとして機能させる
     const backBtn = document.getElementById('main-back-btn');
     if (backBtn) {
         backBtn.classList.remove('hidden');
@@ -220,7 +213,6 @@ async function startLiveChat() {
                 await startMicrophone();
             }
             if (data.serverContent?.modelTurn?.parts?.[0]?.inlineData) {
-                // LiveAPIはPCMを直接流す
                 playLivePcmAudio(data.serverContent.modelTurn.parts[0].inlineData.data);
             }
         };
@@ -260,7 +252,6 @@ async function startMicrophone() {
         workletNode.port.onmessage = (event) => {
             const inputData = event.data;
             
-            // マイク入力インジケーター
             let sum = 0; for(let i=0; i<inputData.length; i++) sum += inputData[i] * inputData[i];
             const volume = Math.sqrt(sum / inputData.length);
             const btn = document.getElementById('mic-btn');
@@ -274,7 +265,6 @@ async function startMicrophone() {
                 }
             }
 
-            // ★重要: 1000ms遅延させて音切れを防ぐ
             setTimeout(() => {
                 if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return;
                 const downsampled = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
@@ -302,7 +292,6 @@ function playLivePcmAudio(base64) {
 function giveLunch() {
     if (currentUser.karikari < 1) return updateNellMessage("カリカリがないにゃ……", "thinking");
     
-    // ★即時表示
     updateNellMessage("もぐもぐ……", "normal");
     
     currentUser.karikari--; 
@@ -315,7 +304,6 @@ function giveLunch() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ count: lunchCount, name: currentUser.name })
     }).then(r=>r.json()).then(d=>{
-        // 1.5秒待ってからAPIの返答（感想）を言う
         setTimeout(() => {
             updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy");
         }, 1500); 
@@ -363,10 +351,7 @@ function drawGame() {
     bricks.forEach(b => {
         if(b.status === 1 && ball.x>b.x && ball.x<b.x+40 && ball.y>b.y && ball.y<b.y+30){
             ball.dy*=-1; b.status=0; score++; document.getElementById('game-score').innerText=score;
-            
-            // ヒット音
             try { sfxHit.currentTime=0; sfxHit.play(); } catch(e){}
-            
             if (Math.random() > 0.7 && !window.isNellSpeaking) {
                 const comment = gameHitComments[Math.floor(Math.random() * gameHitComments.length)];
                 updateNellMessage(comment, "excited");
@@ -379,7 +364,6 @@ function drawGame() {
     else if(ball.y+ball.dy > gameCanvas.height - ball.r - 20) {
         if(ball.x > paddle.x && ball.x < paddle.x + paddle.w) { ball.dy *= -1; ball.dx = (ball.x - (paddle.x+paddle.w/2)) * 0.15; } 
         else if(ball.y+ball.dy > gameCanvas.height-ball.r) { 
-            // ゲームオーバー音
             try { sfxOver.currentTime=0; sfxOver.play(); } catch(e){}
             endGame(false); return; 
         }
@@ -393,17 +377,14 @@ function endGame(c) {
     setTimeout(()=>{ alert(c?`すごい！全クリだにゃ！\nカリカリ ${score} 個ゲット！`:`おしい！\nカリカリ ${score} 個ゲット！`); if(currentUser&&score>0){currentUser.karikari+=score;saveAndSync();updateMiniKarikari();showKarikariEffect(score);} }, 500);
 }
 
-// 5. 分析・ヒント (★修正: カメラ/アルバムの2ボタン対応)
+// 5. 分析・ヒント (統合版: ファイル処理の一元化)
 const handleFileUpload = async (file) => {
     if (isAnalyzing || !file) return; isAnalyzing = true;
     
     // UI制御
     const up = document.getElementById('upload-controls'); if(up) up.classList.add('hidden');
     const th = document.getElementById('thinking-view'); if(th) th.classList.remove('hidden');
-    
-    // 戻るボタンを隠す
-    const backBtn = document.getElementById('main-back-btn');
-    if(backBtn) backBtn.classList.add('hidden');
+    const backBtn = document.getElementById('main-back-btn'); if(backBtn) backBtn.classList.add('hidden');
 
     let loadingMessage = "ちょっと待っててにゃ…\nふむふむ…";
     if (currentUser && currentSubject) {
@@ -414,7 +395,6 @@ const handleFileUpload = async (file) => {
     updateProgress(0); 
     let p = 0; const timer = setInterval(() => { if (p < 90) { p += 3; updateProgress(p); } }, 500);
     try {
-        // 画質優先 (1600px)
         const b64 = await shrinkImage(file, 1600);
         const res = await fetch('/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: b64, mode: currentMode, grade: currentUser.grade, subject: currentSubject }) });
         
@@ -435,9 +415,7 @@ const handleFileUpload = async (file) => {
         clearInterval(timer); updateProgress(100);
         setTimeout(() => { 
             if(th) th.classList.add('hidden'); 
-            // 完了後も戻るボタンは隠す
             if(backBtn) backBtn.classList.add('hidden');
-
             if (currentMode === 'explain' || currentMode === 'review') { renderProblemSelection(); updateNellMessage("問題が読めたにゃ！", "happy"); } 
             else { showGradingView(); }
         }, 800);
@@ -445,7 +423,6 @@ const handleFileUpload = async (file) => {
         clearInterval(timer); 
         document.getElementById('thinking-view').classList.add('hidden'); 
         document.getElementById('upload-controls').classList.remove('hidden'); 
-        // エラー時は戻るボタン復活
         if(backBtn) backBtn.classList.remove('hidden');
         updateNellMessage("エラーだにゃ…もう一回試してにゃ", "thinking"); 
     } finally { isAnalyzing = false; }
@@ -458,7 +435,6 @@ if(camIn) camIn.addEventListener('change', (e) => { handleFileUpload(e.target.fi
 const albIn = document.getElementById('hw-input-album');
 if(albIn) albIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
 
-// 念のため旧ID(hw-input)も残しておく
 const oldIn = document.getElementById('hw-input');
 if(oldIn) oldIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
 
@@ -469,15 +445,15 @@ function startHint(id) {
         return updateNellMessage("データエラーだにゃ", "thinking");
     }
 
+    // ヒント画面表示
     const uiIds = ['problem-selection-view', 'grade-sheet-container', 'final-view', 'hint-detail-container', 'chalkboard', 'answer-display-area'];
     uiIds.forEach(i => { const el = document.getElementById(i); if(el) el.classList.add('hidden'); });
 
-    const fv = document.getElementById('final-view'); if(fv) fv.classList.remove('hidden');
-    const hv = document.getElementById('hint-detail-container'); if(hv) hv.classList.remove('hidden');
+    document.getElementById('final-view').classList.remove('hidden');
+    document.getElementById('hint-detail-container').classList.remove('hidden');
     const board = document.getElementById('chalkboard'); if(board) { board.innerText = selectedProblem.question; board.classList.remove('hidden'); }
     const ansArea = document.getElementById('answer-display-area'); if(ansArea) ansArea.classList.add('hidden');
 
-    // ★ヒント画面では「戻るボタン」を表示し、クリックで「問題リスト」に戻るように上書き
     const backBtn = document.getElementById('main-back-btn');
     if (backBtn) {
         backBtn.classList.remove('hidden');
@@ -489,9 +465,7 @@ function startHint(id) {
             document.getElementById('hint-detail-container').classList.add('hidden');
             document.getElementById('chalkboard').classList.add('hidden');
             
-            // ★リスト画面に戻ったら、また「戻るボタン」を隠す
             backBtn.classList.add('hidden');
-            
             updateNellMessage("他の問題も見るにゃ？", "normal");
         };
     }
@@ -531,7 +505,6 @@ function renderProblemSelection() { document.getElementById('problem-selection-v
 function showGradingView() { 
     document.getElementById('grade-sheet-container').classList.remove('hidden'); 
     document.getElementById('final-view').classList.remove('hidden');
-    // 採点画面でも戻るボタンは隠す
     const backBtn = document.getElementById('main-back-btn');
     if(backBtn) backBtn.classList.add('hidden');
     renderWorksheet(); 
@@ -587,3 +560,63 @@ async function shrinkImage(file, maxSize = 1600) {
     }); 
 }
 function renderMistakeSelection() { if (!currentUser.mistakes || currentUser.mistakes.length === 0) { updateNellMessage("ノートは空っぽにゃ！", "happy"); setTimeout(backToLobby, 2000); return; } transcribedProblems = currentUser.mistakes; renderProblemSelection(); updateNellMessage("復習するにゃ？", "excited"); }
+
+// --- Webカメラ関連 ---
+let videoStream = null;
+
+async function startWebCamera() {
+    const modal = document.getElementById('camera-modal');
+    const video = document.getElementById('camera-video');
+    if (!modal || !video) return;
+
+    try {
+        const constraints = { video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } } };
+        videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = videoStream;
+        video.onloadedmetadata = () => { video.play(); };
+        modal.classList.remove('hidden');
+        updateNellMessage("枠の中に宿題を入れて、ボタンを押してにゃ！", "normal");
+    } catch (err) {
+        console.error("Camera Error:", err);
+        alert("カメラを起動できなかったにゃ…設定を確認してにゃ。");
+        closeWebCamera();
+    }
+}
+
+function closeWebCamera() {
+    const modal = document.getElementById('camera-modal');
+    const video = document.getElementById('camera-video');
+    if (videoStream) {
+        videoStream.getTracks().forEach(track => track.stop());
+        videoStream = null;
+    }
+    if (video) video.srcObject = null;
+    if (modal) modal.classList.add('hidden');
+}
+
+function takePicture() {
+    const video = document.getElementById('camera-video');
+    const canvas = document.getElementById('camera-canvas');
+    if (!video || !canvas || !videoStream) return;
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    canvas.toBlob((blob) => {
+        if (blob) {
+            const file = new File([blob], "webcam_capture.jpg", { type: "image/jpeg" });
+            closeWebCamera();
+            handleFileUpload(file);
+        }
+    }, 'image/jpeg', 0.9);
+}
+
+// Webカメラボタンイベント
+const startWebcamBtn = document.getElementById('start-webcam-btn');
+if (startWebcamBtn) startWebcamBtn.addEventListener('click', startWebCamera);
+const shutterBtn = document.getElementById('camera-shutter-btn');
+if (shutterBtn) shutterBtn.addEventListener('click', takePicture);
+const cancelCamBtn = document.getElementById('camera-cancel-btn');
+if (cancelCamBtn) cancelCamBtn.addEventListener('click', closeWebCamera);
