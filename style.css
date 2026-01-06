@@ -4,15 +4,15 @@ body {
     padding: 0;
     width: 100%;
     min-height: 100vh;
-    background-color: #fce4ec; /* 背景色（画像がない時のため） */
+    background-color: #fce4ec; /* 画像読み込み前の予備色 */
     
-    /* 背景画像がある場合はコメントアウトを外す */
-    /* background-image: url('classroom-bg.png'); */
+    /* ★修正: 背景画像を有効化 */
+    background-image: url('classroom-bg.png');
     
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
-    background-attachment: fixed; /* ★重要: 背景固定 */
+    background-attachment: fixed; /* スクロールしても背景を固定 */
     color: #333;
     -webkit-font-smoothing: antialiased;
     box-sizing: border-box;
@@ -50,25 +50,42 @@ button { font-family: inherit; }
 /* 校門 */
 .school-title {
     text-align: center; font-size: 2rem; color: #d81b60;
-    text-shadow: 2px 2px 0 #fff; margin-top: 40px; margin-bottom: 20px;
+    text-shadow: 3px 3px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;
+    margin-top: 40px; margin-bottom: 20px; font-weight: 900;
 }
 .gate-layout {
     display: flex; justify-content: center; align-items: flex-start;
     gap: 10px; min-height: 300px;
 }
 .right-user-list {
-    width: 100%; display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    width: 100%; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
     gap: 15px; padding: 10px;
 }
 .user-card {
-    background: rgba(255,255,255,0.9); border-radius: 10px; padding: 10px;
+    background: rgba(255,255,255,0.95); border-radius: 12px; padding: 8px;
     text-align: center; cursor: pointer; position: relative;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    transition: transform 0.1s;
 }
-.user-card img { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 3px solid #ff85a1; }
+.user-card:active { transform: scale(0.98); }
+
+/* 学生証の表示スタイル */
+.user-card img { 
+    width: 100%; 
+    height: auto; 
+    border-radius: 6px;
+    object-fit: contain; 
+    border: 2px solid #ff85a1; 
+    display: block;
+    background: #fff;
+}
+
 .delete-student-btn {
-    position: absolute; top: -5px; right: -5px; width: 24px; height: 24px;
-    border-radius: 50%; background: #ff5252; color: white; border: none; font-size: 14px;
+    position: absolute; top: -8px; right: -8px; width: 28px; height: 28px;
+    border-radius: 50%; background: #ff5252; color: white; border: 2px solid white; 
+    font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    z-index: 10;
 }
 
 /* 入学手続き */
@@ -99,6 +116,7 @@ button { font-family: inherit; }
     color: #d84315; background: #fff3e0; padding: 5px 15px;
     border-radius: 20px; display: inline-block; margin-bottom: 15px;
     position: relative; left: 50%; transform: translateX(-50%);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 .lobby-menu { display: grid; gap: 12px; padding: 0 15px; }
 
@@ -119,9 +137,10 @@ button { font-family: inherit; }
 .chalkboard {
     background: #2e7d32; color: white; padding: 15px; border: 8px solid #a1887f;
     border-radius: 5px; margin: 10px; font-family: 'Kiwi Maru', serif; min-height: 100px;
+    box-shadow: inset 0 0 20px rgba(0,0,0,0.2);
 }
 
-.work-area { background: rgba(255,255,255,0.5); border-radius: 20px; padding: 15px; margin: 10px; }
+.work-area { background: rgba(255,255,255,0.8); border-radius: 20px; padding: 15px; margin: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
 
 .camera-btn-large {
     display: block; width: 100%; padding: 30px 0; background: #66bb6a;
@@ -164,7 +183,7 @@ button { font-family: inherit; }
 
 /* ミニカリカリ表示 */
 .mini-karikari-display {
-    position: fixed; top: 10px; right: 10px; background: rgba(255,255,255,0.9);
+    position: fixed; top: 10px; right: 10px; background: rgba(255,255,255,0.95);
     padding: 5px 10px; border-radius: 20px; font-weight: bold; color: #d84315;
     box-shadow: 0 2px 5px rgba(0,0,0,0.2); z-index: 100; display: flex; align-items: center; gap: 5px;
 }
@@ -198,7 +217,7 @@ button { font-family: inherit; }
 .progress-bar { height: 10px; background: #ff85a1; width: 0%; transition: width 0.3s; border-radius: 5px; }
 .progress-container { width: 80%; background: #eee; height: 10px; border-radius: 5px; margin: 10px auto; overflow: hidden; }
 
-/* Webカメラモーダル */
+/* カメラモーダル */
 .camera-modal {
     position: fixed; top: 0; left: 0; width: 100%; height: 100%;
     background: #000; z-index: 9999;
