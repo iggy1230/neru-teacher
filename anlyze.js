@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版: 画像サイズ1600px + その他機能維持) ---
+// --- anlyze.js (完全統合版: v11.3) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -8,6 +8,7 @@ let currentSubject = '';
 let currentMode = ''; 
 let lunchCount = 0; 
 
+// Live Chat Variables
 let liveSocket = null;
 let audioContext = null;
 let mediaStream = null;
@@ -16,9 +17,10 @@ let nextStartTime = 0;
 let stopSpeakingTimer = null;
 let currentTtsSource = null;
 
+// Game Variables
 let gameCanvas, ctx, ball, paddle, bricks, score, gameRunning = false, gameAnimId = null;
 
-// ★効果音
+// ★効果音の読み込み
 const sfxBori = new Audio('boribori.mp3');
 const sfxHit = new Audio('cat1c.mp3');
 const sfxOver = new Audio('gameover.mp3');
@@ -35,6 +37,7 @@ const subjectImages = {
 const defaultIcon = 'nell-normal.png'; 
 const talkIcon = 'nell-talk.png';
 
+// 口パクアニメーション
 function startMouthAnimation() {
     let toggle = false;
     setInterval(() => {
@@ -59,6 +62,7 @@ function startMouthAnimation() {
 }
 startMouthAnimation();
 
+// メッセージ更新ラッパー（TTS同期・SE再生）
 async function updateNellMessage(t, mood = "normal") {
     let targetId = 'nell-text';
     if (!document.getElementById('screen-game').classList.contains('hidden')) {
@@ -66,6 +70,7 @@ async function updateNellMessage(t, mood = "normal") {
     }
     const el = document.getElementById(targetId);
 
+    // AudioContext準備
     if (!audioContext) {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         audioContext = new AudioCtx();
@@ -74,24 +79,27 @@ async function updateNellMessage(t, mood = "normal") {
         await audioContext.resume().catch(()=>{});
     }
 
+    // 前の音声を停止
     if (currentTtsSource) {
         try { currentTtsSource.stop(); } catch(e){}
         currentTtsSource = null;
     }
     window.isNellSpeaking = false;
 
-    // もぐもぐ音
+    // ★効果音再生: 「もぐもぐ」が含まれていたら再生
     if (t && t.includes("もぐもぐ")) {
         try { sfxBori.currentTime = 0; sfxBori.play(); } catch(e){}
     }
 
-    // 即時表示対象
+    // 即時表示対象（TTSなし）
+    // "..." や読み込み中、もぐもぐ等は即座にテキストを出して終了
     if (!t || t === "..." || t.includes("ちょっと待ってて") || t.includes("もぐもぐ")) {
         if (el) el.innerText = t;
         return;
     }
 
     try {
+        // 1. 音声合成リクエスト
         const response = await fetch('/synthesize', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -100,12 +108,15 @@ async function updateNellMessage(t, mood = "normal") {
 
         if (!response.ok) throw new Error("TTS Error");
         const data = await response.json();
+        
+        // 2. 音声データデコード
         const binaryString = window.atob(data.audioContent);
         const len = binaryString.length;
         const bytes = new Uint8Array(len);
         for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
         const decodedBuffer = await audioContext.decodeAudioData(bytes.buffer);
 
+        // 3. テキスト表示と音声を同時に開始
         if (el) el.innerText = t;
 
         const source = audioContext.createBufferSource();
@@ -123,6 +134,8 @@ async function updateNellMessage(t, mood = "normal") {
         };
 
     } catch (e) {
+        console.error("Msg Error:", e);
+        // エラー時はテキストだけ表示
         if (el) el.innerText = t;
         window.isNellSpeaking = false;
     }
@@ -133,9 +146,11 @@ function selectMode(m) {
     currentMode = m; 
     switchScreen('screen-main'); 
     
+    // UIリセット
     const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'lunch-view'];
     ids.forEach(id => { const el = document.getElementById(id); if (el) el.classList.add('hidden'); });
     
+    // ★重要: モード選択直後は「ロビーに戻る」ボタンとして機能させる
     const backBtn = document.getElementById('main-back-btn');
     if (backBtn) {
         backBtn.classList.remove('hidden');
@@ -209,6 +224,7 @@ async function startLiveChat() {
                 await startMicrophone();
             }
             if (data.serverContent?.modelTurn?.parts?.[0]?.inlineData) {
+                // LiveAPIはPCMを直接流す
                 playLivePcmAudio(data.serverContent.modelTurn.parts[0].inlineData.data);
             }
         };
@@ -248,7 +264,7 @@ async function startMicrophone() {
         workletNode.port.onmessage = (event) => {
             const inputData = event.data;
             
-            // マイク入力インジケーター
+            // ★マイク入力インジケーター（音量でボタンが光る）
             let sum = 0; for(let i=0; i<inputData.length; i++) sum += inputData[i] * inputData[i];
             const volume = Math.sqrt(sum / inputData.length);
             const btn = document.getElementById('mic-btn');
@@ -262,14 +278,14 @@ async function startMicrophone() {
                 }
             }
 
-            // 250ms遅延送信
+            // ★重要: 1000ms遅延させて音切れを防ぐ
             setTimeout(() => {
                 if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return;
                 const downsampled = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
                 const pcm16 = floatTo16BitPCM(downsampled);
                 const base64 = arrayBufferToBase64(pcm16);
                 liveSocket.send(JSON.stringify({ type: 'audio', data: base64 }));
-            }, 250);
+            }, 1000);
         };
     } catch(e) { updateNellMessage("マイクエラー", "thinking"); }
 }
@@ -290,6 +306,7 @@ function playLivePcmAudio(base64) {
 function giveLunch() {
     if (currentUser.karikari < 1) return updateNellMessage("カリカリがないにゃ……", "thinking");
     
+    // ★即時表示（TTSスキップ＋SE再生）
     updateNellMessage("もぐもぐ……", "normal");
     
     currentUser.karikari--; 
@@ -302,6 +319,7 @@ function giveLunch() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ count: lunchCount, name: currentUser.name })
     }).then(r=>r.json()).then(d=>{
+        // 1.5秒待ってからAPIの返答（感想）を言う
         setTimeout(() => {
             updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy");
         }, 1500); 
@@ -350,7 +368,7 @@ function drawGame() {
         if(b.status === 1 && ball.x>b.x && ball.x<b.x+40 && ball.y>b.y && ball.y<b.y+30){
             ball.dy*=-1; b.status=0; score++; document.getElementById('game-score').innerText=score;
             
-            // ヒット音
+            // ★ヒット音
             try { sfxHit.currentTime=0; sfxHit.play(); } catch(e){}
             
             if (Math.random() > 0.7 && !window.isNellSpeaking) {
@@ -365,7 +383,7 @@ function drawGame() {
     else if(ball.y+ball.dy > gameCanvas.height - ball.r - 20) {
         if(ball.x > paddle.x && ball.x < paddle.x + paddle.w) { ball.dy *= -1; ball.dx = (ball.x - (paddle.x+paddle.w/2)) * 0.15; } 
         else if(ball.y+ball.dy > gameCanvas.height-ball.r) { 
-            // ゲームオーバー音
+            // ★ゲームオーバー音
             try { sfxOver.currentTime=0; sfxOver.play(); } catch(e){}
             endGame(false); return; 
         }
@@ -389,6 +407,7 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
     const backBtn = document.getElementById('main-back-btn');
     if(backBtn) backBtn.classList.add('hidden');
 
+    // ★改行付きメッセージ
     let loadingMessage = "ちょっと待っててにゃ…\nふむふむ…";
     if (currentUser && currentSubject) {
         loadingMessage = `ちょっと待っててにゃ…\nふむふむ…\n${currentUser.grade}年生の${currentSubject}の問題だにゃ…`;
@@ -398,7 +417,7 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
     updateProgress(0); 
     let p = 0; const timer = setInterval(() => { if (p < 90) { p += 3; updateProgress(p); } }, 500);
     try {
-        // ★修正: 1600pxに拡大
+        // 画質確保のため1600px
         const b64 = await shrinkImage(e.target.files[0], 1600);
         const res = await fetch('/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: b64, mode: currentMode, grade: currentUser.grade, subject: currentSubject }) });
         
@@ -419,7 +438,8 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
         clearInterval(timer); updateProgress(100);
         setTimeout(() => { 
             if(th) th.classList.add('hidden'); 
-            // 完了後も戻るボタンは隠す
+            
+            // 書き起こし後も戻るボタンは隠したままにする
             if(backBtn) backBtn.classList.add('hidden');
 
             if (currentMode === 'explain' || currentMode === 'review') { renderProblemSelection(); updateNellMessage("問題が読めたにゃ！", "happy"); } 
@@ -450,6 +470,7 @@ function startHint(id) {
     const board = document.getElementById('chalkboard'); if(board) { board.innerText = selectedProblem.question; board.classList.remove('hidden'); }
     const ansArea = document.getElementById('answer-display-area'); if(ansArea) ansArea.classList.add('hidden');
 
+    // ★ヒント画面では「戻るボタン」を表示し、クリックで「問題リスト」に戻るように上書き
     const backBtn = document.getElementById('main-back-btn');
     if (backBtn) {
         backBtn.classList.remove('hidden');
@@ -457,11 +478,14 @@ function startHint(id) {
             if (currentMode === 'grade') showGradingView();
             else renderProblemSelection();
             
+            // ヒント画面の要素を隠す
             document.getElementById('final-view').classList.add('hidden');
             document.getElementById('hint-detail-container').classList.add('hidden');
             document.getElementById('chalkboard').classList.add('hidden');
             
+            // ★リスト画面に戻ったら、また「戻るボタン」を隠す
             backBtn.classList.add('hidden');
+            
             updateNellMessage("他の問題も見るにゃ？", "normal");
         };
     }
@@ -473,15 +497,14 @@ function startHint(id) {
     if(revealBtn) revealBtn.classList.add('hidden');
 }
 
+// ... (showNextHint以降の関数は変更なし) ...
 function showNextHint() {
     if (window.initAudioContext) window.initAudioContext();
     let cost = 0; if (hintIndex === 0) cost = 5; else if (hintIndex === 1) cost = 5; else if (hintIndex === 2) cost = 10;
     if (currentUser.karikari < cost) return updateNellMessage(`カリカリが足りないにゃ……あと${cost}個必要にゃ。`, "thinking");
     currentUser.karikari -= cost; saveAndSync(); updateMiniKarikari(); showKarikariEffect(-cost);
-    
     let hints = selectedProblem.hints || [];
     if (hints.length === 0) hints = ["よく読んでみてにゃ", "式を立てるにゃ", "先生と解くにゃ"];
-    
     updateNellMessage(hints[hintIndex] || "……", "thinking"); 
     const hl = document.getElementById('hint-step-label'); if(hl) hl.innerText = `ヒント ${hintIndex + 1}`; hintIndex++; 
     const nextBtn = document.getElementById('next-hint-btn'); const revealBtn = document.getElementById('reveal-answer-btn');
@@ -490,7 +513,6 @@ function showNextHint() {
     else { if(nextBtn) nextBtn.classList.add('hidden'); if(revealBtn) { revealBtn.classList.remove('hidden'); revealBtn.innerText = "答えを見る"; } }
 }
 
-// Utils
 function downsampleBuffer(buffer, sampleRate, outSampleRate) { if (outSampleRate >= sampleRate) return buffer; const ratio = sampleRate / outSampleRate; const newLength = Math.round(buffer.length / ratio); const result = new Float32Array(newLength); let offsetResult = 0, offsetBuffer = 0; while (offsetResult < result.length) { const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio); let accum = 0, count = 0; for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) { accum += buffer[i]; count++; } result[offsetResult] = accum / count; offsetResult++; offsetBuffer = nextOffsetBuffer; } return result; }
 function floatTo16BitPCM(input) { const output = new Int16Array(input.length); for (let i = 0; i < input.length; i++) { const s = Math.max(-1, Math.min(1, input[i])); output[i] = s < 0 ? s * 0x8000 : s * 0x7FFF; } return output.buffer; }
 function arrayBufferToBase64(buffer) { let binary = ''; const bytes = new Uint8Array(buffer); for (let i = 0; i < bytes.byteLength; i++) { binary += String.fromCharCode(bytes[i]); } return window.btoa(binary); }
@@ -506,7 +528,6 @@ function showGradingView() {
     renderWorksheet(); 
 }
 function renderWorksheet() { const l=document.getElementById('problem-list-grade'); if(!l)return; l.innerHTML=""; transcribedProblems.forEach((p,i)=>{ l.innerHTML+=`<div class="problem-row"><div><span class="q-label">${p.label||'?'}</span>${p.question}</div><div style="display:flex;gap:5px"><input class="student-ans-input" value="${p.student_answer}" onchange="updateAns(${i},this.value)"><div class="judgment-mark ${p.status}">${p.status==='correct'?'⭕️':p.status==='incorrect'?'❌':''}</div><button class="mini-teach-btn" onclick="startHint(${p.id})">教えて</button></div></div>`; }); const f=document.createElement('div'); f.style.textAlign="center"; f.style.marginTop="20px"; f.innerHTML=`<button onclick="finishGrading()" class="main-btn orange-btn">✨ ぜんぶわかったにゃ！</button>`; l.appendChild(f); }
-
 function updateAns(i, v) { 
     transcribedProblems[i].student_answer = v; 
     const n = val => val.toString().replace(/\s/g, '').replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0)).replace(/cm|ｍ|ｍｍ|円|個|L/g, '').replace(/[×＊]/g, '*').replace(/[÷／]/g, '/');
@@ -522,7 +543,6 @@ function updateAns(i, v) {
     saveAndSync(); 
     renderWorksheet(); 
 }
-
 async function finishGrading() { await updateNellMessage("よくがんばったにゃ！お疲れさまにゃ✨", "excited"); if (currentUser) { currentUser.karikari += 100; saveAndSync(); updateMiniKarikari(); showKarikariEffect(100); } setTimeout(backToLobby, 2000); }
 function pressAllSolved() { currentUser.karikari+=100; saveAndSync(); backToLobby(); showKarikariEffect(100); }
 function pressThanks() { if(currentMode==='grade') showGradingView(); else backToProblemSelection(); }
@@ -534,8 +554,6 @@ function setSubject(s) {
     document.getElementById('upload-controls').classList.remove('hidden'); 
     updateNellMessage(`${currentSubject}の問題をみせてにゃ！`, "happy"); 
 }
-
-// ★修正: デフォルト1600pxに
 async function shrinkImage(file, maxSize = 1600) { 
     return new Promise((r)=>{ 
         const reader=new FileReader(); 
