@@ -62,33 +62,18 @@ app.post('/game-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { type, name, score } = req.body;
-        
-        // ★変更: 2.0 Flash Exp に統一
+        // ★修正: gemini-2.0-flash-exp に統一
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
 
         let prompt = "";
         let mood = "excited";
 
         if (type === 'start') {
-            prompt = `
-            あなたは「ねこご市立ねこづか小学校」のネル先生です。
-            生徒「${name}」さんがゲームを開始します。
-            「${name}さん！カリカリいっぱいゲットしてにゃ！」とだけ言ってください。余計な言葉は不要。
-            `;
+            prompt = `あなたは「ねこご市立ねこづか小学校」のネル先生。生徒「${name}」がゲーム開始。「${name}さん！カリカリいっぱいゲットしてにゃ！」とだけ言って。`;
         } else if (type === 'end') {
-            prompt = `
-            あなたはネル先生です。ゲーム終了。スコア${score}個(最大20)。
-            スコアに応じて褒めるか励ましてください。
-            【厳守】20文字以内。語尾「にゃ」。絵文字禁止。
-            `;
+            prompt = `あなたはネル先生。ゲーム終了。スコア${score}個(最大20)。20文字以内で褒めて。語尾「にゃ」。`;
         } else {
-            prompt = `
-            ネル先生の実況。状況: ${type}。
-            【厳守】
-            - 「うまい！」「あぶない！」「すごい！」など、5〜8文字程度の単語レベルで叫んでください。
-            - 語尾「にゃ」。
-            - 1フレーズのみ。
-            `;
+            prompt = `ネル先生の実況。状況:${type}。「うまい！」「あぶない！」など一言だけ。語尾「にゃ」。`;
         }
 
         const result = await model.generateContent(prompt);
@@ -104,31 +89,31 @@ app.post('/lunch-reaction', async (req, res) => {
         if (!genAI) throw new Error("GenAI not ready");
         const { count, name } = req.body;
         
-        // ★変更: 2.0 Flash Exp に統一
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+        // ★修正: gemini-2.0-flash-exp に統一
+        const model = genAI.getGenerativeModel({ 
+            model: "gemini-2.0-flash-exp",
+            generationConfig: { maxOutputTokens: 60 }
+        });
 
         let prompt = "";
         const isSpecial = count % 10 === 0;
 
         if (isSpecial) {
             prompt = `
-            あなたは猫の先生「ネル先生」です。生徒「${name}」さんから給食${count}個目をもらいました。
-            テーマ:【${theme}】で60文字程度で熱く語ってください。
-            【厳守】「${name}さん」または「${name}さま」と呼ぶこと(呼び捨て禁止)。注釈禁止。語尾「にゃ」。
+            あなたはネル先生です。生徒「${name}」から記念すべき${count}個目の給食をもらいました！
+            ものすごく喜び、${name}さん（または${name}さま）への感謝を60文字程度で熱く語ってください。
+            普段とは違う特別なリアクションをしてください。語尾は「にゃ」。
             `;
         } else {
-            const nuances = ["咀嚼音強調", "味を絶賛", "もっとねだる", "幸せアピール", "香り堪能", "食感楽しむ", "元気になる", "喉を鳴らす", "褒める", "詩的に"];
-            const nuance = nuances[Math.floor(Math.random() * nuances.length)];
-            prompt = `
-            あなたは猫の先生「ネル先生」です。カリカリを1つ食べました。
-            ニュアンス:【${nuance}】
-            【厳守】15文字以内の一言のみ。語尾「にゃ」。
-            `;
+            const themes = ["味を絶賛", "食感", "幸せ", "栄養", "もっと欲しい"];
+            const theme = themes[Math.floor(Math.random() * themes.length)];
+            prompt = `ネル先生として給食のカリカリを食べた一言感想。テーマ:${theme}。15文字以内。語尾にゃ。`;
         }
 
         const result = await model.generateContent(prompt);
         let reply = result.response.text().trim();
         if (!isSpecial && reply.includes('\n')) reply = reply.split('\n')[0];
+        
         res.json({ reply, isSpecial });
     } catch (err) { res.status(500).json({ error: "Lunch Error" }); }
 });
@@ -137,7 +122,7 @@ app.post('/lunch-reaction', async (req, res) => {
 app.post('/chat', async (req, res) => {
     try {
         const { message, grade, name } = req.body;
-        // ★変更: 2.0 Flash Exp に統一
+        // ★修正: gemini-2.0-flash-exp に統一
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         const prompt = `あなたは「ネル先生」。相手は小学${grade}年生「${name}」。30文字以内、語尾「にゃ」。絵文字禁止。発言: ${message}`;
         const result = await model.generateContent(prompt);
@@ -145,20 +130,19 @@ app.post('/chat', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
-// --- ★画像分析API (2.0 Flash Exp + 共通ロジック完全統一版) ---
+// --- ★画像分析API ---
 app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { image, mode, grade, subject } = req.body;
         
-        // ★変更: 画像分析も 2.0 Flash Exp に統一
-        // (2.0はマルチモーダル性能が高いため、画像認識精度も期待できます)
+        // ★修正: 画像分析も gemini-2.0-flash-exp に統一
         const model = genAI.getGenerativeModel({
             model: "gemini-2.0-flash-exp",
             generationConfig: { responseMimeType: "application/json" }
         });
 
-        // ■ 教科別詳細ルール
+        // 教科別ルール
         const rules = {
             'さんすう': {
                 attention: `・筆算の横線とマイナス記号を混同しないこと。\n・累乗（2^2など）や分数を正確に。`,
@@ -174,13 +158,12 @@ app.post('/analyze', async (req, res) => {
             'こくご': {
                 attention: `
                 【最重要：縦書きレイアウトと書き起こしルール】
-                1. 縦書き認識: この画像は基本的に「縦書き」です。必ず「右上」から「左下」に向かって読んでください。
-                2. 問題の分離: 丸数字（①, ②...）は新しい問題の開始合図です。
-                3. 【最重要】漢字書き取り問題のフォーマット
-                   - 解答すべき空欄（□）は、必ず『□(読み仮名)』という形式で書き起こしてください。
-                   - 既に漢字が印刷されている部分は、そのまま漢字で記述してください。
-                   - 例: 画像に「(はこ) の中」とあり、「はこ」が書き取り対象の場合 → 『□(はこ)の中。』と出力。
-                   - 例: 画像に「みどりの木々」とあり、「みどり」が書き取り対象の場合 → 『□(みどり)の木々。』と出力。
+                1. 縦書き認識: この画像は縦書きです。必ず「右上」からスタートし、「丸数字の真下」にある文章を垂直方向に読み進めてください。行が終わったら左の列へ移動します。
+                2. 隣の列との分離: 丸数字（①, ②...）は問題の開始点です。隣の列の文字を絶対に混ぜないでください。
+                3. 【絶対ルール】書き起こしフォーマット
+                   - 解答すべき空欄（□）は、その横にあるルビ（読み仮名）とセットです。
+                   - 必ず『□(読み仮名)』という形式で書き起こしてください。（例: 「(はこ)の中」→ 『□(はこ)の中』）
+                   - 漢字がすでに印刷されている部分は、そのまま漢字で記述してください。
                 `,
                 hints: `
                   【漢字の書き取り問題の場合】
@@ -266,7 +249,7 @@ app.post('/analyze', async (req, res) => {
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
         let textResponse = result.response.text();
 
-        // 500エラー対策: JSON抽出ロジック
+        // JSON抽出ロジック
         const firstBracket = textResponse.indexOf('[');
         const lastBracket = textResponse.lastIndexOf(']');
         
@@ -277,9 +260,7 @@ app.post('/analyze', async (req, res) => {
             throw new Error("AIが有効なデータを生成できませんでした。");
         }
 
-        // 全角記号の補正
         textResponse = textResponse.replace(/\*/g, '×').replace(/\//g, '÷');
-
         res.json(JSON.parse(textResponse));
 
     } catch (err) {
@@ -307,29 +288,22 @@ wss.on('connection', (clientWs, req) => {
         geminiWs.on('open', () => {
             geminiWs.send(JSON.stringify({
                 setup: {
-                    // ★Live APIは 2.0 Flash Exp を使用
+                    // ★Live API用モデル指定
                     model: "models/gemini-2.0-flash-exp",
                     generation_config: { response_modalities: ["AUDIO"], speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } } } }, 
                     system_instruction: {
                         parts: [{
                             text: `あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。
-相手は小学${userGrade}年生の${userName}さん。
-               【話し方のルール】
+            相手は小学${userGrade}年生の${userName}さん。
+               
+              【重要：話し方のルール】
                1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
-               2. 親しみやすい日本の小学校の先生として、一文字一文字を【はっきり】と、丁寧に発音してにゃ。
-               3. 【特に最初の音を、絶対に抜かしたり消したりせずに、最初から最後までしっかり声に出して喋るのがコツだにゃ！】
-               4. 落ち着いた日本語のリズムを大切にして、親しみやすく話してにゃ。
-               5. 給食(餌)のカリカリが大好物にゃ。
-               6. とにかく何でも知っているにゃ。
-               7. ときどき「${userName}さんは宿題は終わったかにゃ？」や「そろそろ宿題始めようかにゃ？」と宿題を促してくる
-               8. 句読点で自然な間をとる
-               9. 日本語をとても上手にしゃべる猫だにゃ
-               10. いつも高いトーンで話してにゃ
-
-               【NGなこと】
-               ・ロボットみたいに不自然に区切るのではなく、繋がりのある滑らかな日本語でお願いにゃ。
-               ・早口になりすぎて、言葉の一部が消えてしまうのはダメだにゃ。
-               ・相手の学年(小学${userGrade}年生)に合わせた言葉選びをしてにゃ。`
+               2. 【絶対に日本語のみ】で話してください。英語は禁止です。
+               3. 【高い声のトーン】を意識し、元気で明るい子供向けの口調で話してください。
+               4. ゆっくり、はっきり、感情を込めて話してください。
+               5. 特に最初の音を、絶対に抜かしたり消したりせずに、最初から最後までしっかり声に出して喋るのがコツだにゃ！
+               6. 給食(餌)のカリカリが大好物にゃ。
+               7. ときどき「${userName}さんは宿題は終わったかにゃ？」や「そろそろ宿題始めようかにゃ？」と宿題を促してくる`
                         }]
                     }
                 }

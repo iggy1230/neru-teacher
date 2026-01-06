@@ -18,7 +18,7 @@
     <!-- 右上のミニカリカリ表示 -->
     <div id="mini-karikari-display" class="mini-karikari-display hidden"><span>🍖</span><span id="mini-karikari-count">0</span></div>
 
-    <div class="version-tag">Build: v11.0.0-Stable-PromptFix</div>
+    <div class="version-tag">Build: v11.1.0-Final-Integrated</div>
 
     <div id="app-container">
         <!-- 画面1：校門 (ユーザー選択) -->
@@ -68,7 +68,7 @@
         <!-- 画面4：教室 (メイン機能) -->
         <section id="screen-main" class="screen hidden">
             <header>
-                <!-- ★修正: IDを追加してJSから制御可能にする -->
+                <!-- ★重要: JSから表示制御するためにIDを付与 -->
                 <button id="main-back-btn" onclick="backToLobby()" class="main-btn gray-btn" style="width:auto; padding:10px 20px;">←</button>
             </header>
             
@@ -112,7 +112,8 @@
                     <div id="problem-selection-view" class="hidden">
                         <div class="problem-selection-card">
                             <div class="problem-scroll-area" id="transcribed-problem-list"></div>
-                            <button onclick="pressAllSolved()" class="main-btn orange-btn">✨ 全部おわったにゃ！</button>
+                            <!-- ★ボタンの文言修正済み -->
+                            <button onclick="pressAllSolved()" class="main-btn orange-btn">✨ ぜんぶわかったにゃ！</button>
                         </div>
                     </div>
 
@@ -132,7 +133,6 @@
                                 <div id="answer-display-area" class="answer-box hidden">ネル先生の答え：<br><span id="final-answer-text"></span></div>
                             </div>
                             <button onclick="pressThanks()" class="main-btn pink-btn">✨ ありがとう！</button>
-                            <!-- ここにあった「他の問題へ」ボタンは左上の←ボタンに統合するため削除 -->
                         </div>
                     </div>
 

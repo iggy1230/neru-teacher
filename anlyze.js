@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版: 給食もぐもぐ修正 + 安定版) ---
+// --- anlyze.js (完全版) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -54,7 +54,6 @@ function startMouthAnimation() {
 }
 startMouthAnimation();
 
-// ★修正: メッセージ表示関数
 async function updateNellMessage(t, mood = "normal") {
     let targetId = 'nell-text';
     if (!document.getElementById('screen-game').classList.contains('hidden')) {
@@ -62,32 +61,26 @@ async function updateNellMessage(t, mood = "normal") {
     }
     const el = document.getElementById(targetId);
 
-    // AudioContextの初期化・再開
     if (!audioContext) {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         audioContext = new AudioCtx();
     }
     if (audioContext.state === 'suspended') {
-        // ユーザーインタラクションが必要な場合があるため、失敗しても続行
         await audioContext.resume().catch(()=>{});
     }
 
-    // 前の音声を停止
     if (currentTtsSource) {
         try { currentTtsSource.stop(); } catch(e){}
         currentTtsSource = null;
     }
     window.isNellSpeaking = false;
 
-    // ★重要修正: 「もぐもぐ」や「読み込み中」は音声合成せず即時表示する
-    // これにより、API待ち時間で無言・無表示になるのを防ぐ
     if (!t || t === "..." || t.includes("ちょっと待ってて") || t.includes("もぐもぐ")) {
         if (el) el.innerText = t;
         return;
     }
 
     try {
-        // 音声合成API呼び出し
         const response = await fetch('/synthesize', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -97,14 +90,12 @@ async function updateNellMessage(t, mood = "normal") {
         if (!response.ok) throw new Error("TTS Error");
         const data = await response.json();
         
-        // Base64デコード
         const binaryString = window.atob(data.audioContent);
         const len = binaryString.length;
         const bytes = new Uint8Array(len);
         for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
         const decodedBuffer = await audioContext.decodeAudioData(bytes.buffer);
 
-        // ★音声準備完了後にテキスト更新（同期）
         if (el) el.innerText = t;
 
         const source = audioContext.createBufferSource();
@@ -122,8 +113,6 @@ async function updateNellMessage(t, mood = "normal") {
         };
 
     } catch (e) {
-        console.error("Audio/Message Error:", e);
-        // ★エラー時もテキストだけは必ず表示する
         if (el) el.innerText = t;
         window.isNellSpeaking = false;
     }
@@ -134,7 +123,6 @@ function selectMode(m) {
     currentMode = m; 
     switchScreen('screen-main'); 
     
-    // UIリセット
     const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'lunch-view'];
     ids.forEach(id => { const el = document.getElementById(id); if (el) el.classList.add('hidden'); });
     
@@ -249,6 +237,7 @@ async function startMicrophone() {
         
         workletNode.port.onmessage = (event) => {
             const inputData = event.data;
+            
             let sum = 0; for(let i=0; i<inputData.length; i++) sum += inputData[i] * inputData[i];
             const volume = Math.sqrt(sum / inputData.length);
             const btn = document.getElementById('mic-btn');
@@ -289,7 +278,6 @@ function playLivePcmAudio(base64) {
 function giveLunch() {
     if (currentUser.karikari < 1) return updateNellMessage("カリカリがないにゃ……", "thinking");
     
-    // ★即時表示（TTSスキップ）
     updateNellMessage("もぐもぐ……", "normal");
     
     currentUser.karikari--; 
@@ -302,7 +290,6 @@ function giveLunch() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ count: lunchCount, name: currentUser.name })
     }).then(r=>r.json()).then(d=>{
-        // 1.5秒後に感想を再生
         setTimeout(() => {
             updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy");
         }, 1500); 
@@ -378,7 +365,7 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
     const up = document.getElementById('upload-controls'); if(up) up.classList.add('hidden');
     const th = document.getElementById('thinking-view'); if(th) th.classList.remove('hidden');
     
-    // 戻るボタンを隠す
+    // ★戻るボタンを隠す
     const backBtn = document.getElementById('main-back-btn');
     if(backBtn) backBtn.classList.add('hidden');
 
@@ -386,7 +373,6 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
     if (currentUser && currentSubject) {
         loadingMessage = `ちょっと待っててにゃ…\nふむふむ…\n${currentUser.grade}年生の${currentSubject}の問題だにゃ…`;
     }
-    // ここも即時表示
     updateNellMessage(loadingMessage, "thinking"); 
     
     updateProgress(0); 
@@ -412,15 +398,22 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
         clearInterval(timer); updateProgress(100);
         setTimeout(() => { 
             if(th) th.classList.add('hidden'); 
+            
+            // ★書き起こし完了後も「戻るボタン」は隠したままにする
             if(backBtn) backBtn.classList.add('hidden');
 
-            if (currentMode === 'explain' || currentMode === 'review') { renderProblemSelection(); updateNellMessage("問題が読めたにゃ！", "happy"); } 
-            else { showGradingView(); }
+            if (currentMode === 'explain' || currentMode === 'review') { 
+                renderProblemSelection(); 
+                updateNellMessage("問題が読めたにゃ！", "happy"); 
+            } else { 
+                showGradingView(); 
+            }
         }, 800);
     } catch (err) { 
         clearInterval(timer); 
         document.getElementById('thinking-view').classList.add('hidden'); 
         document.getElementById('upload-controls').classList.remove('hidden'); 
+        // エラー時は戻るボタンを復活させる
         if(backBtn) backBtn.classList.remove('hidden');
         updateNellMessage("エラーだにゃ…もう一回試してにゃ", "thinking"); 
     } finally { isAnalyzing = false; e.target.value=''; }
@@ -441,18 +434,25 @@ function startHint(id) {
     const board = document.getElementById('chalkboard'); if(board) { board.innerText = selectedProblem.question; board.classList.remove('hidden'); }
     const ansArea = document.getElementById('answer-display-area'); if(ansArea) ansArea.classList.add('hidden');
 
+    // ★ヒント画面では「戻るボタン」を表示し、クリックで「問題リスト」に戻るように上書き
     const backBtn = document.getElementById('main-back-btn');
     if (backBtn) {
         backBtn.classList.remove('hidden');
         backBtn.onclick = () => {
-            if (currentMode === 'grade') showGradingView();
-            else renderProblemSelection();
+            if (currentMode === 'explain' || currentMode === 'review') {
+                renderProblemSelection();
+            } else {
+                showGradingView();
+            }
             
+            // ヒント画面の要素を隠す
             document.getElementById('final-view').classList.add('hidden');
             document.getElementById('hint-detail-container').classList.add('hidden');
             document.getElementById('chalkboard').classList.add('hidden');
             
+            // ★リスト画面に戻ったら、また「戻るボタン」を隠す
             backBtn.classList.add('hidden');
+            
             updateNellMessage("他の問題も見るにゃ？", "normal");
         };
     }
@@ -488,15 +488,27 @@ function arrayBufferToBase64(buffer) { let binary = ''; const bytes = new Uint8A
 function updateMiniKarikari() { if(currentUser) { document.getElementById('mini-karikari-count').innerText = currentUser.karikari; document.getElementById('karikari-count').innerText = currentUser.karikari; } }
 function showKarikariEffect(amount) { const container = document.querySelector('.nell-avatar-wrap'); if(container) { const floatText = document.createElement('div'); floatText.className = 'floating-text'; floatText.innerText = amount > 0 ? `+${amount}` : `${amount}`; floatText.style.color = amount > 0 ? '#ff9100' : '#ff5252'; floatText.style.right = '0px'; floatText.style.top = '0px'; container.appendChild(floatText); setTimeout(() => floatText.remove(), 1500); } const heartCont = document.getElementById('heart-container'); if(heartCont) { for(let i=0; i<8; i++) { const heart = document.createElement('div'); heart.className = 'heart-particle'; heart.innerText = amount > 0 ? '✨' : '💗'; heart.style.left = (Math.random()*80 + 10) + '%'; heart.style.top = (Math.random()*50 + 20) + '%'; heart.style.animationDelay = (Math.random()*0.5) + 's'; heartCont.appendChild(heart); setTimeout(() => heart.remove(), 1500); } } }
 function revealAnswer() { document.getElementById('final-answer-text').innerText = selectedProblem.correct_answer; document.getElementById('answer-display-area').classList.remove('hidden'); document.getElementById('reveal-answer-btn').classList.add('hidden'); updateNellMessage("答えだにゃ", "gentle"); }
-function renderProblemSelection() { document.getElementById('problem-selection-view').classList.remove('hidden'); const l=document.getElementById('transcribed-problem-list'); l.innerHTML=""; transcribedProblems.forEach(p=>{ l.innerHTML += `<div class="prob-card"><div><span class="q-label">${p.label||'?'}</span>${p.question.substring(0,20)}...</div><button class="main-btn blue-btn" style="width:auto;padding:10px" onclick="startHint(${p.id})">教えて</button></div>`; }); }
+function renderProblemSelection() { 
+    document.getElementById('problem-selection-view').classList.remove('hidden'); 
+    
+    // ★リスト画面ではボタンを隠す
+    const backBtn = document.getElementById('main-back-btn');
+    if(backBtn) backBtn.classList.add('hidden');
+
+    const l=document.getElementById('transcribed-problem-list'); l.innerHTML=""; 
+    transcribedProblems.forEach(p=>{ l.innerHTML += `<div class="prob-card"><div><span class="q-label">${p.label||'?'}</span>${p.question.substring(0,20)}...</div><button class="main-btn blue-btn" style="width:auto;padding:10px" onclick="startHint(${p.id})">教えて</button></div>`; }); 
+}
+
 function showGradingView() { 
     document.getElementById('grade-sheet-container').classList.remove('hidden'); 
     document.getElementById('final-view').classList.remove('hidden');
+    // ★採点画面でも戻るボタンは隠す
     const backBtn = document.getElementById('main-back-btn');
     if(backBtn) backBtn.classList.add('hidden');
     renderWorksheet(); 
 }
-function renderWorksheet() { const l=document.getElementById('problem-list-grade'); if(!l)return; l.innerHTML=""; transcribedProblems.forEach((p,i)=>{ l.innerHTML+=`<div class="problem-row"><div><span class="q-label">${p.label||'?'}</span>${p.question}</div><div style="display:flex;gap:5px"><input class="student-ans-input" value="${p.student_answer}" onchange="updateAns(${i},this.value)"><div class="judgment-mark ${p.status}">${p.status==='correct'?'⭕️':p.status==='incorrect'?'❌':''}</div><button class="mini-teach-btn" onclick="startHint(${p.id})">教えて</button></div></div>`; }); const f=document.createElement('div'); f.style.textAlign="center"; f.style.marginTop="20px"; f.innerHTML=`<button onclick="finishGrading()" class="main-btn orange-btn">✨ 全部わかった！</button>`; l.appendChild(f); }
+
+function renderWorksheet() { const l=document.getElementById('problem-list-grade'); if(!l)return; l.innerHTML=""; transcribedProblems.forEach((p,i)=>{ l.innerHTML+=`<div class="problem-row"><div><span class="q-label">${p.label||'?'}</span>${p.question}</div><div style="display:flex;gap:5px"><input class="student-ans-input" value="${p.student_answer}" onchange="updateAns(${i},this.value)"><div class="judgment-mark ${p.status}">${p.status==='correct'?'⭕️':p.status==='incorrect'?'❌':''}</div><button class="mini-teach-btn" onclick="startHint(${p.id})">教えて</button></div></div>`; }); const f=document.createElement('div'); f.style.textAlign="center"; f.style.marginTop="20px"; f.innerHTML=`<button onclick="finishGrading()" class="main-btn orange-btn">✨ ぜんぶわかったにゃ！</button>`; l.appendChild(f); }
 
 function updateAns(i, v) { 
     transcribedProblems[i].student_answer = v; 
