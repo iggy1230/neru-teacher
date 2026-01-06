@@ -1,4 +1,4 @@
-// --- user.js (完全版: 猫耳拡大・フリーズ対策・UI調整) ---
+// --- user.js (完全版: 容量対策強化 v12.1) ---
 
 let users = JSON.parse(localStorage.getItem('nekoneko_users')) || [];
 let currentUser = null;
@@ -35,7 +35,8 @@ async function loadFaceModels() {
     }
 }
 
-async function resizeImageForProcessing(img, maxSize = 600) {
+// ★修正: 容量対策のため、保存用画像サイズを 400px まで縮小
+async function resizeImageForProcessing(img, maxSize = 400) {
     return new Promise((resolve) => {
         let width = img.width;
         let height = img.height;
@@ -49,7 +50,8 @@ async function resizeImageForProcessing(img, maxSize = 600) {
         ctx.drawImage(img, 0, 0, width, height);
         const resizedImg = new Image();
         resizedImg.onload = () => resolve(resizedImg);
-        resizedImg.src = canvas.toDataURL('image/jpeg', 0.7);
+        // ★修正: 画質を 0.5 まで下げてファイルサイズを削減
+        resizedImg.src = canvas.toDataURL('image/jpeg', 0.5);
     });
 }
 
@@ -162,7 +164,8 @@ async function processAndCompleteEnrollment() {
         }
         await new Promise(r => originalImg.onload = r);
 
-        const sourceImg = await resizeImageForProcessing(originalImg, 600);
+        // ★修正: 400pxにリサイズ
+        const sourceImg = await resizeImageForProcessing(originalImg, 400);
 
         let sx = 0, sy = 0, sWidth = sourceImg.width, sHeight = sourceImg.height;
         let detection = null;
@@ -194,11 +197,16 @@ async function processAndCompleteEnrollment() {
         }
 
         const canvas = document.getElementById('deco-canvas');
-        canvas.width = 800; canvas.height = 800;
+        canvas.width = 640; canvas.height = 400; // 合成先キャンバス
         const ctx = canvas.getContext('2d');
-        ctx.drawImage(idBase, 0, 0, 800, 800);
         
-        const destX = 52, destY = 332, destW = 235, destH = 255;
+        // ベース画像（横長）をフィットさせる
+        ctx.drawImage(idBase, 0, 0, 640, 400);
+        
+        // ★修正: CSSのプレビュー位置に合わせて座標調整 (640x400ベース)
+        // CSSでの位置 (320x220) のおよそ2倍
+        const destX = 44, destY = 170, destW = 160, destH = 160;
+        
         ctx.save();
         ctx.beginPath();
         ctx.rect(destX, destY, destW, destH);
@@ -213,29 +221,28 @@ async function processAndCompleteEnrollment() {
             const leftEyeBrow = landmarks.getLeftEyeBrow()[2];
             const rightEyeBrow = landmarks.getRightEyeBrow()[2];
             
-            // ★修正: 猫耳とマズルを大きく
             const noseX = (nose.x - sx) * scale + destX;
             const noseY = (nose.y - sy) * scale + destY;
-            const muzW = detection.detection.box.width * 0.8 * scale; // 0.6 -> 0.8
+            const muzW = detection.detection.box.width * 0.8 * scale;
             const muzH = muzW * 0.8;
             if (decoMuzzle.complete) ctx.drawImage(decoMuzzle, noseX - (muzW/2), noseY - (muzH/2.5), muzW, muzH);
             
             const browX = ((leftEyeBrow.x + rightEyeBrow.x) / 2 - sx) * scale + destX;
             const browY = ((leftEyeBrow.y + rightEyeBrow.y) / 2 - sy) * scale + destY;
-            const earW = detection.detection.box.width * 2.2 * scale; // 1.8 -> 2.2
+            const earW = detection.detection.box.width * 2.2 * scale;
             const earH = earW * 0.7;
             if (decoEars.complete) ctx.drawImage(decoEars, browX - (earW/2), browY - earH + 10, earW, earH);
         }
 
         ctx.fillStyle = "#333"; 
-        ctx.font = "bold 42px 'M PLUS Rounded 1c', sans-serif"; 
-        // ★修正: 文字位置を20px上に (375->355, 485->465)
-        ctx.fillText(grade + "年生", 475, 355); 
-        ctx.fillText(name, 475, 465);
+        ctx.font = "bold 32px 'M PLUS Rounded 1c', sans-serif"; 
+        // ★修正: テキスト位置合わせ
+        ctx.fillText(grade + "年生", 380, 196); 
+        ctx.fillText(name, 380, 276);
 
         const newUser = { 
             id: Date.now(), name, grade, 
-            photo: canvas.toDataURL('image/jpeg', 0.6), 
+            photo: canvas.toDataURL('image/jpeg', 0.5), // 画質を下げて容量削減
             karikari: 100, 
             history: {}, mistakes: [], attendance: {},
             memory: "今日初めて会ったにゃ。よろしくにゃ！" 
@@ -254,7 +261,12 @@ async function processAndCompleteEnrollment() {
         switchScreen('screen-gate');
 
     } catch (err) {
-        alert("エラーが発生したにゃ……\n" + err.message);
+        // ★修正: 容量エラー時の案内
+        if (err.name === 'QuotaExceededError') {
+            alert("データがいっぱいで保存できないにゃ。\nトップページで古い学生証の「×」ボタンを押して削除してから、もう一度試してにゃ！");
+        } else {
+            alert("エラーが発生したにゃ……\n" + err.message);
+        }
     } finally {
         btn.disabled = false;
         btn.innerText = "入学する！";
@@ -291,7 +303,6 @@ function login(user) {
     const karikari = document.getElementById('karikari-count');
     if (karikari) karikari.innerText = user.karikari || 0;
     
-    // 出席ボーナス
     const today = new Date().toISOString().split('T')[0];
     let isBonus = false;
 
