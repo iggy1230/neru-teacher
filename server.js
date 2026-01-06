@@ -62,7 +62,7 @@ app.post('/game-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { type, name, score } = req.body;
-        // ★修正: gemini-2.0-flash-exp に統一
+        // ★修正: 2.0 Flash Exp に統一
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
 
         let prompt = "";
@@ -89,10 +89,10 @@ app.post('/lunch-reaction', async (req, res) => {
         if (!genAI) throw new Error("GenAI not ready");
         const { count, name } = req.body;
         
-        // ★修正: gemini-2.0-flash-exp に統一
+        // ★修正: 2.0 Flash Exp に統一
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp",
-            generationConfig: { maxOutputTokens: 60 }
+            generationConfig: { maxOutputTokens: 60 } 
         });
 
         let prompt = "";
@@ -113,7 +113,6 @@ app.post('/lunch-reaction', async (req, res) => {
         const result = await model.generateContent(prompt);
         let reply = result.response.text().trim();
         if (!isSpecial && reply.includes('\n')) reply = reply.split('\n')[0];
-        
         res.json({ reply, isSpecial });
     } catch (err) { res.status(500).json({ error: "Lunch Error" }); }
 });
@@ -122,7 +121,7 @@ app.post('/lunch-reaction', async (req, res) => {
 app.post('/chat', async (req, res) => {
     try {
         const { message, grade, name } = req.body;
-        // ★修正: gemini-2.0-flash-exp に統一
+        // ★修正: 2.0 Flash Exp に統一
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         const prompt = `あなたは「ネル先生」。相手は小学${grade}年生「${name}」。30文字以内、語尾「にゃ」。絵文字禁止。発言: ${message}`;
         const result = await model.generateContent(prompt);
@@ -136,13 +135,12 @@ app.post('/analyze', async (req, res) => {
         if (!genAI) throw new Error("GenAI not ready");
         const { image, mode, grade, subject } = req.body;
         
-        // ★修正: 画像分析も gemini-2.0-flash-exp に統一
+        // ★修正: 2.0 Flash Exp に統一
         const model = genAI.getGenerativeModel({
             model: "gemini-2.0-flash-exp",
             generationConfig: { responseMimeType: "application/json" }
         });
 
-        // 教科別ルール
         const rules = {
             'さんすう': {
                 attention: `・筆算の横線とマイナス記号を混同しないこと。\n・累乗（2^2など）や分数を正確に。`,
@@ -222,7 +220,7 @@ app.post('/analyze', async (req, res) => {
 
             【ヒント生成ルール（答えのネタバレ厳禁）】
             以下の指針に従い、3段階のヒントを作成してください。
-            ⚠️重要: ヒント3であっても、「正解の漢字そのもの」や「答えの単語」は絶対に含まないでください。
+            ⚠️重要: ヒント3であっても、「正解の漢字そのもの」や「答えの単語」は絶対に含まないでください。「答えに近いヒント」とは、答えを連想させる情報のことです。
             ${r.hints}
 
             【出力フォーマット】
@@ -233,7 +231,7 @@ app.post('/analyze', async (req, res) => {
                 "id": 1,
                 "label": "①", 
                 "question": "問題文。※国語の漢字書き取り問題の場合、必ず『□(ふりがな)』という形式で空欄を明示すること。（例: □(はこ)の中）",
-                "correct_answer": "正解",
+                "correct_answer": "正解（※必須。絶対に空欄にしないこと。画像に答えがなくても文脈から推測して解くこと。）",
                 "student_answer": "生徒の答え（解説モードなら空文字）",
                 "hints": [
                     "ヒント1: ...",
@@ -249,15 +247,19 @@ app.post('/analyze', async (req, res) => {
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
         let textResponse = result.response.text();
 
-        // JSON抽出ロジック
+        // 500エラー対策: JSON抽出
         const firstBracket = textResponse.indexOf('[');
         const lastBracket = textResponse.lastIndexOf(']');
         
         if (firstBracket !== -1 && lastBracket !== -1) {
             textResponse = textResponse.substring(firstBracket, lastBracket + 1);
         } else {
-            console.error("Invalid JSON format from Gemini:", textResponse);
-            throw new Error("AIが有効なデータを生成できませんでした。");
+            console.error("Invalid JSON:", textResponse);
+            res.json([{
+                id: 1, label: "?", question: "読み取りに失敗したにゃ。もう一度試してにゃ。", 
+                correct_answer: "", student_answer: "", hints: ["ごめんにゃ", "写真を変えてみて", "もう一回！"]
+            }]);
+            return;
         }
 
         textResponse = textResponse.replace(/\*/g, '×').replace(/\//g, '÷');
@@ -288,13 +290,13 @@ wss.on('connection', (clientWs, req) => {
         geminiWs.on('open', () => {
             geminiWs.send(JSON.stringify({
                 setup: {
-                    // ★Live API用モデル指定
+                    // ★Live APIは 2.0 Flash Exp (変更なし)
                     model: "models/gemini-2.0-flash-exp",
                     generation_config: { response_modalities: ["AUDIO"], speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } } } }, 
                     system_instruction: {
                         parts: [{
                             text: `あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。
-            相手は小学${userGrade}年生の${userName}さん。
+相手は小学${userGrade}年生の${userName}さん。
                
               【重要：話し方のルール】
                1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
