@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版: テキスト・音声完全同期) ---
+// --- anlyze.js (完全版: 音声同期・給食修正・マイク可視化) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -8,18 +8,14 @@ let currentSubject = '';
 let currentMode = ''; 
 let lunchCount = 0; 
 
-// Live Chat Variables
 let liveSocket = null;
 let audioContext = null;
 let mediaStream = null;
 let workletNode = null;
 let nextStartTime = 0;
 let stopSpeakingTimer = null;
-
-// TTS制御用 (音声とテキストの同期のため)
 let currentTtsSource = null;
 
-// Game Variables
 let gameCanvas, ctx, ball, paddle, bricks, score, gameRunning = false, gameAnimId = null;
 
 const gameHitComments = [
@@ -34,7 +30,6 @@ const subjectImages = {
 const defaultIcon = 'nell-normal.png'; 
 const talkIcon = 'nell-talk.png';
 
-// 口パクアニメーション
 function startMouthAnimation() {
     let toggle = false;
     setInterval(() => {
@@ -59,16 +54,13 @@ function startMouthAnimation() {
 }
 startMouthAnimation();
 
-// ★修正: テキスト表示と音声再生を完全に同期させる関数
 async function updateNellMessage(t, mood = "normal") {
-    // ターゲット要素の特定
     let targetId = 'nell-text';
     if (!document.getElementById('screen-game').classList.contains('hidden')) {
         targetId = 'nell-text-game';
     }
     const el = document.getElementById(targetId);
 
-    // オーディオコンテキストの準備
     if (!audioContext) {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         audioContext = new AudioCtx();
@@ -77,21 +69,18 @@ async function updateNellMessage(t, mood = "normal") {
         await audioContext.resume();
     }
 
-    // 前の音声を停止
     if (currentTtsSource) {
         try { currentTtsSource.stop(); } catch(e){}
         currentTtsSource = null;
     }
     window.isNellSpeaking = false;
 
-    // テキストが短い、または読み込み中の場合は即時表示して終了（TTSなし）
     if (!t || t === "..." || t.includes("ちょっと待ってて")) {
         if (el) el.innerText = t;
         return;
     }
 
     try {
-        // 1. 音声を先に取得 (この間、テキストはまだ更新しない)
         const response = await fetch('/synthesize', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -100,17 +89,12 @@ async function updateNellMessage(t, mood = "normal") {
 
         if (!response.ok) throw new Error("TTS Error");
         const data = await response.json();
-
-        // Base64 (MP3) をデコード
         const binaryString = window.atob(data.audioContent);
         const len = binaryString.length;
         const bytes = new Uint8Array(len);
-        for (let i = 0; i < len; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-        }
+        for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
         const decodedBuffer = await audioContext.decodeAudioData(bytes.buffer);
 
-        // 2. 音声の準備ができたら、テキストを表示して再生開始 (同期)
         if (el) el.innerText = t;
 
         const source = audioContext.createBufferSource();
@@ -118,20 +102,16 @@ async function updateNellMessage(t, mood = "normal") {
         source.connect(audioContext.destination);
         currentTtsSource = source;
 
-        // 口パク開始
         window.isNellSpeaking = true;
         if (stopSpeakingTimer) clearTimeout(stopSpeakingTimer);
 
         source.start(0);
-
         source.onended = () => {
             stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, 200);
             currentTtsSource = null;
         };
 
     } catch (e) {
-        console.error("Audio Sync Error:", e);
-        // エラー時はテキストだけ表示
         if (el) el.innerText = t;
         window.isNellSpeaking = false;
     }
@@ -142,11 +122,9 @@ function selectMode(m) {
     currentMode = m; 
     switchScreen('screen-main'); 
     
-    // UIリセット
     const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'lunch-view'];
     ids.forEach(id => { const el = document.getElementById(id); if (el) el.classList.add('hidden'); });
     
-    // 戻るボタン設定
     const backBtn = document.getElementById('main-back-btn');
     if (backBtn) {
         backBtn.classList.remove('hidden');
@@ -220,7 +198,7 @@ async function startLiveChat() {
                 await startMicrophone();
             }
             if (data.serverContent?.modelTurn?.parts?.[0]?.inlineData) {
-                // Live APIの場合は専用の再生関数を使う
+                // LiveAPIはPCMを直接流すのでTTS関数は使わない
                 playLivePcmAudio(data.serverContent.modelTurn.parts[0].inlineData.data);
             }
         };
@@ -259,8 +237,6 @@ async function startMicrophone() {
         
         workletNode.port.onmessage = (event) => {
             const inputData = event.data;
-            
-            // マイク入力インジケーター
             let sum = 0; for(let i=0; i<inputData.length; i++) sum += inputData[i] * inputData[i];
             const volume = Math.sqrt(sum / inputData.length);
             const btn = document.getElementById('mic-btn');
@@ -273,8 +249,6 @@ async function startMicrophone() {
                     btn.style.transform = "scale(1)";
                 }
             }
-
-            // 1秒遅延して送信
             setTimeout(() => {
                 if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return;
                 const downsampled = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
@@ -286,7 +260,6 @@ async function startMicrophone() {
     } catch(e) { updateNellMessage("マイクエラー", "thinking"); }
 }
 
-// Live Chat用のPCM再生（TTSとは別）
 function playLivePcmAudio(base64) { 
     if (!audioContext) return; 
     const binary = window.atob(base64); 
@@ -303,7 +276,7 @@ function playLivePcmAudio(base64) {
 function giveLunch() {
     if (currentUser.karikari < 1) return updateNellMessage("カリカリがないにゃ……", "thinking");
     
-    // 即座に「もぐもぐ」を表示・再生
+    // ★修正: 先に「もぐもぐ」と言って間を持たせる
     updateNellMessage("もぐもぐ……", "normal");
     
     currentUser.karikari--; 
@@ -316,11 +289,16 @@ function giveLunch() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ count: lunchCount, name: currentUser.name })
     }).then(r=>r.json()).then(d=>{
-        // 1.5秒後に感想を再生（updateNellMessageが同期してくれるのでテキストも同時に出る）
+        // 2秒待ってからAPIの返答（感想）を言う
         setTimeout(() => {
             updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy");
-        }, 1500); 
-    }).catch(e=>{ updateNellMessage("おいしいにゃ！", "happy"); });
+        }, 2000); 
+    }).catch(e=>{ 
+        // エラー時も「もぐもぐ」の後にセリフ
+        setTimeout(() => {
+            updateNellMessage("おいしいにゃ！", "happy");
+        }, 2000);
+    });
 }
 
 // 4. ミニゲーム
@@ -422,7 +400,7 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
         setTimeout(() => { 
             if(th) th.classList.add('hidden'); 
             
-            // 完了後も戻るボタンは隠す
+            // 書き起こし後も戻るボタンは隠したまま
             if(backBtn) backBtn.classList.add('hidden');
 
             if (currentMode === 'explain' || currentMode === 'review') { renderProblemSelection(); updateNellMessage("問題が読めたにゃ！", "happy"); } 
