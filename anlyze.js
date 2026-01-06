@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版: 音声遅延250ms + 効果音) ---
+// --- anlyze.js (完全版: 画像サイズ1600px + その他機能維持) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -80,11 +80,12 @@ async function updateNellMessage(t, mood = "normal") {
     }
     window.isNellSpeaking = false;
 
-    // ★もぐもぐ音
+    // もぐもぐ音
     if (t && t.includes("もぐもぐ")) {
         try { sfxBori.currentTime = 0; sfxBori.play(); } catch(e){}
     }
 
+    // 即時表示対象
     if (!t || t === "..." || t.includes("ちょっと待ってて") || t.includes("もぐもぐ")) {
         if (el) el.innerText = t;
         return;
@@ -99,7 +100,6 @@ async function updateNellMessage(t, mood = "normal") {
 
         if (!response.ok) throw new Error("TTS Error");
         const data = await response.json();
-        
         const binaryString = window.atob(data.audioContent);
         const len = binaryString.length;
         const bytes = new Uint8Array(len);
@@ -209,7 +209,7 @@ async function startLiveChat() {
                 await startMicrophone();
             }
             if (data.serverContent?.modelTurn?.parts?.[0]?.inlineData) {
-                playPcmAudio(data.serverContent.modelTurn.parts[0].inlineData.data);
+                playLivePcmAudio(data.serverContent.modelTurn.parts[0].inlineData.data);
             }
         };
         liveSocket.onclose = () => { stopLiveChat(); if(btn) btn.innerText = "接続切れちゃった…"; };
@@ -230,6 +230,7 @@ function stopLiveChat() {
         btn.disabled = false; 
         btn.onclick = startLiveChat;
         btn.style.boxShadow = "none";
+        btn.style.transform = "scale(1)";
     }
 }
 
@@ -247,16 +248,21 @@ async function startMicrophone() {
         workletNode.port.onmessage = (event) => {
             const inputData = event.data;
             
-            // マイク可視化
+            // マイク入力インジケーター
             let sum = 0; for(let i=0; i<inputData.length; i++) sum += inputData[i] * inputData[i];
             const volume = Math.sqrt(sum / inputData.length);
             const btn = document.getElementById('mic-btn');
             if (btn) {
-                if (volume > 0.01) btn.style.boxShadow = `0 0 ${10 + volume * 500}px #ffeb3b`;
-                else btn.style.boxShadow = "none";
+                if (volume > 0.01) {
+                    btn.style.boxShadow = `0 0 ${10 + volume * 500}px #ffeb3b`;
+                    btn.style.transform = "scale(1.05)";
+                } else {
+                    btn.style.boxShadow = "none";
+                    btn.style.transform = "scale(1)";
+                }
             }
 
-            // ★修正: 250msに短縮
+            // 250ms遅延送信
             setTimeout(() => {
                 if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return;
                 const downsampled = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
@@ -268,7 +274,7 @@ async function startMicrophone() {
     } catch(e) { updateNellMessage("マイクエラー", "thinking"); }
 }
 
-function playPcmAudio(base64) { 
+function playLivePcmAudio(base64) { 
     if (!audioContext) return; 
     const binary = window.atob(base64); 
     const bytes = new Uint8Array(binary.length); 
@@ -283,7 +289,9 @@ function playPcmAudio(base64) {
 // 3. 給食機能
 function giveLunch() {
     if (currentUser.karikari < 1) return updateNellMessage("カリカリがないにゃ……", "thinking");
+    
     updateNellMessage("もぐもぐ……", "normal");
+    
     currentUser.karikari--; 
     saveAndSync(); 
     updateMiniKarikari(); 
@@ -342,7 +350,7 @@ function drawGame() {
         if(b.status === 1 && ball.x>b.x && ball.x<b.x+40 && ball.y>b.y && ball.y<b.y+30){
             ball.dy*=-1; b.status=0; score++; document.getElementById('game-score').innerText=score;
             
-            // ★ヒット音
+            // ヒット音
             try { sfxHit.currentTime=0; sfxHit.play(); } catch(e){}
             
             if (Math.random() > 0.7 && !window.isNellSpeaking) {
@@ -357,7 +365,7 @@ function drawGame() {
     else if(ball.y+ball.dy > gameCanvas.height - ball.r - 20) {
         if(ball.x > paddle.x && ball.x < paddle.x + paddle.w) { ball.dy *= -1; ball.dx = (ball.x - (paddle.x+paddle.w/2)) * 0.15; } 
         else if(ball.y+ball.dy > gameCanvas.height-ball.r) { 
-            // ★ゲームオーバー音
+            // ゲームオーバー音
             try { sfxOver.currentTime=0; sfxOver.play(); } catch(e){}
             endGame(false); return; 
         }
@@ -390,7 +398,8 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
     updateProgress(0); 
     let p = 0; const timer = setInterval(() => { if (p < 90) { p += 3; updateProgress(p); } }, 500);
     try {
-        const b64 = await shrinkImage(e.target.files[0]);
+        // ★修正: 1600pxに拡大
+        const b64 = await shrinkImage(e.target.files[0], 1600);
         const res = await fetch('/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: b64, mode: currentMode, grade: currentUser.grade, subject: currentSubject }) });
         
         if (!res.ok) {
@@ -525,5 +534,27 @@ function setSubject(s) {
     document.getElementById('upload-controls').classList.remove('hidden'); 
     updateNellMessage(`${currentSubject}の問題をみせてにゃ！`, "happy"); 
 }
-async function shrinkImage(file) { return new Promise((r)=>{ const reader=new FileReader(); reader.readAsDataURL(file); reader.onload=e=>{ const img=new Image(); img.onload=()=>{ const c=document.createElement('canvas'); let w=img.width,h=img.height; if(w>1600||h>1600){if(w>h){h*=1600/w;w=1600}else{w*=1600/h;h=1600}} c.width=w;c.height=h; c.getContext('2d').drawImage(img,0,0,w,h); r(c.toDataURL('image/jpeg',0.9).split(',')[1]); }; img.src=e.target.result; }; }); }
+
+// ★修正: デフォルト1600pxに
+async function shrinkImage(file, maxSize = 1600) { 
+    return new Promise((r)=>{ 
+        const reader=new FileReader(); 
+        reader.readAsDataURL(file); 
+        reader.onload=e=>{ 
+            const img=new Image(); 
+            img.onload=()=>{ 
+                const c=document.createElement('canvas'); 
+                let w=img.width,h=img.height; 
+                if(w>maxSize || h>maxSize){
+                    if(w>h){ h*=maxSize/w; w=maxSize; }
+                    else{ w*=maxSize/h; h=maxSize; }
+                } 
+                c.width=w;c.height=h; 
+                c.getContext('2d').drawImage(img,0,0,w,h); 
+                r(c.toDataURL('image/jpeg',0.9).split(',')[1]); 
+            }; 
+            img.src=e.target.result; 
+        }; 
+    }); 
+}
 function renderMistakeSelection() { if (!currentUser.mistakes || currentUser.mistakes.length === 0) { updateNellMessage("ノートは空っぽにゃ！", "happy"); setTimeout(backToLobby, 2000); return; } transcribedProblems = currentUser.mistakes; renderProblemSelection(); updateNellMessage("復習するにゃ？", "excited"); }
