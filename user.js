@@ -1,9 +1,9 @@
-// --- user.js (完全版: 入学カメラ対応 + カリカリ表示) ---
+// --- user.js (完全版: 猫耳拡大・フリーズ対策・UI調整) ---
 
 let users = JSON.parse(localStorage.getItem('nekoneko_users')) || [];
 let currentUser = null;
 let modelsLoaded = false;
-let enrollFile = null; // 入学用の一時ファイル保持
+let enrollFile = null;
 
 const idBase = new Image(); idBase.src = 'student-id-base.png';
 const decoEars = new Image(); decoEars.src = 'ears.png';
@@ -35,7 +35,6 @@ async function loadFaceModels() {
     }
 }
 
-// 画像リサイズ
 async function resizeImageForProcessing(img, maxSize = 600) {
     return new Promise((resolve) => {
         let width = img.width;
@@ -54,7 +53,6 @@ async function resizeImageForProcessing(img, maxSize = 600) {
     });
 }
 
-// プレビュー描画共通関数
 function drawPreview(img) {
     const canvas = document.getElementById('id-photo-preview-canvas');
     if (!canvas) return;
@@ -66,11 +64,10 @@ function drawPreview(img) {
     ctx.drawImage(img, sx, sy, size, size, 0, 0, canvas.width, canvas.height);
 }
 
-// 入学用写真入力の設定
 function setupEnrollmentPhotoInputs() {
     const handleFile = (file) => {
         if (!file) return;
-        enrollFile = file; // グローバルに保持
+        enrollFile = file;
         const reader = new FileReader();
         reader.onload = (e) => {
             const img = new Image();
@@ -80,31 +77,20 @@ function setupEnrollmentPhotoInputs() {
         reader.readAsDataURL(file);
     };
 
-    // 1. Webカメラ (アプリ内)
     const webCamBtn = document.getElementById('enroll-webcam-btn');
     if (webCamBtn) {
         webCamBtn.addEventListener('click', () => {
-            // anlyze.jsのstartWebCameraを呼び出すが、完了後のコールバックが必要
-            // 簡易的にanlyze.jsの関数をフックする形にするか、ここで実装するか。
-            // ここでは user.js 内で完結するようにWebカメラ処理を呼び出す
             startEnrollmentWebCamera(handleFile);
         });
     }
-
-    // 2. 標準カメラ
     const camInput = document.getElementById('student-photo-input-camera');
     if (camInput) camInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
-
-    // 3. アルバム
     const albInput = document.getElementById('student-photo-input-album');
     if (albInput) albInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
-    
-    // 旧
     const oldInput = document.getElementById('student-photo-input');
     if (oldInput) oldInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
 }
 
-// 入学用Webカメラ処理 (anlyze.jsとは独立して動作させる)
 let enrollStream = null;
 async function startEnrollmentWebCamera(callback) {
     const modal = document.getElementById('camera-modal');
@@ -115,20 +101,17 @@ async function startEnrollmentWebCamera(callback) {
     if (!modal || !video) return;
 
     try {
-        // 自撮り優先
         const constraints = { video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } } };
         enrollStream = await navigator.mediaDevices.getUserMedia(constraints);
         video.srcObject = enrollStream;
         video.onloadedmetadata = () => { video.play(); };
         modal.classList.remove('hidden');
 
-        // シャッター動作定義
         const takePic = () => {
             const canvas = document.getElementById('camera-canvas');
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
             canvas.getContext('2d').drawImage(video, 0, 0);
-            
             canvas.toBlob((blob) => {
                 const file = new File([blob], "enroll_capture.jpg", { type: "image/jpeg" });
                 closeEnrollCamera();
@@ -136,7 +119,6 @@ async function startEnrollmentWebCamera(callback) {
             }, 'image/jpeg', 0.9);
         };
 
-        // イベント上書き (removeEventListenerが面倒なのでonclick使用)
         shutter.onclick = takePic;
         cancel.onclick = closeEnrollCamera;
 
@@ -172,17 +154,14 @@ async function processAndCompleteEnrollment() {
     try {
         if (!idBase.complete) await new Promise(r => idBase.onload = r);
         
-        // 画像取得
         let originalImg = new Image();
         if (enrollFile) {
             originalImg.src = URL.createObjectURL(enrollFile);
         } else {
-            // ファイルがない場合はプレビューCanvasから取得
             originalImg.src = document.getElementById('id-photo-preview-canvas').toDataURL();
         }
         await new Promise(r => originalImg.onload = r);
 
-        // リサイズ
         const sourceImg = await resizeImageForProcessing(originalImg, 600);
 
         let sx = 0, sy = 0, sWidth = sourceImg.width, sHeight = sourceImg.height;
@@ -203,7 +182,6 @@ async function processAndCompleteEnrollment() {
                     sy = faceCenterY - (cropSize / 2);
                     sWidth = cropSize; sHeight = cropSize;
                 } else {
-                     // 中央クロップ
                      const size = Math.min(sourceImg.width, sourceImg.height) * 0.8;
                      sx = (sourceImg.width - size) / 2; sy = (sourceImg.height - size) / 2;
                      sWidth = size; sHeight = size;
@@ -234,22 +212,26 @@ async function processAndCompleteEnrollment() {
             const nose = landmarks.getNose()[3];
             const leftEyeBrow = landmarks.getLeftEyeBrow()[2];
             const rightEyeBrow = landmarks.getRightEyeBrow()[2];
+            
+            // ★修正: 猫耳とマズルを大きく
             const noseX = (nose.x - sx) * scale + destX;
             const noseY = (nose.y - sy) * scale + destY;
-            const muzW = detection.detection.box.width * 0.6 * scale;
+            const muzW = detection.detection.box.width * 0.8 * scale; // 0.6 -> 0.8
             const muzH = muzW * 0.8;
             if (decoMuzzle.complete) ctx.drawImage(decoMuzzle, noseX - (muzW/2), noseY - (muzH/2.5), muzW, muzH);
+            
             const browX = ((leftEyeBrow.x + rightEyeBrow.x) / 2 - sx) * scale + destX;
             const browY = ((leftEyeBrow.y + rightEyeBrow.y) / 2 - sy) * scale + destY;
-            const earW = detection.detection.box.width * 1.8 * scale;
+            const earW = detection.detection.box.width * 2.2 * scale; // 1.8 -> 2.2
             const earH = earW * 0.7;
             if (decoEars.complete) ctx.drawImage(decoEars, browX - (earW/2), browY - earH + 10, earW, earH);
         }
 
         ctx.fillStyle = "#333"; 
         ctx.font = "bold 42px 'M PLUS Rounded 1c', sans-serif"; 
-        ctx.fillText(grade + "年生", 475, 375); 
-        ctx.fillText(name, 475, 485);
+        // ★修正: 文字位置を20px上に (375->355, 485->465)
+        ctx.fillText(grade + "年生", 475, 355); 
+        ctx.fillText(name, 475, 465);
 
         const newUser = { 
             id: Date.now(), name, grade, 
@@ -286,7 +268,6 @@ function renderUserList() {
     users.forEach(user => {
         const div = document.createElement('div');
         div.className = "user-card";
-        // ★修正: カリカリ所持数を表示
         div.innerHTML = `
             <img src="${user.photo}">
             <div class="card-karikari-badge">🍖${user.karikari || 0}</div>
