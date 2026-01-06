@@ -1,4 +1,4 @@
-// --- ui.js (完全版: スタンプ赤色化 + 基本UI制御) ---
+// --- ui.js (完全版: ビュー管理強化) ---
 
 // 画面切り替え（校門、ロビー、教室など）
 function switchScreen(to) {
@@ -10,16 +10,34 @@ function switchScreen(to) {
     }
 }
 
-// 教室内のビュー切り替え（問題選択、思考中、結果など）
+// 教室内のビュー切り替え（一元管理）
 function switchView(id) {
-    const ids = ['problem-selection-view', 'final-view', 'grade-sheet-container', 'hint-detail-container', 'chalkboard', 'upload-controls', 'thinking-view'];
+    // 教室画面内の切り替わる要素IDをすべてリストアップ
+    const ids = [
+        'subject-selection-view', 
+        'upload-controls', 
+        'thinking-view', 
+        'problem-selection-view', 
+        'final-view', 
+        'grade-sheet-container', 
+        'hint-detail-container', 
+        'chalkboard', 
+        'chat-view', 
+        'lunch-view',
+        'answer-display-area'
+    ];
+
+    // 一旦すべて隠す
     ids.forEach(i => {
         const el = document.getElementById(i);
         if(el) el.classList.add('hidden');
     });
     
-    const target = document.getElementById(id);
-    if(target) target.classList.remove('hidden');
+    // 指定されたIDのみ表示する
+    if (id) {
+        const target = document.getElementById(id);
+        if(target) target.classList.remove('hidden');
+    }
 }
 
 // --- ボタンアクション ---
@@ -79,7 +97,7 @@ function renderAttendance() {
         div.style.background = hasAttended ? "#e3f2fd" : "#fff";
         div.style.color = hasAttended ? "#1565c0" : "#999";
         
-        // ★修正: スタンプ部分(🐾)に直接スタイルを適用して確実に赤くする
+        // スタンプ部分(🐾)を赤くする
         div.innerHTML = `
             <div>${d.getMonth()+1}/${d.getDate()}</div>
             <div style="font-size:1.5rem; line-height:1.5; color: ${hasAttended ? '#ff5252' : '#eee'} !important;">
@@ -98,9 +116,9 @@ function updateProgress(p) {
     if (txt) txt.innerText = Math.floor(p);
 }
 
-// ★重要: PC/スマホでの音声再生ブロックを防ぐため、最初のクリック時にオーディオエンジンを起こす
+// 音声再生ブロック防止
 document.addEventListener('click', () => {
     if (window.initAudioContext) {
         window.initAudioContext().catch(e => console.log("Audio Init:", e));
     }
-}, { once: true }); // 最初の一回だけ実行
+}, { once: true });
