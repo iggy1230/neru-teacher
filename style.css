@@ -13,7 +13,6 @@ body {
     color: #333;
     -webkit-font-smoothing: antialiased;
     box-sizing: border-box;
-    /* タイトル固定用のパディング */
     padding-top: 80px; 
 }
 
@@ -23,7 +22,7 @@ button { font-family: inherit; }
 #app-container {
     max-width: 600px;
     margin: 0 auto;
-    min-height: calc(100vh - 80px); /* タイトル分引く */
+    min-height: calc(100vh - 80px);
     position: relative;
     padding-bottom: 20px;
 }
@@ -45,57 +44,46 @@ button { font-family: inherit; }
 .screen { padding: 20px 10px; animation: fadeIn 0.3s ease; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-/* ★修正: タイトルを上部に固定 */
+/* タイトル固定 */
 .school-title {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    text-align: center;
-    font-size: 1.8rem;
-    color: #d81b60;
+    top: 0; left: 0; width: 100%;
+    text-align: center; font-size: 1.8rem; color: #d81b60;
     text-shadow: 3px 3px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;
-    margin: 0;
-    padding: 15px 0;
-    font-weight: 900;
-    z-index: 1000;
-    background: rgba(255, 255, 255, 0.3); /* 少し背景を入れて読みやすく */
-    backdrop-filter: blur(2px);
+    margin: 0; padding: 15px 0; font-weight: 900; z-index: 1000;
+    background: rgba(255, 255, 255, 0.3); backdrop-filter: blur(2px);
 }
 
 .gate-layout {
     display: flex; justify-content: center; align-items: flex-start;
-    gap: 10px; min-height: 300px;
-    margin-top: 20px;
+    gap: 10px; min-height: 300px; margin-top: 20px;
 }
 .right-user-list {
     width: 100%; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
     gap: 15px; padding: 10px;
 }
 
-/* ★修正: ユーザーカードの背景黒化対策 */
+/* ★修正: ユーザーカード完全透明化 */
 .user-card {
-    background: transparent; /* 完全透明 */
-    padding: 5px;
+    background: transparent; /* 背景透明 */
+    padding: 0; /* 余白削除 */
     text-align: center; cursor: pointer; position: relative;
     transition: transform 0.1s;
-    box-shadow: none; border: none; /* 枠線なし */
+    box-shadow: none; border: none;
 }
 .user-card:active { transform: scale(0.95); }
 
 .user-card img { 
     width: 100%; 
     height: auto; 
-    border-radius: 8px;
     object-fit: contain; 
-    /* 背景色を白にして透過PNGの黒化を防ぐ */
-    background-color: #fff; 
-    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    background-color: transparent; /* 画像自体の背景も透明 */
+    box-shadow: none; /* 影削除 */
     display: block;
 }
 
 .card-karikari-badge {
-    position: absolute; bottom: 10px; left: 10px;
+    position: absolute; bottom: 5px; left: 5px;
     background: rgba(255, 255, 255, 0.95); color: #d84315;
     font-size: 0.8rem; font-weight: bold; padding: 2px 8px;
     border-radius: 10px; border: 1px solid #ffab91;
@@ -109,21 +97,24 @@ button { font-family: inherit; }
     box-shadow: 0 2px 4px rgba(0,0,0,0.2); z-index: 10;
 }
 
-/* ★修正: 入学手続きのプレビュー領域を広げる */
+/* ★修正: 入学手続きのプレビュー位置調整 */
 .id-card-wrap {
     position: relative; 
-    width: 320px; /* 少し幅広げる */
-    height: 200px; /* 高さを広げて欠け防止 */
+    width: 320px; height: 215px; /* 高さを確保 */
     margin: 0 auto 20px;
     box-shadow: 0 4px 10px rgba(0,0,0,0.3); 
     border-radius: 12px; 
     overflow: hidden;
-    background: white;
+    background: white; /* ここは白でOK（プレビュー用） */
 }
-.id-base-img { width: 100%; height: 100%; object-fit: contain; } /* coverからcontainへ */
+.id-base-img { width: 100%; height: 100%; object-fit: contain; }
 
+/* 写真の位置調整 */
 #id-photo-slot {
-    position: absolute; top: 82px; left: 20px; width: 94px; height: 102px;
+    position: absolute; 
+    top: 85px; /* 少し下げる */
+    left: 22px; /* 少し右へ */
+    width: 92px; height: 100px;
     background: #eee; overflow: hidden;
 }
 #id-photo-preview-canvas { width: 100%; height: 100%; object-fit: cover; }
@@ -131,9 +122,15 @@ button { font-family: inherit; }
 .id-text-overlay { 
     position: absolute; color: #333; font-weight: bold; font-family: sans-serif; pointer-events: none; 
 }
-/* ★修正: テキスト位置を20px上にずらす */
-.id-grade-text { top: 78px; left: 190px; font-size: 16px; width: 100px; text-align: center; }
-.id-name-text { top: 118px; left: 190px; font-size: 18px; width: 100px; text-align: center; }
+/* テキストの位置調整 */
+.id-grade-text { 
+    top: 98px; /* 元の位置より調整 */
+    left: 190px; font-size: 16px; width: 100px; text-align: center; 
+}
+.id-name-text { 
+    top: 138px; /* 元の位置より調整 */
+    left: 190px; font-size: 18px; width: 100px; text-align: center; 
+}
 
 .styled-input, .styled-select {
     width: 80%; padding: 12px; margin: 10px auto; display: block;
@@ -245,12 +242,8 @@ button { font-family: inherit; }
     display: flex; align-items: center; justify-content: center; overflow: hidden;
 }
 #camera-video { width: 100%; height: 100%; object-fit: cover; }
-
-/* ★修正: 正方形のガイド枠 */
 .camera-guide-box {
-    position: absolute; 
-    width: 70%; 
-    aspect-ratio: 1; /* 正方形にする */
+    position: absolute; width: 70%; aspect-ratio: 1;
     border: 3px solid rgba(255, 255, 255, 0.8); border-radius: 10px;
     box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
     display: flex; align-items: flex-start; justify-content: center; pointer-events: none;
