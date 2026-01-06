@@ -58,11 +58,11 @@ button { font-family: inherit; }
     gap: 10px; min-height: 300px; margin-top: 20px;
 }
 .right-user-list {
-    width: 100%; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    width: 100%; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
     gap: 15px; padding: 10px;
 }
 
-/* ユーザーカード（トップページ） */
+/* ユーザーカード */
 .user-card {
     background: transparent; padding: 0;
     text-align: center; cursor: pointer; position: relative;
@@ -70,16 +70,10 @@ button { font-family: inherit; }
 }
 .user-card:active { transform: scale(0.95); }
 
-/* ★修正: アスペクト比を固定して潰れを防ぐ */
 .user-card img { 
-    width: 100%; 
-    height: auto; 
-    aspect-ratio: 1.6; /* 学生証の一般的な比率（およそ） */
-    object-fit: cover; /* 枠いっぱいに表示（余白なし） */
-    border-radius: 8px;
-    background-color: transparent !important;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-    display: block;
+    width: 100%; height: auto; aspect-ratio: 1.6; object-fit: cover;
+    border-radius: 8px; background-color: transparent !important;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2); display: block;
 }
 
 .card-karikari-badge {
@@ -97,43 +91,36 @@ button { font-family: inherit; }
     box-shadow: 0 2px 4px rgba(0,0,0,0.2); z-index: 10;
 }
 
-/* ★修正: 入学手続きのプレビュー位置調整 */
+/* ★修正: プレビュー枠の高さをさらに広げて比率を正す */
 .id-card-wrap {
     position: relative; 
     width: 320px; 
-    height: 200px; /* 高さを少し減らしてフィットさせる */
+    height: 220px; /* 200px -> 220px */
     margin: 0 auto 20px;
     box-shadow: 0 4px 10px rgba(0,0,0,0.3); 
     border-radius: 12px; 
     overflow: hidden;
     background: white; 
 }
-.id-base-img { width: 100%; height: 100%; object-fit: fill; } /* 枠に合わせて引き伸ばす */
+.id-base-img { width: 100%; height: 100%; object-fit: fill; }
 
-/* 写真の位置調整 (スクリーンショットに基づいて修正) */
-#id-photo-slot {
-    position: absolute; 
-    top: 70px;  /* 上に移動 (85px -> 70px) */
-    left: 20px;
-    width: 90px; 
-    height: 98px;
-    background: #eee; overflow: hidden;
-    z-index: 1;
+/* ★修正: プレビュー用キャンバス（ここに全部描画する） */
+#id-photo-preview-canvas {
+    width: 100%; height: 100%;
+    object-fit: contain;
+    position: absolute; top: 0; left: 0; /* 全面を覆う */
+    z-index: 2; /* ベース画像の上 */
 }
-#id-photo-preview-canvas { width: 100%; height: 100%; object-fit: cover; }
+/* 元の写真枠divは不要になるが、レイアウト崩れ防止のため非表示にして残す */
+#id-photo-slot { display: none; }
 
+/* テキストオーバーレイはキャンバスに描画するのでCSSでの表示は消すか、入力中の確認用として残す */
+/* ここでは、入力中の確認用として残すが、キャンバス描画と被らないようにz-index調整 */
 .id-text-overlay { 
-    position: absolute; color: #333; font-weight: bold; font-family: sans-serif; pointer-events: none; z-index: 2;
+    position: absolute; color: #333; font-weight: bold; font-family: sans-serif; pointer-events: none; z-index: 3;
 }
-/* テキストの位置調整 (スクリーンショットに基づいて修正) */
-.id-grade-text { 
-    top: 85px;  /* 上に移動 (98px -> 85px) */
-    left: 185px; font-size: 16px; width: 100px; text-align: center; 
-}
-.id-name-text { 
-    top: 125px; /* 上に移動 (138px -> 125px) */
-    left: 185px; font-size: 18px; width: 100px; text-align: center; 
-}
+.id-grade-text { top: 85px; left: 185px; font-size: 16px; width: 100px; text-align: center; }
+.id-name-text { top: 125px; left: 185px; font-size: 18px; width: 100px; text-align: center; }
 
 .styled-input, .styled-select {
     width: 80%; padding: 12px; margin: 10px auto; display: block;
