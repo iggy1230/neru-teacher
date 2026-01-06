@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版: 音声同期・給食修正・マイク可視化) ---
+// --- anlyze.js (完全版: 給食もぐもぐ修正 + 安定版) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -54,6 +54,7 @@ function startMouthAnimation() {
 }
 startMouthAnimation();
 
+// ★修正: メッセージ表示関数
 async function updateNellMessage(t, mood = "normal") {
     let targetId = 'nell-text';
     if (!document.getElementById('screen-game').classList.contains('hidden')) {
@@ -61,26 +62,32 @@ async function updateNellMessage(t, mood = "normal") {
     }
     const el = document.getElementById(targetId);
 
+    // AudioContextの初期化・再開
     if (!audioContext) {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         audioContext = new AudioCtx();
     }
     if (audioContext.state === 'suspended') {
-        await audioContext.resume();
+        // ユーザーインタラクションが必要な場合があるため、失敗しても続行
+        await audioContext.resume().catch(()=>{});
     }
 
+    // 前の音声を停止
     if (currentTtsSource) {
         try { currentTtsSource.stop(); } catch(e){}
         currentTtsSource = null;
     }
     window.isNellSpeaking = false;
 
-    if (!t || t === "..." || t.includes("ちょっと待ってて")) {
+    // ★重要修正: 「もぐもぐ」や「読み込み中」は音声合成せず即時表示する
+    // これにより、API待ち時間で無言・無表示になるのを防ぐ
+    if (!t || t === "..." || t.includes("ちょっと待ってて") || t.includes("もぐもぐ")) {
         if (el) el.innerText = t;
         return;
     }
 
     try {
+        // 音声合成API呼び出し
         const response = await fetch('/synthesize', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -89,12 +96,15 @@ async function updateNellMessage(t, mood = "normal") {
 
         if (!response.ok) throw new Error("TTS Error");
         const data = await response.json();
+        
+        // Base64デコード
         const binaryString = window.atob(data.audioContent);
         const len = binaryString.length;
         const bytes = new Uint8Array(len);
         for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
         const decodedBuffer = await audioContext.decodeAudioData(bytes.buffer);
 
+        // ★音声準備完了後にテキスト更新（同期）
         if (el) el.innerText = t;
 
         const source = audioContext.createBufferSource();
@@ -112,6 +122,8 @@ async function updateNellMessage(t, mood = "normal") {
         };
 
     } catch (e) {
+        console.error("Audio/Message Error:", e);
+        // ★エラー時もテキストだけは必ず表示する
         if (el) el.innerText = t;
         window.isNellSpeaking = false;
     }
@@ -122,6 +134,7 @@ function selectMode(m) {
     currentMode = m; 
     switchScreen('screen-main'); 
     
+    // UIリセット
     const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'lunch-view'];
     ids.forEach(id => { const el = document.getElementById(id); if (el) el.classList.add('hidden'); });
     
@@ -198,7 +211,6 @@ async function startLiveChat() {
                 await startMicrophone();
             }
             if (data.serverContent?.modelTurn?.parts?.[0]?.inlineData) {
-                // LiveAPIはPCMを直接流すのでTTS関数は使わない
                 playLivePcmAudio(data.serverContent.modelTurn.parts[0].inlineData.data);
             }
         };
@@ -249,6 +261,7 @@ async function startMicrophone() {
                     btn.style.transform = "scale(1)";
                 }
             }
+
             setTimeout(() => {
                 if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return;
                 const downsampled = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
@@ -276,7 +289,7 @@ function playLivePcmAudio(base64) {
 function giveLunch() {
     if (currentUser.karikari < 1) return updateNellMessage("カリカリがないにゃ……", "thinking");
     
-    // ★修正: 先に「もぐもぐ」と言って間を持たせる
+    // ★即時表示（TTSスキップ）
     updateNellMessage("もぐもぐ……", "normal");
     
     currentUser.karikari--; 
@@ -289,15 +302,14 @@ function giveLunch() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ count: lunchCount, name: currentUser.name })
     }).then(r=>r.json()).then(d=>{
-        // 2秒待ってからAPIの返答（感想）を言う
+        // 1.5秒後に感想を再生
         setTimeout(() => {
             updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy");
-        }, 2000); 
+        }, 1500); 
     }).catch(e=>{ 
-        // エラー時も「もぐもぐ」の後にセリフ
         setTimeout(() => {
             updateNellMessage("おいしいにゃ！", "happy");
-        }, 2000);
+        }, 1500);
     });
 }
 
@@ -374,6 +386,7 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
     if (currentUser && currentSubject) {
         loadingMessage = `ちょっと待っててにゃ…\nふむふむ…\n${currentUser.grade}年生の${currentSubject}の問題だにゃ…`;
     }
+    // ここも即時表示
     updateNellMessage(loadingMessage, "thinking"); 
     
     updateProgress(0); 
@@ -399,8 +412,6 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
         clearInterval(timer); updateProgress(100);
         setTimeout(() => { 
             if(th) th.classList.add('hidden'); 
-            
-            // 書き起こし後も戻るボタンは隠したまま
             if(backBtn) backBtn.classList.add('hidden');
 
             if (currentMode === 'explain' || currentMode === 'review') { renderProblemSelection(); updateNellMessage("問題が読めたにゃ！", "happy"); } 
@@ -410,7 +421,6 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
         clearInterval(timer); 
         document.getElementById('thinking-view').classList.add('hidden'); 
         document.getElementById('upload-controls').classList.remove('hidden'); 
-        // エラー時は戻るボタン復活
         if(backBtn) backBtn.classList.remove('hidden');
         updateNellMessage("エラーだにゃ…もう一回試してにゃ", "thinking"); 
     } finally { isAnalyzing = false; e.target.value=''; }
@@ -482,7 +492,6 @@ function renderProblemSelection() { document.getElementById('problem-selection-v
 function showGradingView() { 
     document.getElementById('grade-sheet-container').classList.remove('hidden'); 
     document.getElementById('final-view').classList.remove('hidden');
-    // 採点画面でも戻るボタンは隠す
     const backBtn = document.getElementById('main-back-btn');
     if(backBtn) backBtn.classList.add('hidden');
     renderWorksheet(); 
