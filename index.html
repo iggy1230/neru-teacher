@@ -14,7 +14,7 @@
     
     <div id="mini-karikari-display" class="mini-karikari-display hidden"><span>🍖</span><span id="mini-karikari-count">0</span></div>
 
-    <div class="version-tag">Build: v11.3.0-AndroidFix2</div>
+    <div class="version-tag">Build: v11.4.0-AndroidFix3</div>
 
     <div id="app-container">
         <!-- 校門 -->
@@ -33,8 +33,21 @@
                 <div class="id-text-overlay id-grade-text" id="preview-grade">○年生</div>
                 <div class="id-text-overlay id-name-text" id="preview-name">なまえ</div>
             </div>
-            <!-- captureなし: メニュー表示 -->
-            <label class="main-btn blue-btn">📸 おかおを撮る・選ぶ<input type="file" id="student-photo-input" accept="image/*" style="display:none;"></label>
+            
+            <p style="text-align:center; font-size:0.9rem; margin-bottom:5px;">写真を選んでにゃ！</p>
+            <div style="display:flex; gap:10px; justify-content:center; margin-bottom:15px;">
+                <!-- カメラ用 (自撮り優先) -->
+                <label class="main-btn pink-btn" style="width:45%; font-size:0.9rem;">
+                    📷 カメラ
+                    <input type="file" id="student-photo-input-camera" accept="image/*" capture="user" style="display:none;">
+                </label>
+                <!-- アルバム用 -->
+                <label class="main-btn blue-btn" style="width:45%; font-size:0.9rem;">
+                    📁 アルバム
+                    <input type="file" id="student-photo-input-album" accept="image/*" style="display:none;">
+                </label>
+            </div>
+
             <input type="text" id="new-student-name" class="styled-input" placeholder="おなまえ" oninput="updateIDPreview()">
             <select id="new-student-grade" class="styled-select" onchange="updateIDPreview()">
                 <option value="" disabled selected>学年</option>
@@ -90,8 +103,19 @@
 
                 <div class="work-area">
                     <div id="upload-controls" class="hidden">
-                        <!-- ★修正: captureを削除して選択肢を表示させる -->
-                        <label class="camera-btn-large">📷 宿題をみせる<input type="file" id="hw-input" accept="image/*" style="display:none;"></label>
+                        <p style="text-align:center; margin-bottom:10px;">宿題の写真を撮ってね！</p>
+                        <div style="display:flex; gap:10px; justify-content:center;">
+                            <!-- カメラ用 (背面) -->
+                            <label class="camera-btn-large" style="width:45%; font-size:1rem; padding:15px 0;">
+                                📷 カメラ
+                                <input type="file" id="hw-input-camera" accept="image/*" capture="environment" style="display:none;">
+                            </label>
+                            <!-- アルバム用 -->
+                            <label class="camera-btn-large" style="width:45%; font-size:1rem; padding:15px 0; background:#4a90e2; box-shadow:0 8px 0 #2c5f96;">
+                                📁 アルバム
+                                <input type="file" id="hw-input-album" accept="image/*" style="display:none;">
+                            </label>
+                        </div>
                     </div>
 
                     <div id="thinking-view" class="hidden">

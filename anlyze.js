@@ -1,4 +1,4 @@
-// --- anlyze.js (完全統合版: v11.3) ---
+// --- anlyze.js (完全版: v11.4 Android対応) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -8,7 +8,6 @@ let currentSubject = '';
 let currentMode = ''; 
 let lunchCount = 0; 
 
-// Live Chat Variables
 let liveSocket = null;
 let audioContext = null;
 let mediaStream = null;
@@ -17,7 +16,6 @@ let nextStartTime = 0;
 let stopSpeakingTimer = null;
 let currentTtsSource = null;
 
-// Game Variables
 let gameCanvas, ctx, ball, paddle, bricks, score, gameRunning = false, gameAnimId = null;
 
 // ★効果音の読み込み
@@ -37,7 +35,6 @@ const subjectImages = {
 const defaultIcon = 'nell-normal.png'; 
 const talkIcon = 'nell-talk.png';
 
-// 口パクアニメーション
 function startMouthAnimation() {
     let toggle = false;
     setInterval(() => {
@@ -92,7 +89,6 @@ async function updateNellMessage(t, mood = "normal") {
     }
 
     // 即時表示対象（TTSなし）
-    // "..." や読み込み中、もぐもぐ等は即座にテキストを出して終了
     if (!t || t === "..." || t.includes("ちょっと待ってて") || t.includes("もぐもぐ")) {
         if (el) el.innerText = t;
         return;
@@ -264,7 +260,7 @@ async function startMicrophone() {
         workletNode.port.onmessage = (event) => {
             const inputData = event.data;
             
-            // ★マイク入力インジケーター（音量でボタンが光る）
+            // マイク入力インジケーター
             let sum = 0; for(let i=0; i<inputData.length; i++) sum += inputData[i] * inputData[i];
             const volume = Math.sqrt(sum / inputData.length);
             const btn = document.getElementById('mic-btn');
@@ -306,7 +302,7 @@ function playLivePcmAudio(base64) {
 function giveLunch() {
     if (currentUser.karikari < 1) return updateNellMessage("カリカリがないにゃ……", "thinking");
     
-    // ★即時表示（TTSスキップ＋SE再生）
+    // ★即時表示
     updateNellMessage("もぐもぐ……", "normal");
     
     currentUser.karikari--; 
@@ -368,7 +364,7 @@ function drawGame() {
         if(b.status === 1 && ball.x>b.x && ball.x<b.x+40 && ball.y>b.y && ball.y<b.y+30){
             ball.dy*=-1; b.status=0; score++; document.getElementById('game-score').innerText=score;
             
-            // ★ヒット音
+            // ヒット音
             try { sfxHit.currentTime=0; sfxHit.play(); } catch(e){}
             
             if (Math.random() > 0.7 && !window.isNellSpeaking) {
@@ -383,7 +379,7 @@ function drawGame() {
     else if(ball.y+ball.dy > gameCanvas.height - ball.r - 20) {
         if(ball.x > paddle.x && ball.x < paddle.x + paddle.w) { ball.dy *= -1; ball.dx = (ball.x - (paddle.x+paddle.w/2)) * 0.15; } 
         else if(ball.y+ball.dy > gameCanvas.height-ball.r) { 
-            // ★ゲームオーバー音
+            // ゲームオーバー音
             try { sfxOver.currentTime=0; sfxOver.play(); } catch(e){}
             endGame(false); return; 
         }
@@ -397,9 +393,11 @@ function endGame(c) {
     setTimeout(()=>{ alert(c?`すごい！全クリだにゃ！\nカリカリ ${score} 個ゲット！`:`おしい！\nカリカリ ${score} 個ゲット！`); if(currentUser&&score>0){currentUser.karikari+=score;saveAndSync();updateMiniKarikari();showKarikariEffect(score);} }, 500);
 }
 
-// 5. 分析・ヒント
-document.getElementById('hw-input').addEventListener('change', async (e) => {
-    if (isAnalyzing || !e.target.files[0]) return; isAnalyzing = true;
+// 5. 分析・ヒント (★修正: カメラ/アルバムの2ボタン対応)
+const handleFileUpload = async (file) => {
+    if (isAnalyzing || !file) return; isAnalyzing = true;
+    
+    // UI制御
     const up = document.getElementById('upload-controls'); if(up) up.classList.add('hidden');
     const th = document.getElementById('thinking-view'); if(th) th.classList.remove('hidden');
     
@@ -407,7 +405,6 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
     const backBtn = document.getElementById('main-back-btn');
     if(backBtn) backBtn.classList.add('hidden');
 
-    // ★改行付きメッセージ
     let loadingMessage = "ちょっと待っててにゃ…\nふむふむ…";
     if (currentUser && currentSubject) {
         loadingMessage = `ちょっと待っててにゃ…\nふむふむ…\n${currentUser.grade}年生の${currentSubject}の問題だにゃ…`;
@@ -417,8 +414,8 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
     updateProgress(0); 
     let p = 0; const timer = setInterval(() => { if (p < 90) { p += 3; updateProgress(p); } }, 500);
     try {
-        // 画質確保のため1600px
-        const b64 = await shrinkImage(e.target.files[0], 1600);
+        // 画質優先 (1600px)
+        const b64 = await shrinkImage(file, 1600);
         const res = await fetch('/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: b64, mode: currentMode, grade: currentUser.grade, subject: currentSubject }) });
         
         if (!res.ok) {
@@ -438,8 +435,7 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
         clearInterval(timer); updateProgress(100);
         setTimeout(() => { 
             if(th) th.classList.add('hidden'); 
-            
-            // 書き起こし後も戻るボタンは隠したままにする
+            // 完了後も戻るボタンは隠す
             if(backBtn) backBtn.classList.add('hidden');
 
             if (currentMode === 'explain' || currentMode === 'review') { renderProblemSelection(); updateNellMessage("問題が読めたにゃ！", "happy"); } 
@@ -452,8 +448,19 @@ document.getElementById('hw-input').addEventListener('change', async (e) => {
         // エラー時は戻るボタン復活
         if(backBtn) backBtn.classList.remove('hidden');
         updateNellMessage("エラーだにゃ…もう一回試してにゃ", "thinking"); 
-    } finally { isAnalyzing = false; e.target.value=''; }
-});
+    } finally { isAnalyzing = false; }
+};
+
+// 2つのボタンにリスナー登録
+const camIn = document.getElementById('hw-input-camera');
+if(camIn) camIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
+
+const albIn = document.getElementById('hw-input-album');
+if(albIn) albIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
+
+// 念のため旧ID(hw-input)も残しておく
+const oldIn = document.getElementById('hw-input');
+if(oldIn) oldIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
 
 function startHint(id) {
     if (window.initAudioContext) window.initAudioContext().catch(e=>{});
@@ -478,7 +485,6 @@ function startHint(id) {
             if (currentMode === 'grade') showGradingView();
             else renderProblemSelection();
             
-            // ヒント画面の要素を隠す
             document.getElementById('final-view').classList.add('hidden');
             document.getElementById('hint-detail-container').classList.add('hidden');
             document.getElementById('chalkboard').classList.add('hidden');
@@ -497,14 +503,15 @@ function startHint(id) {
     if(revealBtn) revealBtn.classList.add('hidden');
 }
 
-// ... (showNextHint以降の関数は変更なし) ...
 function showNextHint() {
     if (window.initAudioContext) window.initAudioContext();
     let cost = 0; if (hintIndex === 0) cost = 5; else if (hintIndex === 1) cost = 5; else if (hintIndex === 2) cost = 10;
     if (currentUser.karikari < cost) return updateNellMessage(`カリカリが足りないにゃ……あと${cost}個必要にゃ。`, "thinking");
     currentUser.karikari -= cost; saveAndSync(); updateMiniKarikari(); showKarikariEffect(-cost);
+    
     let hints = selectedProblem.hints || [];
     if (hints.length === 0) hints = ["よく読んでみてにゃ", "式を立てるにゃ", "先生と解くにゃ"];
+    
     updateNellMessage(hints[hintIndex] || "……", "thinking"); 
     const hl = document.getElementById('hint-step-label'); if(hl) hl.innerText = `ヒント ${hintIndex + 1}`; hintIndex++; 
     const nextBtn = document.getElementById('next-hint-btn'); const revealBtn = document.getElementById('reveal-answer-btn');
@@ -513,6 +520,7 @@ function showNextHint() {
     else { if(nextBtn) nextBtn.classList.add('hidden'); if(revealBtn) { revealBtn.classList.remove('hidden'); revealBtn.innerText = "答えを見る"; } }
 }
 
+// Utils
 function downsampleBuffer(buffer, sampleRate, outSampleRate) { if (outSampleRate >= sampleRate) return buffer; const ratio = sampleRate / outSampleRate; const newLength = Math.round(buffer.length / ratio); const result = new Float32Array(newLength); let offsetResult = 0, offsetBuffer = 0; while (offsetResult < result.length) { const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio); let accum = 0, count = 0; for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) { accum += buffer[i]; count++; } result[offsetResult] = accum / count; offsetResult++; offsetBuffer = nextOffsetBuffer; } return result; }
 function floatTo16BitPCM(input) { const output = new Int16Array(input.length); for (let i = 0; i < input.length; i++) { const s = Math.max(-1, Math.min(1, input[i])); output[i] = s < 0 ? s * 0x8000 : s * 0x7FFF; } return output.buffer; }
 function arrayBufferToBase64(buffer) { let binary = ''; const bytes = new Uint8Array(buffer); for (let i = 0; i < bytes.byteLength; i++) { binary += String.fromCharCode(bytes[i]); } return window.btoa(binary); }
@@ -523,11 +531,13 @@ function renderProblemSelection() { document.getElementById('problem-selection-v
 function showGradingView() { 
     document.getElementById('grade-sheet-container').classList.remove('hidden'); 
     document.getElementById('final-view').classList.remove('hidden');
+    // 採点画面でも戻るボタンは隠す
     const backBtn = document.getElementById('main-back-btn');
     if(backBtn) backBtn.classList.add('hidden');
     renderWorksheet(); 
 }
 function renderWorksheet() { const l=document.getElementById('problem-list-grade'); if(!l)return; l.innerHTML=""; transcribedProblems.forEach((p,i)=>{ l.innerHTML+=`<div class="problem-row"><div><span class="q-label">${p.label||'?'}</span>${p.question}</div><div style="display:flex;gap:5px"><input class="student-ans-input" value="${p.student_answer}" onchange="updateAns(${i},this.value)"><div class="judgment-mark ${p.status}">${p.status==='correct'?'⭕️':p.status==='incorrect'?'❌':''}</div><button class="mini-teach-btn" onclick="startHint(${p.id})">教えて</button></div></div>`; }); const f=document.createElement('div'); f.style.textAlign="center"; f.style.marginTop="20px"; f.innerHTML=`<button onclick="finishGrading()" class="main-btn orange-btn">✨ ぜんぶわかったにゃ！</button>`; l.appendChild(f); }
+
 function updateAns(i, v) { 
     transcribedProblems[i].student_answer = v; 
     const n = val => val.toString().replace(/\s/g, '').replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0)).replace(/cm|ｍ|ｍｍ|円|個|L/g, '').replace(/[×＊]/g, '*').replace(/[÷／]/g, '/');
@@ -543,6 +553,7 @@ function updateAns(i, v) {
     saveAndSync(); 
     renderWorksheet(); 
 }
+
 async function finishGrading() { await updateNellMessage("よくがんばったにゃ！お疲れさまにゃ✨", "excited"); if (currentUser) { currentUser.karikari += 100; saveAndSync(); updateMiniKarikari(); showKarikariEffect(100); } setTimeout(backToLobby, 2000); }
 function pressAllSolved() { currentUser.karikari+=100; saveAndSync(); backToLobby(); showKarikariEffect(100); }
 function pressThanks() { if(currentMode==='grade') showGradingView(); else backToProblemSelection(); }
