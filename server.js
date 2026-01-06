@@ -62,14 +62,13 @@ app.post('/game-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { type, name, score } = req.body;
-        // ★修正: Gemini 2.0 Flashを使用
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
         let prompt = "";
         let mood = "excited";
 
         if (type === 'start') {
-            prompt = `あなたは「ねこご市立ねこづか小学校」のネル先生です。生徒「${name}」さんがゲームを開始。「${name}さん！カリカリいっぱいゲットしてにゃ！」とだけ言って。`;
+            prompt = `あなたは「ねこご市立ねこづか小学校」のネル先生。生徒「${name}」がゲーム開始。「${name}さん！カリカリいっぱいゲットしてにゃ！」とだけ言って。`;
         } else if (type === 'end') {
             prompt = `あなたはネル先生。ゲーム終了。スコア${score}個(最大20)。20文字以内で褒めて。語尾「にゃ」。`;
         } else {
@@ -83,21 +82,35 @@ app.post('/game-reaction', async (req, res) => {
     }
 });
 
-// --- 給食リアクションAPI ---
+// --- 給食リアクションAPI (バリエーション＆敬称強化) ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { count, name } = req.body;
-        // ★修正: Gemini 2.0 Flashを使用
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+        
+        const model = genAI.getGenerativeModel({ 
+            model: "gemini-1.5-flash",
+            generationConfig: { maxOutputTokens: 60 } 
+        });
 
         let prompt = "";
         const isSpecial = count % 10 === 0;
 
         if (isSpecial) {
-            prompt = `ネル先生として給食${count}個目の感謝を熱く語る。相手:${name}。60文字程度。語尾にゃ。`;
+            // ★修正: 敬称の強制
+            prompt = `
+            あなたはネル先生です。生徒「${name}」から給食${count}個目をもらいました。
+            感謝を熱く語ってください。60文字程度。語尾は「にゃ」。
+            【絶対厳守】相手の名前には必ず「さん」か「さま」をつけてください。呼び捨ては禁止です。
+            `;
         } else {
-            prompt = `ネル先生として給食を食べた一言感想。15文字以内。語尾にゃ。`;
+            // ★修正: バリエーションを増やす
+            const themes = [
+                "味を絶賛", "食感を楽しむ(カリッ)", "香りを嗅ぐ", "幸せな気分", 
+                "おかわりを要求", "喉を鳴らす", "栄養について語る", "笑顔になる"
+            ];
+            const theme = themes[Math.floor(Math.random() * themes.length)];
+            prompt = `ネル先生として給食のカリカリを食べた一言感想。テーマ：${theme}。15文字以内。語尾にゃ。即答して。`;
         }
 
         const result = await model.generateContent(prompt);
@@ -111,27 +124,24 @@ app.post('/lunch-reaction', async (req, res) => {
 app.post('/chat', async (req, res) => {
     try {
         const { message, grade, name } = req.body;
-        // ★修正: Gemini 2.0 Flashを使用
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         const prompt = `あなたは「ネル先生」。相手は小学${grade}年生「${name}」。30文字以内、語尾「にゃ」。絵文字禁止。発言: ${message}`;
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text() });
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
-// --- ★画像分析API (2.0 Flash + 強力プロンプト) ---
+// --- ★画像分析API (Flash + 国語強化) ---
 app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { image, mode, grade, subject } = req.body;
         
-        // ★修正: 画像分析も Gemini 2.0 Flash を使用
         const model = genAI.getGenerativeModel({
-            model: "gemini-2.0-flash-exp",
+            model: "gemini-1.5-flash",
             generationConfig: { responseMimeType: "application/json" }
         });
 
-        // ■ 教科別詳細ルール
         const rules = {
             'さんすう': {
                 attention: `・筆算の横線とマイナス記号を混同しないこと。\n・累乗（2^2など）や分数を正確に。`,
@@ -148,7 +158,7 @@ app.post('/analyze', async (req, res) => {
                 attention: `
                 【最重要：縦書きレイアウトと書き起こしルール】
                 1. 縦書き認識: この画像は縦書きです。必ず「右上」からスタートし、「丸数字の真下」にある文章を垂直方向に読み進めてください。行が終わったら左の列へ移動します。
-                2. 問題の分離: 丸数字（①, ②...）は新しい問題の開始合図です。隣の行の文字と混ざらないように、罫線や余白で明確に区切ってください。
+                2. 隣の列との分離: 丸数字（①, ②...）は問題の開始点です。隣の列の文字を絶対に混ぜないでください。
                 3. 【絶対ルール】書き起こしフォーマット
                    - 解答すべき空欄（□）は、その横にあるルビ（読み仮名）とセットです。
                    - 必ず『□(読み仮名)』という形式で書き起こしてください。（例: 「(はこ)の中」→ 『□(はこ)の中』）
@@ -215,7 +225,7 @@ app.post('/analyze', async (req, res) => {
             ${r.hints}
 
             【出力フォーマット】
-            以下のJSON形式のみを出力してください。
+            以下のJSON形式のみを出力してください。Markdownのコードブロックは不要です。
             
             [
               {
@@ -238,15 +248,20 @@ app.post('/analyze', async (req, res) => {
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
         let textResponse = result.response.text();
 
-        // JSON抽出ロジック
+        // 500エラー対策: JSON抽出
         const firstBracket = textResponse.indexOf('[');
         const lastBracket = textResponse.lastIndexOf(']');
         
         if (firstBracket !== -1 && lastBracket !== -1) {
             textResponse = textResponse.substring(firstBracket, lastBracket + 1);
         } else {
-            console.error("Invalid JSON format from Gemini:", textResponse);
-            throw new Error("AIが有効なデータを生成できませんでした。");
+            console.error("Invalid JSON:", textResponse);
+            // サーバーを落とさずダミーを返す安全策
+            res.json([{
+                id: 1, label: "?", question: "読み取りに失敗したにゃ。もう一度試してにゃ。", 
+                correct_answer: "", student_answer: "", hints: ["ごめんにゃ", "写真を変えてみて", "もう一回！"]
+            }]);
+            return;
         }
 
         textResponse = textResponse.replace(/\*/g, '×').replace(/\//g, '÷');
@@ -262,7 +277,7 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- ★Live API Proxy (Aoede) ---
+// --- ★Live API Proxy (Aoede / 応答修正) ---
 const wss = new WebSocketServer({ server });
 wss.on('connection', (clientWs, req) => {
     const parameters = parse(req.url, true).query;
@@ -281,23 +296,14 @@ wss.on('connection', (clientWs, req) => {
                     system_instruction: {
                         parts: [{
                             text: `あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。
-相手は小学${userGrade}年生の${userName}さん。
-               【話し方のルール】
+            相手は小学${userGrade}年生の${userName}さん。
+               
+              【重要：話し方のルール】
                1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
-               2. 親しみやすい日本の小学校の先生として、一文字一文字を【はっきり】と、丁寧に発音してにゃ。
-               3. 【特に最初の音を、絶対に抜かしたり消したりせずに、最初から最後までしっかり声に出して喋るのがコツだにゃ！】
-               4. 落ち着いた日本語のリズムを大切にして、親しみやすく話してにゃ。
-               5. 給食(餌)のカリカリが大好物にゃ。
-               6. とにかく何でも知っているにゃ。
-               7. ときどき「${userName}さんは宿題は終わったかにゃ？」や「そろそろ宿題始めようかにゃ？」と宿題を促してくる
-               8. 句読点で自然な間をとる
-               9. 日本語をとても上手にしゃべる猫だにゃ
-               10. いつも高いトーンで話してにゃ
-
-               【NGなこと】
-               ・ロボットみたいに不自然に区切るのではなく、繋がりのある滑らかな日本語でお願いにゃ。
-               ・早口になりすぎて、言葉の一部が消えてしまうのはダメだにゃ。
-               ・相手の学年(小学${userGrade}年生)に合わせた言葉選びをしてにゃ。`
+               2. 英語は禁止。すべて日本語で話すにゃ。
+               3. 高いトーンで、元気よく、子供向けにゆっくり話すにゃ。
+               4. 特に最初の音を、絶対に抜かしたり消したりせずに、最初から最後までしっかり声に出して喋るのがコツだにゃ！
+               5. 給食(餌)のカリカリが大好物にゃ。`
                         }]
                     }
                 }
