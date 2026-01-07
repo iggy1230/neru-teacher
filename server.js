@@ -62,32 +62,18 @@ app.post('/game-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { type, name, score } = req.body;
-        // ★修正: 2.0 Flash Exp に統一
+        // ゲームは速度優先
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
 
         let prompt = "";
         let mood = "excited";
 
         if (type === 'start') {
-            prompt = `
-            あなたは「ねこご市立ねこづか小学校」のネル先生です。
-            生徒「${name}」さんがゲームを開始します。
-            「${name}さん！カリカリいっぱいゲットしてにゃ！」とだけ言ってください。余計な言葉は不要。
-            `;
+            prompt = `あなたは「ねこご市立ねこづか小学校」のネル先生。生徒「${name}」がゲーム開始。「${name}さん！カリカリいっぱいゲットしてにゃ！」とだけ言って。`;
         } else if (type === 'end') {
-            prompt = `
-            あなたはネル先生です。ゲーム終了。スコア${score}個(最大20)。
-            スコアに応じて褒めるか励ましてください。
-            【厳守】20文字以内。語尾「にゃ」。絵文字禁止。
-            `;
+            prompt = `あなたはネル先生。ゲーム終了。スコア${score}個(最大20)。20文字以内で褒めて。語尾「にゃ」。`;
         } else {
-            prompt = `
-            ネル先生の実況。状況: ${type}。
-            【厳守】
-            - 「うまい！」「あぶない！」「すごい！」など、5〜8文字程度の単語レベルで叫んでください。
-            - 語尾「にゃ」。
-            - 1フレーズのみ。
-            `;
+            prompt = `ネル先生の実況。状況:${type}。「うまい！」「あぶない！」など一言だけ。語尾「にゃ」。`;
         }
 
         const result = await model.generateContent(prompt);
@@ -102,7 +88,7 @@ app.post('/lunch-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { count, name } = req.body;
-        // ★修正: 2.0 Flash Exp に統一
+        // 給食は速度優先
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp",
             generationConfig: { maxOutputTokens: 60 } 
@@ -134,7 +120,7 @@ app.post('/lunch-reaction', async (req, res) => {
 app.post('/chat', async (req, res) => {
     try {
         const { message, grade, name } = req.body;
-        // ★修正: 2.0 Flash Exp に統一
+        // チャットは速度優先
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         const prompt = `あなたは「ネル先生」。相手は小学${grade}年生「${name}」。30文字以内、語尾「にゃ」。絵文字禁止。発言: ${message}`;
         const result = await model.generateContent(prompt);
@@ -142,18 +128,19 @@ app.post('/chat', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
-// --- ★画像分析API ---
+// --- ★画像分析API (Proモデル + JSON抽出強化) ---
 app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { image, mode, grade, subject } = req.body;
         
-        // ★修正: 2.0 Flash Exp に統一
-        const model = genAI.getGenerativeModel({
-            model: "gemini-2.0-flash-exp",
-            generationConfig: { responseMimeType: "application/json" }
+        // ★修正: 分析は最高精度のProモデルを使用
+        // JSONモードは指定せず、テキストとして生成させてから抽出する
+        const model = genAI.getGenerativeModel({ 
+            model: "gemini-2.0-pro-exp-02-05" 
         });
 
+        // ■ 教科別詳細ルール
         const rules = {
             'さんすう': {
                 attention: `・筆算の横線とマイナス記号を混同しないこと。\n・累乗（2^2など）や分数を正確に。`,
@@ -170,7 +157,7 @@ app.post('/analyze', async (req, res) => {
                 attention: `
                 【最重要：縦書きレイアウトと書き起こしルール】
                 1. 縦書き認識: この画像は縦書きです。必ず「右上」からスタートし、「丸数字の真下」にある文章を垂直方向に読み進めてください。行が終わったら左の列へ移動します。
-                2. 隣の列との分離: 丸数字（①, ②...）は問題の開始点です。隣の列の文字を絶対に混ぜないでください。
+                2. 問題の分離: 丸数字（①, ②...）は新しい問題の開始合図です。隣の行の文字と混ざらないように、罫線や余白で明確に区切ってください。
                 3. 【絶対ルール】書き起こしフォーマット
                    - 解答すべき空欄（□）は、その横にあるルビ（読み仮名）とセットです。
                    - 必ず『□(読み仮名)』という形式で書き起こしてください。（例: 「(はこ)の中」→ 『□(はこ)の中』）
@@ -237,7 +224,7 @@ app.post('/analyze', async (req, res) => {
             ${r.hints}
 
             【出力フォーマット】
-            以下のJSON形式のみを出力してください。Markdownのコードブロックは不要です。
+            以下のJSON形式のみを出力してください。Markdownのコードブロックは不要です。配列 [ ... ] のみを出力してください。
             
             [
               {
@@ -257,10 +244,16 @@ app.post('/analyze', async (req, res) => {
             ${mode === 'grade' ? `【採点基準】\n${r.grading}` : ''}
         `;
 
-        const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
+        // Proモデルは text() で受け取ってから自力でJSON抽出する方が安定する
+        const result = await model.generateContent([
+            { inlineData: { mime_type: "image/jpeg", data: image } }, 
+            { text: prompt }
+        ]);
+        
         let textResponse = result.response.text();
 
-        // 500エラー対策: JSON抽出ロジック
+        // JSON抽出ロジック（バッククォート削除と配列抽出）
+        textResponse = textResponse.replace(/```json/g, '').replace(/```/g, '');
         const firstBracket = textResponse.indexOf('[');
         const lastBracket = textResponse.lastIndexOf(']');
         
@@ -289,6 +282,7 @@ const server = app.listen(PORT, () => console.log(`Server running on port ${PORT
 // --- ★Live API Proxy (Aoede) ---
 const wss = new WebSocketServer({ server });
 wss.on('connection', (clientWs, req) => {
+    // 学年と名前を取得
     const parameters = parse(req.url, true).query;
     const userGrade = parameters.grade || "1";
     const userName = decodeURIComponent(parameters.name || "");
@@ -300,7 +294,7 @@ wss.on('connection', (clientWs, req) => {
         geminiWs.on('open', () => {
             geminiWs.send(JSON.stringify({
                 setup: {
-                    // ★修正: Live APIも 2.0 Flash Exp に統一
+                    // Live APIは 2.0 Flash Exp でOK
                     model: "models/gemini-2.0-flash-exp",
                     generation_config: { 
                         response_modalities: ["AUDIO"], 
@@ -312,7 +306,7 @@ wss.on('connection', (clientWs, req) => {
                     system_instruction: {
                         parts: [{
                             text: `あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。
-相手は小学${userGrade}年生の${userName}さん。
+            相手は小学${userGrade}年生の${userName}さん。
                
               【重要：話し方のルール】
                1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
