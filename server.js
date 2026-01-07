@@ -62,6 +62,7 @@ app.post('/game-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { type, name, score } = req.body;
+        // 速度優先
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
 
         let prompt = "";
@@ -87,6 +88,7 @@ app.post('/lunch-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { count, name } = req.body;
+        // 速度優先
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp",
             generationConfig: { maxOutputTokens: 60 } 
@@ -125,18 +127,17 @@ app.post('/chat', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
-// --- ★画像分析API (2.0 Pro Exp + 強力なJSON抽出・洗浄) ---
+// --- ★画像分析API (2.0 Pro Exp + 最強のJSON洗浄) ---
 app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { image, mode, grade, subject } = req.body;
         
-        // ★修正: 分析には最高精度の 2.0 Pro Exp を使用
+        // ★修正: 分析は最高精度のProモデルを使用
         const model = genAI.getGenerativeModel({
             model: "gemini-2.0-pro-exp-02-05"
         });
 
-        // ■ 教科別詳細ルール
         const rules = {
             'さんすう': {
                 attention: `・筆算の横線とマイナス記号を混同しないこと。\n・累乗（2^2など）や分数を正確に。`,
@@ -220,7 +221,7 @@ app.post('/analyze', async (req, res) => {
             ${r.hints}
 
             【出力フォーマット】
-            以下のJSON形式のみを出力してください。
+            以下のJSON形式のみを出力してください。Markdownのコードブロックは不要です。
             
             [
               {
@@ -238,31 +239,37 @@ app.post('/analyze', async (req, res) => {
             ]
             
             ${mode === 'grade' ? `【採点基準】\n${r.grading}` : ''}
+        `;
 
-            【厳守】
-            - 出力は必ず [ ] で囲まれたJSON配列のみにしてください。
+        // 🚀 修正ポイント1: プロンプトに「JSON Schema」を意識させる指示を追加
+        const finalPrompt = prompt + `
+            【エンジニア向け厳守事項】
+            - 出力は必ず [ ] で囲まれた有効なJSON配列のみにしてください。
             - プロパティ名や文字列は必ず二重引用符 (") で囲んでください。
-            - 文字列内での改行は避け、必要な場合は \\n を使用してください。
+            - 文字列内での改行は避け、どうしても必要な場合は "\\n" という文字に置換してください。
+            - Markdownの装飾（\`\`\`jsonなど）は一切不要です。
         `;
 
         const result = await model.generateContent([
             { inlineData: { mime_type: "image/jpeg", data: image } }, 
-            { text: prompt }
+            { text: finalPrompt }
         ]);
         
         const response = await result.response;
-        let textResponse = response.text();
+        let textResponse = response.text().trim();
 
-        // 🚀 強力な抽出と洗浄
+        // 🚀 修正ポイント2: 強力な抽出と洗浄
         const start = textResponse.indexOf('[');
         const end = textResponse.lastIndexOf(']');
         
         if (start !== -1 && end !== -1) {
             let jsonStr = textResponse.substring(start, end + 1);
             
-            // 制御文字や不正な改行を削除・置換してJSONを「修理」
+            // 🚀 重要: JSONを破壊する「制御文字」と「不正な改行」を徹底除去
             jsonStr = jsonStr
                 .replace(/[\u0000-\u001F\u007F-\u009F]/g, "") // 制御文字を削除
+                .replace(/\n/g, " ") // 文字列内の本物の改行をスペースに置換（パースエラー回避）
+                .replace(/\\'/g, "'") // 不正なエスケープの修正
                 .replace(/\*/g, '×')
                 .replace(/\//g, '÷');
 
@@ -270,12 +277,12 @@ app.post('/analyze', async (req, res) => {
                 const parsedData = JSON.parse(jsonStr);
                 res.json(parsedData);
             } catch (parseErr) {
-                console.error("JSON Parse Failed. Raw segment:", jsonStr);
-                throw new Error("AIの返答が崩れてしまったにゃ。もう一度試してにゃ。");
+                console.error("JSON Parse Retry Failed. Raw segment:", jsonStr);
+                throw new Error("AIの返答が少し崩れちゃったにゃ。もう一度撮ってみてにゃ。");
             }
         } else {
             console.error("No JSON found in response:", textResponse);
-            throw new Error("AIがJSON形式で答えてくれなかったにゃ。");
+            throw new Error("AIがJSONを作れなかったにゃ。");
         }
 
     } catch (err) {
@@ -291,7 +298,6 @@ const server = app.listen(PORT, () => console.log(`Server running on port ${PORT
 // --- ★Live API Proxy (Aoede) ---
 const wss = new WebSocketServer({ server });
 wss.on('connection', (clientWs, req) => {
-    // 学年と名前を取得
     const parameters = parse(req.url, true).query;
     const userGrade = parameters.grade || "1";
     const userName = decodeURIComponent(parameters.name || "");
@@ -305,13 +311,7 @@ wss.on('connection', (clientWs, req) => {
                 setup: {
                     // Live APIは 2.0 Flash Exp でOK
                     model: "models/gemini-2.0-flash-exp",
-                    generation_config: { 
-                        response_modalities: ["AUDIO"], 
-                        speech_config: { 
-                            voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } },
-                            language_code: "ja-JP"
-                        } 
-                    }, 
+                    generation_config: { response_modalities: ["AUDIO"], speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } } } }, 
                     system_instruction: {
                         parts: [{
                             text: `あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。
