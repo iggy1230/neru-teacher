@@ -150,7 +150,7 @@ app.post('/analyze', async (req, res) => {
         
         // ★修正: 2.0 Flash Exp に統一
         const model = genAI.getGenerativeModel({
-            model: "gemini-3.0-flash",
+            model: "gemini-1.5-pro",
             generationConfig: { responseMimeType: "application/json" }
         });
 
