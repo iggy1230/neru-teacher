@@ -14,6 +14,7 @@ body {
     -webkit-font-smoothing: antialiased;
     box-sizing: border-box;
     padding-top: 80px; 
+    padding-bottom: 30px;
 }
 
 button { font-family: inherit; }
@@ -22,9 +23,45 @@ button { font-family: inherit; }
 #app-container {
     max-width: 600px;
     margin: 0 auto;
-    min-height: calc(100vh - 80px);
+    min-height: calc(100vh - 110px);
     position: relative;
     padding-bottom: 20px;
+}
+
+/* ★追加: タイトル画面専用スタイル */
+#screen-title {
+    position: fixed; /* 画面全体に固定 */
+    top: 0; left: 0; width: 100%; height: 100%;
+    background-image: url('neru-title-bg.png'); /* 指定の背景 */
+    background-size: cover;
+    background-position: center;
+    z-index: 2000; /* 全ての要素の上に */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    margin: 0;
+}
+/* タイトル画面のスタートボタン */
+.title-start-btn {
+    width: 80%;
+    max-width: 300px;
+    padding: 20px;
+    font-size: 1.5rem;
+    font-weight: 900;
+    box-shadow: 0 8px 15px rgba(0,0,0,0.3);
+    animation: pulseBtn 2s infinite;
+}
+@keyframes pulseBtn {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+
+.version-tag {
+    position: fixed; bottom: 5px; right: 10px; font-size: 0.7rem;
+    color: rgba(0, 0, 0, 0.5); background: rgba(255, 255, 255, 0.5);
+    padding: 2px 5px; border-radius: 4px; pointer-events: none; z-index: 9999;
 }
 
 /* 共通ボタンスタイル */
@@ -91,11 +128,11 @@ button { font-family: inherit; }
     box-shadow: 0 2px 4px rgba(0,0,0,0.2); z-index: 10;
 }
 
-/* ★修正: プレビュー枠の高さをさらに広げて比率を正す */
+/* 入学手続き */
 .id-card-wrap {
     position: relative; 
     width: 320px; 
-    height: 220px; /* 200px -> 220px */
+    height: 220px; 
     margin: 0 auto 20px;
     box-shadow: 0 4px 10px rgba(0,0,0,0.3); 
     border-radius: 12px; 
@@ -104,23 +141,13 @@ button { font-family: inherit; }
 }
 .id-base-img { width: 100%; height: 100%; object-fit: fill; }
 
-/* ★修正: プレビュー用キャンバス（ここに全部描画する） */
 #id-photo-preview-canvas {
     width: 100%; height: 100%;
     object-fit: contain;
-    position: absolute; top: 0; left: 0; /* 全面を覆う */
-    z-index: 2; /* ベース画像の上 */
+    position: absolute; top: 0; left: 0;
+    z-index: 2;
 }
-/* 元の写真枠divは不要になるが、レイアウト崩れ防止のため非表示にして残す */
-#id-photo-slot { display: none; }
-
-/* テキストオーバーレイはキャンバスに描画するのでCSSでの表示は消すか、入力中の確認用として残す */
-/* ここでは、入力中の確認用として残すが、キャンバス描画と被らないようにz-index調整 */
-.id-text-overlay { 
-    position: absolute; color: #333; font-weight: bold; font-family: sans-serif; pointer-events: none; z-index: 3;
-}
-.id-grade-text { top: 85px; left: 185px; font-size: 16px; width: 100px; text-align: center; }
-.id-name-text { top: 125px; left: 185px; font-size: 18px; width: 100px; text-align: center; }
+#id-photo-slot, .id-text-overlay { display: none; }
 
 .styled-input, .styled-select {
     width: 80%; padding: 12px; margin: 10px auto; display: block;
@@ -129,7 +156,7 @@ button { font-family: inherit; }
 
 /* ロビー */
 .lobby-top { text-align: center; margin: 20px 0; }
-.mini-id { transform: scale(0.8); margin-bottom: 0; }
+.mini-id { transform: scale(0.9); margin-bottom: 0; }
 .karikari-counter {
     text-align: center; font-size: 1.2rem; font-weight: bold;
     color: #d84315; background: #fff3e0; padding: 5px 15px;
@@ -143,21 +170,25 @@ button { font-family: inherit; }
 .nell-chat { display: flex; align-items: flex-end; margin-bottom: 15px; padding: 0 10px; }
 .nell-avatar-wrap { position: relative; width: 100px; height: 100px; flex-shrink: 0; }
 .nell-img { width: 100%; height: 100%; object-fit: contain; }
+
 .chat-bubble {
     background: white; border-radius: 20px 20px 20px 0; padding: 15px;
     margin-left: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); position: relative; flex-grow: 1;
+    font-family: 'Kiwi Maru', serif;
 }
 .chat-bubble::after {
     content: ''; position: absolute; bottom: 0; left: -10px;
     border-width: 10px 10px 0 0; border-style: solid; border-color: white transparent transparent transparent;
 }
-.chat-bubble p { margin: 0; font-size: 1rem; line-height: 1.5; }
+.chat-bubble p { margin: 0; font-size: 1.1rem; line-height: 1.6; }
 
 .chalkboard {
     background: #2e7d32; color: white; padding: 15px; border: 8px solid #a1887f;
-    border-radius: 5px; margin: 10px; font-family: 'Kiwi Maru', serif; min-height: 100px;
-    box-shadow: inset 0 0 20px rgba(0,0,0,0.2);
+    border-radius: 5px; margin: 10px; 
+    font-family: 'Kiwi Maru', serif; font-size: 1.2rem;
+    min-height: 100px; box-shadow: inset 0 0 20px rgba(0,0,0,0.2);
 }
+
 .work-area { background: rgba(255,255,255,0.8); border-radius: 20px; padding: 15px; margin: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
 
 .camera-btn-large {
