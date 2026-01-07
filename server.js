@@ -12,6 +12,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 
 app.use(cors());
+// 画像データが大きい場合に対応
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, '.')));
 
@@ -57,12 +58,11 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- ゲーム実況API ---
+// --- ゲーム実況API (速度重視 Flash) ---
 app.post('/game-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { type, name, score } = req.body;
-        // ゲームは速度優先
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
 
         let prompt = "";
@@ -83,12 +83,11 @@ app.post('/game-reaction', async (req, res) => {
     }
 });
 
-// --- 給食リアクションAPI ---
+// --- 給食リアクションAPI (速度重視 Flash) ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { count, name } = req.body;
-        // 給食は速度優先
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp",
             generationConfig: { maxOutputTokens: 60 } 
@@ -116,11 +115,10 @@ app.post('/lunch-reaction', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Lunch Error" }); }
 });
 
-// --- チャットAPI ---
+// --- チャットAPI (速度重視 Flash) ---
 app.post('/chat', async (req, res) => {
     try {
         const { message, grade, name } = req.body;
-        // チャットは速度優先
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         const prompt = `あなたは「ネル先生」。相手は小学${grade}年生「${name}」。30文字以内、語尾「にゃ」。絵文字禁止。発言: ${message}`;
         const result = await model.generateContent(prompt);
@@ -128,19 +126,18 @@ app.post('/chat', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
-// --- ★画像分析API (Proモデル + JSON抽出強化) ---
+// --- ★画像分析API (2.0 Pro Exp + 強力エラー回避) ---
 app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { image, mode, grade, subject } = req.body;
         
-        // ★修正: 分析は最高精度のProモデルを使用
-        // JSONモードは指定せず、テキストとして生成させてから抽出する
-        const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.0-pro-exp-02-05" 
+        // ★修正: 最新の高精度モデルを指定
+        const model = genAI.getGenerativeModel({
+            model: "gemini-2.0-pro-exp-02-05"
         });
 
-        // ■ 教科別詳細ルール
+        // 教科別詳細ルール
         const rules = {
             'さんすう': {
                 attention: `・筆算の横線とマイナス記号を混同しないこと。\n・累乗（2^2など）や分数を正確に。`,
@@ -224,7 +221,7 @@ app.post('/analyze', async (req, res) => {
             ${r.hints}
 
             【出力フォーマット】
-            以下のJSON形式のみを出力してください。Markdownのコードブロックは不要です。配列 [ ... ] のみを出力してください。
+            以下のJSON形式のみを出力してください。Markdownのコードブロックは不要です。
             
             [
               {
@@ -242,9 +239,10 @@ app.post('/analyze', async (req, res) => {
             ]
             
             ${mode === 'grade' ? `【採点基準】\n${r.grading}` : ''}
+            
+            必ず純粋なJSON配列 [ ... ] のみを出力してください。Markdownの枠（\`\`\`json）は不要です。
         `;
 
-        // Proモデルは text() で受け取ってから自力でJSON抽出する方が安定する
         const result = await model.generateContent([
             { inlineData: { mime_type: "image/jpeg", data: image } }, 
             { text: prompt }
@@ -252,22 +250,20 @@ app.post('/analyze', async (req, res) => {
         
         let textResponse = result.response.text();
 
-        // JSON抽出ロジック（バッククォート削除と配列抽出）
-        textResponse = textResponse.replace(/```json/g, '').replace(/```/g, '');
-        const firstBracket = textResponse.indexOf('[');
-        const lastBracket = textResponse.lastIndexOf(']');
+        // ★修正: 頑丈なJSON抽出ロジック
+        const start = textResponse.indexOf('[');
+        const end = textResponse.lastIndexOf(']');
         
-        if (firstBracket !== -1 && lastBracket !== -1) {
-            textResponse = textResponse.substring(firstBracket, lastBracket + 1);
+        if (start !== -1 && end !== -1) {
+            let jsonStr = textResponse.substring(start, end + 1);
+            // 算数記号などの置換
+            jsonStr = jsonStr.replace(/\*/g, '×').replace(/\//g, '÷');
+            // パース実行
+            res.json(JSON.parse(jsonStr));
         } else {
-            console.error("Invalid JSON format from Gemini:", textResponse);
-            throw new Error("AIが有効なデータを生成できませんでした。");
+            console.error("Invalid JSON format from AI:", textResponse);
+            throw new Error("AIが問題を読み取れませんでした。もう一度試してにゃ。");
         }
-
-        // 全角記号の補正
-        textResponse = textResponse.replace(/\*/g, '×').replace(/\//g, '÷');
-
-        res.json(JSON.parse(textResponse));
 
     } catch (err) {
         console.error("Analyze Error Details:", err);
@@ -282,7 +278,6 @@ const server = app.listen(PORT, () => console.log(`Server running on port ${PORT
 // --- ★Live API Proxy (Aoede) ---
 const wss = new WebSocketServer({ server });
 wss.on('connection', (clientWs, req) => {
-    // 学年と名前を取得
     const parameters = parse(req.url, true).query;
     const userGrade = parameters.grade || "1";
     const userName = decodeURIComponent(parameters.name || "");
