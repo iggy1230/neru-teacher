@@ -62,7 +62,6 @@ app.post('/game-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { type, name, score } = req.body;
-        // 速度優先
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
 
         let prompt = "";
@@ -88,7 +87,6 @@ app.post('/lunch-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { count, name } = req.body;
-        // 速度優先
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp",
             generationConfig: { maxOutputTokens: 60 } 
@@ -127,17 +125,18 @@ app.post('/chat', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
-// --- ★画像分析API (2.0 Pro Exp + 最強のJSON洗浄) ---
+// --- ★画像分析API (2.0 Pro Exp + 鉄壁のエラー対策) ---
 app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { image, mode, grade, subject } = req.body;
         
-        // ★修正: 分析は最高精度のProモデルを使用
+        // 最高精度の 2.0 Pro Exp を使用
         const model = genAI.getGenerativeModel({
             model: "gemini-2.0-pro-exp-02-05"
         });
 
+        // 教科別詳細ルール
         const rules = {
             'さんすう': {
                 attention: `・筆算の横線とマイナス記号を混同しないこと。\n・累乗（2^2など）や分数を正確に。`,
@@ -202,7 +201,7 @@ app.post('/analyze', async (req, res) => {
             ? `・画像内の手書き文字（生徒の答え）は【完全に無視】してください。\n・出力JSONの "student_answer" は空文字 "" にしてください。`
             : `・採点のため、生徒の手書き文字を可能な限り読み取り、出力JSONの "student_answer" に格納してください。\n・子供特有の筆跡を考慮し、前後の文脈から推測してください。`;
 
-        const prompt = `
+        const finalPrompt = `
             ${baseRole}
             
             【タスク】
@@ -239,11 +238,8 @@ app.post('/analyze', async (req, res) => {
             ]
             
             ${mode === 'grade' ? `【採点基準】\n${r.grading}` : ''}
-        `;
 
-        // 🚀 修正ポイント1: プロンプトに「JSON Schema」を意識させる指示を追加
-        const finalPrompt = prompt + `
-            【エンジニア向け厳守事項】
+            【厳守事項】
             - 出力は必ず [ ] で囲まれた有効なJSON配列のみにしてください。
             - プロパティ名や文字列は必ず二重引用符 (") で囲んでください。
             - 文字列内での改行は避け、どうしても必要な場合は "\\n" という文字に置換してください。
@@ -258,36 +254,44 @@ app.post('/analyze', async (req, res) => {
         const response = await result.response;
         let textResponse = response.text().trim();
 
-        // 🚀 修正ポイント2: 強力な抽出と洗浄
+        // 🚀 1. Markdownの枠を削除
+        textResponse = textResponse.replace(/```json/g, "").replace(/```/g, "").trim();
+
+        // 🚀 2. [ と ] を探す
         const start = textResponse.indexOf('[');
         const end = textResponse.lastIndexOf(']');
         
         if (start !== -1 && end !== -1) {
             let jsonStr = textResponse.substring(start, end + 1);
             
-            // 🚀 重要: JSONを破壊する「制御文字」と「不正な改行」を徹底除去
+            // 🚀 3. JSONを壊す文字を徹底掃除
             jsonStr = jsonStr
-                .replace(/[\u0000-\u001F\u007F-\u009F]/g, "") // 制御文字を削除
-                .replace(/\n/g, " ") // 文字列内の本物の改行をスペースに置換（パースエラー回避）
-                .replace(/\\'/g, "'") // 不正なエスケープの修正
-                .replace(/\*/g, '×')
+                .replace(/[\u0000-\u001F\u007F-\u009F]/g, "") // 制御文字削除
+                .replace(/\n/g, "\\n") // 改行コードをエスケープ
+                .replace(/\r/g, "")
+                .replace(/\*/g, '×') // 算数記号の補正
                 .replace(/\//g, '÷');
 
             try {
+                // 🚀 4. パース実行
                 const parsedData = JSON.parse(jsonStr);
-                res.json(parsedData);
+                return res.json(parsedData); // ここで完了
             } catch (parseErr) {
-                console.error("JSON Parse Retry Failed. Raw segment:", jsonStr);
-                throw new Error("AIの返答が少し崩れちゃったにゃ。もう一度撮ってみてにゃ。");
+                console.error("JSON Parse Failed. Raw:", jsonStr);
+                // 🚀 5. 失敗時のフォールバック（サーバーを落とさない）
+                return res.json([{
+                    id: 1, label: "!", question: "ごめんにゃ、もう一度撮ってほしいにゃ！（読み取り失敗）",
+                    correct_answer: "", student_answer: "", hints: ["写真を撮り直してにゃ", "", ""]
+                }]);
             }
         } else {
-            console.error("No JSON found in response:", textResponse);
+            console.error("No JSON found:", textResponse);
             throw new Error("AIがJSONを作れなかったにゃ。");
         }
 
     } catch (err) {
         console.error("Analyze Error Details:", err);
-        res.status(500).json({ error: "分析エラーにゃ: " + err.message });
+        res.status(500).json({ error: "AI分析エラー: " + err.message });
     }
 });
 
@@ -298,6 +302,7 @@ const server = app.listen(PORT, () => console.log(`Server running on port ${PORT
 // --- ★Live API Proxy (Aoede) ---
 const wss = new WebSocketServer({ server });
 wss.on('connection', (clientWs, req) => {
+    // 学年と名前を取得
     const parameters = parse(req.url, true).query;
     const userGrade = parameters.grade || "1";
     const userName = decodeURIComponent(parameters.name || "");
@@ -311,11 +316,17 @@ wss.on('connection', (clientWs, req) => {
                 setup: {
                     // Live APIは 2.0 Flash Exp でOK
                     model: "models/gemini-2.0-flash-exp",
-                    generation_config: { response_modalities: ["AUDIO"], speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } } } }, 
+                    generation_config: { 
+                        response_modalities: ["AUDIO"], 
+                        speech_config: { 
+                            voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } },
+                            language_code: "ja-JP"
+                        } 
+                    }, 
                     system_instruction: {
                         parts: [{
                             text: `あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。
-相手は小学${userGrade}年生の${userName}さん。
+            相手は小学${userGrade}年生の${userName}さん。
                
               【重要：話し方のルール】
                1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
