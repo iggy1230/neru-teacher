@@ -6,7 +6,11 @@
     <title>🐾猫後市立ねこづか小学校</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Sawarabi+Gothic&family=M+PLUS+Rounded+1c:wght@700;900&family=Kiwi+Maru:wght@900&display=swap" rel="stylesheet">
+    <!-- 顔認識ライブラリ -->
     <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <!-- クロップ用ライブラリ -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
 </head>
 <body>
     <canvas id="hanamaru-canvas"></canvas>
@@ -14,20 +18,19 @@
     
     <div id="mini-karikari-display" class="mini-karikari-display hidden"><span>🍖</span><span id="mini-karikari-count">0</span></div>
 
-    <div class="version-tag">Build: v14.0.0-TitleAdded</div>
-
     <div id="app-container">
-        <!-- ★追加: 0. タイトル画面 -->
+        <!-- 0. タイトル画面 -->
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container">
                 <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
             </div>
+            <!-- ★移動: タイトル画面最下部へ -->
+            <div class="version-tag">Build: v15.1.0-ModelUnified</div>
         </section>
 
-        <!-- 1. 校門 (ユーザー選択) -->
+        <!-- 1. 校門 -->
         <section id="screen-gate" class="screen hidden">
-            <!-- タイトルは削除し、シンプルなヘッダーなどに変更しても良いが、ここではリストのみ表示 -->
             <h2 class="section-title">登校する生徒を選んでにゃ</h2>
             <div class="gate-layout"><div id="user-list" class="right-user-list"></div></div>
             <button onclick="showEnrollment()" class="main-btn pink-btn">🐾 新しく入学するにゃ</button>
@@ -38,8 +41,8 @@
         <section id="screen-enrollment" class="screen hidden">
             <h2 class="section-title">🎒 入学手続き</h2>
             <div class="id-card-wrap">
-                <img src="student-id-base.png" class="id-base-img">
-                <div id="id-photo-slot"><canvas id="id-photo-preview-canvas" width="94" height="102"></canvas></div>
+                <img src="student-id-base.png" class="id-base-img" id="id-base-preview">
+                <div id="id-photo-slot"><canvas id="id-photo-preview-canvas"></canvas></div>
                 <div class="id-text-overlay id-grade-text" id="preview-grade">○年生</div>
                 <div class="id-text-overlay id-name-text" id="preview-name">なまえ</div>
             </div>
@@ -60,7 +63,6 @@
                         <input type="file" id="student-photo-input-album" accept="image/*" style="display:none;">
                     </label>
                 </div>
-                <input type="file" id="student-photo-input" accept="image/*" style="display:none;">
             </div>
 
             <input type="text" id="new-student-name" class="styled-input" placeholder="おなまえ" oninput="updateIDPreview()">
@@ -120,20 +122,19 @@
                     <div id="upload-controls" class="hidden">
                         <p style="text-align:center; margin-bottom:10px;">宿題をみせてね！</p>
                         <div class="upload-buttons-container">
-                            <button id="start-webcam-btn" class="camera-btn-large" style="background:#ff9800; box-shadow:0 6px 0 #e65100;">
+                            <button id="start-webcam-btn" class="camera-btn-large" style="background:#ff9800; box-shadow:0 6px 0 #e65100; font-size:1rem; padding:10px;">
                                 📹 アプリで撮影
                             </button>
                             <div style="display:flex; gap:10px;">
-                                <label class="camera-btn-large" style="flex:1; font-size:1rem;">
+                                <label class="camera-btn-large" style="flex:1; font-size:0.9rem; padding:10px;">
                                     📷 標準カメラ
                                     <input type="file" id="hw-input-camera" accept="image/*" style="display:none;">
                                 </label>
-                                <label class="camera-btn-large" style="flex:1; font-size:1rem; background:#4a90e2; box-shadow:0 6px 0 #2c5f96;">
+                                <label class="camera-btn-large" style="flex:1; font-size:0.9rem; padding:10px; background:#4a90e2; box-shadow:0 6px 0 #2c5f96;">
                                     📁 アルバム
                                     <input type="file" id="hw-input-album" accept="image/*" style="display:none;">
                                 </label>
                             </div>
-                            <input type="file" id="hw-input" accept="image/*" style="display:none;">
                         </div>
                     </div>
 
@@ -214,17 +215,28 @@
         </section>
     </div>
 
-    <!-- カメラモーダル -->
+    <!-- カメラ撮影モーダル -->
     <div id="camera-modal" class="camera-modal hidden">
         <div class="camera-container">
             <video id="camera-video" autoplay playsinline></video>
-            <div class="camera-guide-box"><p>ここに宿題/顔を合わせてにゃ</p></div>
+            <div class="camera-guide-box"><p>枠に合わせてにゃ</p></div>
         </div>
         <div class="camera-controls">
             <button id="camera-cancel-btn" class="main-btn gray-btn" style="width:100px;">やめる</button>
             <button id="camera-shutter-btn" class="camera-shutter-btn"></button>
         </div>
         <canvas id="camera-canvas" style="display:none;"></canvas>
+    </div>
+
+    <!-- クロップモーダル -->
+    <div id="cropper-modal" class="camera-modal hidden">
+        <div class="camera-container" style="background:#000;">
+            <img id="cropper-img" style="max-width:100%; max-height:80vh;">
+        </div>
+        <div class="camera-controls">
+            <button id="cropper-cancel-btn" class="main-btn gray-btn" style="width:100px;">やめる</button>
+            <button id="cropper-ok-btn" class="main-btn pink-btn" style="width:120px;">決定！</button>
+        </div>
     </div>
 
     <script src="audio.js"></script>

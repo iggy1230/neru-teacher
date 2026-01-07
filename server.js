@@ -62,17 +62,32 @@ app.post('/game-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { type, name, score } = req.body;
+        // ★修正: Flash (高速)
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
 
         let prompt = "";
         let mood = "excited";
 
         if (type === 'start') {
-            prompt = `あなたは「ねこご市立ねこづか小学校」のネル先生。生徒「${name}」がゲーム開始。「${name}さん！カリカリいっぱいゲットしてにゃ！」とだけ言って。`;
+            prompt = `
+            あなたは「ねこご市立ねこづか小学校」のネル先生です。
+            生徒「${name}」さんがゲームを開始します。
+            「${name}さん！カリカリいっぱいゲットしてにゃ！」とだけ言ってください。余計な言葉は不要。
+            `;
         } else if (type === 'end') {
-            prompt = `あなたはネル先生。ゲーム終了。スコア${score}個(最大20)。20文字以内で褒めて。語尾「にゃ」。`;
+            prompt = `
+            あなたはネル先生です。ゲーム終了。スコア${score}個(最大20)。
+            スコアに応じて褒めるか励ましてください。
+            【厳守】20文字以内。語尾「にゃ」。絵文字禁止。
+            `;
         } else {
-            prompt = `ネル先生の実況。状況:${type}。「うまい！」「あぶない！」など一言だけ。語尾「にゃ」。`;
+            prompt = `
+            ネル先生の実況。状況: ${type}。
+            【厳守】
+            - 「うまい！」「あぶない！」「すごい！」など、5〜8文字程度の単語レベルで叫んでください。
+            - 語尾「にゃ」。
+            - 1フレーズのみ。
+            `;
         }
 
         const result = await model.generateContent(prompt);
@@ -87,8 +102,7 @@ app.post('/lunch-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { count, name } = req.body;
-        
-        // 高速化のためFlashモデル
+        // ★修正: Flash (高速)
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp",
             generationConfig: { maxOutputTokens: 60 } 
@@ -120,6 +134,7 @@ app.post('/lunch-reaction', async (req, res) => {
 app.post('/chat', async (req, res) => {
     try {
         const { message, grade, name } = req.body;
+        // ★修正: Flash (高速)
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         const prompt = `あなたは「ネル先生」。相手は小学${grade}年生「${name}」。30文字以内、語尾「にゃ」。絵文字禁止。発言: ${message}`;
         const result = await model.generateContent(prompt);
@@ -127,12 +142,27 @@ app.post('/chat', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
-// --- ★画像分析API ---
+// --- 記憶要約API ---
+app.post('/summarize-chat', async (req, res) => {
+    try {
+        const { transcript } = req.body;
+        if (!transcript || transcript.length < 10) return res.json({ summary: "" });
+        
+        // ★修正: Flash (高速)
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+        const prompt = `以下の会話内容を、次に会った時に話題にできるように、50文字以内で要約して「記憶」として出力してください。\n\n${transcript}`;
+        const result = await model.generateContent(prompt);
+        res.json({ summary: result.response.text().trim() });
+    } catch (err) { res.json({ summary: "" }); }
+});
+
+// --- ★画像分析API (ここだけ Pro モデル) ---
 app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { image, mode, grade, subject } = req.body;
         
+        // ★修正: 画像分析は最高精度の 2.0 Pro を使用
         const model = genAI.getGenerativeModel({
             model: "gemini-2.5-pro",
             generationConfig: { responseMimeType: "application/json" }
@@ -154,7 +184,7 @@ app.post('/analyze', async (req, res) => {
                 attention: `
                 【最重要：縦書きレイアウトと書き起こしルール】
                 1. 縦書き認識: この画像は縦書きです。必ず「右上」からスタートし、「丸数字の真下」にある文章を垂直方向に読み進めてください。行が終わったら左の列へ移動します。
-                2. 隣の列との分離: 丸数字（①, ②...）は問題の開始点です。隣の列の文字を絶対に混ぜないでください。
+                2. 問題の分離: 丸数字（①, ②...）は新しい問題の開始合図です。
                 3. 【絶対ルール】書き起こしフォーマット
                    - 解答すべき空欄（□）は、その横にあるルビ（読み仮名）とセットです。
                    - 必ず『□(読み仮名)』という形式で書き起こしてください。（例: 「(はこ)の中」→ 『□(はこ)の中』）
@@ -244,6 +274,7 @@ app.post('/analyze', async (req, res) => {
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
         let textResponse = result.response.text();
 
+        // JSON抽出ロジック
         const firstBracket = textResponse.indexOf('[');
         const lastBracket = textResponse.lastIndexOf(']');
         
@@ -267,14 +298,14 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- ★Live API Proxy (Aoede / 記憶機能対応) ---
+// --- ★Live API Proxy (Aoede) ---
 const wss = new WebSocketServer({ server });
 wss.on('connection', (clientWs, req) => {
-    // 学年、名前、そして「記憶(memory)」を取得
+    // 学年と名前を取得
     const parameters = parse(req.url, true).query;
     const userGrade = parameters.grade || "1";
     const userName = decodeURIComponent(parameters.name || "");
-    const userMemory = decodeURIComponent(parameters.memory || "特になし");
+    const userMemory = decodeURIComponent(parameters.memory || "");
 
     let geminiWs = null;
     const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${process.env.GEMINI_API_KEY}`;
@@ -283,6 +314,7 @@ wss.on('connection', (clientWs, req) => {
         geminiWs.on('open', () => {
             geminiWs.send(JSON.stringify({
                 setup: {
+                    // ★修正: Live API用には 2.0 Flash Exp を使用
                     model: "models/gemini-2.0-flash-exp",
                     generation_config: { 
                         response_modalities: ["AUDIO"], 
@@ -293,15 +325,13 @@ wss.on('connection', (clientWs, req) => {
                     }, 
                     system_instruction: {
                         parts: [{
-                            // ★修正: 記憶情報を組み込む
                             text: `あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。
             相手は小学${userGrade}年生の${userName}さん。
-
-            【前回の会話の記憶】
+            
+            【前回の記憶】
             ${userMemory}
-            ※この記憶に基づいて、話題を振ったり、矛盾があれば指摘してください。
                
-              【重要：話し方のルール】
+            【話し方のルール】
                1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
                2. 【絶対に日本語のみ】で話してください。英語は禁止です。
                3. 【高い声のトーン】を意識し、元気で明るい子供向けの口調で話してください。
