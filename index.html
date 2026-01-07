@@ -14,27 +14,38 @@
     
     <div id="mini-karikari-display" class="mini-karikari-display hidden"><span>🍖</span><span id="mini-karikari-count">0</span></div>
 
-    <div class="version-tag">Build: v13.0.0-TitleAdded</div>
+    <div class="version-tag">Build: v13.1.0-TitleUpdate</div>
 
     <div id="app-container">
         
-        <!-- ★新設: タイトルページ (ここからスタート) -->
+        <!-- 1. タイトルページ (ここからスタート) -->
         <section id="screen-title" class="screen title-screen">
             <div class="title-content">
-                <!-- ボタンのみ中央配置 -->
-                <button onclick="startApp()" class="main-btn pink-btn title-start-btn">ねこづか小学校へ行くにゃ！</button>
+                <!-- ★追加: ここにタイトルを設置 -->
+                <h1 class="main-game-title">猫後市立<br>ねこづか小学校</h1>
+                
+                <!-- ★修正: ボタンを大きく、2行に -->
+                <button onclick="startApp()" class="main-btn pink-btn title-start-btn">
+                    ねこづか小学校へ<br>行くにゃ！
+                </button>
             </div>
         </section>
 
-        <!-- 1. 校門 (元のトップページ) -->
-        <!-- 初期状態は hidden に変更 -->
+        <!-- 2. 校門 (ユーザー選択) -->
         <section id="screen-gate" class="screen hidden">
-            <h1 class="school-title">猫後市立<br>ねこづか小学校</h1>
-            <div class="gate-layout"><div id="user-list" class="right-user-list"></div></div>
-            <button onclick="showEnrollment()" class="main-btn pink-btn">🐾 新しく入学するにゃ</button>
+            <!-- ★削除: ここにあったタイトルは削除しました -->
+            
+            <div class="gate-layout">
+                <div id="user-list" class="right-user-list"></div>
+            </div>
+            
+            <!-- 新規登録ボタン -->
+            <button onclick="showEnrollment()" class="main-btn pink-btn" style="margin-top: 30px;">
+                🐾 新しく入学するにゃ
+            </button>
         </section>
 
-        <!-- 2. 入学手続き -->
+        <!-- 3. 入学手続き -->
         <section id="screen-enrollment" class="screen hidden">
             <h2 class="section-title">🎒 入学手続き</h2>
             <div class="id-card-wrap">
@@ -45,6 +56,7 @@
             </div>
             
             <p style="text-align:center; margin-bottom:5px;">写真を選んでにゃ！</p>
+            
             <div class="upload-buttons-container">
                 <button id="enroll-webcam-btn" class="camera-btn-large" style="background:#ff9800; box-shadow:0 6px 0 #e65100; font-size:1rem; padding:10px;">
                     📹 アプリで撮影
@@ -72,7 +84,7 @@
             <div id="loading-models" style="text-align:center; font-size:0.7rem; margin-top:5px;">AI準備中...</div>
         </section>
 
-        <!-- 3. ロビー -->
+        <!-- 4. ロビー -->
         <section id="screen-lobby" class="screen hidden">
             <div class="lobby-top"><div class="id-card-wrap mini-id"><img id="current-student-avatar" class="id-base-img"></div></div>
             <div class="karikari-counter">🍖 カリカリ: <span id="karikari-count">0</span></div>
@@ -88,7 +100,7 @@
             </div>
         </section>
 
-        <!-- 4. 教室 -->
+        <!-- 5. 教室 -->
         <section id="screen-main" class="screen hidden">
             <header>
                 <button id="main-back-btn" onclick="backToLobby()" class="main-btn gray-btn" style="width:auto; padding:10px 20px;">←</button>
@@ -103,7 +115,6 @@
                     <div class="chat-bubble"><p id="nell-text"></p></div>
                 </div>
 
-                <!-- 教科選択 -->
                 <div id="subject-selection-view" class="hidden">
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
                         <button onclick="setSubject('こくご')" class="main-btn pink-btn">こくご</button>
@@ -116,7 +127,6 @@
                 <div id="chalkboard" class="chalkboard hidden"></div>
 
                 <div class="work-area">
-                    <!-- 宿題アップロード -->
                     <div id="upload-controls" class="hidden">
                         <p style="text-align:center; margin-bottom:10px;">宿題をみせてね！</p>
                         <div class="upload-buttons-container">
@@ -154,6 +164,7 @@
                         <div id="grade-sheet-container" class="hidden">
                             <div class="glass-card" id="problem-list-grade" style="background:white; border-radius:15px; padding:10px;"></div>
                         </div>
+
                         <div id="hint-detail-container" class="hidden">
                             <div class="hint-btns">
                                 <div class="hint-step-badge" id="hint-step-label">考え方</div>
@@ -185,7 +196,7 @@
             </div>
         </section>
         
-        <!-- 5. ゲーム -->
+        <!-- 6. ゲーム -->
         <section id="screen-game" class="screen hidden">
             <div class="nell-chat">
                 <div class="nell-avatar-wrap">
@@ -204,7 +215,7 @@
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">ロビーにもどる</button>
         </section>
 
-        <!-- 6. 出席簿 -->
+        <!-- 7. 出席簿 -->
         <section id="screen-attendance" class="screen hidden">
             <h2 class="section-title">📅 出席簿</h2>
             <div class="glass-card">

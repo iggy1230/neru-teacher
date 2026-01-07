@@ -13,43 +13,74 @@ body {
     color: #333;
     -webkit-font-smoothing: antialiased;
     box-sizing: border-box;
-    padding-top: 80px; 
+    padding-top: 0; /* タイトル画面のためにパディングなしからスタート */
+}
+
+/* 通常画面のレイアウト用（JSでクラス操作しても良いが、ここではapp-containerに余白を持たせる） */
+#app-container {
+    max-width: 600px;
+    margin: 0 auto;
+    min-height: 100vh;
+    position: relative;
     padding-bottom: 30px;
+    padding-top: 10px; /* 校門以降のための余白 */
 }
 
 button { font-family: inherit; }
 .hidden { display: none !important; }
 
-#app-container {
-    max-width: 600px;
-    margin: 0 auto;
-    min-height: calc(100vh - 110px);
-    position: relative;
-    padding-bottom: 20px;
-}
-
-/* ★追加: タイトル画面専用スタイル */
+/* --- タイトル画面 --- */
 #screen-title {
-    position: fixed; /* 画面全体に固定 */
-    top: 0; left: 0; width: 100%; height: 100%;
-    background-image: url('neru-title-bg.png'); /* 指定の背景 */
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background-image: url('neru-title-bg.png');
     background-size: cover;
     background-position: center;
-    z-index: 2000; /* 全ての要素の上に */
+    z-index: 2000;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0;
-    margin: 0;
 }
-/* タイトル画面のスタートボタン */
+.title-content {
+    text-align: center;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 40px; /* タイトルとボタンの間隔 */
+}
+/* メインタイトル */
+.main-game-title {
+    font-size: 3.5rem; /* かなり大きく */
+    font-weight: 900;
+    color: #d81b60;
+    line-height: 1.2;
+    text-shadow: 
+        4px 4px 0 #fff, 
+        -2px -2px 0 #fff, 
+        2px -2px 0 #fff, 
+        -2px 2px 0 #fff,
+        4px 4px 10px rgba(0,0,0,0.3);
+    margin: 0;
+    transform: rotate(-3deg); /* 少し傾けてポップに */
+    animation: floatingTitle 3s ease-in-out infinite;
+}
+@keyframes floatingTitle {
+    0% { transform: rotate(-3deg) translateY(0); }
+    50% { transform: rotate(-3deg) translateY(-10px); }
+    100% { transform: rotate(-3deg) translateY(0); }
+}
+
+/* スタートボタン */
 .title-start-btn {
     width: 80%;
-    max-width: 300px;
-    padding: 20px;
-    font-size: 1.5rem;
+    max-width: 320px;
+    padding: 25px;
+    font-size: 1.6rem; /* 文字大きく */
     font-weight: 900;
-    box-shadow: 0 8px 15px rgba(0,0,0,0.3);
+    line-height: 1.4; /* 2行の行間 */
+    border-radius: 50px;
+    box-shadow: 0 10px 0 #d15d7d, 0 15px 20px rgba(0,0,0,0.2);
+    border: 4px solid #fff;
     animation: pulseBtn 2s infinite;
 }
 @keyframes pulseBtn {
@@ -57,6 +88,12 @@ button { font-family: inherit; }
     50% { transform: scale(1.05); }
     100% { transform: scale(1); }
 }
+.title-start-btn:active {
+    transform: scale(0.95) translateY(5px);
+    box-shadow: 0 5px 0 #d15d7d;
+}
+
+/* --- ここから下は通常のアプリ画面用 --- */
 
 .version-tag {
     position: fixed; bottom: 5px; right: 10px; font-size: 0.7rem;
@@ -78,21 +115,14 @@ button { font-family: inherit; }
 .yellow-btn { background: #ffd54f; box-shadow: 0 4px 0 #ffca28; color: #5d4037; }
 .gray-btn { background: #b0bec5; box-shadow: 0 4px 0 #78909c; }
 
-.screen { padding: 20px 10px; animation: fadeIn 0.3s ease; }
+.screen { padding: 10px; animation: fadeIn 0.3s ease; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-/* タイトル固定 */
-.school-title {
-    position: fixed; top: 0; left: 0; width: 100%;
-    text-align: center; font-size: 1.8rem; color: #d81b60;
-    text-shadow: 3px 3px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;
-    margin: 0; padding: 15px 0; font-weight: 900; z-index: 1000;
-    background: rgba(255, 255, 255, 0.3); backdrop-filter: blur(2px);
-}
-
+/* 校門（2ページ目）のレイアウト */
 .gate-layout {
     display: flex; justify-content: center; align-items: flex-start;
-    gap: 10px; min-height: 300px; margin-top: 20px;
+    gap: 10px; min-height: 400px; /* タイトルがない分広く */
+    margin-top: 40px;
 }
 .right-user-list {
     width: 100%; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
@@ -130,23 +160,12 @@ button { font-family: inherit; }
 
 /* 入学手続き */
 .id-card-wrap {
-    position: relative; 
-    width: 320px; 
-    height: 220px; 
-    margin: 0 auto 20px;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.3); 
-    border-radius: 12px; 
-    overflow: hidden;
-    background: white; 
+    position: relative; width: 320px; height: 220px; margin: 0 auto 20px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3); border-radius: 12px; 
+    overflow: hidden; background: white; 
 }
 .id-base-img { width: 100%; height: 100%; object-fit: fill; }
-
-#id-photo-preview-canvas {
-    width: 100%; height: 100%;
-    object-fit: contain;
-    position: absolute; top: 0; left: 0;
-    z-index: 2;
-}
+#id-photo-preview-canvas { width: 100%; height: 100%; object-fit: contain; position: absolute; top: 0; left: 0; z-index: 2; }
 #id-photo-slot, .id-text-overlay { display: none; }
 
 .styled-input, .styled-select {
@@ -170,7 +189,6 @@ button { font-family: inherit; }
 .nell-chat { display: flex; align-items: flex-end; margin-bottom: 15px; padding: 0 10px; }
 .nell-avatar-wrap { position: relative; width: 100px; height: 100px; flex-shrink: 0; }
 .nell-img { width: 100%; height: 100%; object-fit: contain; }
-
 .chat-bubble {
     background: white; border-radius: 20px 20px 20px 0; padding: 15px;
     margin-left: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); position: relative; flex-grow: 1;
@@ -184,8 +202,7 @@ button { font-family: inherit; }
 
 .chalkboard {
     background: #2e7d32; color: white; padding: 15px; border: 8px solid #a1887f;
-    border-radius: 5px; margin: 10px; 
-    font-family: 'Kiwi Maru', serif; font-size: 1.2rem;
+    border-radius: 5px; margin: 10px; font-family: 'Kiwi Maru', serif; font-size: 1.2rem;
     min-height: 100px; box-shadow: inset 0 0 20px rgba(0,0,0,0.2);
 }
 
