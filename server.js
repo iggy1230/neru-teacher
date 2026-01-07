@@ -170,8 +170,8 @@ app.post('/analyze', async (req, res) => {
             },
             'こくご': {
                 attention: `
-                【レイアウト認識と抽出の絶対ルール】
-                1. 縦書き認識: この画像は基本的に「縦書き」です。必ず「右上」から「左下」に向かって読んでください。
+                【最重要：縦書きレイアウトと書き起こしルール】
+                1. 縦書き認識: この画像は縦書きです。必ず「右上」からスタートし、「丸数字の真下」にある文章を垂直方向に読み進めてください。行が終わったら左の列へ移動します。
                 2. 問題の分離: 丸数字（①, ②...）は新しい問題の開始合図です。
                 3. 【最重要】漢字書き取り問題のフォーマット
                    - 解答すべき空欄（□）は、必ず『□(読み仮名)』という形式で書き起こしてください。
@@ -238,7 +238,7 @@ app.post('/analyze', async (req, res) => {
 
             【ヒント生成ルール（答えのネタバレ厳禁）】
             以下の指針に従い、3段階のヒントを作成してください。
-            ⚠️重要: ヒント3であっても、「正解の漢字そのもの」や「答えの単語」は絶対に含まないでください。「答えに近いヒント」とは、答えを連想させる情報のことです。
+            ⚠️重要: ヒント3であっても、「正解の漢字そのもの」や「答えの単語」は絶対に含まないでください。
             ${r.hints}
 
             【出力フォーマット】
@@ -254,7 +254,7 @@ app.post('/analyze', async (req, res) => {
                 "hints": [
                     "ヒント1: ...",
                     "ヒント2: ...",
-                    "ヒント3: ..."
+                    "ヒント3: ...",
                 ]
               }
             ]
@@ -263,12 +263,27 @@ app.post('/analyze', async (req, res) => {
         `;
 
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
-        const jsonStr = result.response.text().replace(/```json|```/g, '').replace(/\*/g, '×').replace(/\//g, '÷');
-        res.json(JSON.parse(jsonStr));
+        let textResponse = result.response.text();
+
+        // 500エラー対策: JSON抽出ロジック
+        const firstBracket = textResponse.indexOf('[');
+        const lastBracket = textResponse.lastIndexOf(']');
+        
+        if (firstBracket !== -1 && lastBracket !== -1) {
+            textResponse = textResponse.substring(firstBracket, lastBracket + 1);
+        } else {
+            console.error("Invalid JSON format from Gemini:", textResponse);
+            throw new Error("AIが有効なデータを生成できませんでした。");
+        }
+
+        // 全角記号の補正
+        textResponse = textResponse.replace(/\*/g, '×').replace(/\//g, '÷');
+
+        res.json(JSON.parse(textResponse));
 
     } catch (err) {
-        console.error("Analyze Error:", err);
-        res.status(500).json({ error: "AI Error" });
+        console.error("Analyze Error Details:", err);
+        res.status(500).json({ error: "AI分析エラー: " + err.message });
     }
 });
 
@@ -291,9 +306,16 @@ wss.on('connection', (clientWs, req) => {
         geminiWs.on('open', () => {
             geminiWs.send(JSON.stringify({
                 setup: {
-                    // ★修正: 安定板 Live用モデル
+                    // ★Live APIは 2.0 Flash Exp を使用
                     model: "models/gemini-2.0-flash-exp",
-                    generation_config: { response_modalities: ["AUDIO"], speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } } } }, 
+                    generation_config: { 
+                        response_modalities: ["AUDIO"], 
+                        speech_config: { 
+                            voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } },
+                            // ★追加: 日本語モードを明示
+                            language_code: "ja-JP"
+                        } 
+                    }, 
                     system_instruction: {
                         parts: [{
                             text: `あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。
