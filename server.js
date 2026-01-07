@@ -137,7 +137,7 @@ app.post('/analyze', async (req, res) => {
         
         // 最高精度の 2.0 Pro Exp を使用
         const model = genAI.getGenerativeModel({
-            model: "gemini-2.0-pro-exp-02-05"
+            model: "gemini-2.0-pro"
         });
 
         // ■ 教科別詳細ルール
