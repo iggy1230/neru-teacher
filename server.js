@@ -12,6 +12,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 
 app.use(cors());
+// 画像データが大きい場合に対応するため制限を緩和
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, '.')));
 
@@ -62,13 +63,14 @@ app.post('/game-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { type, name, score } = req.body;
+        // 速度優先: 2.0 Flash Exp
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
 
         let prompt = "";
         let mood = "excited";
 
         if (type === 'start') {
-            prompt = `あなたは「ねこご市立ねこづか小学校」のネル先生。生徒「${name}」がゲーム開始。「${name}さん！カリカリいっぱいゲットしてにゃ！」とだけ言って。`;
+            prompt = `あなたは「ねこご市立ねこづか小学校」のネル先生です。生徒「${name}」さんがゲームを開始。「${name}さん！カリカリいっぱいゲットしてにゃ！」とだけ言って。`;
         } else if (type === 'end') {
             prompt = `あなたはネル先生。ゲーム終了。スコア${score}個(最大20)。20文字以内で褒めて。語尾「にゃ」。`;
         } else {
@@ -87,6 +89,7 @@ app.post('/lunch-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { count, name } = req.body;
+        // 速度優先: 2.0 Flash Exp
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp",
             generationConfig: { maxOutputTokens: 60 } 
@@ -118,6 +121,7 @@ app.post('/lunch-reaction', async (req, res) => {
 app.post('/chat', async (req, res) => {
     try {
         const { message, grade, name } = req.body;
+        // 速度優先: 2.0 Flash Exp
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         const prompt = `あなたは「ネル先生」。相手は小学${grade}年生「${name}」。30文字以内、語尾「にゃ」。絵文字禁止。発言: ${message}`;
         const result = await model.generateContent(prompt);
@@ -125,17 +129,18 @@ app.post('/chat', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
-// --- ★画像分析API (鉄壁のJSON解析版) ---
+// --- ★画像分析API (2.0 Pro Exp + 鉄壁のJSON抽出) ---
 app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { image, mode, grade, subject } = req.body;
         
-        // ★修正: 分析には最高精度の 2.0 Pro Exp を使用
+        // ★修正: 分析は最高精度の 2.0 Pro Exp を使用
         const model = genAI.getGenerativeModel({
             model: "gemini-2.0-pro-exp-02-05"
         });
 
+        // ■ 教科別詳細ルール
         const rules = {
             'さんすう': {
                 attention: `・筆算の横線とマイナス記号を混同しないこと。\n・累乗（2^2など）や分数を正確に。`,
@@ -240,7 +245,6 @@ app.post('/analyze', async (req, res) => {
 
             【厳守】
             - 出力は必ず [ ] で囲まれた有効なJSON配列のみにしてください。
-            - プロパティ名や文字列は必ず二重引用符 (") で囲んでください。
             - 文字列内での改行は避け、どうしても必要な場合は "\\n" という文字に置換してください。
         `;
 
@@ -253,20 +257,24 @@ app.post('/analyze', async (req, res) => {
         let textResponse = response.text().trim();
 
         // 🚀 1. Markdown枠の削除
-        let cleanResponse = textResponse.replace(/```json/g, "").replace(/```/g, "").trim();
+        textResponse = textResponse.replace(/```json/g, "").replace(/```/g, "").trim();
 
         // 🚀 2. 配列 [ ... ] の抽出
-        const start = cleanResponse.indexOf('[');
-        const end = cleanResponse.lastIndexOf(']');
+        const start = textResponse.indexOf('[');
+        const end = textResponse.lastIndexOf(']');
         
         if (start !== -1 && end !== -1) {
-            let jsonStr = cleanResponse.substring(start, end + 1);
+            let jsonStr = textResponse.substring(start, end + 1);
             
-            // 🚀 3. 制御文字のみ削除（構造に関わる文字は触らない！）
-            jsonStr = jsonStr.replace(/[\u0000-\u001F\u007F-\u009F]/g, "");
+            // 🚀 3. JSONを壊す文字を徹底掃除 (制御文字, 不正な改行, エスケープ)
+            jsonStr = jsonStr
+                .replace(/[\u0000-\u001F\u007F-\u009F]/g, "") 
+                .replace(/\n/g, "\\n") 
+                .replace(/\r/g, "")
+                .replace(/\\'/g, "'");
 
             try {
-                // 🚀 4. 先にパースする
+                // 🚀 4. 先にパース
                 const parsedData = JSON.parse(jsonStr);
 
                 // 🚀 5. パース後に安全に文字置換を行う
@@ -280,27 +288,32 @@ app.post('/analyze', async (req, res) => {
                 return res.json(safeData);
 
             } catch (parseErr) {
-                console.error("JSON Parse Error:", parseErr);
-                // 🚀 6. フォールバック（エラーメッセージをJSONで返す）
+                console.error("JSON Parse Failed:", jsonStr);
+                // 🚀 6. フォールバック (エラーでも止まらない)
                 return res.json([{
                     id: 1, label: "!", question: "ごめんにゃ、写真が少し暗いかもにゃ？もう一度撮ってみてにゃ！",
                     correct_answer: "", student_answer: "", hints: ["明るい場所で撮るにゃ", "", ""]
                 }]);
             }
         } else {
-            throw new Error("AIがJSON形式で答えてくれなかったにゃ。");
+            throw new Error("AIがJSONを作れなかったにゃ。");
         }
 
     } catch (err) {
         console.error("Analyze Error Details:", err);
-        // ここでのエラーはフォールバックも失敗した致命的なものなので500を返す
         res.status(500).json({ error: "AI分析エラー: " + err.message });
     }
 });
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+
+// --- ★サーバー設定: タイムアウト延長 ---
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+// ★Proモデルの長考対策 (120秒)
+server.timeout = 120000; 
+server.keepAliveTimeout = 121000;
 
 // --- ★Live API Proxy (Aoede) ---
 const wss = new WebSocketServer({ server });
@@ -317,6 +330,7 @@ wss.on('connection', (clientWs, req) => {
         geminiWs.on('open', () => {
             geminiWs.send(JSON.stringify({
                 setup: {
+                    // Live APIは 2.0 Flash Exp でOK
                     model: "models/gemini-2.0-flash-exp",
                     generation_config: { 
                         response_modalities: ["AUDIO"], 
