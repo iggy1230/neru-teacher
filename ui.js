@@ -1,4 +1,4 @@
-// --- ui.js (完全版: v13.0) ---
+// --- ui.js (完全版: タイトル遷移・音声被り防止) ---
 
 function switchScreen(to) {
     document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
@@ -35,22 +35,38 @@ function switchView(id) {
     }
 }
 
-// --- ボタンアクション ---
+// --- タイトル・ロビー制御 ---
+
+// 1. タイトルから開始
+function startApp() {
+    switchScreen('screen-gate');
+    // BGMがあればここで再生
+}
+
+// 2. ゲートに戻る
+function backToGate() {
+    switchScreen('screen-title'); // ゲートではなくタイトルに戻す仕様に変更
+}
+
+// 3. ロビーに戻る (音声制御追加)
+function backToLobby(suppressGreeting = false) {
+    switchScreen('screen-lobby');
+    
+    // suppressGreetingが true なら挨拶しない (ぜんぶわかった時など)
+    // 指定がなければ挨拶する
+    // ただしイベントリスナーなどから呼ばれるとEventオブジェクトが入るので型チェック
+    const shouldGreet = (typeof suppressGreeting === 'boolean') ? !suppressGreeting : true;
+
+    if (shouldGreet && currentUser && typeof getNellGreeting === 'function' && typeof updateNellMessage === 'function') {
+        updateNellMessage(getNellGreeting(currentUser), "happy");
+    }
+}
+
+// --- その他ボタンアクション ---
 
 function showEnrollment() {
     switchScreen('screen-enrollment');
     if (typeof loadFaceModels === 'function') loadFaceModels();
-}
-
-function backToGate() {
-    switchScreen('screen-gate');
-}
-
-function backToLobby() {
-    switchScreen('screen-lobby');
-    if (currentUser && typeof getNellGreeting === 'function' && typeof updateNellMessage === 'function') {
-        updateNellMessage(getNellGreeting(currentUser), "happy");
-    }
 }
 
 function backToProblemSelection() {
@@ -68,14 +84,12 @@ function showAttendance() {
     if (typeof renderAttendance === 'function') renderAttendance();
 }
 
-// 出席簿の描画
 function renderAttendance() {
     const grid = document.getElementById('attendance-grid');
     if (!grid || !currentUser) return;
     grid.innerHTML = "";
     const today = new Date();
     
-    // 過去14日分
     for (let i = 13; i >= 0; i--) {
         const d = new Date(); 
         d.setDate(today.getDate() - i);
@@ -87,7 +101,6 @@ function renderAttendance() {
         div.style.background = hasAttended ? "#e3f2fd" : "#fff";
         div.style.color = hasAttended ? "#1565c0" : "#999";
         
-        // ★修正: スタンプ色を赤に
         div.innerHTML = `
             <div>${d.getMonth()+1}/${d.getDate()}</div>
             <div style="font-size:1.5rem; line-height:1.5; color: ${hasAttended ? '#ff5252' : '#eee'} !important;">
@@ -105,7 +118,6 @@ function updateProgress(p) {
     if (txt) txt.innerText = Math.floor(p);
 }
 
-// 音声再生ブロック防止
 document.addEventListener('click', () => {
     if (window.initAudioContext) {
         window.initAudioContext().catch(e => console.log("Audio Init:", e));
