@@ -5,47 +5,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>🐾猫後市立ねこづか小学校</title>
     <link rel="stylesheet" href="style.css">
+    <!-- フォント読み込み -->
     <link href="https://fonts.googleapis.com/css2?family=Sawarabi+Gothic&family=M+PLUS+Rounded+1c:wght@700;900&family=Kiwi+Maru:wght@900&display=swap" rel="stylesheet">
+    <!-- 顔認識ライブラリ -->
     <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 </head>
 <body>
+    <!-- エフェクト用キャンバス -->
     <canvas id="hanamaru-canvas"></canvas>
     <canvas id="deco-canvas" style="display:none;"></canvas>
     
+    <!-- 右上のミニカリカリ表示 -->
     <div id="mini-karikari-display" class="mini-karikari-display hidden"><span>🍖</span><span id="mini-karikari-count">0</span></div>
 
-    <div class="version-tag">Build: v13.1.0-TitleUpdate</div>
+    <div class="version-tag">Build: v13.0.0-FullFeatures</div>
 
     <div id="app-container">
-        
-        <!-- 1. タイトルページ (ここからスタート) -->
-        <section id="screen-title" class="screen title-screen">
-            <div class="title-content">
-                <!-- ★追加: ここにタイトルを設置 -->
-                <h1 class="main-game-title">猫後市立<br>ねこづか小学校</h1>
-                
-                <!-- ★修正: ボタンを大きく、2行に -->
-                <button onclick="startApp()" class="main-btn pink-btn title-start-btn">
-                    ねこづか小学校へ<br>行くにゃ！
-                </button>
-            </div>
+        <!-- 1. 校門 (ユーザー選択) -->
+        <section id="screen-gate" class="screen">
+            <h1 class="school-title">猫後市立<br>ねこづか小学校</h1>
+            <div class="gate-layout"><div id="user-list" class="right-user-list"></div></div>
+            <button onclick="showEnrollment()" class="main-btn pink-btn">🐾 新しく入学するにゃ</button>
         </section>
 
-        <!-- 2. 校門 (ユーザー選択) -->
-        <section id="screen-gate" class="screen hidden">
-            <!-- ★削除: ここにあったタイトルは削除しました -->
-            
-            <div class="gate-layout">
-                <div id="user-list" class="right-user-list"></div>
-            </div>
-            
-            <!-- 新規登録ボタン -->
-            <button onclick="showEnrollment()" class="main-btn pink-btn" style="margin-top: 30px;">
-                🐾 新しく入学するにゃ
-            </button>
-        </section>
-
-        <!-- 3. 入学手続き -->
+        <!-- 2. 入学手続き -->
         <section id="screen-enrollment" class="screen hidden">
             <h2 class="section-title">🎒 入学手続き</h2>
             <div class="id-card-wrap">
@@ -57,6 +40,7 @@
             
             <p style="text-align:center; margin-bottom:5px;">写真を選んでにゃ！</p>
             
+            <!-- 入学用の3つのボタン -->
             <div class="upload-buttons-container">
                 <button id="enroll-webcam-btn" class="camera-btn-large" style="background:#ff9800; box-shadow:0 6px 0 #e65100; font-size:1rem; padding:10px;">
                     📹 アプリで撮影
@@ -71,6 +55,8 @@
                         <input type="file" id="student-photo-input-album" accept="image/*" style="display:none;">
                     </label>
                 </div>
+                <!-- 互換性用 -->
+                <input type="file" id="student-photo-input" accept="image/*" style="display:none;">
             </div>
 
             <input type="text" id="new-student-name" class="styled-input" placeholder="おなまえ" oninput="updateIDPreview()">
@@ -84,7 +70,7 @@
             <div id="loading-models" style="text-align:center; font-size:0.7rem; margin-top:5px;">AI準備中...</div>
         </section>
 
-        <!-- 4. ロビー -->
+        <!-- 3. ロビー -->
         <section id="screen-lobby" class="screen hidden">
             <div class="lobby-top"><div class="id-card-wrap mini-id"><img id="current-student-avatar" class="id-base-img"></div></div>
             <div class="karikari-counter">🍖 カリカリ: <span id="karikari-count">0</span></div>
@@ -100,13 +86,15 @@
             </div>
         </section>
 
-        <!-- 5. 教室 -->
+        <!-- 4. 教室 (メイン機能) -->
         <section id="screen-main" class="screen hidden">
             <header>
+                <!-- JS制御用ID付き -->
                 <button id="main-back-btn" onclick="backToLobby()" class="main-btn gray-btn" style="width:auto; padding:10px 20px;">←</button>
             </header>
             
             <div class="operation-layout">
+                <!-- ネル先生エリア -->
                 <div class="nell-chat">
                     <div class="nell-avatar-wrap">
                         <img src="nell-normal.png" class="nell-img" id="nell-face">
@@ -115,6 +103,7 @@
                     <div class="chat-bubble"><p id="nell-text"></p></div>
                 </div>
 
+                <!-- 教科選択 -->
                 <div id="subject-selection-view" class="hidden">
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
                         <button onclick="setSubject('こくご')" class="main-btn pink-btn">こくご</button>
@@ -124,35 +113,40 @@
                     </div>
                 </div>
 
+                <!-- 黒板 (問題文表示用) -->
                 <div id="chalkboard" class="chalkboard hidden"></div>
 
                 <div class="work-area">
+                    <!-- 宿題アップロード (3つのボタン) -->
                     <div id="upload-controls" class="hidden">
                         <p style="text-align:center; margin-bottom:10px;">宿題をみせてね！</p>
                         <div class="upload-buttons-container">
-                            <button id="start-webcam-btn" class="camera-btn-large" style="background:#ff9800; box-shadow:0 6px 0 #e65100;">
+                            <button id="start-webcam-btn" class="camera-btn-large" style="background:#ff9800; box-shadow:0 6px 0 #e65100; font-size:1rem; padding:10px;">
                                 📹 アプリで撮影
                             </button>
                             <div style="display:flex; gap:10px;">
-                                <label class="camera-btn-large" style="flex:1; font-size:1rem;">
+                                <label class="camera-btn-large" style="flex:1; font-size:0.9rem; padding:10px;">
                                     📷 標準カメラ
                                     <input type="file" id="hw-input-camera" accept="image/*" style="display:none;">
                                 </label>
-                                <label class="camera-btn-large" style="flex:1; font-size:1rem; background:#4a90e2; box-shadow:0 6px 0 #2c5f96;">
+                                <label class="camera-btn-large" style="flex:1; font-size:0.9rem; padding:10px; background:#4a90e2; box-shadow:0 6px 0 #2c5f96;">
                                     📁 アルバム
                                     <input type="file" id="hw-input-album" accept="image/*" style="display:none;">
                                 </label>
                             </div>
+                            <!-- 互換性用 -->
                             <input type="file" id="hw-input" accept="image/*" style="display:none;">
                         </div>
                     </div>
 
+                    <!-- 解析中 -->
                     <div id="thinking-view" class="hidden">
                         <img src="nell-inspect.png" class="loader-inspect-img">
                         <div class="progress-container"><div id="progress-bar" class="progress-bar"></div></div>
                         <p id="thinking-status">考え中... <span id="progress-percent">0</span>%</p>
                     </div>
 
+                    <!-- 問題選択リスト -->
                     <div id="problem-selection-view" class="hidden">
                         <div class="problem-selection-card">
                             <div class="problem-scroll-area" id="transcribed-problem-list"></div>
@@ -160,11 +154,14 @@
                         </div>
                     </div>
 
+                    <!-- 最終ビュー (採点結果 or ヒント) -->
                     <div id="final-view" class="hidden">
+                        <!-- 採点シート -->
                         <div id="grade-sheet-container" class="hidden">
                             <div class="glass-card" id="problem-list-grade" style="background:white; border-radius:15px; padding:10px;"></div>
                         </div>
 
+                        <!-- ヒント詳細 -->
                         <div id="hint-detail-container" class="hidden">
                             <div class="hint-btns">
                                 <div class="hint-step-badge" id="hint-step-label">考え方</div>
@@ -176,6 +173,7 @@
                         </div>
                     </div>
 
+                    <!-- チャット -->
                     <div id="chat-view" class="hidden">
                         <div class="glass-card" style="text-align:center; padding:20px;">
                             <p style="font-size:0.9rem; color:#666;">マイクを押して話しかけてね</p>
@@ -184,6 +182,7 @@
                         </div>
                     </div>
 
+                    <!-- 給食 -->
                     <div id="lunch-view" class="hidden">
                         <div class="glass-card" style="text-align:center; padding:20px;">
                             <p style="font-size:1.2rem; font-weight:900;">ネル先生にお給食をあげる？</p>
@@ -196,7 +195,7 @@
             </div>
         </section>
         
-        <!-- 6. ゲーム -->
+        <!-- 5. ミニゲーム -->
         <section id="screen-game" class="screen hidden">
             <div class="nell-chat">
                 <div class="nell-avatar-wrap">
@@ -204,6 +203,7 @@
                 </div>
                 <div class="chat-bubble"><p id="nell-text-game">カリカリキャッチで遊ぶにゃ！</p></div>
             </div>
+
             <h2 class="section-title" style="margin-top:10px;">🍖 カリカリ・キャッチ</h2>
             <div class="game-container">
                 <canvas id="game-canvas" width="320" height="400"></canvas>
@@ -215,7 +215,7 @@
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">ロビーにもどる</button>
         </section>
 
-        <!-- 7. 出席簿 -->
+        <!-- 6. 出席簿 -->
         <section id="screen-attendance" class="screen hidden">
             <h2 class="section-title">📅 出席簿</h2>
             <div class="glass-card">
