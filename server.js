@@ -12,7 +12,6 @@ const __dirname = path.dirname(__filename);
 const app = express();
 
 app.use(cors());
-// 画像データが大きい場合に対応
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, '.')));
 
@@ -58,7 +57,7 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- ゲーム実況API (速度重視 Flash) ---
+// --- ゲーム実況API ---
 app.post('/game-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
@@ -83,7 +82,7 @@ app.post('/game-reaction', async (req, res) => {
     }
 });
 
-// --- 給食リアクションAPI (速度重視 Flash) ---
+// --- 給食リアクションAPI ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
@@ -115,7 +114,7 @@ app.post('/lunch-reaction', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Lunch Error" }); }
 });
 
-// --- チャットAPI (速度重視 Flash) ---
+// --- チャットAPI ---
 app.post('/chat', async (req, res) => {
     try {
         const { message, grade, name } = req.body;
@@ -126,18 +125,18 @@ app.post('/chat', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
-// --- ★画像分析API (2.0 Pro Exp + 強力エラー回避) ---
+// --- ★画像分析API (2.0 Pro Exp + 強力なJSON抽出・洗浄) ---
 app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { image, mode, grade, subject } = req.body;
         
-        // ★修正: 最新の高精度モデルを指定
+        // ★修正: 分析には最高精度の 2.0 Pro Exp を使用
         const model = genAI.getGenerativeModel({
             model: "gemini-2.0-pro-exp-02-05"
         });
 
-        // 教科別詳細ルール
+        // ■ 教科別詳細ルール
         const rules = {
             'さんすう': {
                 attention: `・筆算の横線とマイナス記号を混同しないこと。\n・累乗（2^2など）や分数を正確に。`,
@@ -221,7 +220,7 @@ app.post('/analyze', async (req, res) => {
             ${r.hints}
 
             【出力フォーマット】
-            以下のJSON形式のみを出力してください。Markdownのコードブロックは不要です。
+            以下のJSON形式のみを出力してください。
             
             [
               {
@@ -239,8 +238,11 @@ app.post('/analyze', async (req, res) => {
             ]
             
             ${mode === 'grade' ? `【採点基準】\n${r.grading}` : ''}
-            
-            必ず純粋なJSON配列 [ ... ] のみを出力してください。Markdownの枠（\`\`\`json）は不要です。
+
+            【厳守】
+            - 出力は必ず [ ] で囲まれたJSON配列のみにしてください。
+            - プロパティ名や文字列は必ず二重引用符 (") で囲んでください。
+            - 文字列内での改行は避け、必要な場合は \\n を使用してください。
         `;
 
         const result = await model.generateContent([
@@ -248,26 +250,37 @@ app.post('/analyze', async (req, res) => {
             { text: prompt }
         ]);
         
-        let textResponse = result.response.text();
+        const response = await result.response;
+        let textResponse = response.text();
 
-        // ★修正: 頑丈なJSON抽出ロジック
+        // 🚀 強力な抽出と洗浄
         const start = textResponse.indexOf('[');
         const end = textResponse.lastIndexOf(']');
         
         if (start !== -1 && end !== -1) {
             let jsonStr = textResponse.substring(start, end + 1);
-            // 算数記号などの置換
-            jsonStr = jsonStr.replace(/\*/g, '×').replace(/\//g, '÷');
-            // パース実行
-            res.json(JSON.parse(jsonStr));
+            
+            // 制御文字や不正な改行を削除・置換してJSONを「修理」
+            jsonStr = jsonStr
+                .replace(/[\u0000-\u001F\u007F-\u009F]/g, "") // 制御文字を削除
+                .replace(/\*/g, '×')
+                .replace(/\//g, '÷');
+
+            try {
+                const parsedData = JSON.parse(jsonStr);
+                res.json(parsedData);
+            } catch (parseErr) {
+                console.error("JSON Parse Failed. Raw segment:", jsonStr);
+                throw new Error("AIの返答が崩れてしまったにゃ。もう一度試してにゃ。");
+            }
         } else {
-            console.error("Invalid JSON format from AI:", textResponse);
-            throw new Error("AIが問題を読み取れませんでした。もう一度試してにゃ。");
+            console.error("No JSON found in response:", textResponse);
+            throw new Error("AIがJSON形式で答えてくれなかったにゃ。");
         }
 
     } catch (err) {
         console.error("Analyze Error Details:", err);
-        res.status(500).json({ error: "AI分析エラー: " + err.message });
+        res.status(500).json({ error: "分析エラーにゃ: " + err.message });
     }
 });
 
@@ -278,6 +291,7 @@ const server = app.listen(PORT, () => console.log(`Server running on port ${PORT
 // --- ★Live API Proxy (Aoede) ---
 const wss = new WebSocketServer({ server });
 wss.on('connection', (clientWs, req) => {
+    // 学年と名前を取得
     const parameters = parse(req.url, true).query;
     const userGrade = parameters.grade || "1";
     const userName = decodeURIComponent(parameters.name || "");
@@ -301,7 +315,7 @@ wss.on('connection', (clientWs, req) => {
                     system_instruction: {
                         parts: [{
                             text: `あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。
-            相手は小学${userGrade}年生の${userName}さん。
+相手は小学${userGrade}年生の${userName}さん。
                
               【重要：話し方のルール】
                1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
