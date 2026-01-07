@@ -13,92 +13,18 @@ body {
     color: #333;
     -webkit-font-smoothing: antialiased;
     box-sizing: border-box;
-    padding-top: 0; /* タイトル画面のためにパディングなしからスタート */
-}
-
-/* 通常画面のレイアウト用（JSでクラス操作しても良いが、ここではapp-containerに余白を持たせる） */
-#app-container {
-    max-width: 600px;
-    margin: 0 auto;
-    min-height: 100vh;
-    position: relative;
-    padding-bottom: 30px;
-    padding-top: 10px; /* 校門以降のための余白 */
+    padding-top: 80px; 
 }
 
 button { font-family: inherit; }
 .hidden { display: none !important; }
 
-/* --- タイトル画面 --- */
-#screen-title {
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    background-image: url('neru-title-bg.png');
-    background-size: cover;
-    background-position: center;
-    z-index: 2000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-.title-content {
-    text-align: center;
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 40px; /* タイトルとボタンの間隔 */
-}
-/* メインタイトル */
-.main-game-title {
-    font-size: 3.5rem; /* かなり大きく */
-    font-weight: 900;
-    color: #d81b60;
-    line-height: 1.2;
-    text-shadow: 
-        4px 4px 0 #fff, 
-        -2px -2px 0 #fff, 
-        2px -2px 0 #fff, 
-        -2px 2px 0 #fff,
-        4px 4px 10px rgba(0,0,0,0.3);
-    margin: 0;
-    transform: rotate(-3deg); /* 少し傾けてポップに */
-    animation: floatingTitle 3s ease-in-out infinite;
-}
-@keyframes floatingTitle {
-    0% { transform: rotate(-3deg) translateY(0); }
-    50% { transform: rotate(-3deg) translateY(-10px); }
-    100% { transform: rotate(-3deg) translateY(0); }
-}
-
-/* スタートボタン */
-.title-start-btn {
-    width: 80%;
-    max-width: 320px;
-    padding: 25px;
-    font-size: 1.6rem; /* 文字大きく */
-    font-weight: 900;
-    line-height: 1.4; /* 2行の行間 */
-    border-radius: 50px;
-    box-shadow: 0 10px 0 #d15d7d, 0 15px 20px rgba(0,0,0,0.2);
-    border: 4px solid #fff;
-    animation: pulseBtn 2s infinite;
-}
-@keyframes pulseBtn {
-    0% { transform: scale(1); }
-    50% { transform: scale(1.05); }
-    100% { transform: scale(1); }
-}
-.title-start-btn:active {
-    transform: scale(0.95) translateY(5px);
-    box-shadow: 0 5px 0 #d15d7d;
-}
-
-/* --- ここから下は通常のアプリ画面用 --- */
-
-.version-tag {
-    position: fixed; bottom: 5px; right: 10px; font-size: 0.7rem;
-    color: rgba(0, 0, 0, 0.5); background: rgba(255, 255, 255, 0.5);
-    padding: 2px 5px; border-radius: 4px; pointer-events: none; z-index: 9999;
+#app-container {
+    max-width: 600px;
+    margin: 0 auto;
+    min-height: calc(100vh - 80px);
+    position: relative;
+    padding-bottom: 20px;
 }
 
 /* 共通ボタンスタイル */
@@ -115,14 +41,21 @@ button { font-family: inherit; }
 .yellow-btn { background: #ffd54f; box-shadow: 0 4px 0 #ffca28; color: #5d4037; }
 .gray-btn { background: #b0bec5; box-shadow: 0 4px 0 #78909c; }
 
-.screen { padding: 10px; animation: fadeIn 0.3s ease; }
+.screen { padding: 20px 10px; animation: fadeIn 0.3s ease; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-/* 校門（2ページ目）のレイアウト */
+/* タイトル固定 */
+.school-title {
+    position: fixed; top: 0; left: 0; width: 100%;
+    text-align: center; font-size: 1.8rem; color: #d81b60;
+    text-shadow: 3px 3px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;
+    margin: 0; padding: 15px 0; font-weight: 900; z-index: 1000;
+    background: rgba(255, 255, 255, 0.3); backdrop-filter: blur(2px);
+}
+
 .gate-layout {
     display: flex; justify-content: center; align-items: flex-start;
-    gap: 10px; min-height: 400px; /* タイトルがない分広く */
-    margin-top: 40px;
+    gap: 10px; min-height: 300px; margin-top: 20px;
 }
 .right-user-list {
     width: 100%; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
@@ -138,9 +71,9 @@ button { font-family: inherit; }
 .user-card:active { transform: scale(0.95); }
 
 .user-card img { 
-    width: 100%; height: auto; aspect-ratio: 1.6; object-fit: cover;
+    width: 100%; height: auto; aspect-ratio: 1.6; object-fit: contain;
     border-radius: 8px; background-color: transparent !important;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.2); display: block;
+    box-shadow: none; display: block;
 }
 
 .card-karikari-badge {
@@ -152,21 +85,29 @@ button { font-family: inherit; }
 }
 
 .delete-student-btn {
-    position: absolute; top: -5px; right: -5px; width: 28px; height: 28px;
+    position: absolute; top: 0; right: 0; width: 28px; height: 28px;
     border-radius: 50%; background: #ff5252; color: white; border: 2px solid white; 
     font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center;
     box-shadow: 0 2px 4px rgba(0,0,0,0.2); z-index: 10;
 }
 
-/* 入学手続き */
+/* 学生証作成プレビュー */
 .id-card-wrap {
-    position: relative; width: 320px; height: 220px; margin: 0 auto 20px;
+    position: relative; width: 320px; height: 200px; margin: 0 auto 20px;
     box-shadow: 0 4px 10px rgba(0,0,0,0.3); border-radius: 12px; 
     overflow: hidden; background: white; 
 }
 .id-base-img { width: 100%; height: 100%; object-fit: fill; }
-#id-photo-preview-canvas { width: 100%; height: 100%; object-fit: contain; position: absolute; top: 0; left: 0; z-index: 2; }
-#id-photo-slot, .id-text-overlay { display: none; }
+#id-photo-preview-canvas {
+    width: 100%; height: 100%; object-fit: contain;
+    position: absolute; top: 0; left: 0; z-index: 2;
+}
+#id-photo-slot { display: none; }
+.id-text-overlay { 
+    position: absolute; color: #333; font-weight: bold; font-family: sans-serif; pointer-events: none; z-index: 3;
+}
+.id-grade-text { top: 85px; left: 185px; font-size: 16px; width: 100px; text-align: center; }
+.id-name-text { top: 125px; left: 185px; font-size: 18px; width: 100px; text-align: center; }
 
 .styled-input, .styled-select {
     width: 80%; padding: 12px; margin: 10px auto; display: block;
@@ -175,7 +116,7 @@ button { font-family: inherit; }
 
 /* ロビー */
 .lobby-top { text-align: center; margin: 20px 0; }
-.mini-id { transform: scale(0.9); margin-bottom: 0; }
+.mini-id { transform: scale(0.8); margin-bottom: 0; }
 .karikari-counter {
     text-align: center; font-size: 1.2rem; font-weight: bold;
     color: #d84315; background: #fff3e0; padding: 5px 15px;
@@ -192,20 +133,18 @@ button { font-family: inherit; }
 .chat-bubble {
     background: white; border-radius: 20px 20px 20px 0; padding: 15px;
     margin-left: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); position: relative; flex-grow: 1;
-    font-family: 'Kiwi Maru', serif;
 }
 .chat-bubble::after {
     content: ''; position: absolute; bottom: 0; left: -10px;
     border-width: 10px 10px 0 0; border-style: solid; border-color: white transparent transparent transparent;
 }
-.chat-bubble p { margin: 0; font-size: 1.1rem; line-height: 1.6; }
+.chat-bubble p { margin: 0; font-size: 1rem; line-height: 1.5; }
 
 .chalkboard {
     background: #2e7d32; color: white; padding: 15px; border: 8px solid #a1887f;
-    border-radius: 5px; margin: 10px; font-family: 'Kiwi Maru', serif; font-size: 1.2rem;
-    min-height: 100px; box-shadow: inset 0 0 20px rgba(0,0,0,0.2);
+    border-radius: 5px; margin: 10px; font-family: 'Kiwi Maru', serif; min-height: 100px;
+    box-shadow: inset 0 0 20px rgba(0,0,0,0.2);
 }
-
 .work-area { background: rgba(255,255,255,0.8); border-radius: 20px; padding: 15px; margin: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
 
 .camera-btn-large {
@@ -214,9 +153,21 @@ button { font-family: inherit; }
     text-align: center; cursor: pointer; box-shadow: 0 6px 0 #388e3c; margin-bottom: 10px;
 }
 .camera-btn-large:active { transform: translateY(2px); box-shadow: 0 2px 0 #388e3c; }
-
 .upload-buttons-container { display: flex; flex-direction: column; gap: 10px; width: 100%; }
 
+/* ★修正: ゲーム画面の中央寄せ */
+.game-container {
+    display: flex; 
+    flex-direction: column;
+    justify-content: center; 
+    align-items: center; 
+    width: 100%;
+}
+#game-canvas { border: 4px solid #8d6e63; border-radius: 10px; background: #fffde7; box-shadow: 0 4px 0 rgba(0,0,0,0.1); }
+.game-ui { text-align: center; margin-top: 10px; }
+.game-ui p { font-size: 1.2rem; font-weight: bold; color: #d84315; }
+
+/* 問題リスト */
 .problem-selection-card { height: 400px; display: flex; flex-direction: column; }
 .problem-scroll-area { flex: 1; overflow-y: auto; padding: 5px; }
 .prob-card {
@@ -227,6 +178,7 @@ button { font-family: inherit; }
 }
 .q-label { font-weight: bold; color: #e91e63; margin-right: 5px; }
 
+/* 採点シート */
 .problem-row {
     background: #fff; padding: 10px; margin-bottom: 8px; border-radius: 8px;
     border-bottom: 2px solid #eee;

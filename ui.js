@@ -1,4 +1,4 @@
-// --- ui.js (完全版: タイトル遷移対応) ---
+// --- ui.js (完全版: v13.0) ---
 
 function switchScreen(to) {
     document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
@@ -10,24 +10,32 @@ function switchScreen(to) {
 }
 
 function switchView(id) {
-    const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'grade-sheet-container', 'hint-detail-container', 'chalkboard', 'chat-view', 'lunch-view', 'answer-display-area'];
+    const ids = [
+        'subject-selection-view', 
+        'upload-controls', 
+        'thinking-view', 
+        'problem-selection-view', 
+        'final-view', 
+        'grade-sheet-container', 
+        'hint-detail-container', 
+        'chalkboard', 
+        'chat-view', 
+        'lunch-view',
+        'answer-display-area'
+    ];
+
     ids.forEach(i => {
         const el = document.getElementById(i);
         if(el) el.classList.add('hidden');
     });
-    const target = document.getElementById(id);
-    if(target) target.classList.remove('hidden');
-}
-
-// ★追加: タイトル画面からスタートする関数
-function startApp() {
-    switchScreen('screen-gate');
     
-    // ユーザーインタラクションのタイミングでオーディオを初期化
-    if (window.initAudioContext) {
-        window.initAudioContext().catch(e => console.log("Audio Init:", e));
+    if (id) {
+        const target = document.getElementById(id);
+        if(target) target.classList.remove('hidden');
     }
 }
+
+// --- ボタンアクション ---
 
 function showEnrollment() {
     switchScreen('screen-enrollment');
@@ -60,12 +68,14 @@ function showAttendance() {
     if (typeof renderAttendance === 'function') renderAttendance();
 }
 
+// 出席簿の描画
 function renderAttendance() {
     const grid = document.getElementById('attendance-grid');
     if (!grid || !currentUser) return;
     grid.innerHTML = "";
     const today = new Date();
     
+    // 過去14日分
     for (let i = 13; i >= 0; i--) {
         const d = new Date(); 
         d.setDate(today.getDate() - i);
@@ -77,6 +87,7 @@ function renderAttendance() {
         div.style.background = hasAttended ? "#e3f2fd" : "#fff";
         div.style.color = hasAttended ? "#1565c0" : "#999";
         
+        // ★修正: スタンプ色を赤に
         div.innerHTML = `
             <div>${d.getMonth()+1}/${d.getDate()}</div>
             <div style="font-size:1.5rem; line-height:1.5; color: ${hasAttended ? '#ff5252' : '#eee'} !important;">
@@ -94,7 +105,7 @@ function updateProgress(p) {
     if (txt) txt.innerText = Math.floor(p);
 }
 
-// バックアップ: クリック時のオーディオ初期化
+// 音声再生ブロック防止
 document.addEventListener('click', () => {
     if (window.initAudioContext) {
         window.initAudioContext().catch(e => console.log("Audio Init:", e));
