@@ -125,18 +125,17 @@ app.post('/chat', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
-// --- ★画像分析API (2.0 Pro Exp + 鉄壁のエラー対策) ---
+// --- ★画像分析API (鉄壁のJSON解析版) ---
 app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { image, mode, grade, subject } = req.body;
         
-        // 最高精度の 2.0 Pro Exp を使用
+        // ★修正: 分析には最高精度の 2.0 Pro Exp を使用
         const model = genAI.getGenerativeModel({
             model: "gemini-2.0-pro-exp-02-05"
         });
 
-        // 教科別詳細ルール
         const rules = {
             'さんすう': {
                 attention: `・筆算の横線とマイナス記号を混同しないこと。\n・累乗（2^2など）や分数を正確に。`,
@@ -239,11 +238,10 @@ app.post('/analyze', async (req, res) => {
             
             ${mode === 'grade' ? `【採点基準】\n${r.grading}` : ''}
 
-            【厳守事項】
+            【厳守】
             - 出力は必ず [ ] で囲まれた有効なJSON配列のみにしてください。
             - プロパティ名や文字列は必ず二重引用符 (") で囲んでください。
             - 文字列内での改行は避け、どうしても必要な場合は "\\n" という文字に置換してください。
-            - Markdownの装飾（\`\`\`jsonなど）は一切不要です。
         `;
 
         const result = await model.generateContent([
@@ -254,43 +252,48 @@ app.post('/analyze', async (req, res) => {
         const response = await result.response;
         let textResponse = response.text().trim();
 
-        // 🚀 1. Markdownの枠を削除
-        textResponse = textResponse.replace(/```json/g, "").replace(/```/g, "").trim();
+        // 🚀 1. Markdown枠の削除
+        let cleanResponse = textResponse.replace(/```json/g, "").replace(/```/g, "").trim();
 
-        // 🚀 2. [ と ] を探す
-        const start = textResponse.indexOf('[');
-        const end = textResponse.lastIndexOf(']');
+        // 🚀 2. 配列 [ ... ] の抽出
+        const start = cleanResponse.indexOf('[');
+        const end = cleanResponse.lastIndexOf(']');
         
         if (start !== -1 && end !== -1) {
-            let jsonStr = textResponse.substring(start, end + 1);
+            let jsonStr = cleanResponse.substring(start, end + 1);
             
-            // 🚀 3. JSONを壊す文字を徹底掃除
-            jsonStr = jsonStr
-                .replace(/[\u0000-\u001F\u007F-\u009F]/g, "") // 制御文字削除
-                .replace(/\n/g, "\\n") // 改行コードをエスケープ
-                .replace(/\r/g, "")
-                .replace(/\*/g, '×') // 算数記号の補正
-                .replace(/\//g, '÷');
+            // 🚀 3. 制御文字のみ削除（構造に関わる文字は触らない！）
+            jsonStr = jsonStr.replace(/[\u0000-\u001F\u007F-\u009F]/g, "");
 
             try {
-                // 🚀 4. パース実行
+                // 🚀 4. 先にパースする
                 const parsedData = JSON.parse(jsonStr);
-                return res.json(parsedData); // ここで完了
+
+                // 🚀 5. パース後に安全に文字置換を行う
+                const safeData = parsedData.map(item => ({
+                    ...item,
+                    question: item.question ? item.question.replace(/\*/g, '×').replace(/\//g, '÷') : "",
+                    correct_answer: item.correct_answer ? item.correct_answer.toString().replace(/\*/g, '×').replace(/\//g, '÷') : "",
+                    hints: item.hints || []
+                }));
+
+                return res.json(safeData);
+
             } catch (parseErr) {
-                console.error("JSON Parse Failed. Raw:", jsonStr);
-                // 🚀 5. 失敗時のフォールバック（サーバーを落とさない）
+                console.error("JSON Parse Error:", parseErr);
+                // 🚀 6. フォールバック（エラーメッセージをJSONで返す）
                 return res.json([{
-                    id: 1, label: "!", question: "ごめんにゃ、もう一度撮ってほしいにゃ！（読み取り失敗）",
-                    correct_answer: "", student_answer: "", hints: ["写真を撮り直してにゃ", "", ""]
+                    id: 1, label: "!", question: "ごめんにゃ、写真が少し暗いかもにゃ？もう一度撮ってみてにゃ！",
+                    correct_answer: "", student_answer: "", hints: ["明るい場所で撮るにゃ", "", ""]
                 }]);
             }
         } else {
-            console.error("No JSON found:", textResponse);
-            throw new Error("AIがJSONを作れなかったにゃ。");
+            throw new Error("AIがJSON形式で答えてくれなかったにゃ。");
         }
 
     } catch (err) {
         console.error("Analyze Error Details:", err);
+        // ここでのエラーはフォールバックも失敗した致命的なものなので500を返す
         res.status(500).json({ error: "AI分析エラー: " + err.message });
     }
 });
@@ -314,7 +317,6 @@ wss.on('connection', (clientWs, req) => {
         geminiWs.on('open', () => {
             geminiWs.send(JSON.stringify({
                 setup: {
-                    // Live APIは 2.0 Flash Exp でOK
                     model: "models/gemini-2.0-flash-exp",
                     generation_config: { 
                         response_modalities: ["AUDIO"], 
