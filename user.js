@@ -1,4 +1,4 @@
-// --- user.js (完全版: Canvas描画 + 猫化AI合成) ---
+// --- user.js (最終修正版: テキスト位置・画像表示対応) ---
 
 let users = JSON.parse(localStorage.getItem('nekoneko_users')) || [];
 let currentUser = null;
@@ -20,11 +20,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // 入力イベント設定
     const nameInput = document.getElementById('new-student-name');
     const gradeInput = document.getElementById('new-student-grade');
-    if(nameInput) nameInput.addEventListener('input', () => renderIdCard());
-    if(gradeInput) gradeInput.addEventListener('change', () => renderIdCard());
+    // 入力時はプレビューモード(false)で描画
+    if(nameInput) nameInput.addEventListener('input', () => renderIdCard(false));
+    if(gradeInput) gradeInput.addEventListener('change', () => renderIdCard(false));
 
-    // 初期描画
-    if(idBase.complete) { renderIdCard(); } else { idBase.onload = () => renderIdCard(); }
+    // 初回描画（プレビューモード）
+    renderIdCard(false);
 });
 
 async function loadFaceModels() {
@@ -40,14 +41,13 @@ async function loadFaceModels() {
         const btn = document.getElementById('complete-btn');
         if(btn) btn.disabled = false;
     } catch (e) {
-        console.error(e);
         if(status) status.innerText = "手動モードで入学できるにゃ🐾";
         const btn = document.getElementById('complete-btn');
         if(btn) btn.disabled = false;
     }
 }
 
-// AI処理用に画像をリサイズするヘルパー
+// AI用リサイズ
 async function resizeForAI(img, maxSize = 600) {
     return new Promise(resolve => {
         const canvas = document.createElement('canvas');
@@ -67,34 +67,47 @@ async function resizeForAI(img, maxSize = 600) {
     });
 }
 
-// ★最重要: 描画関数 (AIデコレーション付き)
-async function renderIdCard() {
-    const canvas = document.getElementById('id-photo-preview-canvas');
+// ★描画関数: forSave=trueなら背景込みで描画、falseなら透明で描画
+async function renderIdCard(forSave = false) {
+    let canvas;
+    if (forSave) {
+        canvas = document.createElement('canvas'); // 保存用
+    } else {
+        canvas = document.getElementById('id-photo-preview-canvas'); // 表示用
+    }
     if (!canvas) return;
 
-    // 1. キャンバス設定
+    // サイズ固定
     canvas.width = 640; 
     canvas.height = 400;
     const ctx = canvas.getContext('2d');
 
-    // 2. ベース画像
-    if (idBase.complete && idBase.naturalWidth > 0) {
-        ctx.drawImage(idBase, 0, 0, 640, 400);
+    // 1. 背景の処理
+    if (forSave) {
+        // 保存時はCanvasに背景を描く
+        if (idBase.complete && idBase.naturalWidth > 0) {
+            ctx.drawImage(idBase, 0, 0, 640, 400);
+        } else {
+            // ロード待ち
+            await new Promise(r => { idBase.onload = r; idBase.onerror = r; });
+            ctx.drawImage(idBase, 0, 0, 640, 400);
+        }
     } else {
-        ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, 640, 400);
+        // プレビュー時は透明にして、HTMLのimgタグを見せる
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
 
-    // 3. 写真とデコレーション
+    // 2. 写真とデコレーション
     if (enrollFile) {
         try {
             const img = new Image();
             img.src = URL.createObjectURL(enrollFile);
             await new Promise(r => img.onload = r);
 
-            // --- A. 写真の描画 (トリミング計算) ---
-            const destX = 44, destY = 138, destW = 180, destH = 200; // 枠の座標
+            // 枠の座標
+            const destX = 44, destY = 138, destW = 180, destH = 200;
             
-            // 比率計算
+            // クロップ計算
             const scale = Math.max(destW / img.width, destH / img.height);
             const cropW = destW / scale;
             const cropH = destH / scale;
@@ -108,67 +121,47 @@ async function renderIdCard() {
             ctx.drawImage(img, cropX, cropY, cropW, cropH, destX, destY, destW, destH);
             ctx.restore();
 
-            // --- B. AI顔認識とデコレーション ---
+            // 猫化AI
             if (modelsLoaded) {
-                // 高速化のためリサイズ画像で検出
                 const aiImg = await resizeForAI(img);
-                // 検出実行
                 const detection = await faceapi.detectSingleFace(aiImg).withFaceLandmarks();
 
                 if (detection) {
                     const landmarks = detection.landmarks;
-                    const nose = landmarks.getNose()[3]; // 鼻の頭
+                    const nose = landmarks.getNose()[3];
                     const leftEyeBrow = landmarks.getLeftEyeBrow()[2];
                     const rightEyeBrow = landmarks.getRightEyeBrow()[2];
-                    
-                    // AI画像の座標系を、元の画像の座標系に戻す倍率
                     const aiScale = img.width / aiImg.width;
 
-                    // --- 座標変換ロジック ---
-                    // 1. AI座標(鼻など)を元画像の座標に戻す: nose.x * aiScale
-                    // 2. そこからクロップ開始位置を引く: - cropX
-                    // 3. それをCanvas上の枠サイズに縮小/拡大する: * scale
-                    // 4. 最後にCanvas上の枠の開始位置を足す: + destX
-
-                    // マズル（鼻）の描画
                     if (decoMuzzle.complete) {
                         const nX = destX + (nose.x * aiScale - cropX) * scale;
                         const nY = destY + (nose.y * aiScale - cropY) * scale;
-                        
-                        // マズルの幅は顔の幅の半分くらい
                         const faceW = detection.detection.box.width * aiScale * scale;
                         const muzW = faceW * 0.8;
-                        const muzH = muzW * 0.8; // 比率適当
-
-                        // 少し回転を考慮せずそのまま描画
+                        const muzH = muzW * 0.8;
                         ctx.drawImage(decoMuzzle, nX - muzW/2, nY - muzH/2.5, muzW, muzH);
                     }
 
-                    // 猫耳の描画
                     if (decoEars.complete) {
-                        // 眉間の位置を計算
                         const browX = ((leftEyeBrow.x + rightEyeBrow.x)/2) * aiScale;
                         const browY = ((leftEyeBrow.y + rightEyeBrow.y)/2) * aiScale;
-
                         const eX = destX + (browX - cropX) * scale;
                         const eY = destY + (browY - cropY) * scale;
-
                         const faceW = detection.detection.box.width * aiScale * scale;
-                        const earW = faceW * 2.2; // 顔よりかなり大きく
+                        const earW = faceW * 2.2;
                         const earH = earW * 0.7;
-
-                        // 眉間の少し上に描画
                         ctx.drawImage(decoEars, eX - earW/2, eY - earH + 10, earW, earH);
                     }
                 }
             }
-
         } catch(e) { console.error(e); }
-    } else {
-        ctx.fillStyle = "#ddd"; ctx.fillRect(44, 138, 180, 200);
+    } else if (!forSave) {
+        // プレビューで写真がない時は半透明グレーで枠を示す
+        ctx.fillStyle = "rgba(200, 200, 200, 0.5)";
+        ctx.fillRect(44, 138, 180, 200);
     }
 
-    // 4. テキスト描画
+    // 3. テキスト描画 (座標を大幅に修正)
     const nameVal = document.getElementById('new-student-name').value || "なまえ";
     const gradeVal = document.getElementById('new-student-grade').value || "○";
     
@@ -176,15 +169,22 @@ async function renderIdCard() {
     ctx.font = "bold 32px 'M PLUS Rounded 1c', sans-serif";
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
-    ctx.fillText(gradeVal + "年生", 350, 185); 
-    ctx.fillText(nameVal, 350, 265);
+
+    // ★座標修正: X=440 にしてラベルと被らないようにする
+    // 学年
+    ctx.fillText(gradeVal + "年生", 440, 185); 
+    
+    // 名前
+    ctx.fillText(nameVal, 440, 265);
+
+    return canvas;
 }
 
 function setupEnrollmentPhotoInputs() {
     const handleFile = (file) => {
         if (!file) return;
         enrollFile = file;
-        renderIdCard(); 
+        renderIdCard(false);
     };
 
     const webCamBtn = document.getElementById('enroll-webcam-btn');
@@ -261,16 +261,15 @@ async function processAndCompleteEnrollment() {
     
     btn.disabled = true;
     btn.innerText = "作成中にゃ...";
-    await new Promise(r => setTimeout(r, 100)); // 描画待ち
+    await new Promise(r => setTimeout(r, 100));
 
     try {
-        // 現在のキャンバス状態（AI合成済み）をそのまま保存
-        await renderIdCard(); // 念のため再描画
-        const canvas = document.getElementById('id-photo-preview-canvas');
+        // 保存用に背景込みでCanvas生成 (trueを指定)
+        const saveCanvas = await renderIdCard(true);
         
         const newUser = { 
             id: Date.now(), name, grade, 
-            photo: canvas.toDataURL('image/jpeg', 0.6), 
+            photo: saveCanvas.toDataURL('image/jpeg', 0.6), 
             karikari: 100, 
             history: {}, mistakes: [], attendance: {},
             memory: "" 
@@ -283,16 +282,16 @@ async function processAndCompleteEnrollment() {
         document.getElementById('new-student-name').value = "";
         document.getElementById('new-student-grade').value = "";
         enrollFile = null;
-        renderIdCard(); 
+        renderIdCard(false); // リセット
         
         alert("入学おめでとうにゃ！🌸");
         switchScreen('screen-gate');
 
     } catch (err) {
         if (err.name === 'QuotaExceededError') {
-            alert("データがいっぱいで保存できないにゃ。古い学生証を削除してにゃ！");
+            alert("データがいっぱいです。古い学生証を削除してください。");
         } else {
-            alert("エラーが発生したにゃ……\n" + err.message);
+            alert("エラー: " + err.message);
         }
     } finally {
         btn.disabled = false;
