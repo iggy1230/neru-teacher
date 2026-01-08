@@ -1,16 +1,15 @@
-// --- anlyze.js (完全版: 音声安定 + 記憶機能対応) ---
+// --- anlyze.js (完全安定版) ---
 
 let transcribedProblems = []; let selectedProblem = null; let hintIndex = 0; let isAnalyzing = false;
 let currentSubject = ''; let currentMode = ''; let lunchCount = 0; let analysisType = 'fast';
 
 // Live Chat Variables
 let liveSocket = null;
-let audioContext = null; // 使い回し用
+let audioContext = null;
 let mediaStream = null;
 let workletNode = null;
 let stopSpeakingTimer = null;
 let currentTtsSource = null;
-let chatTranscript = ""; 
 let nextStartTime = 0;
 
 // Game & Crop Variables
@@ -21,8 +20,6 @@ let cropImg = new Image(); let cropPoints = []; let activeHandle = -1; let video
 const sfxBori = new Audio('boribori.mp3');
 const sfxHit = new Audio('cat1c.mp3');
 const sfxOver = new Audio('gameover.mp3');
-const gameHitComments = ["うまいにゃ！", "すごいにゃ！", "さすがにゃ！", "がんばれにゃ！"];
-
 const subjectImages = {
     'こくご': { base: 'nell-kokugo.png', talk: 'nell-kokugo-talk.png' },
     'さんすう': { base: 'nell-sansu.png', talk: 'nell-sansu-talk.png' },
@@ -32,7 +29,7 @@ const subjectImages = {
 const defaultIcon = 'nell-normal.png'; 
 const talkIcon = 'nell-talk.png';
 
-// --- オーディオ機能の取得（シングルトン） ---
+// --- AudioContext Helper ---
 function getAudioContext() {
     if (!audioContext) {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -59,7 +56,7 @@ function startMouthAnimation() {
 }
 startMouthAnimation();
 
-// --- Message & TTS (Standard Mode) ---
+// --- Message & TTS ---
 async function updateNellMessage(t, mood = "normal") {
     let targetId = document.getElementById('screen-game').classList.contains('hidden') ? 'nell-text' : 'nell-text-game';
     const el = document.getElementById(targetId);
@@ -128,17 +125,15 @@ window.setAnalyzeMode = function(type) {
     }
 };
 
-// --- Live Chat (完全版) ---
+// --- Live Chat (安定版) ---
 async function startLiveChat() {
     const btn = document.getElementById('mic-btn');
     if (liveSocket) { stopLiveChat(); return; }
     
     const ctx = getAudioContext();
     await ctx.resume();
-    
     updateNellMessage("電話をかけてるにゃ……", "thinking");
     if(btn) btn.disabled = true;
-    chatTranscript = "";
     nextStartTime = ctx.currentTime;
 
     const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -147,7 +142,6 @@ async function startLiveChat() {
 
     liveSocket.onopen = () => { 
         console.log("WS Open");
-        // 設定送信
         liveSocket.send(JSON.stringify({
             type: "config",
             userGrade: currentUser ? currentUser.grade : "1",
@@ -163,18 +157,13 @@ async function startLiveChat() {
         
         if (data.type === "server_ready") {
             if(btn) { btn.innerText = "📞 つながった！(終了)"; btn.style.background = "#ff5252"; btn.disabled = false; }
-            updateNellMessage("お待たせ！なんでも話してにゃ！", "happy");
+            updateNellMessage("お待たせ！話していいにゃ！", "happy");
             await startMicrophone();
         }
 
         if (data.serverContent?.modelTurn?.parts) {
             data.serverContent.modelTurn.parts.forEach(p => {
-                // ★記憶のために文字も保存
-                if (p.text) {
-                    console.log("AI Text:", p.text);
-                    chatTranscript += `ネル: ${p.text}\n`;
-                }
-                // ★音声再生
+                // 音声データのみを処理
                 if (p.inlineData) {
                     playLivePcmAudio(p.inlineData.data);
                 }
@@ -193,17 +182,6 @@ function stopLiveChat() {
     
     const btn = document.getElementById('mic-btn');
     if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; btn.style.boxShadow = "none"; }
-    
-    // ★会話ログ保存
-    if (chatTranscript.length > 5 && currentUser) {
-        const now = new Date().toLocaleString('ja-JP');
-        const newMemory = `\n[${now}]の会話:\n${chatTranscript}`;
-        currentUser.memory = (currentUser.memory || "") + newMemory;
-        if (currentUser.memory.length > 30000) {
-            currentUser.memory = currentUser.memory.slice(-30000); 
-        }
-        saveAndSync();
-    }
 }
 
 async function startMicrophone() {

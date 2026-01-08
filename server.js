@@ -33,7 +33,7 @@ try {
     console.error("Init Error:", e.message); 
 }
 
-// --- 音声合成 (SSML: 通常モード用) ---
+// --- 音声合成 (SSML) ---
 function createSSML(text, mood) {
     let rate = "1.1", pitch = "+2st";
     if (mood === "thinking") { rate = "1.0"; pitch = "0st"; }
@@ -69,15 +69,12 @@ app.post('/synthesize', async (req, res) => {
     }
 });
 
-// --- ゲーム実況API ---
 app.post('/game-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { type, name, score } = req.body;
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         let prompt = "";
-        let mood = "excited";
-
         if (type === 'start') {
             prompt = `あなたは「ねこご市立ねこづか小学校」のネル先生です。生徒「${name}」さんがゲームを開始。「${name}さん！カリカリいっぱいゲットしてにゃ！」とだけ言って。`;
         } else if (type === 'end') {
@@ -86,11 +83,10 @@ app.post('/game-reaction', async (req, res) => {
             prompt = `ネル先生の実況。状況: ${type}。「うまい！」「あぶない！」など単語で叫んで。語尾「にゃ」。`;
         }
         const result = await model.generateContent(prompt);
-        res.json({ reply: result.response.text().trim(), mood: mood });
+        res.json({ reply: result.response.text().trim(), mood: "excited" });
     } catch (err) { res.json({ reply: "がんばれにゃ！", mood: "excited" }); }
 });
 
-// --- 給食リアクションAPI ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
@@ -110,7 +106,6 @@ app.post('/lunch-reaction', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Lunch Error" }); }
 });
 
-// --- チャットAPI (テキストのみ) ---
 app.post('/chat', async (req, res) => {
     try {
         const { message, grade, name } = req.body;
@@ -123,7 +118,6 @@ app.post('/chat', async (req, res) => {
 
 app.post('/summarize-chat', async (req, res) => { res.json({ summary: "" }); });
 
-// --- 画像分析API ---
 app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
@@ -177,7 +171,7 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- ★Live API Proxy (音声+文字 完全対応版) ---
+// --- ★Live API Proxy (安定版: 音声のみ) ---
 const wss = new WebSocketServer({ server });
 wss.on('connection', (clientWs) => {
     let geminiWs = null;
@@ -189,7 +183,7 @@ wss.on('connection', (clientWs) => {
         
         try {
             const msg = JSON.parse(msgStr);
-            // ★設定データ ("config")
+            // 設定データ
             if (msg && msg.type === "config") {
                 isConfig = true;
                 const { userGrade, userName, userMemory } = msg;
@@ -200,14 +194,15 @@ wss.on('connection', (clientWs) => {
                         setup: {
                             model: "models/gemini-2.0-flash-exp",
                             generation_config: { 
-                                // ★修正: 音声とテキストの両方を要求
-                                response_modalities: ["AUDIO", "TEXT"], 
+                                // ★修正: 音声のみに戻す (これで安定します)
+                                response_modalities: ["AUDIO"], 
                                 speech_config: { 
                                     voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }
                                 } 
                             }, 
                             system_instruction: {
                                 parts: [{
+                                    // 記憶はここで注入するので、過去のことは覚えています
                                     text: `あなたは「ねこご市立ねこづか小学校」の先生、「ネル先生」です。語尾は必ず「〜にゃ」をつけて。相手は小学${userGrade}年生の${userName}さん。
                                     【過去の記憶】
                                     ${userMemory}
@@ -232,7 +227,7 @@ wss.on('connection', (clientWs) => {
             }
         } catch(e) {}
 
-        // ★音声データの場合
+        // 音声データ
         if (!isConfig && geminiWs && geminiWs.readyState === WebSocket.OPEN) {
             try {
                 const binaryMessage = {
