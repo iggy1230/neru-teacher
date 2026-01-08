@@ -5,7 +5,7 @@ body {
     width: 100%;
     min-height: 100vh;
     background-color: #fce4ec;
-    background-image: url('classroom-bg.png');
+    background-image: url('classroom-bg.png'); /* 通常画面の背景 */
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
@@ -14,7 +14,7 @@ body {
     -webkit-font-smoothing: antialiased;
     box-sizing: border-box;
     padding-top: 0;
-    overflow-x: hidden;
+    overflow-x: hidden; /* 横スクロール防止 */
 }
 
 button { font-family: inherit; }
@@ -30,10 +30,8 @@ button { font-family: inherit; }
 
 /* --- タイトル画面 --- */
 .title-screen {
-    position: fixed;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    background-image: url('neru-title-bg.png');
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background-image: url('neru-title-bg.png'); /* タイトル専用背景 */
     background-size: cover;
     background-position: center;
     display: flex;
@@ -42,55 +40,26 @@ button { font-family: inherit; }
     align-items: center;
     z-index: 2000;
 }
-
-/* ★修正: フワフワアニメーション追加 */
 .main-title {
-    margin-top: 80px;
-    font-size: 3rem;
-    color: #d81b60;
+    margin-top: 80px; font-size: 3rem; color: #d81b60;
     text-shadow: 4px 4px 0 #fff, -2px -2px 0 #fff;
-    text-align: center;
-    font-weight: 900;
+    text-align: center; font-weight: 900;
     animation: floatingTitle 3s ease-in-out infinite;
 }
-
 @keyframes floatingTitle {
-    0% { transform: translateY(0); }
-    50% { transform: translateY(-15px); }
-    100% { transform: translateY(0); }
+    0% { transform: translateY(0); } 50% { transform: translateY(-15px); } 100% { transform: translateY(0); }
 }
-
-/* ★修正: ボタン位置を上げる */
-.title-btn-container {
-    margin-bottom: 200px; /* 150px -> 200px (上に移動) */
-    width: 100%;
-    display: flex;
-    justify-content: center;
-}
-
-/* ★修正: ボタン幅を調整 */
+.title-btn-container { margin-bottom: 200px; width: 100%; display: flex; justify-content: center; }
 .title-start-btn {
-    background: #ff5252;
-    color: white;
-    font-size: 1.3rem; /* 少し小さく */
-    padding: 15px 30px; /* パディング縮小 */
-    border-radius: 50px;
-    border: 4px solid #fff;
+    background: #ff5252; color: white; font-size: 1.3rem; padding: 15px 30px;
+    border-radius: 50px; border: 4px solid #fff;
     box-shadow: 0 6px 0 #d32f2f, 0 10px 10px rgba(0,0,0,0.3);
-    width: auto;
-    min-width: 200px; /* 幅を制限 */
-    animation: pulse 2s infinite;
+    width: auto; min-width: 200px; animation: pulse 2s infinite;
 }
-@keyframes pulse {
-    0% { transform: scale(1); }
-    50% { transform: scale(1.05); }
-    100% { transform: scale(1); }
-}
-
+@keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
 .version-tag {
     position: absolute; bottom: 10px; left: 0; width: 100%;
-    text-align: center; font-size: 0.7rem; color: rgba(0, 0, 0, 0.4);
-    pointer-events: none;
+    text-align: center; font-size: 0.7rem; color: rgba(0, 0, 0, 0.4); pointer-events: none;
 }
 
 /* --- 共通ボタン --- */
@@ -110,29 +79,33 @@ button { font-family: inherit; }
 .screen { padding: 20px 10px; animation: fadeIn 0.3s ease; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
+/* --- 戻るボタン (左上固定) --- */
+/* ★修正: 戻るボタンを絶対配置にしてレイアウト崩れを防ぐ */
+#main-back-btn {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    width: auto !important;
+    margin: 0 !important;
+    padding: 8px 20px !important;
+    z-index: 100;
+    font-size: 1rem;
+    box-shadow: 0 2px 0 #78909c;
+}
+
 /* --- 校門・ロビー --- */
 .school-title {
     text-align: center; font-size: 1.8rem; color: #d81b60;
-    text-shadow: 3px 3px 0 #fff, -1px -1px 0 #fff;
-    margin: 20px 0; font-weight: 900;
+    text-shadow: 3px 3px 0 #fff, -1px -1px 0 #fff; margin: 20px 0; font-weight: 900;
 }
 .section-title {
     text-align: center; font-size: 1.5rem; color: white;
-    text-shadow: 2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
-    margin: 20px 0; font-weight: 900;
+    text-shadow: 2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000; margin: 20px 0; font-weight: 900;
 }
-.gate-layout {
-    display: flex; justify-content: center; align-items: flex-start;
-    gap: 10px; min-height: 300px; margin-top: 20px;
-}
-.right-user-list {
-    width: 100%; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-    gap: 15px; padding: 10px;
-}
-.user-card {
-    background: transparent; padding: 0; text-align: center; cursor: pointer;
-    position: relative; transition: transform 0.1s;
-}
+.gate-layout { display: flex; justify-content: center; align-items: flex-start; gap: 10px; min-height: 300px; margin-top: 20px; }
+.right-user-list { width: 100%; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 15px; padding: 10px; }
+
+.user-card { background: transparent; padding: 0; text-align: center; cursor: pointer; position: relative; transition: transform 0.1s; }
 .user-card:active { transform: scale(0.95); }
 .user-card img {
     width: 100%; height: auto; aspect-ratio: 1.6; object-fit: contain;
@@ -152,31 +125,20 @@ button { font-family: inherit; }
     box-shadow: 0 2px 4px rgba(0,0,0,0.2); z-index: 10;
 }
 
-/* --- 入学手続き (プレビュー) --- */
+/* --- 入学手続き --- */
 .id-card-wrap {
-    position: relative; width: 320px; height: 200px;
-    margin: 0 auto 20px;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.3); border-radius: 12px;
-    overflow: hidden; background: white;
+    position: relative; width: 320px; height: 200px; margin: 0 auto 20px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3); border-radius: 12px; overflow: hidden; background: white;
 }
 .id-base-img { width: 100%; height: 100%; object-fit: fill; }
-#id-photo-preview-canvas {
-    width: 100%; height: 100%; object-fit: contain;
-    position: absolute; top: 0; left: 0; z-index: 2;
-}
+#id-photo-preview-canvas { width: 100%; height: 100%; object-fit: contain; position: absolute; top: 0; left: 0; z-index: 2; }
 #id-photo-slot { display: none; }
-.id-text-overlay {
-    position: absolute; color: #333; font-weight: bold;
-    font-family: sans-serif; pointer-events: none; z-index: 3;
-}
+.id-text-overlay { position: absolute; color: #333; font-weight: bold; font-family: sans-serif; pointer-events: none; z-index: 3; }
 .id-grade-text { top: 85px; left: 185px; font-size: 16px; width: 100px; text-align: center; }
 .id-name-text { top: 125px; left: 185px; font-size: 18px; width: 100px; text-align: center; }
+.styled-input, .styled-select { width: 80%; padding: 12px; margin: 10px auto; display: block; border: 2px solid #ff85a1; border-radius: 10px; font-size: 1rem; }
 
-.styled-input, .styled-select {
-    width: 80%; padding: 12px; margin: 10px auto; display: block;
-    border: 2px solid #ff85a1; border-radius: 10px; font-size: 1rem;
-}
-
+/* --- ロビー --- */
 .lobby-top { text-align: center; margin: 20px 0; }
 .mini-id { transform: scale(0.8); margin-bottom: 0; }
 .karikari-counter {
@@ -189,6 +151,9 @@ button { font-family: inherit; }
 .lobby-menu { display: grid; gap: 12px; padding: 0 15px; }
 
 /* --- 教室 --- */
+/* ★修正: 戻るボタンと被らないように余白追加 */
+.operation-layout { margin-top: 50px; }
+
 .nell-chat { display: flex; align-items: flex-end; margin-bottom: 15px; padding: 0 10px; }
 .nell-avatar-wrap { position: relative; width: 100px; height: 100px; flex-shrink: 0; }
 .nell-img { width: 100%; height: 100%; object-fit: contain; }
@@ -218,113 +183,51 @@ button { font-family: inherit; }
 .upload-buttons-container { display: flex; flex-direction: column; gap: 10px; width: 100%; }
 
 /* ゲーム画面 */
-.game-container {
-    display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%;
-}
+.game-container { display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%; }
 #game-canvas { border: 4px solid #8d6e63; border-radius: 10px; background: #fffde7; box-shadow: 0 4px 0 rgba(0,0,0,0.1); }
 .game-ui { text-align: center; margin-top: 10px; }
 .game-ui p { font-size: 1.2rem; font-weight: bold; color: #d84315; }
 
-/* 問題リスト */
+/* その他UI */
 .problem-selection-card { height: 400px; display: flex; flex-direction: column; }
 .problem-scroll-area { flex: 1; overflow-y: auto; padding: 5px; }
 .prob-card {
     background: white; border-left: 5px solid #ff85a1; padding: 10px;
-    margin-bottom: 10px; border-radius: 5px; display: flex;
-    justify-content: space-between; align-items: center;
+    margin-bottom: 10px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center;
     box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 }
 .q-label { font-weight: bold; color: #e91e63; margin-right: 5px; }
-
-.problem-row {
-    background: #fff; padding: 10px; margin-bottom: 8px; border-radius: 8px;
-    border-bottom: 2px solid #eee;
-}
+.problem-row { background: #fff; padding: 10px; margin-bottom: 8px; border-radius: 8px; border-bottom: 2px solid #eee; }
 .student-ans-input { font-size: 1rem; padding: 5px; width: 100px; border: 2px solid #ddd; border-radius: 5px; }
 .judgment-mark { font-size: 1.5rem; margin-left: 5px; }
-.judgment-mark.correct { color: red; }
-.judgment-mark.incorrect { color: blue; }
-.mini-teach-btn {
-    background: #2196f3; color: white; border: none; border-radius: 15px;
-    padding: 5px 10px; font-size: 0.8rem; margin-left: auto;
-}
-
+.mini-teach-btn { background: #2196f3; color: white; border: none; border-radius: 15px; padding: 5px 10px; font-size: 0.8rem; margin-left: auto; }
 .mini-karikari-display {
     position: fixed; top: 10px; right: 10px; background: rgba(255,255,255,0.95);
     padding: 5px 10px; border-radius: 20px; font-weight: bold; color: #d84315;
     box-shadow: 0 2px 5px rgba(0,0,0,0.2); z-index: 100; display: flex; align-items: center; gap: 5px;
 }
-
 .glass-card { background: rgba(255,255,255,0.9); border-radius: 15px; padding: 15px; }
 .attendance-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
-.day-box {
-    background: white; border-radius: 5px; padding: 5px; text-align: center;
-    font-size: 0.8rem; aspect-ratio: 1; display: flex; flex-direction: column; justify-content: center;
-}
+.day-box { background: white; border-radius: 5px; padding: 5px; text-align: center; font-size: 0.8rem; aspect-ratio: 1; display: flex; flex-direction: column; justify-content: center; }
 
-.floating-text {
-    position: absolute; font-weight: bold; font-size: 1.5rem;
-    animation: floatUp 1.5s ease-out forwards; pointer-events: none;
-}
-@keyframes floatUp { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(-50px); opacity: 0; } }
-.heart-particle {
-    position: absolute; font-size: 1.2rem; pointer-events: none;
-    animation: popHeart 1s ease-out forwards;
-}
-@keyframes popHeart { 0% { transform: scale(0); } 50% { transform: scale(1.2); } 100% { transform: scale(1); opacity: 0; } }
-
-.loader-inspect-img {
-    width: 200px;
-    display: block; margin: 0 auto;
-    animation: bounce 1s infinite alternate;
-}
-@keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-10px); } }
+/* ローディング */
+.loader-inspect-img { width: 200px; display: block; margin: 0 auto; animation: bounce 1s infinite alternate; }
 .progress-bar { height: 10px; background: #ff85a1; width: 0%; transition: width 0.3s; border-radius: 5px; }
 .progress-container { width: 80%; background: #eee; height: 10px; border-radius: 5px; margin: 10px auto; overflow: hidden; }
 
-/* カメラモーダル */
-.camera-modal {
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    background: #000; z-index: 9999;
-    display: flex; flex-direction: column; align-items: center; justify-content: space-between;
-}
-.camera-container {
-    position: relative; width: 100%; flex: 1;
-    display: flex; align-items: center; justify-content: center; overflow: hidden;
-}
+/* モーダル */
+.camera-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: space-between; }
+.camera-container { position: relative; width: 100%; flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; }
 #camera-video, #cropper-img { width: 100%; height: 100%; object-fit: contain; }
-.camera-guide-box {
-    position: absolute; width: 70%; aspect-ratio: 1;
-    border: 3px solid rgba(255, 255, 255, 0.8); border-radius: 10px;
-    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
-    display: flex; align-items: flex-start; justify-content: center; pointer-events: none;
-}
-.camera-guide-box p {
-    color: white; background: rgba(0,0,0,0.5); padding: 5px 10px;
-    border-radius: 15px; margin-top: -40px; font-weight: bold;
-}
-.camera-controls {
-    width: 100%; height: 120px; background: #222;
-    display: flex; align-items: center; justify-content: space-around; padding-bottom: 20px;
-}
-.camera-shutter-btn {
-    width: 70px; height: 70px; border-radius: 50%; background: white;
-    border: 5px solid #ccc; cursor: pointer; transition: transform 0.1s;
-}
+.camera-guide-box { position: absolute; width: 70%; aspect-ratio: 1; border: 3px solid rgba(255, 255, 255, 0.8); border-radius: 10px; pointer-events: none; }
+.camera-guide-box p { color: white; background: rgba(0,0,0,0.5); padding: 5px 10px; border-radius: 15px; margin-top: -40px; font-weight: bold; }
+.camera-controls { width: 100%; height: 120px; background: #222; display: flex; align-items: center; justify-content: space-around; padding-bottom: 20px; }
+.camera-shutter-btn { width: 70px; height: 70px; border-radius: 50%; background: white; border: 5px solid #ccc; cursor: pointer; }
 .camera-shutter-btn:active { transform: scale(0.9); background: #ff5252; }
 
-/* 独自クロッパー用 */
-.cropper-wrapper {
-    position: relative; width: 100%; flex: 1; background: #222;
-    display: flex; justify-content: center; align-items: center;
-    overflow: hidden; touch-action: none;
-}
+/* クロップUI */
+.cropper-wrapper { position: relative; width: 100%; flex: 1; background: #222; display: flex; justify-content: center; align-items: center; overflow: hidden; touch-action: none; }
 #crop-canvas { max-width: 95%; max-height: 80vh; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
-.crop-handle {
-    position: absolute; width: 40px; height: 40px;
-    background: rgba(255, 255, 255, 0.4); border: 3px solid #ff4081;
-    border-radius: 50%; transform: translate(-50%, -50%);
-    z-index: 100; touch-action: none;
-}
+.crop-handle { position: absolute; width: 40px; height: 40px; background: rgba(255, 255, 255, 0.4); border: 3px solid #ff4081; border-radius: 50%; transform: translate(-50%, -50%); z-index: 100; touch-action: none; }
 .crop-handle:active { background: #ff4081; transform: translate(-50%, -50%) scale(1.2); }
 #crop-lines polyline { fill: none; stroke: #ff4081; stroke-width: 3; stroke-dasharray: 5; }
