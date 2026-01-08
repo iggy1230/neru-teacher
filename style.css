@@ -1,4 +1,4 @@
-/* --- style.css (最終版: 縦横比自動維持) --- */
+/* --- style.css (強制サイズ確保版) --- */
 
 body {
     font-family: 'M PLUS Rounded 1c', "Sawarabi Gothic", sans-serif;
@@ -117,28 +117,29 @@ button { font-family: inherit; }
     position: relative;
     width: 100%;
     max-width: 320px; /* 最大幅 */
-    /* 高さ指定を削除し、Canvasのサイズに合わせる */
-    height: auto; 
+    /* 縦横比を1.6:1に固定 */
+    aspect-ratio: 1.6 / 1; 
+    /* 万が一のために最低高さを確保（これで潰れを防ぐ） */
+    min-height: 180px;
     margin: 0 auto 20px;
     box-shadow: 0 4px 10px rgba(0,0,0,0.3);
     border-radius: 12px;
     overflow: hidden;
-    background: white;
+    /* 背景色と枠線をつけて、画像が出なくても場所がわかるようにする */
+    background: #ffffff;
+    border: 2px solid #ddd;
 }
-
-/* 画像タグは非表示 */
-.id-base-img { display: none; }
 
 /* Canvasの設定 */
 #id-photo-preview-canvas { 
-    width: 100%; /* 親要素の幅いっぱいに */
-    height: auto; /* 縦横比を維持して自動調整 */
+    width: 100%; 
+    height: 100%; 
+    object-fit: contain;
     display: block; 
-    /* デフォルト背景色（読み込み失敗時用） */
-    background-color: #f0f0f0; 
 }
 
-/* 他のオーバーレイ要素はすべて非表示 */
+/* 画像タグやオーバーレイは非表示 */
+.id-base-img { display: none; }
 .id-text-overlay { display: none; }
 #id-photo-slot { display: none; }
 
