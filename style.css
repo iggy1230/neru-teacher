@@ -1,4 +1,4 @@
-/* --- style.css (Canvas描画版) --- */
+/* --- style.css (画像表示復活版) --- */
 
 body {
     font-family: 'M PLUS Rounded 1c', "Sawarabi Gothic", sans-serif;
@@ -112,13 +112,12 @@ button { font-family: inherit; }
     box-shadow: 0 2px 4px rgba(0,0,0,0.2); z-index: 10;
 }
 
-/* --- ★学生証レイアウト修正 (ここが重要) --- */
+/* --- ★学生証レイアウト修正 --- */
 .id-card-wrap {
     position: relative;
     width: 100%;
-    max-width: 320px; /* 大きくなりすぎないように制限 */
-    /* アスペクト比を学生証画像(640x400)に合わせて固定。これで絶対に潰れません */
-    aspect-ratio: 640 / 400; 
+    max-width: 320px;
+    aspect-ratio: 640 / 400; /* アスペクト比を固定 */
     margin: 0 auto 20px;
     box-shadow: 0 4px 10px rgba(0,0,0,0.3);
     border-radius: 12px;
@@ -126,20 +125,32 @@ button { font-family: inherit; }
     background: white;
 }
 
-/* HTMLのimgタグは非表示にする（Canvasだけで描画するため） */
+/* ベース画像を復活表示（一番下） */
 .id-base-img { 
-    display: none; 
+    width: 100%; 
+    height: 100%; 
+    object-fit: fill; /* 枠いっぱいに広げる */
+    display: block !important; /* 強制表示 */
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1;
 }
 
-/* キャンバスを枠いっぱいに表示 */
+/* キャンバス（写真と文字）を上に重ねる */
 #id-photo-preview-canvas { 
     width: 100%; 
     height: 100%; 
-    object-fit: contain;
+    object-fit: fill; 
     display: block; 
+    position: absolute; 
+    top: 0; 
+    left: 0; 
+    z-index: 2; /* 画像の上に表示 */
+    background-color: transparent; /* 背景は透明にする */
 }
 
-/* CSSでのテキスト重ね合わせは廃止（Canvasに描くため非表示） */
+/* 不要なオーバーレイは非表示 */
 .id-text-overlay { display: none; }
 #id-photo-slot { display: none; }
 
