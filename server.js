@@ -134,7 +134,7 @@ app.post('/analyze', async (req, res) => {
         const { image, mode, grade, subject } = req.body;
         
         const model = genAI.getGenerativeModel({
-            model: "gemini-2.0-pro-exp-02-05",
+            model: "gemini-2.5-pro",
             generationConfig: { responseMimeType: "application/json" }
         });
 
