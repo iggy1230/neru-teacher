@@ -68,25 +68,11 @@ app.post('/game-reaction', async (req, res) => {
         let mood = "excited";
 
         if (type === 'start') {
-            prompt = `
-            あなたは「ねこご市立ねこづか小学校」のネル先生です。
-            生徒「${name}」さんがゲームを開始します。
-            「${name}さん！カリカリいっぱいゲットしてにゃ！」とだけ言ってください。余計な言葉は不要。
-            `;
+            prompt = `あなたは「ねこご市立ねこづか小学校」のネル先生。生徒「${name}」がゲーム開始。「${name}さん！カリカリいっぱいゲットしてにゃ！」とだけ言って。`;
         } else if (type === 'end') {
-            prompt = `
-            あなたはネル先生です。ゲーム終了。スコア${score}個(最大20)。
-            スコアに応じて褒めるか励ましてください。
-            【厳守】20文字以内。語尾「にゃ」。絵文字禁止。
-            `;
+            prompt = `あなたはネル先生。ゲーム終了。スコア${score}個(最大20)。20文字以内で褒めて。語尾「にゃ」。`;
         } else {
-            prompt = `
-            ネル先生の実況。状況: ${type}。
-            【厳守】
-            - 「うまい！」「あぶない！」「すごい！」など、5〜8文字程度の単語レベルで叫んでください。
-            - 語尾「にゃ」。
-            - 1フレーズのみ。
-            `;
+            prompt = `ネル先生の実況。状況:${type}。「うまい！」「あぶない！」など一言だけ。語尾「にゃ」。`;
         }
 
         const result = await model.generateContent(prompt);
@@ -101,6 +87,8 @@ app.post('/lunch-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { count, name } = req.body;
+        
+        // 高速化のためFlashモデル
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp",
             generationConfig: { maxOutputTokens: 60 } 
@@ -139,43 +127,17 @@ app.post('/chat', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
-// --- ★記憶要約API (新機能) ---
-app.post('/summarize-chat', async (req, res) => {
-    try {
-        const { transcript } = req.body;
-        if (!transcript || transcript.length < 10) return res.json({ summary: "" });
-        
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
-        const prompt = `
-        以下の生徒との会話内容を、次に会った時に話題にできるように、50文字以内で要約して「記憶」として出力してください。
-        重要なキーワード（好きなもの、悩み、頑張ったこと）を残してください。
-        
-        【会話内容】
-        ${transcript}`;
-        
-        const result = await model.generateContent(prompt);
-        res.json({ summary: result.response.text().trim() });
-    } catch (err) { res.json({ summary: "" }); }
-});
-
-// --- ★画像分析API (モード切り替え対応) ---
+// --- ★画像分析API ---
 app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
-        const { image, mode, grade, subject, analysisType } = req.body;
+        const { image, mode, grade, subject } = req.body;
         
-        // ★修正: モードによってモデルを切り替え
-        let modelName = "gemini-2.5-flash"; // 高速モード (デフォルト)
-        if (analysisType === 'precision') {
-            modelName = "gemini-2.5-pro"; // 精密モード
-        }
-
         const model = genAI.getGenerativeModel({
-            model: modelName,
+            model: "gemini-2.5-pro",
             generationConfig: { responseMimeType: "application/json" }
         });
 
-        // 教科別ルール
         const rules = {
             'さんすう': {
                 attention: `・筆算の横線とマイナス記号を混同しないこと。\n・累乗（2^2など）や分数を正確に。`,
@@ -192,10 +154,10 @@ app.post('/analyze', async (req, res) => {
                 attention: `
                 【最重要：縦書きレイアウトと書き起こしルール】
                 1. 縦書き認識: この画像は縦書きです。必ず「右上」からスタートし、「丸数字の真下」にある文章を垂直方向に読み進めてください。行が終わったら左の列へ移動します。
-                2. 問題の分離: 丸数字（①, ②...）は新しい問題の開始合図です。
+                2. 隣の列との分離: 丸数字（①, ②...）は問題の開始点です。隣の列の文字を絶対に混ぜないでください。
                 3. 【絶対ルール】書き起こしフォーマット
-                   - 解答すべき空欄（□）は、必ず『□(読み仮名)』という形式で書き起こしてください。
-                   - 例: 「(はこ)の中」→『□(はこ)の中』
+                   - 解答すべき空欄（□）は、その横にあるルビ（読み仮名）とセットです。
+                   - 必ず『□(読み仮名)』という形式で書き起こしてください。（例: 「(はこ)の中」→ 『□(はこ)の中』）
                    - 漢字がすでに印刷されている部分は、そのまま漢字で記述してください。
                 `,
                 hints: `
@@ -248,9 +210,9 @@ app.post('/analyze', async (req, res) => {
 
             【書き起こし・抽出の絶対ルール】
             1. 画像全体を解析し、大問・小問番号を含めてすべての問題を漏らさず抽出してください。
-            2. 【超重要】「解答欄（□、括弧、下線、空欄）」が存在しないテキストは、問題（question）として出力しないでください。
+            2. 【超重要】「解答欄（□、括弧、下線、空欄）」が存在しないテキスト（例題、説明文、タイトル）は、問題（question）として出力しないでください。
             3. ${studentAnswerInstruction}
-            4. １つの問いの中に複数の回答が必要なときは、JSONデータの要素を分けてください。
+            4. １つの問いの中に複数の回答が必要なときは、JSONデータの要素を分けて、必要な数だけ回答欄を設けてください。
             5. 教科別注意（特に重要）: ${r.attention}
 
             【ヒント生成ルール（答えのネタバレ厳禁）】
@@ -258,26 +220,33 @@ app.post('/analyze', async (req, res) => {
             ⚠️重要: ヒント3であっても、「正解の漢字そのもの」や「答えの単語」は絶対に含まないでください。
             ${r.hints}
 
-            【出力フォーマット (JSONのみ)】
+            【出力フォーマット】
+            以下のJSON形式のみを出力してください。Markdownのコードブロックは不要です。
+            
             [
               {
                 "id": 1,
                 "label": "①", 
-                "question": "問題文 (国語書き取りは『□(ふりがな)』形式)",
-                "correct_answer": "正解 (必須)",
-                "student_answer": "",
-                "hints": ["ヒント1", "ヒント2", "ヒント3"]
+                "question": "問題文。※国語の漢字書き取り問題の場合、必ず『□(ふりがな)』という形式で空欄を明示すること。（例: □(はこ)の中）",
+                "correct_answer": "正解",
+                "student_answer": "生徒の答え（解説モードなら空文字）",
+                "hints": [
+                    "ヒント1: ...",
+                    "ヒント2: ...",
+                    "ヒント3: ..."
+                ]
               }
             ]
+            
             ${mode === 'grade' ? `【採点基準】\n${r.grading}` : ''}
         `;
 
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
         let textResponse = result.response.text();
 
-        // JSON抽出
         const firstBracket = textResponse.indexOf('[');
         const lastBracket = textResponse.lastIndexOf(']');
+        
         if (firstBracket !== -1 && lastBracket !== -1) {
             textResponse = textResponse.substring(firstBracket, lastBracket + 1);
         } else {
@@ -287,8 +256,9 @@ app.post('/analyze', async (req, res) => {
 
         textResponse = textResponse.replace(/\*/g, '×').replace(/\//g, '÷');
         res.json(JSON.parse(textResponse));
+
     } catch (err) {
-        console.error("Analyze Error:", err);
+        console.error("Analyze Error Details:", err);
         res.status(500).json({ error: "AI分析エラー: " + err.message });
     }
 });
@@ -297,13 +267,13 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- ★Live API Proxy (記憶機能付き) ---
+// --- ★Live API Proxy (Aoede / 記憶機能対応) ---
 const wss = new WebSocketServer({ server });
 wss.on('connection', (clientWs, req) => {
+    // 学年、名前、そして「記憶(memory)」を取得
     const parameters = parse(req.url, true).query;
     const userGrade = parameters.grade || "1";
     const userName = decodeURIComponent(parameters.name || "");
-    // ★修正: 記憶データを受け取る
     const userMemory = decodeURIComponent(parameters.memory || "特になし");
 
     let geminiWs = null;
@@ -314,17 +284,24 @@ wss.on('connection', (clientWs, req) => {
             geminiWs.send(JSON.stringify({
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
-                    generation_config: { response_modalities: ["AUDIO"], speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } } } }, 
+                    generation_config: { 
+                        response_modalities: ["AUDIO"], 
+                        speech_config: { 
+                            voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } },
+                            language_code: "ja-JP"
+                        } 
+                    }, 
                     system_instruction: {
                         parts: [{
-                            // ★修正: 記憶をプロンプトに注入
+                            // ★修正: 記憶情報を組み込む
                             text: `あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。
             相手は小学${userGrade}年生の${userName}さん。
-            
+
             【前回の会話の記憶】
             ${userMemory}
-            
-            【話し方のルール】
+            ※この記憶に基づいて、話題を振ったり、矛盾があれば指摘してください。
+               
+              【重要：話し方のルール】
                1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
                2. 【絶対に日本語のみ】で話してください。英語は禁止です。
                3. 【高い声のトーン】を意識し、元気で明るい子供向けの口調で話してください。
@@ -338,27 +315,17 @@ wss.on('connection', (clientWs, req) => {
             }));
             if (clientWs.readyState === WebSocket.OPEN) clientWs.send(JSON.stringify({ type: "server_ready" }));
         });
-
-        // クライアントからのメッセージ転送
-        clientWs.on('message', (data) => {
-            if (geminiWs.readyState !== WebSocket.OPEN) return;
-            try {
-                // 生のBase64文字列が来るのでラップして送る
-                const binaryMessage = {
-                    realtime_input: {
-                        media_chunks: [{
-                            mime_type: "audio/pcm;rate=16000",
-                            data: data.toString()
-                        }]
-                    }
-                };
-                geminiWs.send(JSON.stringify(binaryMessage));
-            } catch (e) { console.error(e); }
-        });
-
         geminiWs.on('message', (data) => { if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data); });
         geminiWs.on('error', (e) => console.error('Gemini WS Error:', e));
         geminiWs.on('close', () => {});
     } catch (e) { clientWs.close(); }
+    clientWs.on('message', (data) => {
+        try {
+            const parsed = JSON.parse(data);
+            if (parsed.type === 'audio' && geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+                geminiWs.send(JSON.stringify({ realtime_input: { media_chunks: [{ mime_type: "audio/pcm;rate=16000", data: parsed.data }] } }));
+            }
+        } catch (e) {}
+    });
     clientWs.on('close', () => { if (geminiWs && geminiWs.readyState === WebSocket.OPEN) geminiWs.close(); });
 });
