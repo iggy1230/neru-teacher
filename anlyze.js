@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版: 記憶転送修正済) ---
+// --- anlyze.js (完全版: テキストログ取得対応) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -136,7 +136,7 @@ window.setAnalyzeMode = function(type) {
     }
 };
 
-// --- Live Chat (修正版: 接続後に記憶送信) ---
+// --- Live Chat (テキストログ収集対応) ---
 async function startLiveChat() {
     const btn = document.getElementById('mic-btn');
     if (liveSocket) { stopLiveChat(); return; }
@@ -151,13 +151,11 @@ async function startLiveChat() {
         nextStartTime = audioContext.currentTime;
 
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        // ★URLパラメータを削除しシンプルに接続
         liveSocket = new WebSocket(`${wsProto}//${location.host}`);
         liveSocket.binaryType = "blob";
 
         liveSocket.onopen = () => { 
             console.log("WS Open");
-            // ★接続後に設定データ（記憶含む）を送信
             liveSocket.send(JSON.stringify({
                 type: "config",
                 userGrade: currentUser ? currentUser.grade : "1",
@@ -176,10 +174,18 @@ async function startLiveChat() {
                 updateNellMessage("お待たせ！なんでも話してにゃ！", "happy");
                 await startMicrophone();
             }
+
+            // ★修正: 音声(inlineData)とテキスト(text)の両方を受け取る
             if (data.serverContent?.modelTurn?.parts) {
                 data.serverContent.modelTurn.parts.forEach(p => {
-                    if (p.text) chatTranscript += `ネル: ${p.text}\n`;
-                    if (p.inlineData) playLivePcmAudio(p.inlineData.data);
+                    // テキストがあればログに追加
+                    if (p.text) {
+                        chatTranscript += `ネル: ${p.text}\n`;
+                    }
+                    // 音声があれば再生
+                    if (p.inlineData) {
+                        playLivePcmAudio(p.inlineData.data);
+                    }
                 });
             }
         };
@@ -197,12 +203,16 @@ function stopLiveChat() {
     const btn = document.getElementById('mic-btn');
     if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; btn.style.boxShadow = "none"; }
     
-    // 会話ログ保存（制限緩和）
+    // ★会話ログ保存 (テキストを受信できるようになったので正しく動作する)
     if (chatTranscript.length > 5 && currentUser) {
         const now = new Date().toLocaleString('ja-JP');
         const newMemory = `\n[${now}]の会話:\n${chatTranscript}`;
         currentUser.memory = (currentUser.memory || "") + newMemory;
-        if (currentUser.memory.length > 30000) { currentUser.memory = currentUser.memory.slice(-30000); }
+        
+        // メモリ増大対策 (30000文字程度で制限)
+        if (currentUser.memory.length > 30000) {
+            currentUser.memory = currentUser.memory.slice(-30000); 
+        }
         saveAndSync();
     }
 }
@@ -229,7 +239,6 @@ async function startMicrophone() {
                 const downsampled = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
                 const pcmBuffer = floatTo16BitPCM(downsampled);
                 const base64Audio = arrayBufferToBase64(pcmBuffer);
-                // 生のBase64文字列として送信（server.js側でJSONではないと判定させる）
                 liveSocket.send(base64Audio);
             }, 250);
         };
@@ -263,7 +272,7 @@ function arrayBufferToBase64(buffer) { let binary = ''; const bytes = new Uint8A
 function updateMiniKarikari() { if(currentUser) { document.getElementById('mini-karikari-count').innerText = currentUser.karikari; document.getElementById('karikari-count').innerText = currentUser.karikari; } }
 function showKarikariEffect(amount) { const container = document.querySelector('.nell-avatar-wrap'); if(container) { const floatText = document.createElement('div'); floatText.className = 'floating-text'; floatText.innerText = amount > 0 ? `+${amount}` : `${amount}`; floatText.style.color = amount > 0 ? '#ff9100' : '#ff5252'; floatText.style.right = '0px'; floatText.style.top = '0px'; container.appendChild(floatText); setTimeout(() => floatText.remove(), 1500); } const heartCont = document.getElementById('heart-container'); if(heartCont) { for(let i=0; i<8; i++) { const heart = document.createElement('div'); heart.className = 'heart-particle'; heart.innerText = amount > 0 ? '✨' : '💗'; heart.style.left = (Math.random()*80 + 10) + '%'; heart.style.top = (Math.random()*50 + 20) + '%'; heart.style.animationDelay = (Math.random()*0.5) + 's'; heartCont.appendChild(heart); setTimeout(() => heart.remove(), 1500); } } }
 
-// 独自クロップ機能などは省略せずそのまま維持（長いので省略して表示していますが、元のコードのままでOKです）
+// 独自クロップ機能などは省略せずそのまま維持
 const handleFileUpload = async (file) => { if (isAnalyzing || !file) return; const reader = new FileReader(); reader.onload = (e) => { cropImg = new Image(); cropImg.onload = () => { initCustomCropper(); }; cropImg.src = e.target.result; }; reader.readAsDataURL(file); };
 function initCustomCropper() { const modal = document.getElementById('cropper-modal'); modal.classList.remove('hidden'); const canvas = document.getElementById('crop-canvas'); const container = document.querySelector('.cropper-wrapper'); const maxWidth = container.clientWidth * 0.95; const maxHeight = container.clientHeight * 0.8; let w = cropImg.width; let h = cropImg.height; const scale = Math.min(maxWidth / w, maxHeight / h); w *= scale; h *= scale; canvas.width = w; canvas.height = h; const ctx = canvas.getContext('2d'); ctx.drawImage(cropImg, 0, 0, w, h); cropPoints = [{x: w*0.1, y: h*0.1}, {x: w*0.9, y: h*0.1}, {x: w*0.9, y: h*0.9}, {x: w*0.1, y: h*0.9}]; updateCropUI(canvas); const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl']; handles.forEach((id, idx) => { const el = document.getElementById(id); const startDrag = (e) => { e.preventDefault(); activeHandle = idx; }; el.onmousedown = startDrag; el.ontouchstart = startDrag; }); const move = (e) => { if (activeHandle === -1) return; e.preventDefault(); const rect = canvas.getBoundingClientRect(); const clientX = e.touches ? e.touches[0].clientX : e.clientX; const clientY = e.touches ? e.touches[0].clientY : e.clientY; let x = Math.max(0, Math.min(clientX - rect.left, canvas.width)); let y = Math.max(0, Math.min(clientY - rect.top, canvas.height)); cropPoints[activeHandle] = {x, y}; updateCropUI(canvas); }; const end = () => { activeHandle = -1; }; window.onmousemove = move; window.ontouchmove = move; window.onmouseup = end; window.ontouchend = end; document.getElementById('cropper-cancel-btn').onclick = () => { modal.classList.add('hidden'); window.onmousemove = null; window.ontouchmove = null; }; document.getElementById('cropper-ok-btn').onclick = () => { modal.classList.add('hidden'); window.onmousemove = null; window.ontouchmove = null; const croppedBase64 = performPerspectiveCrop(cropImg, cropPoints, canvas.width, canvas.height); startAnalysis(croppedBase64); }; }
 function updateCropUI(canvas) { const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl']; handles.forEach((id, i) => { const el = document.getElementById(id); el.style.left = (cropPoints[i].x + canvas.offsetLeft) + 'px'; el.style.top = (cropPoints[i].y + canvas.offsetTop) + 'px'; }); const svg = document.getElementById('crop-lines'); svg.style.left = canvas.offsetLeft + 'px'; svg.style.top = canvas.offsetTop + 'px'; svg.style.width = canvas.width + 'px'; svg.style.height = canvas.height + 'px'; const pts = cropPoints.map(p => `${p.x},${p.y}`).join(' '); svg.innerHTML = `<polyline points="${pts} ${cropPoints[0].x},${cropPoints[0].y}" style="fill:rgba(255,255,255,0.2);stroke:#ff4081;stroke-width:3;stroke-dasharray:5" />`; }

@@ -128,15 +128,14 @@ app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { image, mode, grade, subject, analysisType } = req.body;
-        let modelName = "gemini-2.5-flash";
-        if (analysisType === 'precision') modelName = "gemini-2.5-pro";
+        let modelName = "gemini-1.5-flash";
+        if (analysisType === 'precision') modelName = "gemini-1.5-pro";
 
         const model = genAI.getGenerativeModel({
             model: modelName,
             generationConfig: { responseMimeType: "application/json" }
         });
 
-        // (プロンプト定義は省略せずそのまま使用)
         const rules = {
             'さんすう': { attention: `・筆算の横線とマイナスを混同しない。\n・累乗や分数を正確に。`, hints: `1.立式のヒント\n2.注目点\n3.計算のコツ`, grading: `・単位忘れはバツ。\n・0と6、1と7の見間違いに注意。` },
             'こくご': { attention: `・縦書きです。右上から読んでください。\n・解答欄のないテキストは無視。\n・『□(読み仮名)』形式で出力。`, hints: `1.漢字のなりたち\n2.部首や画数\n3.似た漢字`, grading: `・送り仮名ミスはバツ。` },
@@ -187,10 +186,7 @@ wss.on('connection', (clientWs) => {
     // クライアントからのメッセージ処理
     clientWs.on('message', (data) => {
         try {
-            // まずテキスト(JSON)として解析を試みる
             const msgStr = data.toString();
-            
-            // JSONパースを試みる（設定データかどうか）
             let msg;
             try { msg = JSON.parse(msgStr); } catch(e) { msg = null; }
 
@@ -200,12 +196,13 @@ wss.on('connection', (clientWs) => {
                 
                 geminiWs = new WebSocket(GEMINI_URL);
                 geminiWs.on('open', () => {
-                    // Geminiへの初期設定送信（ここで記憶を注入）
+                    // Geminiへの初期設定送信
                     geminiWs.send(JSON.stringify({
                         setup: {
                             model: "models/gemini-2.0-flash-exp",
                             generation_config: { 
-                                response_modalities: ["AUDIO"], 
+                                // ★修正: "TEXT" を追加して、文字ログも返してもらう
+                                response_modalities: ["AUDIO", "TEXT"], 
                                 speech_config: { 
                                     voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } },
                                     language_code: "ja-JP"
@@ -222,7 +219,6 @@ wss.on('connection', (clientWs) => {
                             }
                         }
                     }));
-                    // 準備完了をクライアントに通知
                     if (clientWs.readyState === WebSocket.OPEN) {
                         clientWs.send(JSON.stringify({ type: "server_ready" }));
                     }
@@ -238,10 +234,9 @@ wss.on('connection', (clientWs) => {
             }
         } catch(e) {}
 
-        // ★音声データの場合（まだGeminiがつながっていれば転送）
+        // ★音声データの場合
         if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
             try {
-                // クライアントから送られてくるのは生のBase64文字列
                 const binaryMessage = {
                     realtime_input: {
                         media_chunks: [{
