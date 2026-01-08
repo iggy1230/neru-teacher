@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版: テキストログ取得対応) ---
+// --- anlyze.js (完全修正版: 音声機能使い回し対応) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -12,6 +12,7 @@ let analysisType = 'fast';
 
 // Live Chat Variables
 let liveSocket = null;
+// ★変更: AudioContextはここで初期化せず、nullのままにしておく
 let audioContext = null;
 let mediaStream = null;
 let workletNode = null;
@@ -44,6 +45,14 @@ const subjectImages = {
 const defaultIcon = 'nell-normal.png'; 
 const talkIcon = 'nell-talk.png';
 
+// --- オーディオ機能の初期化（使い回し用） ---
+function getAudioContext() {
+    if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+    }
+    return audioContext;
+}
+
 // --- 口パクアニメーション ---
 function startMouthAnimation() {
     let toggle = false;
@@ -69,8 +78,9 @@ async function updateNellMessage(t, mood = "normal") {
     let targetId = document.getElementById('screen-game').classList.contains('hidden') ? 'nell-text' : 'nell-text-game';
     const el = document.getElementById(targetId);
     
-    if (!audioContext) { audioContext = new (window.AudioContext || window.webkitAudioContext)(); }
-    if (audioContext.state === 'suspended') await audioContext.resume().catch(()=>{});
+    // TTS用にも共通のAudioContextを使う
+    const ctx = getAudioContext();
+    if (ctx.state === 'suspended') await ctx.resume().catch(()=>{});
     
     if (currentTtsSource) { try { currentTtsSource.stop(); } catch(e){} currentTtsSource = null; }
     window.isNellSpeaking = false;
@@ -88,12 +98,12 @@ async function updateNellMessage(t, mood = "normal") {
         const len = binaryString.length;
         const bytes = new Uint8Array(len);
         for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
-        const decodedBuffer = await audioContext.decodeAudioData(bytes.buffer);
+        const decodedBuffer = await ctx.decodeAudioData(bytes.buffer);
         
         if (el) el.innerText = t;
-        const source = audioContext.createBufferSource();
+        const source = ctx.createBufferSource();
         source.buffer = decodedBuffer;
-        source.connect(audioContext.destination);
+        source.connect(ctx.destination);
         currentTtsSource = source;
         window.isNellSpeaking = true;
         source.start(0);
@@ -136,7 +146,7 @@ window.setAnalyzeMode = function(type) {
     }
 };
 
-// --- Live Chat (テキストログ収集対応) ---
+// --- Live Chat (修正版) ---
 async function startLiveChat() {
     const btn = document.getElementById('mic-btn');
     if (liveSocket) { stopLiveChat(); return; }
@@ -145,10 +155,10 @@ async function startLiveChat() {
         if(btn) btn.disabled = true;
         chatTranscript = "";
 
-        if (window.initAudioContext) await window.initAudioContext();
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        await audioContext.resume();
-        nextStartTime = audioContext.currentTime;
+        // ★修正: AudioContextを使い回す
+        const ctx = getAudioContext();
+        await ctx.resume();
+        nextStartTime = ctx.currentTime;
 
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
         liveSocket = new WebSocket(`${wsProto}//${location.host}`);
@@ -175,15 +185,13 @@ async function startLiveChat() {
                 await startMicrophone();
             }
 
-            // ★修正: 音声(inlineData)とテキスト(text)の両方を受け取る
             if (data.serverContent?.modelTurn?.parts) {
                 data.serverContent.modelTurn.parts.forEach(p => {
-                    // テキストがあればログに追加
                     if (p.text) {
                         chatTranscript += `ネル: ${p.text}\n`;
                     }
-                    // 音声があれば再生
                     if (p.inlineData) {
+                        console.log("Audio received!"); // デバッグ用
                         playLivePcmAudio(p.inlineData.data);
                     }
                 });
@@ -197,19 +205,17 @@ function stopLiveChat() {
     if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
     if (workletNode) { workletNode.port.postMessage('stop'); workletNode.disconnect(); workletNode = null; }
     if (liveSocket) { liveSocket.close(); liveSocket = null; }
-    if (audioContext) { audioContext.close(); audioContext = null; }
+    
+    // ★修正: AudioContextは閉じない (使い回すため)
     window.isNellSpeaking = false;
     
     const btn = document.getElementById('mic-btn');
     if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; btn.style.boxShadow = "none"; }
     
-    // ★会話ログ保存 (テキストを受信できるようになったので正しく動作する)
     if (chatTranscript.length > 5 && currentUser) {
         const now = new Date().toLocaleString('ja-JP');
         const newMemory = `\n[${now}]の会話:\n${chatTranscript}`;
         currentUser.memory = (currentUser.memory || "") + newMemory;
-        
-        // メモリ増大対策 (30000文字程度で制限)
         if (currentUser.memory.length > 30000) {
             currentUser.memory = currentUser.memory.slice(-30000); 
         }
@@ -218,17 +224,24 @@ function stopLiveChat() {
 }
 
 async function startMicrophone() {
+    const ctx = getAudioContext();
     try {
         mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1 } });
-        const processorCode = `class PcmProcessor extends AudioWorkletProcessor { constructor() { super(); this.bufferSize = 2048; this.buffer = new Float32Array(this.bufferSize); this.index = 0; } process(inputs, outputs, parameters) { const input = inputs[0]; if (input.length > 0) { const channel = input[0]; for (let i = 0; i < channel.length; i++) { this.buffer[this.index++] = channel[i]; if (this.index >= this.bufferSize) { this.port.postMessage(this.buffer); this.index = 0; } } } return true; } } registerProcessor('pcm-processor', PcmProcessor);`;
-        const blob = new Blob([processorCode], { type: 'application/javascript' });
-        await audioContext.audioWorklet.addModule(URL.createObjectURL(blob));
-        const source = audioContext.createMediaStreamSource(mediaStream);
-        workletNode = new AudioWorkletNode(audioContext, 'pcm-processor');
+        
+        // AudioWorkletの登録 (既に登録済みならスキップしたいが、try-catchで逃げる)
+        try {
+            const processorCode = `class PcmProcessor extends AudioWorkletProcessor { constructor() { super(); this.bufferSize = 2048; this.buffer = new Float32Array(this.bufferSize); this.index = 0; } process(inputs, outputs, parameters) { const input = inputs[0]; if (input.length > 0) { const channel = input[0]; for (let i = 0; i < channel.length; i++) { this.buffer[this.index++] = channel[i]; if (this.index >= this.bufferSize) { this.port.postMessage(this.buffer); this.index = 0; } } } return true; } } registerProcessor('pcm-processor', PcmProcessor);`;
+            const blob = new Blob([processorCode], { type: 'application/javascript' });
+            await ctx.audioWorklet.addModule(URL.createObjectURL(blob));
+        } catch(e) { /* 登録済みエラーは無視 */ }
+
+        const source = ctx.createMediaStreamSource(mediaStream);
+        workletNode = new AudioWorkletNode(ctx, 'pcm-processor');
         source.connect(workletNode);
         
         workletNode.port.onmessage = (event) => {
             const inputData = event.data;
+            // マイク音量チェック
             let sum = 0; for(let i=0; i<inputData.length; i++) sum += inputData[i] * inputData[i];
             const volume = Math.sqrt(sum / inputData.length);
             const btn = document.getElementById('mic-btn');
@@ -236,25 +249,45 @@ async function startMicrophone() {
             
             setTimeout(() => {
                 if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return;
-                const downsampled = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
+                const downsampled = downsampleBuffer(inputData, ctx.sampleRate, 16000);
                 const pcmBuffer = floatTo16BitPCM(downsampled);
                 const base64Audio = arrayBufferToBase64(pcmBuffer);
                 liveSocket.send(base64Audio);
             }, 250);
         };
-    } catch(e) { updateNellMessage("マイクエラー", "thinking"); }
+    } catch(e) { 
+        console.error(e);
+        updateNellMessage("マイクが使えないみたい…", "thinking"); 
+    }
 }
 
 function playLivePcmAudio(base64) { 
-    if (!audioContext) return; 
+    const ctx = getAudioContext();
+    if (!ctx) return; 
+    
     const binary = window.atob(base64); 
     const bytes = new Uint8Array(binary.length); 
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i); 
     const float32 = new Float32Array(bytes.length / 2); 
     const view = new DataView(bytes.buffer); 
     for (let i = 0; i < float32.length; i++) float32[i] = view.getInt16(i * 2, true) / 32768.0; 
-    const buffer = audioContext.createBuffer(1, float32.length, 24000); buffer.copyToChannel(float32, 0); const source = audioContext.createBufferSource(); source.buffer = buffer; source.connect(audioContext.destination); const now = audioContext.currentTime; if (nextStartTime < now) nextStartTime = now; source.start(nextStartTime); nextStartTime += buffer.duration; 
-    window.isNellSpeaking = true; if (stopSpeakingTimer) clearTimeout(stopSpeakingTimer); source.onended = () => { stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, 250); }; 
+    
+    // サンプリングレートはGemini Aoedeに合わせて24000
+    const buffer = ctx.createBuffer(1, float32.length, 24000); 
+    buffer.copyToChannel(float32, 0); 
+    
+    const source = ctx.createBufferSource(); 
+    source.buffer = buffer; 
+    source.connect(ctx.destination); 
+    
+    const now = ctx.currentTime; 
+    if (nextStartTime < now) nextStartTime = now; 
+    source.start(nextStartTime); 
+    nextStartTime += buffer.duration; 
+    
+    window.isNellSpeaking = true; 
+    if (stopSpeakingTimer) clearTimeout(stopSpeakingTimer); 
+    source.onended = () => { stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, 250); }; 
 }
 
 function floatTo16BitPCM(float32Array) {

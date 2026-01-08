@@ -201,11 +201,11 @@ wss.on('connection', (clientWs) => {
                         setup: {
                             model: "models/gemini-2.0-flash-exp",
                             generation_config: { 
-                                // ★修正: "TEXT" を追加して、文字ログも返してもらう
+                                // 音声とテキストの両方を要求
                                 response_modalities: ["AUDIO", "TEXT"], 
                                 speech_config: { 
-                                    voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } },
-                                    language_code: "ja-JP"
+                                    voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }
+                                    // language_code は削除して自動判定に任せる
                                 } 
                             }, 
                             system_instruction: {
