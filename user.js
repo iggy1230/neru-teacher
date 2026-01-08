@@ -1,4 +1,4 @@
-// --- user.js (完全版: リアルタイム合成プレビュー v13.0) ---
+// --- user.js (完全版: v15.2 修正版) ---
 
 let users = JSON.parse(localStorage.getItem('nekoneko_users')) || [];
 let currentUser = null;
@@ -53,96 +53,49 @@ async function resizeImageForProcessing(img, maxSize = 400) {
     });
 }
 
-// ★修正: プレビュー時点で学生証全体を合成して描画する
+// ★修正: プレビューは「加工なし」で即座に表示
 async function drawPreview(img) {
     const canvas = document.getElementById('id-photo-preview-canvas');
     if (!canvas) return;
 
-    // プレビュー用キャンバスサイズを学生証サイズ(640x400)に合わせる
-    // CSSで縮小表示(320x220)させている
     canvas.width = 640; 
     canvas.height = 400;
     const ctx = canvas.getContext('2d');
 
-    // 1. ベース描画
     if (!idBase.complete) await new Promise(r => idBase.onload = r);
     ctx.drawImage(idBase, 0, 0, 640, 400);
 
-    // 2. 写真のリサイズと顔認識
     const sourceImg = await resizeImageForProcessing(img, 400);
-    let sx = 0, sy = 0, sWidth = sourceImg.width, sHeight = sourceImg.height;
-    let detection = null;
 
-    if (modelsLoaded) {
-        try {
-            // 軽量化のためtimeout設定
-            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 2000));
-            const detectionPromise = faceapi.detectSingleFace(sourceImg).withFaceLandmarks();
-            detection = await Promise.race([detectionPromise, timeoutPromise]);
-            
-            if (detection) {
-                const box = detection.detection.box;
-                const faceCenterX = box.x + (box.width / 2);
-                const faceCenterY = box.y + (box.height / 2);
-                const cropSize = Math.max(box.width, box.height) * 1.8;
-                sx = faceCenterX - (cropSize / 2);
-                sy = faceCenterY - (cropSize / 2);
-                sWidth = cropSize; sHeight = cropSize;
-            } else {
-                 const size = Math.min(sourceImg.width, sourceImg.height) * 0.8;
-                 sx = (sourceImg.width - size) / 2; sy = (sourceImg.height - size) / 2;
-                 sWidth = size; sHeight = size;
-            }
-        } catch (e) {
-             const size = Math.min(sourceImg.width, sourceImg.height) * 0.8;
-             sx = (sourceImg.width - size) / 2; sy = (sourceImg.height - size) / 2;
-             sWidth = size; sHeight = size;
-        }
-    }
-
-    // 3. 写真描画 (座標: 44, 140)
+    // 加工なしで写真を描画
     const destX = 44, destY = 140, destW = 180, destH = 196;
     ctx.save();
     ctx.beginPath();
     ctx.rect(destX, destY, destW, destH);
     ctx.clip();
-    ctx.drawImage(sourceImg, sx, sy, sWidth, sHeight, destX, destY, destW, destH);
+    
+    // 中央クロップ描画
+    const size = Math.min(sourceImg.width, sourceImg.height) * 0.8;
+    const sx = (sourceImg.width - size) / 2; 
+    const sy = (sourceImg.height - size) / 2;
+    ctx.drawImage(sourceImg, sx, sy, size, size, destX, destY, destW, destH);
     ctx.restore();
 
-    // 4. 猫耳合成
-    if (detection) {
-        const scale = destW / sWidth;
-        const landmarks = detection.landmarks;
-        const nose = landmarks.getNose()[3];
-        const leftEyeBrow = landmarks.getLeftEyeBrow()[2];
-        const rightEyeBrow = landmarks.getRightEyeBrow()[2];
-        
-        const noseX = (nose.x - sx) * scale + destX;
-        const noseY = (nose.y - sy) * scale + destY;
-        const muzW = detection.detection.box.width * 0.8 * scale;
-        const muzH = muzW * 0.8;
-        if (decoMuzzle.complete) ctx.drawImage(decoMuzzle, noseX - (muzW/2), noseY - (muzH/2.5), muzW, muzH);
-        
-        const browX = ((leftEyeBrow.x + rightEyeBrow.x) / 2 - sx) * scale + destX;
-        const browY = ((leftEyeBrow.y + rightEyeBrow.y) / 2 - sy) * scale + destY;
-        const earW = detection.detection.box.width * 2.2 * scale;
-        const earH = earW * 0.7;
-        if (decoEars.complete) ctx.drawImage(decoEars, browX - (earW/2), browY - earH + 10, earW, earH);
-    }
-}
-
-// テキスト更新用 (inputイベントで呼ばれる)
-function updateIDPreview() {
-    // プレビューキャンバスに描画されている画像の上にテキストを重ねるのではなく、
-    // キャンバス自体に文字を書き込むのが理想だが、処理が重くなるため
-    // ここではHTMLオーバーレイ (CSS) で見た目を合わせる。
-    // ※保存時(`processAndCompleteEnrollment`)にキャンバスに焼き付ける。
-    
-    // ただし、リアルタイム感を出すために、CSSオーバーレイの位置も style.css で調整済み。
+    // テキストのみリアルタイム更新
     const nameVal = document.getElementById('new-student-name').value;
     const gradeVal = document.getElementById('new-student-grade').value;
-    document.getElementById('preview-name').innerText = nameVal || "なまえ";
-    document.getElementById('preview-grade').innerText = (gradeVal || "○") + "年生";
+    ctx.fillStyle = "#333"; 
+    ctx.font = "bold 32px 'M PLUS Rounded 1c', sans-serif"; 
+    ctx.fillText((gradeVal || "○") + "年生", 370, 194); 
+    ctx.fillText(nameVal || "なまえ", 370, 274);
+}
+
+function updateIDPreview() {
+    if (enrollFile) {
+        const img = new Image();
+        img.onload = () => drawPreview(img);
+        img.src = URL.createObjectURL(enrollFile);
+    }
 }
 
 function setupEnrollmentPhotoInputs() {
@@ -152,7 +105,6 @@ function setupEnrollmentPhotoInputs() {
         const reader = new FileReader();
         reader.onload = (e) => {
             const img = new Image();
-            // 読み込み完了後にプレビュー描画を実行
             img.onload = () => drawPreview(img);
             img.src = e.target.result;
         };
@@ -160,11 +112,7 @@ function setupEnrollmentPhotoInputs() {
     };
 
     const webCamBtn = document.getElementById('enroll-webcam-btn');
-    if (webCamBtn) {
-        webCamBtn.addEventListener('click', () => {
-            startEnrollmentWebCamera(handleFile);
-        });
-    }
+    if (webCamBtn) webCamBtn.addEventListener('click', () => startEnrollmentWebCamera(handleFile));
     const camInput = document.getElementById('student-photo-input-camera');
     if (camInput) camInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
     const albInput = document.getElementById('student-photo-input-album');
@@ -179,7 +127,6 @@ async function startEnrollmentWebCamera(callback) {
     const video = document.getElementById('camera-video');
     const shutter = document.getElementById('camera-shutter-btn');
     const cancel = document.getElementById('camera-cancel-btn');
-    
     if (!modal || !video) return;
 
     try {
@@ -191,8 +138,7 @@ async function startEnrollmentWebCamera(callback) {
 
         const takePic = () => {
             const canvas = document.getElementById('camera-canvas');
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
+            canvas.width = video.videoWidth; canvas.height = video.videoHeight;
             canvas.getContext('2d').drawImage(video, 0, 0);
             canvas.toBlob((blob) => {
                 const file = new File([blob], "enroll_capture.jpg", { type: "image/jpeg" });
@@ -200,10 +146,8 @@ async function startEnrollmentWebCamera(callback) {
                 callback(file);
             }, 'image/jpeg', 0.9);
         };
-
         shutter.onclick = takePic;
         cancel.onclick = closeEnrollCamera;
-
     } catch (err) {
         alert("カメラ起動エラー: " + err.message);
         closeEnrollCamera();
@@ -213,44 +157,95 @@ async function startEnrollmentWebCamera(callback) {
 function closeEnrollCamera() {
     const modal = document.getElementById('camera-modal');
     const video = document.getElementById('camera-video');
-    if (enrollStream) {
-        enrollStream.getTracks().forEach(t => t.stop());
-        enrollStream = null;
-    }
+    if (enrollStream) { enrollStream.getTracks().forEach(t => t.stop()); enrollStream = null; }
     if (video) video.srcObject = null;
     if (modal) modal.classList.add('hidden');
 }
 
+// ★修正: 入学ボタンを押したときに加工処理を行う
 async function processAndCompleteEnrollment() {
     const name = document.getElementById('new-student-name').value;
     const grade = document.getElementById('new-student-grade').value;
     const btn = document.getElementById('complete-btn');
 
     if(!name || !grade) return alert("お名前と学年を入れてにゃ！");
-    // プレビューがまだ（写真未選択）の場合はアラート
-    // enrollFileがnullでも、プレビューキャンバスに描画済みならOKとする（描き直し防止）
-    const canvas = document.getElementById('id-photo-preview-canvas');
-    // canvasが真っ白かどうか判定するのは重いので、enrollFileか、または「AI準備中」が消えているかで判断
+    if(!enrollFile) return alert("写真を選んでにゃ！");
     
     btn.disabled = true;
-    btn.innerText = "作成中にゃ...";
+    btn.innerText = "猫化中にゃ...";
     await new Promise(r => setTimeout(r, 100));
 
     try {
-        // ★修正: プレビューキャンバス（猫耳合成済み）をそのまま保存用画像として使う
-        // これにより、プレビューと保存結果が完全に一致する
-        const finalCanvas = document.getElementById('id-photo-preview-canvas');
+        let originalImg = new Image();
+        originalImg.src = URL.createObjectURL(enrollFile);
+        await new Promise(r => originalImg.onload = r);
+
+        const sourceImg = await resizeImageForProcessing(originalImg, 400);
+        let detection = null;
+        let sx=0, sy=0, sWidth=sourceImg.width, sHeight=sourceImg.height;
+
+        // ここで初めて顔認識
+        if (modelsLoaded) {
+            try {
+                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 3000));
+                const detectionPromise = faceapi.detectSingleFace(sourceImg).withFaceLandmarks();
+                detection = await Promise.race([detectionPromise, timeoutPromise]);
+                
+                if (detection) {
+                    const box = detection.detection.box;
+                    const faceCenterX = box.x + (box.width / 2);
+                    const faceCenterY = box.y + (box.height / 2);
+                    const cropSize = Math.max(box.width, box.height) * 1.8;
+                    sx = faceCenterX - (cropSize / 2); sy = faceCenterY - (cropSize / 2);
+                    sWidth = cropSize; sHeight = cropSize;
+                } else {
+                     const size = Math.min(sourceImg.width, sourceImg.height) * 0.8;
+                     sx = (sourceImg.width - size) / 2; sy = (sourceImg.height - size) / 2;
+                     sWidth = size; sHeight = size;
+                }
+            } catch (e) {
+                 const size = Math.min(sourceImg.width, sourceImg.height) * 0.8;
+                 sx = (sourceImg.width - size) / 2; sy = (sourceImg.height - size) / 2;
+                 sWidth = size; sHeight = size;
+            }
+        }
+
+        // 最終合成
+        const canvas = document.getElementById('deco-canvas');
+        canvas.width = 640; canvas.height = 400;
+        const ctx = canvas.getContext('2d');
         
-        // テキストを焼き付けるために、一時的なキャンバスを作成
-        const saveCanvas = document.createElement('canvas');
-        saveCanvas.width = 640;
-        saveCanvas.height = 400;
-        const ctx = saveCanvas.getContext('2d');
+        ctx.drawImage(idBase, 0, 0, 640, 400);
         
-        // プレビュー内容をコピー
-        ctx.drawImage(finalCanvas, 0, 0);
-        
-        // テキスト焼き付け
+        const destX = 44, destY = 140, destW = 180, destH = 196;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(destX, destY, destW, destH);
+        ctx.clip();
+        ctx.drawImage(sourceImg, sx, sy, sWidth, sHeight, destX, destY, destW, destH);
+        ctx.restore();
+
+        // 猫耳合成
+        if (detection) {
+            const scale = destW / sWidth;
+            const landmarks = detection.landmarks;
+            const nose = landmarks.getNose()[3];
+            const leftEyeBrow = landmarks.getLeftEyeBrow()[2];
+            const rightEyeBrow = landmarks.getRightEyeBrow()[2];
+            
+            const noseX = (nose.x - sx) * scale + destX;
+            const noseY = (nose.y - sy) * scale + destY;
+            const muzW = detection.detection.box.width * 0.8 * scale;
+            const muzH = muzW * 0.8;
+            if (decoMuzzle.complete) ctx.drawImage(decoMuzzle, noseX - (muzW/2), noseY - (muzH/2.5), muzW, muzH);
+            
+            const browX = ((leftEyeBrow.x + rightEyeBrow.x) / 2 - sx) * scale + destX;
+            const browY = ((leftEyeBrow.y + rightEyeBrow.y) / 2 - sy) * scale + destY;
+            const earW = detection.detection.box.width * 2.2 * scale;
+            const earH = earW * 0.7;
+            if (decoEars.complete) ctx.drawImage(decoEars, browX - (earW/2), browY - earH + 10, earW, earH);
+        }
+
         ctx.fillStyle = "#333"; 
         ctx.font = "bold 32px 'M PLUS Rounded 1c', sans-serif"; 
         ctx.fillText(grade + "年生", 370, 194); 
@@ -258,27 +253,29 @@ async function processAndCompleteEnrollment() {
 
         const newUser = { 
             id: Date.now(), name, grade, 
-            photo: saveCanvas.toDataURL('image/jpeg', 0.6), 
+            photo: canvas.toDataURL('image/jpeg', 0.5), 
             karikari: 100, 
             history: {}, mistakes: [], attendance: {},
             memory: "今日初めて会ったにゃ。よろしくにゃ！" 
         };
         
         users.push(newUser);
-        localStorage.setItem('nekoneko_users', JSON.stringify(users)); 
-        renderUserList(); 
-        
-        document.getElementById('new-student-name').value = "";
-        document.getElementById('new-student-grade').value = "";
-        enrollFile = null;
-        updateIDPreview();
-        
-        alert("入学おめでとうにゃ！🌸");
-        switchScreen('screen-gate');
+        try {
+            localStorage.setItem('nekoneko_users', JSON.stringify(users)); 
+            renderUserList(); 
+            document.getElementById('new-student-name').value = "";
+            document.getElementById('new-student-grade').value = "";
+            enrollFile = null;
+            updateIDPreview();
+            alert(detection ? "入学おめでとうにゃ！🌸" : "入学おめでとうにゃ！🌸\n(お顔が見つからなかったから猫耳はなしだにゃ)");
+            switchScreen('screen-gate');
+        } catch (e) {
+            users.pop(); throw e;
+        }
 
     } catch (err) {
         if (err.name === 'QuotaExceededError') {
-            alert("データがいっぱいで保存できないにゃ。\nトップページで古い学生証の「×」ボタンを押して削除してから、もう一度試してにゃ！");
+            alert("データがいっぱいで保存できないにゃ。\nトップページで古い学生証を削除してから試してにゃ！");
         } else {
             alert("エラーが発生したにゃ……\n" + err.message);
         }
@@ -295,16 +292,11 @@ function renderUserList() {
     users.forEach(user => {
         const div = document.createElement('div');
         div.className = "user-card";
-        div.innerHTML = `
-            <img src="${user.photo}">
-            <div class="card-karikari-badge">🍖${user.karikari || 0}</div>
-            <button class="delete-student-btn" onclick="deleteUser(event, ${user.id})">×</button>
-        `;
+        div.innerHTML = `<img src="${user.photo}"><div class="card-karikari-badge">🍖${user.karikari || 0}</div><button class="delete-student-btn" onclick="deleteUser(event, ${user.id})">×</button>`;
         div.onclick = () => login(user);
         list.appendChild(div);
     });
 }
-
 function login(user) {
     currentUser = user;
     if (!currentUser.attendance) currentUser.attendance = {};
@@ -318,46 +310,32 @@ function login(user) {
     const karikari = document.getElementById('karikari-count');
     if (karikari) karikari.innerText = user.karikari || 0;
     
-    // 出席ボーナス
     const today = new Date().toISOString().split('T')[0];
     let isBonus = false;
 
     if (!currentUser.attendance[today]) {
         currentUser.attendance[today] = true;
-        let streak = 1;
-        let d = new Date();
+        let streak = 1; let d = new Date();
         while (true) {
             d.setDate(d.getDate() - 1);
             const key = d.toISOString().split('T')[0];
-            if (currentUser.attendance[key]) streak++;
-            else break;
+            if (currentUser.attendance[key]) streak++; else break;
         }
-        if (streak >= 3) {
-            currentUser.karikari += 100;
-            isBonus = true;
-        }
+        if (streak >= 3) { currentUser.karikari += 100; isBonus = true; }
         saveAndSync();
     }
-
     switchScreen('screen-lobby');
-    
     if (isBonus) {
         updateNellMessage("連続出席ボーナス！カリカリ100個プレゼントだにゃ！", "excited");
-        showKarikariEffect(100);
-        updateMiniKarikari();
+        showKarikariEffect(100); updateMiniKarikari();
     } else {
         updateNellMessage(getNellGreeting(user), "happy");
     }
 }
-
 function getNellGreeting(user) {
     const mem = user.memory || "";
-    if (user.karikari >= 100 && Math.random() > 0.3) {
-        return [`お腹すいたにゃ～...給食まだかにゃ？`, `カリカリ${user.karikari}個もあるにゃ！給食行こうにゃ～`][Math.floor(Math.random()*2)];
-    }
-    if (mem && mem.length > 5 && !mem.includes("初めて") && Math.random() > 0.4) {
-        return `おかえりにゃ！${mem}`;
-    }
+    if (user.karikari >= 100 && Math.random() > 0.3) return [`お腹すいたにゃ～...給食まだかにゃ？`, `カリカリ${user.karikari}個もあるにゃ！給食行こうにゃ～`][Math.floor(Math.random()*2)];
+    if (mem && mem.length > 5 && !mem.includes("初めて") && Math.random() > 0.4) return `おかえりにゃ！${mem}`;
     const hist = user.history || {};
     if (Object.keys(hist).length > 0) {
         const favSub = Object.keys(hist).reduce((a, b) => hist[a] > hist[b] ? a : b);
@@ -365,27 +343,6 @@ function getNellGreeting(user) {
     }
     return `はじめまして、${user.name}さん！一緒に勉強するにゃ！`;
 }
-
-function deleteUser(e, id) { 
-    e.stopPropagation(); 
-    if(confirm("この生徒手帳を削除するにゃ？")) { 
-        users = users.filter(u => u.id !== id); 
-        try { localStorage.setItem('nekoneko_users', JSON.stringify(users)); renderUserList(); } catch(err) {}
-    } 
-}
-
-function saveAndSync() {
-    if (!currentUser) return;
-    const idx = users.findIndex(u => u.id === currentUser.id);
-    if (idx !== -1) users[idx] = currentUser;
-    try { localStorage.setItem('nekoneko_users', JSON.stringify(users)); } catch(err) {}
-    const kCounter = document.getElementById('karikari-count');
-    if (kCounter) kCounter.innerText = currentUser.karikari;
-}
-
-function updateIDPreview() { 
-    const nameVal = document.getElementById('new-student-name').value;
-    const gradeVal = document.getElementById('new-student-grade').value;
-    document.getElementById('preview-name').innerText = nameVal || "なまえ";
-    document.getElementById('preview-grade').innerText = (gradeVal || "○") + "年生";
-}
+function deleteUser(e, id) { e.stopPropagation(); if(confirm("この生徒手帳を削除するにゃ？")) { users = users.filter(u => u.id !== id); try { localStorage.setItem('nekoneko_users', JSON.stringify(users)); renderUserList(); } catch(err) {} } }
+function saveAndSync() { if (!currentUser) return; const idx = users.findIndex(u => u.id === currentUser.id); if (idx !== -1) users[idx] = currentUser; try { localStorage.setItem('nekoneko_users', JSON.stringify(users)); } catch(err) {} const kCounter = document.getElementById('karikari-count'); if (kCounter) kCounter.innerText = currentUser.karikari; }
+function updateIDPreview() { if (enrollFile) { const img = new Image(); img.onload = () => drawPreview(img); img.src = URL.createObjectURL(enrollFile); } }

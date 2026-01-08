@@ -5,7 +5,7 @@ body {
     width: 100%;
     min-height: 100vh;
     background-color: #fce4ec;
-    background-image: url('classroom-bg.png'); /* 通常画面の背景 */
+    background-image: url('classroom-bg.png');
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
@@ -14,6 +14,7 @@ body {
     -webkit-font-smoothing: antialiased;
     box-sizing: border-box;
     padding-top: 0;
+    overflow-x: hidden; /* 横スクロール防止 */
 }
 
 button { font-family: inherit; }
@@ -24,61 +25,26 @@ button { font-family: inherit; }
     margin: 0 auto;
     min-height: 100vh;
     position: relative;
-    padding-bottom: 20px;
+    padding-bottom: 40px;
 }
 
 /* --- タイトル画面 --- */
 .title-screen {
-    position: fixed;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    background-image: url('neru-title-bg.png'); /* タイトル専用背景 */
-    background-size: cover;
-    background-position: center;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    align-items: center;
-    z-index: 2000;
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background-image: url('neru-title-bg.png'); background-size: cover; background-position: center;
+    display: flex; flex-direction: column; justify-content: space-between; align-items: center; z-index: 2000;
 }
-
-.main-title {
-    margin-top: 80px;
-    font-size: 3rem;
-    color: #d81b60;
-    text-shadow: 4px 4px 0 #fff, -2px -2px 0 #fff;
-    text-align: center;
-    font-weight: 900;
-}
-
-.title-btn-container {
-    margin-bottom: 150px;
-    width: 100%;
-    display: flex;
-    justify-content: center;
-}
-
+.main-title { margin-top: 80px; font-size: 3rem; color: #d81b60; text-shadow: 4px 4px 0 #fff; text-align: center; font-weight: 900; }
+.title-btn-container { margin-bottom: 150px; width: 100%; display: flex; justify-content: center; }
 .title-start-btn {
-    background: #ff5252;
-    color: white;
-    font-size: 1.5rem;
-    padding: 20px 40px;
-    border-radius: 50px;
-    border: 4px solid #fff;
-    box-shadow: 0 6px 0 #d32f2f, 0 10px 10px rgba(0,0,0,0.3);
-    width: auto;
-    animation: pulse 2s infinite;
+    background: #ff5252; color: white; font-size: 1.5rem; padding: 20px 40px;
+    border-radius: 50px; border: 4px solid #fff; box-shadow: 0 6px 0 #d32f2f;
+    width: auto; animation: pulse 2s infinite;
 }
-@keyframes pulse {
-    0% { transform: scale(1); }
-    50% { transform: scale(1.05); }
-    100% { transform: scale(1); }
-}
-
+@keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
 .version-tag {
     position: absolute; bottom: 10px; left: 0; width: 100%;
-    text-align: center; font-size: 0.7rem; color: rgba(0, 0, 0, 0.4);
-    pointer-events: none;
+    text-align: center; font-size: 0.7rem; color: rgba(0, 0, 0, 0.4); pointer-events: none;
 }
 
 /* --- 共通ボタン --- */
@@ -99,9 +65,10 @@ button { font-family: inherit; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
 /* --- 校門・ロビー --- */
-.school-title {
-    text-align: center; font-size: 1.8rem; color: #d81b60;
-    text-shadow: 3px 3px 0 #fff, -1px -1px 0 #fff;
+/* ★修正: 白文字＋黒縁取り */
+.section-title {
+    text-align: center; font-size: 1.5rem; color: white;
+    text-shadow: 2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
     margin: 20px 0; font-weight: 900;
 }
 .gate-layout {
@@ -136,8 +103,12 @@ button { font-family: inherit; }
 }
 
 /* --- 入学手続き (プレビュー) --- */
+/* ★修正: 縦横比完全固定 (320:200 = 1.6) */
 .id-card-wrap {
-    position: relative; width: 320px; height: 200px; /* アスペクト比固定 */
+    position: relative; 
+    width: 100%; /* スマホ対応 */
+    max-width: 320px;
+    aspect-ratio: 1.6; /* 比率固定 */
     margin: 0 auto 20px;
     box-shadow: 0 4px 10px rgba(0,0,0,0.3); border-radius: 12px;
     overflow: hidden; background: white;
@@ -152,9 +123,15 @@ button { font-family: inherit; }
     position: absolute; color: #333; font-weight: bold;
     font-family: sans-serif; pointer-events: none; z-index: 3;
 }
-/* 座標微調整 */
-.id-grade-text { top: 85px; left: 185px; font-size: 16px; width: 100px; text-align: center; }
-.id-name-text { top: 125px; left: 185px; font-size: 18px; width: 100px; text-align: center; }
+/* 座標調整（aspect-ratio基準） */
+.id-grade-text { top: 42%; left: 58%; font-size: 4.5cqw; width: 30%; text-align: center; }
+.id-name-text { top: 62%; left: 58%; font-size: 5cqw; width: 30%; text-align: center; }
+
+/* container query workaround (using relative ems roughly) */
+@media (max-width: 350px) {
+    .id-grade-text { font-size: 14px; }
+    .id-name-text { font-size: 16px; }
+}
 
 .styled-input, .styled-select {
     width: 80%; padding: 12px; margin: 10px auto; display: block;
@@ -193,7 +170,6 @@ button { font-family: inherit; }
 }
 .work-area { background: rgba(255,255,255,0.8); border-radius: 20px; padding: 15px; margin: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
 
-/* カメラボタン */
 .camera-btn-large {
     display: block; width: 100%; padding: 30px 0; background: #66bb6a;
     color: white; font-weight: bold; font-size: 1.2rem; border-radius: 15px;
@@ -202,10 +178,8 @@ button { font-family: inherit; }
 .camera-btn-large:active { transform: translateY(2px); box-shadow: 0 2px 0 #388e3c; }
 .upload-buttons-container { display: flex; flex-direction: column; gap: 10px; width: 100%; }
 
-/* ゲーム画面 (中央寄せ) */
-.game-container {
-    display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%;
-}
+/* ゲーム画面 */
+.game-container { display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%; }
 #game-canvas { border: 4px solid #8d6e63; border-radius: 10px; background: #fffde7; box-shadow: 0 4px 0 rgba(0,0,0,0.1); }
 .game-ui { text-align: center; margin-top: 10px; }
 .game-ui p { font-size: 1.2rem; font-weight: bold; color: #d84315; }
@@ -249,7 +223,6 @@ button { font-family: inherit; }
     font-size: 0.8rem; aspect-ratio: 1; display: flex; flex-direction: column; justify-content: center;
 }
 
-/* エフェクト */
 .floating-text {
     position: absolute; font-weight: bold; font-size: 1.5rem;
     animation: floatUp 1.5s ease-out forwards; pointer-events: none;
@@ -261,9 +234,9 @@ button { font-family: inherit; }
 }
 @keyframes popHeart { 0% { transform: scale(0); } 50% { transform: scale(1.2); } 100% { transform: scale(1); opacity: 0; } }
 
-/* ローディング (サイズ縮小) */
+/* ★修正: 読み取り中画像を大きく */
 .loader-inspect-img {
-    width: 80px; /* 80pxに縮小 */
+    width: 200px; /* 80px -> 200px */
     display: block; margin: 0 auto;
     animation: bounce 1s infinite alternate;
 }
@@ -271,7 +244,7 @@ button { font-family: inherit; }
 .progress-bar { height: 10px; background: #ff85a1; width: 0%; transition: width 0.3s; border-radius: 5px; }
 .progress-container { width: 80%; background: #eee; height: 10px; border-radius: 5px; margin: 10px auto; overflow: hidden; }
 
-/* カメラ・クロップモーダル */
+/* カメラモーダル */
 .camera-modal {
     position: fixed; top: 0; left: 0; width: 100%; height: 100%;
     background: #000; z-index: 9999;
