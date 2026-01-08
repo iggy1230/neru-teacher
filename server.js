@@ -6,6 +6,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import WebSocket, { WebSocketServer } from 'ws';
 import { parse } from 'url';
+import dotenv from 'dotenv';
+
+// .envファイルを読み込む
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,10 +24,20 @@ app.use(express.static(path.join(__dirname, '.')));
 let genAI, ttsClient;
 try {
     genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    ttsClient = new textToSpeech.TextToSpeechClient({
-        credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON)
-    });
-} catch (e) { console.error("Init Error:", e.message); }
+    
+    // Google Cloud TTSの初期化
+    // 環境変数 GOOGLE_CREDENTIALS_JSON がある場合はそれを使用
+    // ない場合はデフォルトの認証（ADC）または keyFilename を想定
+    if (process.env.GOOGLE_CREDENTIALS_JSON) {
+        ttsClient = new textToSpeech.TextToSpeechClient({
+            credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON)
+        });
+    } else {
+        ttsClient = new textToSpeech.TextToSpeechClient();
+    }
+} catch (e) { 
+    console.error("Init Error:", e.message); 
+}
 
 // --- 音声合成 (SSML) ---
 function createSSML(text, mood) {
@@ -55,7 +69,10 @@ app.post('/synthesize', async (req, res) => {
             audioConfig: { audioEncoding: 'MP3' },
         });
         res.json({ audioContent: response.audioContent.toString('base64') });
-    } catch (err) { res.status(500).send(err.message); }
+    } catch (err) { 
+        console.error("TTS Error:", err);
+        res.status(500).send(err.message); 
+    }
 });
 
 // --- ゲーム実況API ---
@@ -64,7 +81,7 @@ app.post('/game-reaction', async (req, res) => {
         if (!genAI) throw new Error("GenAI not ready");
         const { type, name, score } = req.body;
         // 最新・高速モデル
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
         let prompt = "";
         let mood = "excited";
@@ -106,7 +123,7 @@ app.post('/lunch-reaction', async (req, res) => {
         
         // 高速モデル + トークン制限
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.0-flash-exp",
+            model: "gemini-1.5-flash",
             generationConfig: { maxOutputTokens: 60 } 
         });
 
@@ -132,24 +149,24 @@ app.post('/lunch-reaction', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Lunch Error" }); }
 });
 
-// --- チャットAPI ---
+// --- チャットAPI (テキストのみの場合) ---
 app.post('/chat', async (req, res) => {
     try {
         const { message, grade, name } = req.body;
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         const prompt = `あなたは「ネル先生」。相手は小学${grade}年生「${name}」。30文字以内、語尾「にゃ」。絵文字禁止。発言: ${message}`;
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text() });
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
-// --- 記憶要約API ---
+// --- 記憶要約API (使わない場合もあるが残しておく) ---
 app.post('/summarize-chat', async (req, res) => {
     try {
         const { transcript } = req.body;
         if (!transcript || transcript.length < 10) return res.json({ summary: "" });
         
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         const prompt = `
         以下の生徒との会話内容を、次に会った時に話題にできるように、50文字以内で要約して「記憶」として出力してください。
         重要なキーワード（好きなもの、悩み、頑張ったこと）を残してください。
@@ -168,10 +185,10 @@ app.post('/analyze', async (req, res) => {
         if (!genAI) throw new Error("GenAI not ready");
         const { image, mode, grade, subject, analysisType } = req.body;
         
-        // ★修正: モードによってモデルを切り替え
-        let modelName = "gemini-2.5-flash"; // 高速モード (デフォルト)
+        // ★モデル切り替えロジック
+        let modelName = "gemini-2.5-flash"; // 高速モード (標準)
         if (analysisType === 'precision') {
-            modelName = "gemini-2.5-pro"; // 精密モード
+            modelName = "gemini-2.5-pro"; // 精密モード (高精度)
         }
 
         const model = genAI.getGenerativeModel({
@@ -278,7 +295,7 @@ app.post('/analyze', async (req, res) => {
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
         let textResponse = result.response.text();
 
-        // 500エラー対策: JSON抽出ロジック
+        // JSON抽出ロジック
         const firstBracket = textResponse.indexOf('[');
         const lastBracket = textResponse.lastIndexOf(']');
         
@@ -299,23 +316,28 @@ app.post('/analyze', async (req, res) => {
 });
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
 // --- ★Live API Proxy (Aoede) ---
+// WebSocketで「会話の記憶」を注入し、過去のことを全て覚えさせる
 const wss = new WebSocketServer({ server });
 wss.on('connection', (clientWs, req) => {
-    // 学年と名前を取得
+    // クエリパラメータから情報を取得
     const parameters = parse(req.url, true).query;
     const userGrade = parameters.grade || "1";
     const userName = decodeURIComponent(parameters.name || "");
-    const userMemory = decodeURIComponent(parameters.memory || "");
+    // ★ここが重要：クライアントから送られてきた「過去の全会話ログ」
+    const userMemory = decodeURIComponent(parameters.memory || "まだ会話していない");
 
     let geminiWs = null;
     const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${process.env.GEMINI_API_KEY}`;
+    
     try {
         geminiWs = new WebSocket(GEMINI_URL);
         geminiWs.on('open', () => {
+            // 初期設定送信
             geminiWs.send(JSON.stringify({
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
@@ -323,23 +345,32 @@ wss.on('connection', (clientWs, req) => {
                         response_modalities: ["AUDIO"], 
                         speech_config: { 
                             voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } },
-                            // ★修正: language_code を指定して日本語対応を強化
                             language_code: "ja-JP"
                         } 
                     }, 
                     system_instruction: {
                         parts: [{
-                            text: `あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。
-            相手は小学${userGrade}年生の${userName}さん。
-            【前回の記憶】${userMemory}
-            
-            【話し方のルール】
-               1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
-               2. 【絶対に日本語のみ】で話してください。英語は禁止です。
-               3. 【高い声のトーン】を意識し、元気で明るい子供向けの口調で話してください。
-               4. ゆっくり、はっきり、感情を込めて話してください。
-               5. 特に最初の音を、絶対に抜かしたり消したりせずに、最初から最後までしっかり声に出して喋るのがコツだにゃ！
-               6. 給食(餌)のカリカリが大好物にゃ。`
+                            // ★システムプロンプトに「記憶」を埋め込む
+                            text: `
+あなたは「ねこご市立ねこづか小学校」の先生、「ネル先生」です。
+語尾は必ず「〜にゃ」「〜だにゃ」をつけて話してください。
+相手は小学${userGrade}年生の${userName}さんです。
+
+【重要：過去の記憶】
+以下は、あなたと${userName}さんのこれまでの会話の記録です。
+この内容をすべて踏まえて、親しみを込めて話してください。
+例えば、以前話した好きな食べ物や、頑張ったことなどを話題に出してください。
+
+=== 過去の会話ログ ===
+${userMemory}
+==================
+
+【話し方のルール】
+1. 短い文章で、明るく元気に話してください。
+2. 日本語のみで話してください。
+3. 難しい言葉は使わず、小学生にもわかる言葉で話してください。
+4. 給食(餌)のカリカリが大好物です。
+`
                         }]
                     }
                 }
@@ -347,12 +378,11 @@ wss.on('connection', (clientWs, req) => {
             if (clientWs.readyState === WebSocket.OPEN) clientWs.send(JSON.stringify({ type: "server_ready" }));
         });
 
-        // メッセージ転送
+        // クライアント(音声データ) -> Gemini
         clientWs.on('message', (data) => {
             if (geminiWs.readyState !== WebSocket.OPEN) return;
 
             try {
-                // クライアントからの生データをBase64としてラップして送信
                 const binaryMessage = {
                     realtime_input: {
                         media_chunks: [{
@@ -365,6 +395,7 @@ wss.on('connection', (clientWs, req) => {
             } catch (e) { console.error(e); }
         });
 
+        // Gemini(音声データ) -> クライアント
         geminiWs.on('message', (data) => { if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data); });
         geminiWs.on('error', (e) => console.error('Gemini WS Error:', e));
         geminiWs.on('close', () => {});

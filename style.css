@@ -14,7 +14,7 @@ body {
     -webkit-font-smoothing: antialiased;
     box-sizing: border-box;
     padding-top: 0;
-    overflow-x: hidden; /* 横スクロール防止 */
+    overflow-x: hidden;
 }
 
 button { font-family: inherit; }
@@ -31,7 +31,7 @@ button { font-family: inherit; }
 /* --- タイトル画面 --- */
 .title-screen {
     position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    background-image: url('neru-title-bg.png'); /* タイトル専用背景 */
+    background-image: url('neru-title-bg.png');
     background-size: cover;
     background-position: center;
     display: flex;
@@ -50,11 +50,15 @@ button { font-family: inherit; }
     0% { transform: translateY(0); } 50% { transform: translateY(-15px); } 100% { transform: translateY(0); }
 }
 .title-btn-container { margin-bottom: 200px; width: 100%; display: flex; justify-content: center; }
+
+/* ★修正: ボタン幅をテキストに合わせる */
 .title-start-btn {
-    background: #ff5252; color: white; font-size: 1.3rem; padding: 15px 30px;
+    background: #ff5252; color: white; font-size: 1.3rem; padding: 15px 40px;
     border-radius: 50px; border: 4px solid #fff;
     box-shadow: 0 6px 0 #d32f2f, 0 10px 10px rgba(0,0,0,0.3);
-    width: auto; min-width: 200px; animation: pulse 2s infinite;
+    width: fit-content; /* テキスト幅に合わせる */
+    min-width: auto;
+    animation: pulse 2s infinite;
 }
 @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
 .version-tag {
@@ -79,25 +83,14 @@ button { font-family: inherit; }
 .screen { padding: 20px 10px; animation: fadeIn 0.3s ease; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-/* --- 戻るボタン (左上固定) --- */
-/* ★修正: 戻るボタンを絶対配置にしてレイアウト崩れを防ぐ */
+/* --- 戻るボタン --- */
 #main-back-btn {
-    position: absolute;
-    top: 10px;
-    left: 10px;
-    width: auto !important;
-    margin: 0 !important;
-    padding: 8px 20px !important;
-    z-index: 100;
-    font-size: 1rem;
-    box-shadow: 0 2px 0 #78909c;
+    position: absolute; top: 10px; left: 10px;
+    width: auto !important; margin: 0 !important; padding: 8px 20px !important;
+    z-index: 100; font-size: 1rem; box-shadow: 0 2px 0 #78909c;
 }
 
 /* --- 校門・ロビー --- */
-.school-title {
-    text-align: center; font-size: 1.8rem; color: #d81b60;
-    text-shadow: 3px 3px 0 #fff, -1px -1px 0 #fff; margin: 20px 0; font-weight: 900;
-}
 .section-title {
     text-align: center; font-size: 1.5rem; color: white;
     text-shadow: 2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000; margin: 20px 0; font-weight: 900;
@@ -125,22 +118,32 @@ button { font-family: inherit; }
     box-shadow: 0 2px 4px rgba(0,0,0,0.2); z-index: 10;
 }
 
-/* --- 入学手続き --- */
+/* --- 入学手続き & 学生証レイアウト --- */
+/* ★修正: 縦横比を固定して画像のつぶれを防ぐ */
 .id-card-wrap {
-    position: relative; width: 320px; height: 200px; margin: 0 auto 20px;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.3); border-radius: 12px; overflow: hidden; background: white;
+    position: relative;
+    width: 320px;
+    /* height: 200px; を削除しアスペクト比で管理 */
+    aspect-ratio: 1.6 / 1; 
+    margin: 0 auto 20px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    border-radius: 12px;
+    overflow: hidden;
+    background: white;
 }
-.id-base-img { width: 100%; height: 100%; object-fit: fill; }
-#id-photo-preview-canvas { width: 100%; height: 100%; object-fit: contain; position: absolute; top: 0; left: 0; z-index: 2; }
+.id-base-img { width: 100%; height: 100%; object-fit: cover; }
+#id-photo-preview-canvas { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; z-index: 2; }
 #id-photo-slot { display: none; }
 .id-text-overlay { position: absolute; color: #333; font-weight: bold; font-family: sans-serif; pointer-events: none; z-index: 3; }
-.id-grade-text { top: 85px; left: 185px; font-size: 16px; width: 100px; text-align: center; }
-.id-name-text { top: 125px; left: 185px; font-size: 18px; width: 100px; text-align: center; }
+/* 学生証内のテキスト位置調整 (比率固定に伴い微調整が必要な場合があるが基本維持) */
+.id-grade-text { top: 42%; left: 58%; font-size: 16px; width: 30%; text-align: center; }
+.id-name-text { top: 62%; left: 58%; font-size: 18px; width: 30%; text-align: center; }
+
 .styled-input, .styled-select { width: 80%; padding: 12px; margin: 10px auto; display: block; border: 2px solid #ff85a1; border-radius: 10px; font-size: 1rem; }
 
 /* --- ロビー --- */
 .lobby-top { text-align: center; margin: 20px 0; }
-.mini-id { transform: scale(0.8); margin-bottom: 0; }
+.mini-id { transform: scale(0.8); margin-bottom: 0; transform-origin: top center; }
 .karikari-counter {
     text-align: center; font-size: 1.2rem; font-weight: bold;
     color: #d84315; background: #fff3e0; padding: 5px 15px;
@@ -151,9 +154,7 @@ button { font-family: inherit; }
 .lobby-menu { display: grid; gap: 12px; padding: 0 15px; }
 
 /* --- 教室 --- */
-/* ★修正: 戻るボタンと被らないように余白追加 */
 .operation-layout { margin-top: 50px; }
-
 .nell-chat { display: flex; align-items: flex-end; margin-bottom: 15px; padding: 0 10px; }
 .nell-avatar-wrap { position: relative; width: 100px; height: 100px; flex-shrink: 0; }
 .nell-img { width: 100%; height: 100%; object-fit: contain; }
@@ -181,6 +182,24 @@ button { font-family: inherit; }
 }
 .camera-btn-large:active { transform: translateY(2px); box-shadow: 0 2px 0 #388e3c; }
 .upload-buttons-container { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+
+/* --- 答え表示エリア (新規追加) --- */
+.answer-box {
+    background: #fff3e0;
+    border: 3px solid #ffb74d;
+    border-radius: 10px;
+    padding: 15px;
+    margin-top: 15px;
+    text-align: center;
+    font-size: 1.2rem;
+    color: #e65100;
+    font-weight: bold;
+    animation: popIn 0.3s ease;
+}
+@keyframes popIn {
+    0% { transform: scale(0.8); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+}
 
 /* ゲーム画面 */
 .game-container { display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%; }
