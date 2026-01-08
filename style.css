@@ -1,46 +1,92 @@
 body {
     font-family: 'M PLUS Rounded 1c', "Sawarabi Gothic", sans-serif;
-    margin: 0; padding: 0; width: 100%; min-height: 100vh;
-    background-color: #fce4ec; background-image: url('classroom-bg.png');
-    background-size: cover; background-position: center; background-repeat: no-repeat;
-    background-attachment: fixed; color: #333; box-sizing: border-box; padding-top: 0;
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    min-height: 100vh;
+    background-color: #fce4ec;
+    background-image: url('classroom-bg.png'); /* 通常画面の背景 */
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+    color: #333;
+    -webkit-font-smoothing: antialiased;
+    box-sizing: border-box;
+    padding-top: 0;
 }
+
 button { font-family: inherit; }
 .hidden { display: none !important; }
-#app-container { max-width: 600px; margin: 0 auto; min-height: 100vh; position: relative; padding-bottom: 20px; }
 
-/* タイトル画面 */
+#app-container {
+    max-width: 600px;
+    margin: 0 auto;
+    min-height: 100vh;
+    position: relative;
+    padding-bottom: 20px;
+}
+
+/* --- タイトル画面 --- */
 .title-screen {
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    background-image: url('neru-title-bg.png'); background-size: cover; background-position: center;
-    display: flex; flex-direction: column; justify-content: space-between; align-items: center; z-index: 2000;
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background-image: url('neru-title-bg.png'); /* タイトル専用背景 */
+    background-size: cover;
+    background-position: center;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
+    z-index: 2000;
 }
-.main-title { margin-top: 80px; font-size: 3rem; color: #d81b60; text-shadow: 4px 4px 0 #fff; text-align: center; font-weight: 900; }
-.title-btn-container { margin-bottom: 150px; width: 100%; display: flex; justify-content: center; }
-.title-start-btn {
-    background: #ff5252; color: white; font-size: 1.5rem; padding: 20px 40px;
-    border-radius: 50px; border: 4px solid #fff; box-shadow: 0 6px 0 #d32f2f;
-    width: auto; animation: pulse 2s infinite;
-}
-@keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
 
-/* ★修正: ビルド番号 */
-.version-tag {
-    position: absolute;
-    bottom: 10px;
-    left: 0;
-    width: 100%;
+.main-title {
+    margin-top: 80px;
+    font-size: 3rem;
+    color: #d81b60;
+    text-shadow: 4px 4px 0 #fff, -2px -2px 0 #fff;
     text-align: center;
-    font-size: 0.7rem;
-    color: rgba(0, 0, 0, 0.4);
+    font-weight: 900;
+}
+
+.title-btn-container {
+    margin-bottom: 150px;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+}
+
+.title-start-btn {
+    background: #ff5252;
+    color: white;
+    font-size: 1.5rem;
+    padding: 20px 40px;
+    border-radius: 50px;
+    border: 4px solid #fff;
+    box-shadow: 0 6px 0 #d32f2f, 0 10px 10px rgba(0,0,0,0.3);
+    width: auto;
+    animation: pulse 2s infinite;
+}
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+
+.version-tag {
+    position: absolute; bottom: 10px; left: 0; width: 100%;
+    text-align: center; font-size: 0.7rem; color: rgba(0, 0, 0, 0.4);
     pointer-events: none;
 }
 
-/* 共通ボタン */
+/* --- 共通ボタン --- */
 .main-btn {
-    display: block; width: 90%; margin: 10px auto; padding: 15px; border: none;
-    border-radius: 30px; font-size: 1.1rem; font-weight: bold; color: white;
-    cursor: pointer; box-shadow: 0 4px 0 rgba(0,0,0,0.1); transition: transform 0.1s; text-align: center;
+    display: block; width: 90%; margin: 10px auto; padding: 15px;
+    border: none; border-radius: 30px; font-size: 1.1rem; font-weight: bold;
+    color: white; cursor: pointer; box-shadow: 0 4px 0 rgba(0,0,0,0.1);
+    transition: transform 0.1s; text-align: center; text-decoration: none;
 }
 .main-btn:active { transform: translateY(2px); box-shadow: none; }
 .pink-btn { background: #ff85a1; box-shadow: 0 4px 0 #d15d7d; }
@@ -48,39 +94,85 @@ button { font-family: inherit; }
 .orange-btn { background: #ffb74d; box-shadow: 0 4px 0 #f57c00; }
 .yellow-btn { background: #ffd54f; box-shadow: 0 4px 0 #ffca28; color: #5d4037; }
 .gray-btn { background: #b0bec5; box-shadow: 0 4px 0 #78909c; }
-.camera-btn-large {
-    display: block; width: 100%; padding: 30px 0; background: #66bb6a;
-    color: white; font-weight: bold; font-size: 1.2rem; border-radius: 15px;
-    text-align: center; cursor: pointer; box-shadow: 0 6px 0 #388e3c; margin-bottom: 10px;
-}
-.camera-btn-large:active { transform: translateY(2px); box-shadow: 0 2px 0 #388e3c; }
 
-/* 学生証（ユーザーカード） */
-.right-user-list { width: 100%; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 15px; padding: 10px; }
-.user-card { background: transparent; padding: 0; text-align: center; cursor: pointer; position: relative; transition: transform 0.1s; }
+.screen { padding: 20px 10px; animation: fadeIn 0.3s ease; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+/* --- 校門・ロビー --- */
+.school-title {
+    text-align: center; font-size: 1.8rem; color: #d81b60;
+    text-shadow: 3px 3px 0 #fff, -1px -1px 0 #fff;
+    margin: 20px 0; font-weight: 900;
+}
+.gate-layout {
+    display: flex; justify-content: center; align-items: flex-start;
+    gap: 10px; min-height: 300px; margin-top: 20px;
+}
+.right-user-list {
+    width: 100%; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 15px; padding: 10px;
+}
+.user-card {
+    background: transparent; padding: 0; text-align: center; cursor: pointer;
+    position: relative; transition: transform 0.1s;
+}
 .user-card:active { transform: scale(0.95); }
-.user-card img { width: 100%; height: auto; object-fit: contain; box-shadow: 0 4px 8px rgba(0,0,0,0.2); display: block; border-radius: 8px; }
+.user-card img {
+    width: 100%; height: auto; aspect-ratio: 1.6; object-fit: contain;
+    border-radius: 8px; background-color: transparent !important;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2); display: block;
+}
 .card-karikari-badge {
-    position: absolute; bottom: 5px; left: 5px; background: rgba(255,255,255,0.95);
-    color: #d84315; font-size: 0.8rem; font-weight: bold; padding: 2px 8px;
+    position: absolute; bottom: 5px; left: 5px;
+    background: rgba(255, 255, 255, 0.95); color: #d84315;
+    font-size: 0.8rem; font-weight: bold; padding: 2px 8px;
     border-radius: 10px; border: 1px solid #ffab91; pointer-events: none;
 }
 .delete-student-btn {
     position: absolute; top: -5px; right: -5px; width: 28px; height: 28px;
-    border-radius: 50%; background: #ff5252; color: white; border: 2px solid white; font-size: 16px;
-    cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    border-radius: 50%; background: #ff5252; color: white; border: 2px solid white;
+    font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2); z-index: 10;
 }
 
-/* 学生証作成プレビュー（縦横比維持） */
+/* --- 入学手続き (プレビュー) --- */
 .id-card-wrap {
-    position: relative; width: 320px; height: auto; margin: 0 auto 20px;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.3); border-radius: 12px; overflow: hidden; background: white;
+    position: relative; width: 320px; height: 200px; /* アスペクト比固定 */
+    margin: 0 auto 20px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3); border-radius: 12px;
+    overflow: hidden; background: white;
 }
-.id-base-img { width: 100%; display: block; } /* 高さは自動 */
-#id-photo-preview-canvas { width: 100%; height: 100%; object-fit: contain; position: absolute; top: 0; left: 0; z-index: 2; }
+.id-base-img { width: 100%; height: 100%; object-fit: fill; }
+#id-photo-preview-canvas {
+    width: 100%; height: 100%; object-fit: contain;
+    position: absolute; top: 0; left: 0; z-index: 2;
+}
 #id-photo-slot { display: none; }
+.id-text-overlay {
+    position: absolute; color: #333; font-weight: bold;
+    font-family: sans-serif; pointer-events: none; z-index: 3;
+}
+/* 座標微調整 */
+.id-grade-text { top: 85px; left: 185px; font-size: 16px; width: 100px; text-align: center; }
+.id-name-text { top: 125px; left: 185px; font-size: 18px; width: 100px; text-align: center; }
 
-/* 教室 */
+.styled-input, .styled-select {
+    width: 80%; padding: 12px; margin: 10px auto; display: block;
+    border: 2px solid #ff85a1; border-radius: 10px; font-size: 1rem;
+}
+
+.lobby-top { text-align: center; margin: 20px 0; }
+.mini-id { transform: scale(0.8); margin-bottom: 0; }
+.karikari-counter {
+    text-align: center; font-size: 1.2rem; font-weight: bold;
+    color: #d84315; background: #fff3e0; padding: 5px 15px;
+    border-radius: 20px; display: inline-block; margin-bottom: 15px;
+    position: relative; left: 50%; transform: translateX(-50%);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+.lobby-menu { display: grid; gap: 12px; padding: 0 15px; }
+
+/* --- 教室 --- */
 .nell-chat { display: flex; align-items: flex-end; margin-bottom: 15px; padding: 0 10px; }
 .nell-avatar-wrap { position: relative; width: 100px; height: 100px; flex-shrink: 0; }
 .nell-img { width: 100%; height: 100%; object-fit: contain; }
@@ -88,36 +180,124 @@ button { font-family: inherit; }
     background: white; border-radius: 20px 20px 20px 0; padding: 15px;
     margin-left: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); position: relative; flex-grow: 1;
 }
-.chat-bubble::after { content: ''; position: absolute; bottom: 0; left: -10px; border-width: 10px 10px 0 0; border-style: solid; border-color: white transparent transparent transparent; }
+.chat-bubble::after {
+    content: ''; position: absolute; bottom: 0; left: -10px;
+    border-width: 10px 10px 0 0; border-style: solid; border-color: white transparent transparent transparent;
+}
 .chat-bubble p { margin: 0; font-size: 1rem; line-height: 1.5; }
 
-.chalkboard { background: #2e7d32; color: white; padding: 15px; border: 8px solid #a1887f; border-radius: 5px; margin: 10px; font-family: 'Kiwi Maru', serif; min-height: 100px; box-shadow: inset 0 0 20px rgba(0,0,0,0.2); }
-.work-area { background: rgba(255,255,255,0.8); border-radius: 20px; padding: 15px; margin: 10px; }
+.chalkboard {
+    background: #2e7d32; color: white; padding: 15px; border: 8px solid #a1887f;
+    border-radius: 5px; margin: 10px; font-family: 'Kiwi Maru', serif; min-height: 100px;
+    box-shadow: inset 0 0 20px rgba(0,0,0,0.2);
+}
+.work-area { background: rgba(255,255,255,0.8); border-radius: 20px; padding: 15px; margin: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
 
-/* ゲーム */
-.game-container { display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%; }
-#game-canvas { border: 4px solid #8d6e63; border-radius: 10px; background: #fffde7; }
+/* カメラボタン */
+.camera-btn-large {
+    display: block; width: 100%; padding: 30px 0; background: #66bb6a;
+    color: white; font-weight: bold; font-size: 1.2rem; border-radius: 15px;
+    text-align: center; cursor: pointer; box-shadow: 0 6px 0 #388e3c; margin-bottom: 10px;
+}
+.camera-btn-large:active { transform: translateY(2px); box-shadow: 0 2px 0 #388e3c; }
+.upload-buttons-container { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+
+/* ゲーム画面 (中央寄せ) */
+.game-container {
+    display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%;
+}
+#game-canvas { border: 4px solid #8d6e63; border-radius: 10px; background: #fffde7; box-shadow: 0 4px 0 rgba(0,0,0,0.1); }
 .game-ui { text-align: center; margin-top: 10px; }
+.game-ui p { font-size: 1.2rem; font-weight: bold; color: #d84315; }
 
-/* その他 */
-.prob-card { background: white; border-left: 5px solid #ff85a1; padding: 10px; margin-bottom: 10px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+/* 問題リスト */
+.problem-selection-card { height: 400px; display: flex; flex-direction: column; }
+.problem-scroll-area { flex: 1; overflow-y: auto; padding: 5px; }
+.prob-card {
+    background: white; border-left: 5px solid #ff85a1; padding: 10px;
+    margin-bottom: 10px; border-radius: 5px; display: flex;
+    justify-content: space-between; align-items: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
 .q-label { font-weight: bold; color: #e91e63; margin-right: 5px; }
-.problem-row { background: #fff; padding: 10px; margin-bottom: 8px; border-radius: 8px; border-bottom: 2px solid #eee; }
+
+/* 採点シート */
+.problem-row {
+    background: #fff; padding: 10px; margin-bottom: 8px; border-radius: 8px;
+    border-bottom: 2px solid #eee;
+}
 .student-ans-input { font-size: 1rem; padding: 5px; width: 100px; border: 2px solid #ddd; border-radius: 5px; }
 .judgment-mark { font-size: 1.5rem; margin-left: 5px; }
-.mini-teach-btn { background: #2196f3; color: white; border: none; border-radius: 15px; padding: 5px 10px; font-size: 0.8rem; margin-left: auto; }
-.mini-karikari-display { position: fixed; top: 10px; right: 10px; background: rgba(255,255,255,0.95); padding: 5px 10px; border-radius: 20px; font-weight: bold; color: #d84315; z-index: 100; display: flex; align-items: center; gap: 5px; }
+.judgment-mark.correct { color: red; }
+.judgment-mark.incorrect { color: blue; }
+.mini-teach-btn {
+    background: #2196f3; color: white; border: none; border-radius: 15px;
+    padding: 5px 10px; font-size: 0.8rem; margin-left: auto;
+}
+
+.mini-karikari-display {
+    position: fixed; top: 10px; right: 10px; background: rgba(255,255,255,0.95);
+    padding: 5px 10px; border-radius: 20px; font-weight: bold; color: #d84315;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2); z-index: 100; display: flex; align-items: center; gap: 5px;
+}
 
 /* 出席簿 */
 .glass-card { background: rgba(255,255,255,0.9); border-radius: 15px; padding: 15px; }
 .attendance-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
-.day-box { background: white; border-radius: 5px; padding: 5px; text-align: center; font-size: 0.8rem; aspect-ratio: 1; display: flex; flex-direction: column; justify-content: center; }
+.day-box {
+    background: white; border-radius: 5px; padding: 5px; text-align: center;
+    font-size: 0.8rem; aspect-ratio: 1; display: flex; flex-direction: column; justify-content: center;
+}
 
-/* モーダル共通 */
-.camera-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: space-between; }
-.camera-container { position: relative; width: 100%; flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+/* エフェクト */
+.floating-text {
+    position: absolute; font-weight: bold; font-size: 1.5rem;
+    animation: floatUp 1.5s ease-out forwards; pointer-events: none;
+}
+@keyframes floatUp { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(-50px); opacity: 0; } }
+.heart-particle {
+    position: absolute; font-size: 1.2rem; pointer-events: none;
+    animation: popHeart 1s ease-out forwards;
+}
+@keyframes popHeart { 0% { transform: scale(0); } 50% { transform: scale(1.2); } 100% { transform: scale(1); opacity: 0; } }
+
+/* ローディング (サイズ縮小) */
+.loader-inspect-img {
+    width: 80px; /* 80pxに縮小 */
+    display: block; margin: 0 auto;
+    animation: bounce 1s infinite alternate;
+}
+@keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-10px); } }
+.progress-bar { height: 10px; background: #ff85a1; width: 0%; transition: width 0.3s; border-radius: 5px; }
+.progress-container { width: 80%; background: #eee; height: 10px; border-radius: 5px; margin: 10px auto; overflow: hidden; }
+
+/* カメラ・クロップモーダル */
+.camera-modal {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: #000; z-index: 9999;
+    display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+}
+.camera-container {
+    position: relative; width: 100%; flex: 1;
+    display: flex; align-items: center; justify-content: center; overflow: hidden;
+}
 #camera-video, #cropper-img { width: 100%; height: 100%; object-fit: contain; }
-.camera-guide-box { position: absolute; width: 70%; aspect-ratio: 1; border: 3px solid rgba(255,255,255,0.8); border-radius: 10px; pointer-events: none; }
-.camera-controls { width: 100%; height: 120px; background: #222; display: flex; align-items: center; justify-content: space-around; padding-bottom: 20px; }
-.camera-shutter-btn { width: 70px; height: 70px; border-radius: 50%; background: white; border: 5px solid #ccc; cursor: pointer; }
+.camera-guide-box {
+    position: absolute; width: 70%; aspect-ratio: 1;
+    border: 3px solid rgba(255, 255, 255, 0.8); border-radius: 10px;
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+    display: flex; align-items: flex-start; justify-content: center; pointer-events: none;
+}
+.camera-guide-box p {
+    color: white; background: rgba(0,0,0,0.5); padding: 5px 10px;
+    border-radius: 15px; margin-top: -40px; font-weight: bold;
+}
+.camera-controls {
+    width: 100%; height: 120px; background: #222;
+    display: flex; align-items: center; justify-content: space-around; padding-bottom: 20px;
+}
+.camera-shutter-btn {
+    width: 70px; height: 70px; border-radius: 50%; background: white;
+    border: 5px solid #ccc; cursor: pointer; transition: transform 0.1s;
+}
 .camera-shutter-btn:active { transform: scale(0.9); background: #ff5252; }

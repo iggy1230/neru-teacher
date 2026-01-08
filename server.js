@@ -111,7 +111,6 @@ app.post('/lunch-reaction', async (req, res) => {
         const result = await model.generateContent(prompt);
         let reply = result.response.text().trim();
         if (!isSpecial && reply.includes('\n')) reply = reply.split('\n')[0];
-        
         res.json({ reply, isSpecial });
     } catch (err) { res.status(500).json({ error: "Lunch Error" }); }
 });
@@ -125,6 +124,19 @@ app.post('/chat', async (req, res) => {
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text() });
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
+});
+
+// --- 記憶要約API ---
+app.post('/summarize-chat', async (req, res) => {
+    try {
+        const { transcript } = req.body;
+        if (!transcript || transcript.length < 10) return res.json({ summary: "" });
+        
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+        const prompt = `以下の会話内容を、次に会った時に話題にできるように、50文字以内で要約して「記憶」として出力してください。\n\n${transcript}`;
+        const result = await model.generateContent(prompt);
+        res.json({ summary: result.response.text().trim() });
+    } catch (err) { res.json({ summary: "" }); }
 });
 
 // --- ★画像分析API ---
@@ -248,7 +260,7 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- ★Live API Proxy (音声対話) ---
+// --- ★Live API Proxy (Aoede) ---
 const wss = new WebSocketServer({ server });
 wss.on('connection', (clientWs, req) => {
     const parameters = parse(req.url, true).query;
@@ -266,9 +278,9 @@ wss.on('connection', (clientWs, req) => {
                     model: "models/gemini-2.0-flash-exp",
                     generation_config: { 
                         response_modalities: ["AUDIO"], 
+                        // ★修正: language_code を削除 (接続エラーの原因)
                         speech_config: { 
-                            voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } },
-                            language_code: "ja-JP"
+                            voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }
                         } 
                     }, 
                     system_instruction: {
@@ -276,13 +288,12 @@ wss.on('connection', (clientWs, req) => {
                             text: `あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。
             相手は小学${userGrade}年生の${userName}さん。
             【前回の記憶】${userMemory}
-            【重要：話し方のルール】
+            
+            【話し方のルール】
                1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
-               2. 【絶対に日本語のみ】で話してください。英語は禁止です。
-               3. 【高い声のトーン】を意識し、元気で明るい子供向けの口調で話してください。
-               4. ゆっくり、はっきり、感情を込めて話してください。
-               5. 特に最初の音を、絶対に抜かしたり消したりせずに、最初から最後までしっかり声に出して喋るのがコツだにゃ！
-               6. 給食(餌)のカリカリが大好物にゃ。`
+               2. 【重要】絶対に日本語のみで話してください。英語は禁止です。
+               3. 高いトーンで、元気よく、子供向けにゆっくり話すにゃ。
+               4. 特に最初の音を、絶対に抜かしたり消したりせずに、最初から最後までしっかり声に出して喋るのがコツだにゃ！`
                         }]
                     }
                 }
@@ -290,44 +301,21 @@ wss.on('connection', (clientWs, req) => {
             if (clientWs.readyState === WebSocket.OPEN) clientWs.send(JSON.stringify({ type: "server_ready" }));
         });
 
-        // ★修正: メッセージ中継部分
+        // メッセージ転送
         clientWs.on('message', (data) => {
             if (geminiWs.readyState !== WebSocket.OPEN) return;
-
             try {
-                // クライアントからJSONが来る場合もあるが、anlyze.jsの修正でRaw Base64が来ることも想定
-                // 基本的に catch ブロックで処理されることを期待するが、
-                // 万が一JSONで来ても対応できるようにしておく
-                const parsed = JSON.parse(data);
-                
-                // もし { realtime_input: ... } という形式ならそのまま送る
-                if (parsed.realtime_input) {
-                    geminiWs.send(JSON.stringify(parsed));
-                } else if (parsed.type === 'audio' && parsed.data) {
-                     // { type: 'audio', data: 'BASE64' } 形式の場合
-                     const formattedMessage = {
-                        realtime_input: {
-                            media_chunks: [{
-                                mime_type: "audio/pcm;rate=16000",
-                                data: parsed.data
-                            }]
-                        }
-                    };
-                    geminiWs.send(JSON.stringify(formattedMessage));
-                }
-            } catch (e) {
-                // JSONじゃない（＝生のBase64文字列）場合
-                // ここが今回の修正の肝
+                // 生のBase64文字列が来るのでラップして送る
                 const binaryMessage = {
                     realtime_input: {
                         media_chunks: [{
                             mime_type: "audio/pcm;rate=16000",
-                            data: data.toString() // Bufferを文字列(Base64)に
+                            data: data.toString()
                         }]
                     }
                 };
                 geminiWs.send(JSON.stringify(binaryMessage));
-            }
+            } catch (e) { console.error(e); }
         });
 
         geminiWs.on('message', (data) => { if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data); });
