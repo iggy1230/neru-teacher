@@ -7,7 +7,6 @@
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Sawarabi+Gothic&family=M+PLUS+Rounded+1c:wght@700;900&family=Kiwi+Maru:wght@900&display=swap" rel="stylesheet">
     <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-    <!-- Cropper.jsは削除し、独自実装に切り替え -->
 </head>
 <body>
     <canvas id="hanamaru-canvas"></canvas>
@@ -15,7 +14,7 @@
     
     <div id="mini-karikari-display" class="mini-karikari-display hidden"><span>🍖</span><span id="mini-karikari-count">0</span></div>
 
-    <div class="version-tag">Build: v16.0.0-PerspectiveCrop</div>
+    <div class="version-tag">Build: v16.1.0-PerspectiveCropFix</div>
 
     <div id="app-container">
         <!-- 0. タイトル画面 -->
@@ -123,7 +122,7 @@
                     <div id="upload-controls" class="hidden">
                         <p style="text-align:center; font-weight:bold; margin-bottom:5px;">分析モードを選んでにゃ！</p>
                         
-                        <!-- モード切替タブ風ボタン -->
+                        <!-- モード切替ボタン -->
                         <div style="display:flex; justify-content:center; gap:10px; margin-bottom:15px;">
                             <button onclick="setAnalyzeMode('fast')" id="mode-btn-fast" class="main-btn pink-btn" style="margin:0; flex:1; font-size:0.9rem;">🚀 高速<br><span style="font-size:0.7rem">いつもの</span></button>
                             <button onclick="setAnalyzeMode('precision')" id="mode-btn-precision" class="main-btn gray-btn" style="margin:0; flex:1; font-size:0.9rem;">✨ 精密<br><span style="font-size:0.7rem">じっくり</span></button>
@@ -144,6 +143,8 @@
                                     <input type="file" id="hw-input-album" accept="image/*" style="display:none;">
                                 </label>
                             </div>
+                            <!-- 互換用 -->
+                            <input type="file" id="hw-input" accept="image/*" style="display:none;">
                         </div>
                     </div>
 
@@ -241,15 +242,16 @@
         <canvas id="camera-canvas" style="display:none;"></canvas>
     </div>
 
-    <!-- ★修正: 4点クロップ用モーダル -->
+    <!-- ★独自クロップモーダル (Canvas + ハンドル) -->
     <div id="cropper-modal" class="camera-modal hidden">
         <div class="cropper-wrapper">
             <canvas id="crop-canvas"></canvas>
-            <!-- 4つのハンドル (四隅) -->
+            <!-- 4つのハンドル -->
             <div id="handle-tl" class="crop-handle"></div>
             <div id="handle-tr" class="crop-handle"></div>
             <div id="handle-bl" class="crop-handle"></div>
             <div id="handle-br" class="crop-handle"></div>
+            <!-- 枠線用SVG -->
             <svg id="crop-lines" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;"></svg>
         </div>
         <div class="camera-controls">
