@@ -12,6 +12,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 
 app.use(cors());
+// 画像データが大きい場合に対応するため制限を緩和
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, '.')));
 
@@ -62,6 +63,7 @@ app.post('/game-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { type, name, score } = req.body;
+        // 最新・高速モデル
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
 
         let prompt = "";
@@ -101,6 +103,8 @@ app.post('/lunch-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { count, name } = req.body;
+        
+        // 高速モデル + トークン制限
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp",
             generationConfig: { maxOutputTokens: 60 } 
@@ -139,7 +143,7 @@ app.post('/chat', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
-// --- ★記憶要約API (新機能) ---
+// --- 記憶要約API ---
 app.post('/summarize-chat', async (req, res) => {
     try {
         const { transcript } = req.body;
@@ -195,7 +199,6 @@ app.post('/analyze', async (req, res) => {
                 2. 問題の分離: 丸数字（①, ②...）は新しい問題の開始合図です。
                 3. 【絶対ルール】書き起こしフォーマット
                    - 解答すべき空欄（□）は、必ず『□(読み仮名)』という形式で書き起こしてください。
-                   - 例: 「(はこ)の中」→『□(はこ)の中』
                    - 漢字がすでに印刷されている部分は、そのまま漢字で記述してください。
                 `,
                 hints: `
@@ -238,7 +241,7 @@ app.post('/analyze', async (req, res) => {
 
         const studentAnswerInstruction = mode === 'explain' 
             ? `・画像内の手書き文字（生徒の答え）は【完全に無視】してください。\n・出力JSONの "student_answer" は空文字 "" にしてください。`
-            : `・採点のため、生徒の手書き文字を可能な限り読み取り、出力JSONの "student_answer" に格納してください。\n・子供特有の筆跡を考慮し、前後の文脈から推測してください。`;
+            : `・採点のため、生徒の手書き文字を可能な限り読み取り、出力JSONの "student_answer" に入れてください。`;
 
         const prompt = `
             ${baseRole}
@@ -275,9 +278,10 @@ app.post('/analyze', async (req, res) => {
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
         let textResponse = result.response.text();
 
-        // JSON抽出
+        // 500エラー対策: JSON抽出ロジック
         const firstBracket = textResponse.indexOf('[');
         const lastBracket = textResponse.lastIndexOf(']');
+        
         if (firstBracket !== -1 && lastBracket !== -1) {
             textResponse = textResponse.substring(firstBracket, lastBracket + 1);
         } else {
@@ -287,8 +291,9 @@ app.post('/analyze', async (req, res) => {
 
         textResponse = textResponse.replace(/\*/g, '×').replace(/\//g, '÷');
         res.json(JSON.parse(textResponse));
+
     } catch (err) {
-        console.error("Analyze Error:", err);
+        console.error("Analyze Error Details:", err);
         res.status(500).json({ error: "AI分析エラー: " + err.message });
     }
 });
@@ -297,14 +302,14 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- ★Live API Proxy (記憶機能付き) ---
+// --- ★Live API Proxy (Aoede) ---
 const wss = new WebSocketServer({ server });
 wss.on('connection', (clientWs, req) => {
+    // 学年と名前を取得
     const parameters = parse(req.url, true).query;
     const userGrade = parameters.grade || "1";
     const userName = decodeURIComponent(parameters.name || "");
-    // ★修正: 記憶データを受け取る
-    const userMemory = decodeURIComponent(parameters.memory || "特になし");
+    const userMemory = decodeURIComponent(parameters.memory || "");
 
     let geminiWs = null;
     const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${process.env.GEMINI_API_KEY}`;
@@ -314,15 +319,19 @@ wss.on('connection', (clientWs, req) => {
             geminiWs.send(JSON.stringify({
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
-                    generation_config: { response_modalities: ["AUDIO"], speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } } } }, 
+                    generation_config: { 
+                        response_modalities: ["AUDIO"], 
+                        speech_config: { 
+                            voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } },
+                            // ★修正: language_code を指定して日本語対応を強化
+                            language_code: "ja-JP"
+                        } 
+                    }, 
                     system_instruction: {
                         parts: [{
-                            // ★修正: 記憶をプロンプトに注入
                             text: `あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。
             相手は小学${userGrade}年生の${userName}さん。
-            
-            【前回の会話の記憶】
-            ${userMemory}
+            【前回の記憶】${userMemory}
             
             【話し方のルール】
                1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
@@ -330,8 +339,7 @@ wss.on('connection', (clientWs, req) => {
                3. 【高い声のトーン】を意識し、元気で明るい子供向けの口調で話してください。
                4. ゆっくり、はっきり、感情を込めて話してください。
                5. 特に最初の音を、絶対に抜かしたり消したりせずに、最初から最後までしっかり声に出して喋るのがコツだにゃ！
-               6. 給食(餌)のカリカリが大好物にゃ。
-               7. ときどき「${userName}さんは宿題は終わったかにゃ？」や「そろそろ宿題始めようかにゃ？」と宿題を促してくる`
+               6. 給食(餌)のカリカリが大好物にゃ。`
                         }]
                     }
                 }
@@ -339,11 +347,12 @@ wss.on('connection', (clientWs, req) => {
             if (clientWs.readyState === WebSocket.OPEN) clientWs.send(JSON.stringify({ type: "server_ready" }));
         });
 
-        // クライアントからのメッセージ転送
+        // メッセージ転送
         clientWs.on('message', (data) => {
             if (geminiWs.readyState !== WebSocket.OPEN) return;
+
             try {
-                // 生のBase64文字列が来るのでラップして送る
+                // クライアントからの生データをBase64としてラップして送信
                 const binaryMessage = {
                     realtime_input: {
                         media_chunks: [{
@@ -360,5 +369,6 @@ wss.on('connection', (clientWs, req) => {
         geminiWs.on('error', (e) => console.error('Gemini WS Error:', e));
         geminiWs.on('close', () => {});
     } catch (e) { clientWs.close(); }
+    
     clientWs.on('close', () => { if (geminiWs && geminiWs.readyState === WebSocket.OPEN) geminiWs.close(); });
 });
