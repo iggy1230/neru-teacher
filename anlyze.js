@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v16.2: 全機能統合済) ---
+// --- anlyze.js (完全版 v16.3: 変数定義修正・全機能統合) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -16,6 +16,8 @@ let liveSocket = null;
 let audioContext = null;
 let mediaStream = null;
 let workletNode = null;
+// ★修正: 変数定義を復活
+let nextStartTime = 0; 
 let stopSpeakingTimer = null;
 let currentTtsSource = null;
 let chatTranscript = ""; 
@@ -146,12 +148,12 @@ window.setAnalyzeMode = function(type) {
     const btnPrec = document.getElementById('mode-btn-precision');
     
     if (type === 'fast') {
-        btnFast.className = "main-btn pink-btn";
+        btnFast.className = "main-btn pink-btn"; // 選択中
         btnPrec.className = "main-btn gray-btn";
         updateNellMessage("サクサク解くモードだにゃ！", "happy");
     } else {
         btnFast.className = "main-btn gray-btn";
-        btnPrec.className = "main-btn pink-btn";
+        btnPrec.className = "main-btn pink-btn"; // 選択中
         updateNellMessage("じっくり考えるモードだにゃ！", "thinking");
     }
 };
@@ -288,7 +290,8 @@ async function startAnalysis(b64) {
 
     try {
         const res = await fetch('/analyze', { 
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, 
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' }, 
             body: JSON.stringify({ 
                 image: b64, mode: currentMode, grade: currentUser.grade, 
                 subject: currentSubject, analysisType: analysisType 
@@ -312,7 +315,6 @@ async function startAnalysis(b64) {
     } finally { isAnalyzing = false; }
 }
 
-// 宿題アップロードボタンのリスナー
 const camIn = document.getElementById('hw-input-camera');
 if(camIn) camIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
 const albIn = document.getElementById('hw-input-album');
@@ -324,15 +326,11 @@ function startHint(id) {
     if (window.initAudioContext) window.initAudioContext().catch(e=>{});
     selectedProblem = transcribedProblems.find(p => p.id == id); 
     if (!selectedProblem) { return updateNellMessage("データエラーだにゃ", "thinking"); }
-    
-    // UI切り替え
     const uiIds = ['problem-selection-view', 'grade-sheet-container', 'final-view', 'hint-detail-container', 'chalkboard', 'answer-display-area'];
     uiIds.forEach(i => { const el = document.getElementById(i); if(el) el.classList.add('hidden'); });
-    document.getElementById('final-view').classList.remove('hidden'); 
-    document.getElementById('hint-detail-container').classList.remove('hidden');
+    document.getElementById('final-view').classList.remove('hidden'); document.getElementById('hint-detail-container').classList.remove('hidden');
     const board = document.getElementById('chalkboard'); if(board) { board.innerText = selectedProblem.question; board.classList.remove('hidden'); }
     const ansArea = document.getElementById('answer-display-area'); if(ansArea) ansArea.classList.add('hidden');
-    
     const backBtn = document.getElementById('main-back-btn');
     if (backBtn) {
         backBtn.classList.remove('hidden');
@@ -362,18 +360,15 @@ function showNextHint() {
     else { if(nextBtn) nextBtn.classList.add('hidden'); if(revealBtn) { revealBtn.classList.remove('hidden'); revealBtn.innerText = "答えを見る"; } }
 }
 
-// 答え表示（吹き出し）
+// 答え表示
 function revealAnswer() {
     const ansArea = document.getElementById('answer-display-area');
-    if(ansArea) {
-        document.getElementById('final-answer-text').innerText = selectedProblem.correct_answer;
-        ansArea.classList.remove('hidden');
-    }
-    document.getElementById('reveal-answer-btn').classList.add('hidden');
-    updateNellMessage(`答えは「${selectedProblem.correct_answer}」だにゃ！`, "gentle");
+    if(ansArea) { document.getElementById('final-answer-text').innerText = selectedProblem.correct_answer; ansArea.classList.remove('hidden'); }
+    document.getElementById('reveal-answer-btn').classList.add('hidden'); 
+    updateNellMessage(`答えは「${selectedProblem.correct_answer}」だにゃ！`, "gentle"); 
 }
 
-// --- 2. Live Chat (記憶機能) ---
+// --- 2. Live Chat (記憶機能 + 音切れ対策) ---
 async function startLiveChat() {
     const btn = document.getElementById('mic-btn');
     if (liveSocket) { stopLiveChat(); return; }
@@ -385,6 +380,7 @@ async function startLiveChat() {
         if (window.initAudioContext) await window.initAudioContext();
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
         await audioContext.resume();
+        nextStartTime = audioContext.currentTime; // ★追加：ここがUndefinedだとエラーになる
 
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
         const grade = currentUser ? currentUser.grade : "1";
@@ -425,6 +421,7 @@ function stopLiveChat() {
     const btn = document.getElementById('mic-btn');
     if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; btn.style.boxShadow = "none"; }
     
+    // 記憶保存
     if (chatTranscript.length > 20 && currentUser) {
         fetch('/summarize-chat', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -456,12 +453,13 @@ async function startMicrophone() {
             const btn = document.getElementById('mic-btn');
             if (btn) btn.style.boxShadow = volume > 0.01 ? `0 0 ${10 + volume * 500}px #ffeb3b` : "none";
             
+            // 250ms遅延送信
             setTimeout(() => {
                 if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return;
                 const downsampled = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
                 const pcmBuffer = floatTo16BitPCM(downsampled);
                 const base64Audio = arrayBufferToBase64(pcmBuffer);
-                liveSocket.send(base64Audio); 
+                liveSocket.send(base64Audio); // 生Base64
             }, 250);
         };
     } catch(e) { updateNellMessage("マイクエラー", "thinking"); }
@@ -475,8 +473,35 @@ function playLivePcmAudio(base64) {
     const float32 = new Float32Array(bytes.length / 2); 
     const view = new DataView(bytes.buffer); 
     for (let i = 0; i < float32.length; i++) float32[i] = view.getInt16(i * 2, true) / 32768.0; 
-    const buffer = audioContext.createBuffer(1, float32.length, 24000); buffer.copyToChannel(float32, 0); const source = audioContext.createBufferSource(); source.buffer = buffer; source.connect(audioContext.destination); const now = audioContext.currentTime; if (nextStartTime < now) nextStartTime = now; source.start(nextStartTime); nextStartTime += buffer.duration; 
-    window.isNellSpeaking = true; if (stopSpeakingTimer) clearTimeout(stopSpeakingTimer); source.onended = () => { stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, 250); }; 
+    
+    // ★重要: LiveAPIのサンプリングレートは24kHz
+    const buffer = audioContext.createBuffer(1, float32.length, 24000); 
+    buffer.copyToChannel(float32, 0); 
+    const source = audioContext.createBufferSource(); 
+    source.buffer = buffer; 
+    source.connect(audioContext.destination); 
+    const now = audioContext.currentTime; 
+    
+    // 連続再生のためのスケジューリング
+    if (nextStartTime < now) nextStartTime = now; 
+    source.start(nextStartTime); 
+    nextStartTime += buffer.duration; 
+    
+    window.isNellSpeaking = true; 
+    if (stopSpeakingTimer) clearTimeout(stopSpeakingTimer); 
+    source.onended = () => { stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, 250); }; 
+}
+
+// 16bit PCM変換
+function floatTo16BitPCM(float32Array) {
+    const buffer = new ArrayBuffer(float32Array.length * 2);
+    const view = new DataView(buffer);
+    let offset = 0;
+    for (let i = 0; i < float32Array.length; i++, offset += 2) {
+        let s = Math.max(-1, Math.min(1, float32Array[i]));
+        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    }
+    return buffer;
 }
 
 // --- 3. 給食 ---
@@ -530,73 +555,12 @@ function endGame(c) {
     setTimeout(()=>{ alert(c?`すごい！全クリだにゃ！\nカリカリ ${score} 個ゲット！`:`おしい！\nカリカリ ${score} 個ゲット！`); if(currentUser&&score>0){currentUser.karikari+=score;saveAndSync();updateMiniKarikari();showKarikariEffect(score);} }, 500);
 }
 
-// 宿題カメラ (anlyze.js内)
-async function startWebCamera() {
-    const modal = document.getElementById('camera-modal');
-    const video = document.getElementById('camera-video');
-    if (!modal || !video) return;
-    try {
-        const constraints = { video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } } };
-        videoStream = await navigator.mediaDevices.getUserMedia(constraints);
-        video.srcObject = videoStream;
-        video.onloadedmetadata = () => { video.play(); };
-        modal.classList.remove('hidden');
-        updateNellMessage("枠の中に宿題を入れて、ボタンを押してにゃ！", "normal");
-        const shutter = document.getElementById('camera-shutter-btn');
-        const cancel = document.getElementById('camera-cancel-btn');
-        shutter.onclick = takePicture;
-        cancel.onclick = closeWebCamera;
-    } catch (err) {
-        alert("カメラを起動できなかったにゃ…");
-        closeWebCamera();
-    }
-}
-function closeWebCamera() {
-    const modal = document.getElementById('camera-modal');
-    const video = document.getElementById('camera-video');
-    if (videoStream) { videoStream.getTracks().forEach(track => track.stop()); videoStream = null; }
-    if (video) video.srcObject = null;
-    if (modal) modal.classList.add('hidden');
-}
-function takePicture() {
-    const video = document.getElementById('camera-video');
-    const canvas = document.getElementById('camera-canvas');
-    if (!video || !canvas || !videoStream) return;
-    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    canvas.toBlob((blob) => {
-        if (blob) {
-            const file = new File([blob], "webcam_capture.jpg", { type: "image/jpeg" });
-            closeWebCamera();
-            handleFileUpload(file);
-        }
-    }, 'image/jpeg', 0.9);
-}
-const startWebcamBtn = document.getElementById('start-webcam-btn');
-if (startWebcamBtn) startWebcamBtn.addEventListener('click', startWebCamera);
-
 // Utils
-function floatTo16BitPCM(float32Array) {
-    const buffer = new ArrayBuffer(float32Array.length * 2);
-    const view = new DataView(buffer);
-    let offset = 0;
-    for (let i = 0; i < float32Array.length; i++, offset += 2) {
-        let s = Math.max(-1, Math.min(1, float32Array[i]));
-        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-    }
-    return buffer;
-}
 function downsampleBuffer(buffer, sampleRate, outSampleRate) { if (outSampleRate >= sampleRate) return buffer; const ratio = sampleRate / outSampleRate; const newLength = Math.round(buffer.length / ratio); const result = new Float32Array(newLength); let offsetResult = 0, offsetBuffer = 0; while (offsetResult < result.length) { const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio); let accum = 0, count = 0; for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) { accum += buffer[i]; count++; } result[offsetResult] = accum / count; offsetResult++; offsetBuffer = nextOffsetBuffer; } return result; }
 function arrayBufferToBase64(buffer) { let binary = ''; const bytes = new Uint8Array(buffer); for (let i = 0; i < bytes.byteLength; i++) { binary += String.fromCharCode(bytes[i]); } return window.btoa(binary); }
 function updateMiniKarikari() { if(currentUser) { document.getElementById('mini-karikari-count').innerText = currentUser.karikari; document.getElementById('karikari-count').innerText = currentUser.karikari; } }
 function showKarikariEffect(amount) { const container = document.querySelector('.nell-avatar-wrap'); if(container) { const floatText = document.createElement('div'); floatText.className = 'floating-text'; floatText.innerText = amount > 0 ? `+${amount}` : `${amount}`; floatText.style.color = amount > 0 ? '#ff9100' : '#ff5252'; floatText.style.right = '0px'; floatText.style.top = '0px'; container.appendChild(floatText); setTimeout(() => floatText.remove(), 1500); } const heartCont = document.getElementById('heart-container'); if(heartCont) { for(let i=0; i<8; i++) { const heart = document.createElement('div'); heart.className = 'heart-particle'; heart.innerText = amount > 0 ? '✨' : '💗'; heart.style.left = (Math.random()*80 + 10) + '%'; heart.style.top = (Math.random()*50 + 20) + '%'; heart.style.animationDelay = (Math.random()*0.5) + 's'; heartCont.appendChild(heart); setTimeout(() => heart.remove(), 1500); } } }
-function revealAnswer() { 
-    const ansArea = document.getElementById('answer-display-area'); 
-    if(ansArea) { document.getElementById('final-answer-text').innerText = selectedProblem.correct_answer; ansArea.classList.remove('hidden'); }
-    document.getElementById('reveal-answer-btn').classList.add('hidden'); 
-    updateNellMessage(`答えは「${selectedProblem.correct_answer}」だにゃ！`, "gentle"); 
-}
+function revealAnswer() { document.getElementById('final-answer-text').innerText = selectedProblem.correct_answer; document.getElementById('answer-display-area').classList.remove('hidden'); document.getElementById('reveal-answer-btn').classList.add('hidden'); updateNellMessage("答えだにゃ", "gentle"); }
 function renderProblemSelection() { document.getElementById('problem-selection-view').classList.remove('hidden'); const l=document.getElementById('transcribed-problem-list'); l.innerHTML=""; transcribedProblems.forEach(p=>{ l.innerHTML += `<div class="prob-card"><div><span class="q-label">${p.label||'?'}</span>${p.question.substring(0,20)}...</div><button class="main-btn blue-btn" style="width:auto;padding:10px" onclick="startHint(${p.id})">教えて</button></div>`; }); }
 function showGradingView() { document.getElementById('grade-sheet-container').classList.remove('hidden'); document.getElementById('final-view').classList.remove('hidden'); const backBtn = document.getElementById('main-back-btn'); if(backBtn) backBtn.classList.add('hidden'); renderWorksheet(); }
 function renderWorksheet() { const l=document.getElementById('problem-list-grade'); if(!l)return; l.innerHTML=""; transcribedProblems.forEach((p,i)=>{ l.innerHTML+=`<div class="problem-row"><div><span class="q-label">${p.label||'?'}</span>${p.question}</div><div style="display:flex;gap:5px"><input class="student-ans-input" value="${p.student_answer}" onchange="updateAns(${i},this.value)"><div class="judgment-mark ${p.status}">${p.status==='correct'?'⭕️':p.status==='incorrect'?'❌':''}</div><button class="mini-teach-btn" onclick="startHint(${p.id})">教えて</button></div></div>`; }); const f=document.createElement('div'); f.style.textAlign="center"; f.style.marginTop="20px"; f.innerHTML=`<button onclick="finishGrading()" class="main-btn orange-btn">✨ ぜんぶわかったにゃ！</button>`; l.appendChild(f); }
