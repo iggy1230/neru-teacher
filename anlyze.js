@@ -1,4 +1,4 @@
-// --- anlyze.js (完全修正版: 音声機能使い回し対応) ---
+// --- anlyze.js (音声再生 強制起動版) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -12,8 +12,7 @@ let analysisType = 'fast';
 
 // Live Chat Variables
 let liveSocket = null;
-// ★変更: AudioContextはここで初期化せず、nullのままにしておく
-let audioContext = null;
+let audioContext = null; // nullで初期化
 let mediaStream = null;
 let workletNode = null;
 let stopSpeakingTimer = null;
@@ -45,10 +44,11 @@ const subjectImages = {
 const defaultIcon = 'nell-normal.png'; 
 const talkIcon = 'nell-talk.png';
 
-// --- オーディオ機能の初期化（使い回し用） ---
+// --- オーディオ機能の取得（使い回し） ---
 function getAudioContext() {
     if (!audioContext) {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+        // Geminiのレートに合わせて24000Hz推奨だが、ブラウザ依存もあるので指定しないか、適宜調整
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
     }
     return audioContext;
 }
@@ -78,7 +78,6 @@ async function updateNellMessage(t, mood = "normal") {
     let targetId = document.getElementById('screen-game').classList.contains('hidden') ? 'nell-text' : 'nell-text-game';
     const el = document.getElementById(targetId);
     
-    // TTS用にも共通のAudioContextを使う
     const ctx = getAudioContext();
     if (ctx.state === 'suspended') await ctx.resume().catch(()=>{});
     
@@ -155,9 +154,8 @@ async function startLiveChat() {
         if(btn) btn.disabled = true;
         chatTranscript = "";
 
-        // ★修正: AudioContextを使い回す
         const ctx = getAudioContext();
-        await ctx.resume();
+        await ctx.resume(); // 開始時に必ず再開
         nextStartTime = ctx.currentTime;
 
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -165,7 +163,7 @@ async function startLiveChat() {
         liveSocket.binaryType = "blob";
 
         liveSocket.onopen = () => { 
-            console.log("WS Open");
+            console.log("WS Open: Sending Config...");
             liveSocket.send(JSON.stringify({
                 type: "config",
                 userGrade: currentUser ? currentUser.grade : "1",
@@ -191,7 +189,8 @@ async function startLiveChat() {
                         chatTranscript += `ネル: ${p.text}\n`;
                     }
                     if (p.inlineData) {
-                        console.log("Audio received!"); // デバッグ用
+                        // 音声データ受信！
+                        console.log("Audio Chunk Received!"); 
                         playLivePcmAudio(p.inlineData.data);
                     }
                 });
@@ -206,7 +205,7 @@ function stopLiveChat() {
     if (workletNode) { workletNode.port.postMessage('stop'); workletNode.disconnect(); workletNode = null; }
     if (liveSocket) { liveSocket.close(); liveSocket = null; }
     
-    // ★修正: AudioContextは閉じない (使い回すため)
+    // AudioContextは閉じない
     window.isNellSpeaking = false;
     
     const btn = document.getElementById('mic-btn');
@@ -228,12 +227,11 @@ async function startMicrophone() {
     try {
         mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1 } });
         
-        // AudioWorkletの登録 (既に登録済みならスキップしたいが、try-catchで逃げる)
         try {
             const processorCode = `class PcmProcessor extends AudioWorkletProcessor { constructor() { super(); this.bufferSize = 2048; this.buffer = new Float32Array(this.bufferSize); this.index = 0; } process(inputs, outputs, parameters) { const input = inputs[0]; if (input.length > 0) { const channel = input[0]; for (let i = 0; i < channel.length; i++) { this.buffer[this.index++] = channel[i]; if (this.index >= this.bufferSize) { this.port.postMessage(this.buffer); this.index = 0; } } } return true; } } registerProcessor('pcm-processor', PcmProcessor);`;
             const blob = new Blob([processorCode], { type: 'application/javascript' });
             await ctx.audioWorklet.addModule(URL.createObjectURL(blob));
-        } catch(e) { /* 登録済みエラーは無視 */ }
+        } catch(e) {}
 
         const source = ctx.createMediaStreamSource(mediaStream);
         workletNode = new AudioWorkletNode(ctx, 'pcm-processor');
@@ -241,7 +239,6 @@ async function startMicrophone() {
         
         workletNode.port.onmessage = (event) => {
             const inputData = event.data;
-            // マイク音量チェック
             let sum = 0; for(let i=0; i<inputData.length; i++) sum += inputData[i] * inputData[i];
             const volume = Math.sqrt(sum / inputData.length);
             const btn = document.getElementById('mic-btn');
@@ -261,9 +258,15 @@ async function startMicrophone() {
     }
 }
 
+// ★修正: 再生直前に必ず resume() を呼ぶ
 function playLivePcmAudio(base64) { 
     const ctx = getAudioContext();
     if (!ctx) return; 
+
+    // ブラウザの自動再生ポリシー対策：強制的に起こす
+    if (ctx.state === 'suspended') {
+        ctx.resume();
+    }
     
     const binary = window.atob(base64); 
     const bytes = new Uint8Array(binary.length); 
@@ -272,7 +275,6 @@ function playLivePcmAudio(base64) {
     const view = new DataView(bytes.buffer); 
     for (let i = 0; i < float32.length; i++) float32[i] = view.getInt16(i * 2, true) / 32768.0; 
     
-    // サンプリングレートはGemini Aoedeに合わせて24000
     const buffer = ctx.createBuffer(1, float32.length, 24000); 
     buffer.copyToChannel(float32, 0); 
     
@@ -280,7 +282,7 @@ function playLivePcmAudio(base64) {
     source.buffer = buffer; 
     source.connect(ctx.destination); 
     
-    const now = ctx.currentTime; 
+    let now = ctx.currentTime; 
     if (nextStartTime < now) nextStartTime = now; 
     source.start(nextStartTime); 
     nextStartTime += buffer.duration; 

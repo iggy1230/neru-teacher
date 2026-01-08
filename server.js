@@ -185,13 +185,15 @@ wss.on('connection', (clientWs) => {
     
     // クライアントからのメッセージ処理
     clientWs.on('message', (data) => {
+        // ★修正: JSONと音声を確実に判別する
+        const msgStr = data.toString();
+        let isConfig = false;
+        
         try {
-            const msgStr = data.toString();
-            let msg;
-            try { msg = JSON.parse(msgStr); } catch(e) { msg = null; }
-
+            const msg = JSON.parse(msgStr);
             // ★設定データ ("config") が来たら Gemini に接続開始
             if (msg && msg.type === "config") {
+                isConfig = true;
                 const { userGrade, userName, userMemory } = msg;
                 
                 geminiWs = new WebSocket(GEMINI_URL);
@@ -205,7 +207,6 @@ wss.on('connection', (clientWs) => {
                                 response_modalities: ["AUDIO", "TEXT"], 
                                 speech_config: { 
                                     voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }
-                                    // language_code は削除して自動判定に任せる
                                 } 
                             }, 
                             system_instruction: {
@@ -230,12 +231,13 @@ wss.on('connection', (clientWs) => {
                 
                 geminiWs.on('error', (e) => console.error('Gemini WS Error:', e));
                 geminiWs.on('close', () => {});
-                return;
             }
-        } catch(e) {}
+        } catch(e) {
+            // JSONでない場合は音声データとみなす
+        }
 
-        // ★音声データの場合
-        if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+        // ★設定でない、かつGemini接続済みなら音声として転送
+        if (!isConfig && geminiWs && geminiWs.readyState === WebSocket.OPEN) {
             try {
                 const binaryMessage = {
                     realtime_input: {
