@@ -1,4 +1,4 @@
-/* --- style.css (原点回帰: 重ね合わせレイアウト) --- */
+/* --- style.css (比率完全固定版) --- */
 
 body {
     font-family: 'M PLUS Rounded 1c', "Sawarabi Gothic", sans-serif;
@@ -112,12 +112,12 @@ button { font-family: inherit; }
     box-shadow: 0 2px 4px rgba(0,0,0,0.2); z-index: 10;
 }
 
-/* --- ★学生証レイアウト (ここが修正の核心) --- */
+/* --- ★学生証レイアウト修正 (ここが最重要) --- */
 .id-card-wrap {
     position: relative;
     width: 100%;
     max-width: 320px;
-    /* 縦横比を固定。これが潰れ防止の鍵 */
+    /* 比率を1.6:1に固定 (width / 1.6 = height) */
     aspect-ratio: 1.6 / 1; 
     margin: 0 auto 20px;
     box-shadow: 0 4px 10px rgba(0,0,0,0.3);
@@ -126,58 +126,32 @@ button { font-family: inherit; }
     background: white;
 }
 
-/* 1. ベース画像（HTML）: 絶対に表示する！ */
+/* ベース画像（HTML）: containで全体を表示 */
 .id-base-img { 
     display: block !important; 
     width: 100%;
     height: 100%;
     position: absolute;
     top: 0; left: 0;
-    object-fit: fill; 
-    z-index: 1; /* 一番下 */
+    /* coverではなくcontainを使うことで、画像全体を強制的に収める */
+    object-fit: contain; 
+    z-index: 1; 
 }
 
-/* 2. 写真用キャンバス: 透明にして上に重ねる */
+/* Canvas: 写真と文字用 */
 #id-photo-preview-canvas { 
     display: block;
     width: 100%;
     height: 100%;
     position: absolute;
     top: 0; left: 0;
-    object-fit: contain;
+    object-fit: contain; /* こちらもcontainで合わせる */
     z-index: 2; 
-    background-color: transparent !important; /* 透明！ */
+    background-color: transparent !important; 
 }
 
-/* 3. 文字オーバーレイ: HTMLで表示して即反映させる */
-.id-text-overlay { 
-    position: absolute; 
-    display: block !important;
-    color: #333; 
-    font-weight: bold; 
-    font-family: 'M PLUS Rounded 1c', sans-serif;
-    pointer-events: none; 
-    z-index: 3; /* 一番上 */
-    white-space: nowrap;
-}
-
-/* 座標をパーセントで指定（レスポンシブ対応） */
-/* 左:55%, 上:46% (640x400の座標から算出) */
-.id-grade-text { 
-    top: 46%; 
-    left: 55%; 
-    font-size: 18px; 
-    transform: translateY(-50%);
-}
-
-/* 左:55%, 上:66% */
-.id-name-text { 
-    top: 66%; 
-    left: 55%; 
-    font-size: 22px; 
-    transform: translateY(-50%);
-}
-
+/* その他非表示 */
+.id-text-overlay { display: none; }
 #id-photo-slot { display: none; }
 
 .styled-input, .styled-select { width: 80%; padding: 12px; margin: 10px auto; display: block; border: 2px solid #ff85a1; border-radius: 10px; font-size: 1rem; }
