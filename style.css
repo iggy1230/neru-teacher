@@ -1,4 +1,4 @@
-/* --- style.css (絶対潰れない版) --- */
+/* --- style.css (位置・トリミング微調整版) --- */
 
 body {
     font-family: 'M PLUS Rounded 1c', "Sawarabi Gothic", sans-serif;
@@ -112,12 +112,12 @@ button { font-family: inherit; }
     box-shadow: 0 2px 4px rgba(0,0,0,0.2); z-index: 10;
 }
 
-/* --- ★学生証レイアウト修正 (ここが最重要) --- */
+/* --- ★学生証レイアウト --- */
 .id-card-wrap {
     position: relative;
     width: 100%;
     max-width: 320px;
-    height: auto; /* ★高さは中身に合わせる */
+    aspect-ratio: 1.6 / 1; 
     margin: 0 auto 20px;
     box-shadow: 0 4px 10px rgba(0,0,0,0.3);
     border-radius: 12px;
@@ -129,38 +129,34 @@ button { font-family: inherit; }
 .id-base-img { 
     display: block !important; 
     width: 100%;
-    /* ★height: auto と position: relative で、画像の本来の比率を維持して枠を広げる */
-    height: auto !important; 
+    height: auto !important; /* 自然な比率を維持 */
     position: relative !important; 
     z-index: 1;
 }
 
-/* 2. 写真表示エリア */
+/* 2. 写真表示エリア (修正: 高さ縮小でトリミング) */
 #id-photo-slot {
     display: block !important;
     position: absolute;
     z-index: 2;
-    /* 位置はベース画像(640x400)に対する比率で固定 */
-    top: 34.5%; 
+    top: 36%;  /* 34.5% -> 36% (少し下げた) */
     left: 6.9%;
     width: 28.1%; 
-    height: 50%;
+    height: 46%; /* 50% -> 46% (少し高さを縮めた＝トリミング) */
     background-color: #ddd;
     overflow: hidden;
 }
 
-/* 写真: 枠いっぱいにトリミングして表示 */
 #id-photo-slot img {
     width: 100%;
     height: 100%;
-    object-fit: cover !important; 
+    object-fit: cover !important; /* 枠いっぱいに埋める */
     display: block;
 }
 
-/* プレビュー用Canvasは非表示 */
 #id-photo-preview-canvas { display: none; }
 
-/* 3. テキストオーバーレイ (位置調整) */
+/* 3. テキストオーバーレイ (位置修正) */
 .id-text-overlay { 
     display: block !important;
     position: absolute; 
@@ -171,18 +167,18 @@ button { font-family: inherit; }
     z-index: 3;
     white-space: nowrap;
     text-align: left;
-    font-size: 1.0rem;
 }
 
-/* 学年: 位置調整 */
+/* 学年: 下へ移動 (42% -> 46%) */
 .id-grade-text { 
-    top: 42%; /* 高さを少し下げました */
+    top: 46%; 
     left: 55%; 
+    font-size: 1.1rem;
 }
 
-/* 氏名: 位置調整 */
+/* 氏名: 上へ移動 (56% -> 53%) */
 .id-name-text { 
-    top: 60%; /* 高さを少し上げました */
+    top: 53%; 
     left: 55%; 
     font-size: 1.2rem;
 }
