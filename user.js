@@ -1,4 +1,4 @@
-// --- user.js (修正版: プレビューHTML・保存Canvas分離) ---
+// --- user.js (最終調整版) ---
 
 let users = JSON.parse(localStorage.getItem('nekoneko_users')) || [];
 let currentUser = null;
@@ -8,27 +8,27 @@ let enrollFile = null;
 const idBase = new Image();
 idBase.src = 'student-id-base.png';
 
+const decoEars = new Image(); decoEars.src = 'ears.png';
+const decoMuzzle = new Image(); decoMuzzle.src = 'muzzle.png';
+
 document.addEventListener('DOMContentLoaded', () => {
     renderUserList();
     loadFaceModels();
     setupEnrollmentPhotoInputs();
     
-    // 入力イベント設定: HTML要素を直接書き換える
+    // 入力イベント
     const nameInput = document.getElementById('new-student-name');
     const gradeInput = document.getElementById('new-student-grade');
     if(nameInput) nameInput.addEventListener('input', updateIDPreviewText);
     if(gradeInput) gradeInput.addEventListener('change', updateIDPreviewText);
 
-    // 初期化
     updateIDPreviewText();
 });
 
-// HTMLテキストの即時更新
 function updateIDPreviewText() {
     const nameVal = document.getElementById('new-student-name').value || "なまえ";
     const gradeVal = document.getElementById('new-student-grade').value || "○";
     
-    // HTMLの要素を探して更新
     const nameEl = document.querySelector('.id-name-text');
     const gradeEl = document.querySelector('.id-grade-text');
     
@@ -36,22 +36,17 @@ function updateIDPreviewText() {
     if(gradeEl) gradeEl.innerText = gradeVal + "年生";
 }
 
-// 写真の即時更新 (HTML imgタグを使用)
 function updatePhotoPreview(file) {
     enrollFile = file;
     const slot = document.getElementById('id-photo-slot');
     if(!slot) return;
 
-    // 既存のimgがあれば削除
     slot.innerHTML = '';
-    
     const img = document.createElement('img');
     img.src = URL.createObjectURL(file);
-    // CSSで object-fit: cover しているので、ここでスタイル指定は不要だが念のため
     img.style.width = '100%';
     img.style.height = '100%';
     img.style.objectFit = 'cover';
-    
     slot.appendChild(img);
 }
 
@@ -74,10 +69,30 @@ async function loadFaceModels() {
     }
 }
 
+// AI用リサイズ
+async function resizeForAI(img, maxSize = 600) {
+    return new Promise(resolve => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        if (width > height) {
+            if (width > maxSize) { height *= maxSize / width; width = maxSize; }
+        } else {
+            if (height > maxSize) { width *= maxSize / height; height = maxSize; }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        const i = new Image();
+        i.onload = () => resolve(i);
+        i.src = canvas.toDataURL();
+    });
+}
+
 function setupEnrollmentPhotoInputs() {
     const handleFile = (file) => {
         if (!file) return;
-        updatePhotoPreview(file); // HTML更新
+        updatePhotoPreview(file);
     };
 
     const webCamBtn = document.getElementById('enroll-webcam-btn');
@@ -145,7 +160,7 @@ function closeEnrollCamera() {
     if (modal) modal.classList.add('hidden');
 }
 
-// ★保存用: ここだけCanvasを使って1枚の画像にする
+// ★保存用: 裏でCanvasに全部描画する (位置修正済み)
 async function renderForSave() {
     const canvas = document.createElement('canvas');
     canvas.width = 640; 
@@ -160,34 +175,61 @@ async function renderForSave() {
 
     // 2. 写真
     if (enrollFile) {
-        const img = new Image();
-        img.src = URL.createObjectURL(enrollFile);
-        await new Promise(r => img.onload = r);
+        try {
+            const img = new Image();
+            img.src = URL.createObjectURL(enrollFile);
+            await new Promise(r => img.onload = r);
 
-        // 枠の座標 (HTMLのCSSと同じ比率で計算)
-        // CSS: top 34.5%, left 6.9%, w 28.1%, h 50%
-        // 640 * 0.069 = 44
-        // 400 * 0.345 = 138
-        // 640 * 0.281 = 180
-        // 400 * 0.500 = 200
-        const destX = 44, destY = 138, destW = 180, destH = 200;
-        
-        // クロップ計算
-        const scale = Math.max(destW / img.width, destH / img.height);
-        const cropW = destW / scale;
-        const cropH = destH / scale;
-        const cropX = (img.width - cropW) / 2;
-        const cropY = (img.height - cropH) / 2;
+            // 枠の座標: CSS比率と同じ (34.5%, 6.9%, 28.1%, 50%)
+            const destX = 44, destY = 138, destW = 180, destH = 200;
+            const scale = Math.max(destW / img.width, destH / img.height);
+            const cropW = destW / scale;
+            const cropH = destH / scale;
+            const cropX = (img.width - cropW) / 2;
+            const cropY = (img.height - cropH) / 2;
 
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(destX, destY, destW, destH);
-        ctx.clip(); 
-        ctx.drawImage(img, cropX, cropY, cropW, cropH, destX, destY, destW, destH);
-        ctx.restore();
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(destX, destY, destW, destH);
+            ctx.clip(); 
+            ctx.drawImage(img, cropX, cropY, cropW, cropH, destX, destY, destW, destH);
+            ctx.restore();
+
+            // 猫化AI (保存時に一発合成)
+            if (modelsLoaded) {
+                const aiImg = await resizeForAI(img);
+                const detection = await faceapi.detectSingleFace(aiImg).withFaceLandmarks();
+                if (detection) {
+                    const landmarks = detection.landmarks;
+                    const nose = landmarks.getNose()[3];
+                    const leftEyeBrow = landmarks.getLeftEyeBrow()[2];
+                    const rightEyeBrow = landmarks.getRightEyeBrow()[2];
+                    const aiScale = img.width / aiImg.width;
+
+                    if (decoMuzzle.complete) {
+                        const nX = destX + (nose.x * aiScale - cropX) * scale;
+                        const nY = destY + (nose.y * aiScale - cropY) * scale;
+                        const faceW = detection.detection.box.width * aiScale * scale;
+                        const muzW = faceW * 0.8;
+                        const muzH = muzW * 0.8;
+                        ctx.drawImage(decoMuzzle, nX - muzW/2, nY - muzH/2.5, muzW, muzH);
+                    }
+                    if (decoEars.complete) {
+                        const browX = ((leftEyeBrow.x + rightEyeBrow.x)/2) * aiScale;
+                        const browY = ((leftEyeBrow.y + rightEyeBrow.y)/2) * aiScale;
+                        const eX = destX + (browX - cropX) * scale;
+                        const eY = destY + (browY - cropY) * scale;
+                        const faceW = detection.detection.box.width * aiScale * scale;
+                        const earW = faceW * 2.2;
+                        const earH = earW * 0.7;
+                        ctx.drawImage(decoEars, eX - earW/2, eY - earH + 10, earW, earH);
+                    }
+                }
+            }
+        } catch(e) { console.error(e); }
     }
 
-    // 3. テキスト
+    // 3. テキスト (CSSの位置に合わせて座標を修正)
     const nameVal = document.getElementById('new-student-name').value || "なまえ";
     const gradeVal = document.getElementById('new-student-grade').value || "○";
     
@@ -196,9 +238,11 @@ async function renderForSave() {
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
 
-    // 座標 (CSSに合わせる)
-    ctx.fillText(gradeVal + "年生", 350, 185); 
-    ctx.fillText(nameVal, 350, 265);
+    // 学年: 400 * 38% = 152px
+    ctx.fillText(gradeVal + "年生", 350, 155); 
+    
+    // 名前: 400 * 58% = 232px
+    ctx.fillText(nameVal, 350, 235);
 
     return canvas;
 }
@@ -215,7 +259,6 @@ async function processAndCompleteEnrollment() {
     await new Promise(r => setTimeout(r, 100));
 
     try {
-        // 保存用Canvasを作成
         const saveCanvas = await renderForSave();
         
         const newUser = { 
@@ -233,8 +276,6 @@ async function processAndCompleteEnrollment() {
         document.getElementById('new-student-name').value = "";
         document.getElementById('new-student-grade').value = "";
         enrollFile = null;
-        
-        // プレビューリセット
         updateIDPreviewText();
         const slot = document.getElementById('id-photo-slot');
         if(slot) slot.innerHTML = '';
