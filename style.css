@@ -1,4 +1,4 @@
-/* --- style.css (比率完全固定版) --- */
+/* --- style.css (決定版: HTML重ね合わせ方式) --- */
 
 body {
     font-family: 'M PLUS Rounded 1c', "Sawarabi Gothic", sans-serif;
@@ -117,7 +117,7 @@ button { font-family: inherit; }
     position: relative;
     width: 100%;
     max-width: 320px;
-    /* 比率を1.6:1に固定 (width / 1.6 = height) */
+    /* 縦横比を1.6:1に固定。これで潰れません */
     aspect-ratio: 1.6 / 1; 
     margin: 0 auto 20px;
     box-shadow: 0 4px 10px rgba(0,0,0,0.3);
@@ -126,33 +126,71 @@ button { font-family: inherit; }
     background: white;
 }
 
-/* ベース画像（HTML）: containで全体を表示 */
+/* 1. ベース画像 */
 .id-base-img { 
     display: block !important; 
     width: 100%;
     height: 100%;
     position: absolute;
     top: 0; left: 0;
-    /* coverではなくcontainを使うことで、画像全体を強制的に収める */
-    object-fit: contain; 
-    z-index: 1; 
+    object-fit: fill; 
+    z-index: 1; /* 一番下 */
 }
 
-/* Canvas: 写真と文字用 */
-#id-photo-preview-canvas { 
-    display: block;
+/* 2. 写真表示エリア (Canvasではなくdiv+imgで表示) */
+#id-photo-slot {
+    display: block !important;
+    position: absolute;
+    z-index: 2;
+    /* 学生証画像(640x400)に対する比率で位置指定 */
+    top: 34.5%;  /* 138 / 400 */
+    left: 6.9%;  /* 44 / 640 */
+    width: 28.1%; /* 180 / 640 */
+    height: 50%; /* 200 / 400 */
+    background-color: #ddd; /* 写真がないときはグレー */
+    overflow: hidden;
+}
+
+/* 写真本体 */
+#id-photo-slot img {
     width: 100%;
     height: 100%;
-    position: absolute;
-    top: 0; left: 0;
-    object-fit: contain; /* こちらもcontainで合わせる */
-    z-index: 2; 
-    background-color: transparent !important; 
+    object-fit: cover; /* 枠いっぱいにトリミングして表示 */
+    display: block;
 }
 
-/* その他非表示 */
-.id-text-overlay { display: none; }
-#id-photo-slot { display: none; }
+/* Canvasはプレビューでは非表示 (保存処理の裏方で使う) */
+#id-photo-preview-canvas { 
+    display: none; 
+}
+
+/* 3. テキストオーバーレイ (復活！) */
+.id-text-overlay { 
+    display: block !important;
+    position: absolute; 
+    color: #333; 
+    font-weight: bold; 
+    font-family: 'M PLUS Rounded 1c', sans-serif;
+    pointer-events: none; 
+    z-index: 3; /* 一番上 */
+    white-space: nowrap;
+    text-align: left;
+    /* フォントサイズもレスポンシブ対応 */
+    font-size: 1.1rem;
+}
+
+/* 学年: 右側エリア */
+.id-grade-text { 
+    top: 42%; 
+    left: 55%; 
+}
+
+/* 氏名: 右側エリア */
+.id-name-text { 
+    top: 62%; 
+    left: 55%; 
+    font-size: 1.3rem; /* 名前は少し大きく */
+}
 
 .styled-input, .styled-select { width: 80%; padding: 12px; margin: 10px auto; display: block; border: 2px solid #ff85a1; border-radius: 10px; font-size: 1rem; }
 
