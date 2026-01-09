@@ -1,11 +1,11 @@
-// --- user.js (最終完全版: ハイブリッド描画) ---
+// --- user.js (最終版: 即時描画確保) ---
 
 let users = JSON.parse(localStorage.getItem('nekoneko_users')) || [];
 let currentUser = null;
 let modelsLoaded = false;
 let enrollFile = null;
 
-// 画像オブジェクト (念のためJSでも保持)
+// 画像オブジェクト (キャッシュ対策なしでシンプルに)
 const idBase = new Image();
 idBase.src = 'student-id-base.png';
 
@@ -17,14 +17,32 @@ document.addEventListener('DOMContentLoaded', () => {
     loadFaceModels();
     setupEnrollmentPhotoInputs();
     
-    // イベントリスナー
+    // ★重要: HTMLが読み込まれたら即座にCanvasのサイズを確定させ、白く塗る
+    // これにより「高さ0」を防ぐ
+    const canvas = document.getElementById('id-photo-preview-canvas');
+    if (canvas) {
+        canvas.width = 640;
+        canvas.height = 400;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, 640, 400);
+        // 仮の枠線
+        ctx.strokeStyle = "#ddd";
+        ctx.strokeRect(0, 0, 640, 400);
+    }
+
+    // イベント設定
     const nameInput = document.getElementById('new-student-name');
     const gradeInput = document.getElementById('new-student-grade');
-    if(nameInput) nameInput.addEventListener('input', () => renderIdCard(false));
-    if(gradeInput) gradeInput.addEventListener('change', () => renderIdCard(false));
+    if(nameInput) nameInput.addEventListener('input', () => renderIdCard());
+    if(gradeInput) gradeInput.addEventListener('change', () => renderIdCard());
 
-    // 初回描画（プレビューモード）
-    renderIdCard(false);
+    // 画像が読み込まれたら再描画
+    if(idBase.complete) {
+        renderIdCard();
+    } else {
+        idBase.onload = () => renderIdCard();
+    }
 });
 
 async function loadFaceModels() {
@@ -40,6 +58,7 @@ async function loadFaceModels() {
         const btn = document.getElementById('complete-btn');
         if(btn) btn.disabled = false;
     } catch (e) {
+        console.error(e);
         if(status) status.innerText = "手動モードで入学できるにゃ🐾";
         const btn = document.getElementById('complete-btn');
         if(btn) btn.disabled = false;
@@ -67,32 +86,24 @@ async function resizeForAI(img, maxSize = 600) {
 }
 
 // ★最重要: 描画関数
-async function renderIdCard(forSave = false) {
-    let canvas;
-    if (forSave) {
-        canvas = document.createElement('canvas'); // 保存用
-    } else {
-        canvas = document.getElementById('id-photo-preview-canvas'); // 表示用
-    }
+async function renderIdCard() {
+    const canvas = document.getElementById('id-photo-preview-canvas');
     if (!canvas) return;
 
-    // サイズ固定 (640x400)
+    // キャンバスサイズ再確認
     canvas.width = 640; 
     canvas.height = 400;
     const ctx = canvas.getContext('2d');
 
-    // 1. 背景の処理
-    if (forSave) {
-        // 保存時はCanvasに背景を描く
-        if (idBase.complete && idBase.naturalWidth > 0) {
-            ctx.drawImage(idBase, 0, 0, 640, 400);
-        } else {
-            await new Promise(r => { idBase.onload = r; idBase.onerror = r; });
-            ctx.drawImage(idBase, 0, 0, 640, 400);
-        }
+    // 1. ベース画像の描画
+    if (idBase.complete && idBase.naturalWidth > 0) {
+        ctx.drawImage(idBase, 0, 0, 640, 400);
     } else {
-        // プレビュー時は透明にして、HTMLのimgタグを見せる
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // 画像がない場合でも白背景＋枠線を維持
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, 640, 400);
+        ctx.strokeStyle = "#333";
+        ctx.strokeRect(0, 0, 640, 400);
     }
 
     // 2. 写真とデコレーション
@@ -153,13 +164,13 @@ async function renderIdCard(forSave = false) {
                 }
             }
         } catch(e) { console.error(e); }
-    } else if (!forSave) {
-        // プレビューで写真がない時は半透明グレー
-        ctx.fillStyle = "rgba(200, 200, 200, 0.5)";
+    } else {
+        // 写真がない時は枠を薄いグレーに
+        ctx.fillStyle = "#ddd";
         ctx.fillRect(44, 138, 180, 200);
     }
 
-    // 3. テキスト描画 (座標: X=360あたり)
+    // 3. テキスト描画 (座標: X=440あたり)
     const nameVal = document.getElementById('new-student-name').value || "なまえ";
     const gradeVal = document.getElementById('new-student-grade').value || "○";
     
@@ -168,20 +179,18 @@ async function renderIdCard(forSave = false) {
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
 
-    // 学年: x=360, y=185
-    ctx.fillText(gradeVal + "年生", 360, 185); 
+    // 学年: x=440, y=185
+    ctx.fillText(gradeVal + "年生", 440, 185); 
     
-    // 名前: x=360, y=265
-    ctx.fillText(nameVal, 360, 265);
-
-    return canvas;
+    // 名前: x=440, y=265
+    ctx.fillText(nameVal, 440, 265);
 }
 
 function setupEnrollmentPhotoInputs() {
     const handleFile = (file) => {
         if (!file) return;
         enrollFile = file;
-        renderIdCard(false);
+        renderIdCard(); 
     };
 
     const webCamBtn = document.getElementById('enroll-webcam-btn');
@@ -261,12 +270,13 @@ async function processAndCompleteEnrollment() {
     await new Promise(r => setTimeout(r, 100));
 
     try {
-        // 保存用に背景込みでCanvas生成 (trueを指定)
-        const saveCanvas = await renderIdCard(true);
+        // 最新の状態を描画してから保存
+        await renderIdCard(); 
+        const canvas = document.getElementById('id-photo-preview-canvas');
         
         const newUser = { 
             id: Date.now(), name, grade, 
-            photo: saveCanvas.toDataURL('image/jpeg', 0.6), 
+            photo: canvas.toDataURL('image/jpeg', 0.6), 
             karikari: 100, 
             history: {}, mistakes: [], attendance: {},
             memory: "" 
@@ -279,7 +289,7 @@ async function processAndCompleteEnrollment() {
         document.getElementById('new-student-name').value = "";
         document.getElementById('new-student-grade').value = "";
         enrollFile = null;
-        renderIdCard(false); // リセット
+        renderIdCard(); 
         
         alert("入学おめでとうにゃ！🌸");
         switchScreen('screen-gate');

@@ -1,4 +1,4 @@
-/* --- style.css (最終完全版) --- */
+/* --- style.css (完全版) --- */
 
 body {
     font-family: 'M PLUS Rounded 1c', "Sawarabi Gothic", sans-serif;
@@ -116,9 +116,10 @@ button { font-family: inherit; }
 .id-card-wrap {
     position: relative;
     width: 100%;
-    max-width: 320px; /* 最大幅 */
-    /* 高さ指定を削除し、縦横比(1.6:1)を強制 */
+    max-width: 320px;
+    /* 縦横比を1.6:1に固定。高さは自動計算 */
     aspect-ratio: 1.6 / 1; 
+    height: auto; 
     margin: 0 auto 20px;
     box-shadow: 0 4px 10px rgba(0,0,0,0.3);
     border-radius: 12px;
@@ -126,28 +127,16 @@ button { font-family: inherit; }
     background: white;
 }
 
-/* HTMLのベース画像を「一番下」に表示 (これで白紙を防ぐ) */
-.id-base-img { 
-    position: absolute;
-    top: 0; left: 0;
-    width: 100%; height: 100%; 
-    object-fit: fill;
-    display: block !important; 
-    z-index: 1;
-}
-
-/* Canvasは「透明」にして上に重ねる (写真と文字だけ描画) */
+/* Canvasの設定 */
 #id-photo-preview-canvas { 
-    position: absolute;
-    top: 0; left: 0;
-    width: 100%; height: 100%; 
-    object-fit: contain;
+    width: 100%; 
+    height: 100%; 
     display: block; 
-    z-index: 2;
-    background-color: transparent; /* 重要 */
+    object-fit: contain;
 }
 
-/* 他のオーバーレイ要素はすべて非表示 */
+/* 余計なものは非表示 */
+.id-base-img { display: none; }
 .id-text-overlay { display: none; }
 #id-photo-slot { display: none; }
 
