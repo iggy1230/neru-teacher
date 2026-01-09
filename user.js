@@ -1,4 +1,4 @@
-// --- user.js (座標調整版) ---
+// --- user.js (完全版: プレビューHTML + 保存Canvas) ---
 
 let users = JSON.parse(localStorage.getItem('nekoneko_users')) || [];
 let currentUser = null;
@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadFaceModels();
     setupEnrollmentPhotoInputs();
     
+    // 入力イベント設定
     const nameInput = document.getElementById('new-student-name');
     const gradeInput = document.getElementById('new-student-grade');
     if(nameInput) nameInput.addEventListener('input', updateIDPreviewText);
@@ -24,6 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateIDPreviewText();
 });
 
+// テキスト更新
 function updateIDPreviewText() {
     const nameVal = document.getElementById('new-student-name').value || "なまえ";
     const gradeVal = document.getElementById('new-student-grade').value || "○";
@@ -35,6 +37,7 @@ function updateIDPreviewText() {
     if(gradeEl) gradeEl.innerText = gradeVal + "年生";
 }
 
+// 写真更新 (HTML)
 function updatePhotoPreview(file) {
     enrollFile = file;
     const slot = document.getElementById('id-photo-slot');
@@ -43,9 +46,7 @@ function updatePhotoPreview(file) {
     slot.innerHTML = '';
     const img = document.createElement('img');
     img.src = URL.createObjectURL(file);
-    img.style.width = '100%';
-    img.style.height = '100%';
-    img.style.objectFit = 'cover';
+    // スタイルはCSSで制御 (object-fit: cover)
     slot.appendChild(img);
 }
 
@@ -159,7 +160,7 @@ function closeEnrollCamera() {
     if (modal) modal.classList.add('hidden');
 }
 
-// ★保存用: 座標調整 (CSSに合わせる)
+// ★保存用: 裏でCanvasに全部描画する (座標修正済み)
 async function renderForSave() {
     const canvas = document.createElement('canvas');
     canvas.width = 640; 
@@ -179,9 +180,8 @@ async function renderForSave() {
             img.src = URL.createObjectURL(enrollFile);
             await new Promise(r => img.onload = r);
 
-            // 枠の座標 (CSSに合わせて調整)
-            // top:35% -> 140px, height:45% -> 180px
-            const destX = 44, destY = 140, destW = 180, destH = 180;
+            // 枠の座標: CSS比率と同じ (34.5%, 6.9%, 28.1%, 50%)
+            const destX = 44, destY = 138, destW = 180, destH = 200;
             
             const scale = Math.max(destW / img.width, destH / img.height);
             const cropW = destW / scale;
@@ -196,7 +196,7 @@ async function renderForSave() {
             ctx.drawImage(img, cropX, cropY, cropW, cropH, destX, destY, destW, destH);
             ctx.restore();
 
-            // 猫化AI
+            // 猫化AI (保存時に一発合成)
             if (modelsLoaded) {
                 const aiImg = await resizeForAI(img);
                 const detection = await faceapi.detectSingleFace(aiImg).withFaceLandmarks();
@@ -230,7 +230,7 @@ async function renderForSave() {
         } catch(e) { console.error(e); }
     }
 
-    // 3. テキスト (CSSの位置に合わせて座標調整)
+    // 3. テキスト (CSSの位置に合わせて座標を修正)
     const nameVal = document.getElementById('new-student-name').value || "なまえ";
     const gradeVal = document.getElementById('new-student-grade').value || "○";
     
@@ -239,11 +239,11 @@ async function renderForSave() {
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
 
-    // 学年: 42% -> 400 * 0.42 = 168 (Y=168あたり)
+    // 学年: 400px * 42% = 168px
     ctx.fillText(gradeVal + "年生", 350, 168); 
     
-    // 名前: 56% -> 400 * 0.56 = 224 (Y=224あたり)
-    ctx.fillText(nameVal, 350, 224);
+    // 名前: 400px * 60% = 240px
+    ctx.fillText(nameVal, 350, 240);
 
     return canvas;
 }

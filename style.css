@@ -1,4 +1,4 @@
-/* --- style.css (位置・サイズ微調整版) --- */
+/* --- style.css (絶対潰れない版) --- */
 
 body {
     font-family: 'M PLUS Rounded 1c', "Sawarabi Gothic", sans-serif;
@@ -112,12 +112,12 @@ button { font-family: inherit; }
     box-shadow: 0 2px 4px rgba(0,0,0,0.2); z-index: 10;
 }
 
-/* --- ★学生証レイアウト --- */
+/* --- ★学生証レイアウト修正 (ここが最重要) --- */
 .id-card-wrap {
     position: relative;
     width: 100%;
     max-width: 320px;
-    aspect-ratio: 1.6 / 1; 
+    height: auto; /* ★高さは中身に合わせる */
     margin: 0 auto 20px;
     box-shadow: 0 4px 10px rgba(0,0,0,0.3);
     border-radius: 12px;
@@ -129,34 +129,35 @@ button { font-family: inherit; }
 .id-base-img { 
     display: block !important; 
     width: 100%;
-    height: 100%;
-    position: absolute;
-    top: 0; left: 0;
-    object-fit: fill; 
+    /* ★height: auto と position: relative で、画像の本来の比率を維持して枠を広げる */
+    height: auto !important; 
+    position: relative !important; 
     z-index: 1;
 }
 
-/* 2. 写真表示エリア (修正: 高さ調整) */
+/* 2. 写真表示エリア */
 #id-photo-slot {
     display: block !important;
     position: absolute;
     z-index: 2;
-    /* 位置とサイズを微調整 */
-    top: 35%; /* 34.5% -> 35% 少し下げてヘッダー被り防止 */
+    /* 位置はベース画像(640x400)に対する比率で固定 */
+    top: 34.5%; 
     left: 6.9%;
     width: 28.1%; 
-    height: 45%; /* 50% -> 45% 高さを縮めて枠内に収める */
+    height: 50%;
     background-color: #ddd;
     overflow: hidden;
 }
 
+/* 写真: 枠いっぱいにトリミングして表示 */
 #id-photo-slot img {
     width: 100%;
     height: 100%;
-    object-fit: cover; 
+    object-fit: cover !important; 
     display: block;
 }
 
+/* プレビュー用Canvasは非表示 */
 #id-photo-preview-canvas { display: none; }
 
 /* 3. テキストオーバーレイ (位置調整) */
@@ -173,17 +174,23 @@ button { font-family: inherit; }
     font-size: 1.0rem;
 }
 
-/* 学年: 上へ移動 (46% -> 42%) */
+/* 学年: 位置調整 */
 .id-grade-text { 
-    top: 42%; 
+    top: 42%; /* 高さを少し下げました */
     left: 55%; 
 }
 
-/* 氏名: 上へ移動 (60% -> 56%) */
+/* 氏名: 位置調整 */
 .id-name-text { 
-    top: 56%; 
+    top: 60%; /* 高さを少し上げました */
     left: 55%; 
     font-size: 1.2rem;
+}
+
+/* 画面が小さい時用の文字サイズ調整 */
+@media (max-width: 350px) {
+    .id-grade-text { font-size: 0.9rem; }
+    .id-name-text { font-size: 1.1rem; }
 }
 
 .styled-input, .styled-select { width: 80%; padding: 12px; margin: 10px auto; display: block; border: 2px solid #ff85a1; border-radius: 10px; font-size: 1rem; }
