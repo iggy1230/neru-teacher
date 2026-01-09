@@ -1,4 +1,4 @@
-/* --- style.css (強制サイズ確保版) --- */
+/* --- style.css (最終完全版) --- */
 
 body {
     font-family: 'M PLUS Rounded 1c', "Sawarabi Gothic", sans-serif;
@@ -117,29 +117,37 @@ button { font-family: inherit; }
     position: relative;
     width: 100%;
     max-width: 320px; /* 最大幅 */
-    /* 縦横比を1.6:1に固定 */
+    /* 高さ指定を削除し、縦横比(1.6:1)を強制 */
     aspect-ratio: 1.6 / 1; 
-    /* 万が一のために最低高さを確保（これで潰れを防ぐ） */
-    min-height: 180px;
     margin: 0 auto 20px;
     box-shadow: 0 4px 10px rgba(0,0,0,0.3);
     border-radius: 12px;
     overflow: hidden;
-    /* 背景色と枠線をつけて、画像が出なくても場所がわかるようにする */
-    background: #ffffff;
-    border: 2px solid #ddd;
+    background: white;
 }
 
-/* Canvasの設定 */
+/* HTMLのベース画像を「一番下」に表示 (これで白紙を防ぐ) */
+.id-base-img { 
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%; 
+    object-fit: fill;
+    display: block !important; 
+    z-index: 1;
+}
+
+/* Canvasは「透明」にして上に重ねる (写真と文字だけ描画) */
 #id-photo-preview-canvas { 
-    width: 100%; 
-    height: 100%; 
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%; 
     object-fit: contain;
     display: block; 
+    z-index: 2;
+    background-color: transparent; /* 重要 */
 }
 
-/* 画像タグやオーバーレイは非表示 */
-.id-base-img { display: none; }
+/* 他のオーバーレイ要素はすべて非表示 */
 .id-text-overlay { display: none; }
 #id-photo-slot { display: none; }
 
