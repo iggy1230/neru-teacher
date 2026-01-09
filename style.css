@@ -1,4 +1,4 @@
-/* --- style.css (Canvas一本化・比率固定版) --- */
+/* --- style.css (決定版: 画像表示優先) --- */
 
 body {
     font-family: 'M PLUS Rounded 1c', "Sawarabi Gothic", sans-serif;
@@ -112,33 +112,44 @@ button { font-family: inherit; }
     box-shadow: 0 2px 4px rgba(0,0,0,0.2); z-index: 10;
 }
 
-/* --- ★学生証レイアウト修正 (ここが最重要) --- */
+/* --- ★学生証レイアウト (ここが決定版) --- */
 .id-card-wrap {
     position: relative;
     width: 100%;
     max-width: 320px;
-    /* 縦横比を1.6:1に固定 */
+    /* 縦横比を1.6:1に固定。高さは自動で決まる */
     aspect-ratio: 1.6 / 1; 
     margin: 0 auto 20px;
     box-shadow: 0 4px 10px rgba(0,0,0,0.3);
     border-radius: 12px;
     overflow: hidden;
-    background: #ffffff; /* 背景白 */
+    background: white;
 }
 
-/* HTMLのimgタグは非表示（使用しない） */
-.id-base-img { display: none; }
+/* 1. ベース画像（HTML）: 絶対に表示させる */
+.id-base-img { 
+    display: block !important; 
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    top: 0; left: 0;
+    object-fit: fill; /* 枠いっぱいに */
+    z-index: 1; /* 下のレイヤー */
+}
 
-/* Canvasの設定: 親要素いっぱいに広げる */
+/* 2. Canvas: 写真と文字用（透明） */
 #id-photo-preview-canvas { 
-    width: 100%; 
-    height: 100%; 
-    display: block; 
+    display: block;
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    top: 0; left: 0;
     object-fit: contain;
-    background-color: #ffffff;
+    z-index: 2; /* 画像の上 */
+    background: transparent !important; /* 背景は透明！ */
 }
 
-/* オーバーレイは使用しない */
+/* その他非表示 */
 .id-text-overlay { display: none; }
 #id-photo-slot { display: none; }
 
