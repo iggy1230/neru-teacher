@@ -1,4 +1,4 @@
-// --- user.js (決定版: プレビューは透明Canvas) ---
+// --- user.js (原点回帰版: プレビューはHTML主体) ---
 
 let users = JSON.parse(localStorage.getItem('nekoneko_users')) || [];
 let currentUser = null;
@@ -17,15 +17,34 @@ document.addEventListener('DOMContentLoaded', () => {
     loadFaceModels();
     setupEnrollmentPhotoInputs();
     
-    // 入力イベント設定
+    // 入力イベント設定: テキスト表示を更新するだけ
     const nameInput = document.getElementById('new-student-name');
     const gradeInput = document.getElementById('new-student-grade');
-    if(nameInput) nameInput.addEventListener('input', () => renderIdCard(false));
-    if(gradeInput) gradeInput.addEventListener('change', () => renderIdCard(false));
+    if(nameInput) nameInput.addEventListener('input', updateIDPreviewText);
+    if(gradeInput) gradeInput.addEventListener('change', updateIDPreviewText);
 
-    // 初回描画: Canvasを透明にする
-    renderIdCard(false);
+    // Canvasの初期化（透明にする）
+    const canvas = document.getElementById('id-photo-preview-canvas');
+    if(canvas) {
+        canvas.width = 640; 
+        canvas.height = 400;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, 640, 400);
+    }
+    updateIDPreviewText();
 });
+
+// HTMLのテキストを更新する関数
+function updateIDPreviewText() {
+    const nameVal = document.getElementById('new-student-name').value || "なまえ";
+    const gradeVal = document.getElementById('new-student-grade').value || "○";
+    
+    const nameEl = document.querySelector('.id-name-text');
+    const gradeEl = document.querySelector('.id-grade-text');
+    
+    if(nameEl) nameEl.innerText = nameVal;
+    if(gradeEl) gradeEl.innerText = gradeVal + "年生";
+}
 
 async function loadFaceModels() {
     if (modelsLoaded) return;
@@ -39,6 +58,8 @@ async function loadFaceModels() {
         if(status) status.innerText = "準備完了にゃ！";
         const btn = document.getElementById('complete-btn');
         if(btn) btn.disabled = false;
+        // 既に写真があれば猫耳をつける処理
+        if(enrollFile) renderPhotoOnly();
     } catch (e) {
         if(status) status.innerText = "手動モードで入学できるにゃ🐾";
         const btn = document.getElementById('complete-btn');
@@ -66,46 +87,24 @@ async function resizeForAI(img, maxSize = 600) {
     });
 }
 
-// ★描画関数 (forSave=true:保存用, false:プレビュー用)
-async function renderIdCard(forSave = false) {
-    let canvas;
-    if (forSave) {
-        canvas = document.createElement('canvas'); // 保存用
-    } else {
-        canvas = document.getElementById('id-photo-preview-canvas'); // プレビュー用
-    }
+// ★プレビュー用: Canvasには写真だけを描く（背景は描かない）
+async function renderPhotoOnly() {
+    const canvas = document.getElementById('id-photo-preview-canvas');
     if (!canvas) return;
 
-    // サイズ固定 (640x400)
     canvas.width = 640; 
     canvas.height = 400;
     const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, 640, 400); // 背景を透明に
 
-    // 1. 背景の処理
-    if (forSave) {
-        // 保存時はCanvasに背景を描き込む
-        if (idBase.complete && idBase.naturalWidth > 0) {
-            ctx.drawImage(idBase, 0, 0, 640, 400);
-        } else {
-            await new Promise(r => { idBase.onload = r; idBase.onerror = r; });
-            ctx.drawImage(idBase, 0, 0, 640, 400);
-        }
-    } else {
-        // ★プレビュー時は背景を完全に消す (HTMLの画像が見えるように)
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-    }
-
-    // 2. 写真とデコレーション
     if (enrollFile) {
         try {
             const img = new Image();
             img.src = URL.createObjectURL(enrollFile);
             await new Promise(r => img.onload = r);
 
-            // 枠の座標: 左44px, 上138px, 幅180px, 高さ200px
+            // 枠の座標
             const destX = 44, destY = 138, destW = 180, destH = 200;
-            
-            // クロップ計算
             const scale = Math.max(destW / img.width, destH / img.height);
             const cropW = destW / scale;
             const cropH = destH / scale;
@@ -153,13 +152,29 @@ async function renderIdCard(forSave = false) {
                 }
             }
         } catch(e) { console.error(e); }
-    } else if (!forSave) {
-        // プレビューで写真がない時は半透明グレー
-        ctx.fillStyle = "rgba(200, 200, 200, 0.5)";
-        ctx.fillRect(44, 138, 180, 200);
+    }
+}
+
+// ★保存用: 裏でCanvasに全部描画する
+async function renderForSave() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 640; 
+    canvas.height = 400;
+    const ctx = canvas.getContext('2d');
+
+    // 1. 背景
+    if (!idBase.complete) {
+        await new Promise(r => { idBase.onload = r; idBase.onerror = r; });
+    }
+    ctx.drawImage(idBase, 0, 0, 640, 400);
+
+    // 2. 写真 (プレビューCanvasからコピーするのが一番速い)
+    const previewCanvas = document.getElementById('id-photo-preview-canvas');
+    if (previewCanvas) {
+        ctx.drawImage(previewCanvas, 0, 0);
     }
 
-    // 3. テキスト描画 (座標: X=440あたり)
+    // 3. テキスト (HTMLから値を取得して描画)
     const nameVal = document.getElementById('new-student-name').value || "なまえ";
     const gradeVal = document.getElementById('new-student-grade').value || "○";
     
@@ -168,10 +183,9 @@ async function renderIdCard(forSave = false) {
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
 
-    // 学年: x=440, y=185
-    ctx.fillText(gradeVal + "年生", 440, 185); 
-    // 名前: x=440, y=265
-    ctx.fillText(nameVal, 440, 265);
+    // 座標調整 (Canvas内での絶対座標)
+    ctx.fillText(gradeVal + "年生", 350, 185); 
+    ctx.fillText(nameVal, 350, 265);
 
     return canvas;
 }
@@ -180,7 +194,7 @@ function setupEnrollmentPhotoInputs() {
     const handleFile = (file) => {
         if (!file) return;
         enrollFile = file;
-        renderIdCard(false);
+        renderPhotoOnly();
     };
 
     const webCamBtn = document.getElementById('enroll-webcam-btn');
@@ -260,8 +274,8 @@ async function processAndCompleteEnrollment() {
     await new Promise(r => setTimeout(r, 100));
 
     try {
-        // 保存用に背景込みでCanvas生成 (trueを指定)
-        const saveCanvas = await renderIdCard(true);
+        // 保存用の一枚絵を作成
+        const saveCanvas = await renderForSave();
         
         const newUser = { 
             id: Date.now(), name, grade, 
@@ -278,7 +292,8 @@ async function processAndCompleteEnrollment() {
         document.getElementById('new-student-name').value = "";
         document.getElementById('new-student-grade').value = "";
         enrollFile = null;
-        renderIdCard(false); // リセット
+        renderPhotoOnly(); // リセット
+        updateIDPreviewText();
         
         alert("入学おめでとうにゃ！🌸");
         switchScreen('screen-gate');
