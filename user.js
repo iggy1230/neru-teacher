@@ -1,4 +1,4 @@
-// --- user.js (決定版: 座標微調整) ---
+// --- user.js (最終調整版: プレビューHTML + 保存Canvas座標修正) ---
 
 let users = JSON.parse(localStorage.getItem('nekoneko_users')) || [];
 let currentUser = null;
@@ -46,7 +46,8 @@ function updatePhotoPreview(file) {
     img.src = URL.createObjectURL(file);
     img.style.width = '100%';
     img.style.height = '100%';
-    img.style.objectFit = 'cover'; // これで縦横比維持しつつ埋める
+    // 写真のサイズ感を調整
+    img.style.objectFit = 'cover'; 
     slot.appendChild(img);
 }
 
@@ -62,7 +63,6 @@ async function loadFaceModels() {
         if(status) status.innerText = "準備完了にゃ！";
         const btn = document.getElementById('complete-btn');
         if(btn) btn.disabled = false;
-        // 猫耳処理などは一旦省略し、表示優先
     } catch (e) {
         if(status) status.innerText = "手動モードで入学できるにゃ🐾";
         const btn = document.getElementById('complete-btn');
@@ -161,7 +161,7 @@ function closeEnrollCamera() {
     if (modal) modal.classList.add('hidden');
 }
 
-// ★保存用: 裏でCanvasに全部描画する (座標修正済み)
+// ★保存用: 裏でCanvasに全部描画する (座標修正)
 async function renderForSave() {
     const canvas = document.createElement('canvas');
     canvas.width = 640; 
@@ -181,7 +181,7 @@ async function renderForSave() {
             img.src = URL.createObjectURL(enrollFile);
             await new Promise(r => img.onload = r);
 
-            // 枠の座標
+            // 枠の座標: CSS比率と同じ (34.5%, 6.9%, 28.1%, 50%)
             const destX = 44, destY = 138, destW = 180, destH = 200;
             
             // クロップ計算 (object-fit: cover 相当)
@@ -241,11 +241,12 @@ async function renderForSave() {
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
 
-    // 学年: CSS(46%) -> 400 * 0.46 = 184 (Y=185あたり)
-    ctx.fillText(gradeVal + "年生", 350, 190); 
+    // CSSの「44%」「56%」に対応するY座標
+    // 400px * 0.44 = 176px (少し下に調整して178px)
+    ctx.fillText(gradeVal + "年生", 350, 178); 
     
-    // 名前: CSS(60%) -> 400 * 0.60 = 240 (Y=245あたり)
-    ctx.fillText(nameVal, 350, 250);
+    // 400px * 0.56 = 224px (少し下に調整して226px)
+    ctx.fillText(nameVal, 350, 226);
 
     return canvas;
 }
