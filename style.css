@@ -1,4 +1,4 @@
-/* --- style.css (最終調整版: 自然比率レイアウト) --- */
+/* --- style.css (位置・比率 微調整版) --- */
 
 body {
     font-family: 'M PLUS Rounded 1c', "Sawarabi Gothic", sans-serif;
@@ -112,12 +112,12 @@ button { font-family: inherit; }
     box-shadow: 0 2px 4px rgba(0,0,0,0.2); z-index: 10;
 }
 
-/* --- ★学生証レイアウト修正 (自然比率維持) --- */
+/* --- ★学生証レイアウト --- */
 .id-card-wrap {
     position: relative;
     width: 100%;
-    max-width: 320px; /* 横幅の制限のみ */
-    height: auto;     /* 高さは中身(画像)に合わせる */
+    max-width: 320px;
+    aspect-ratio: 1.6 / 1; 
     margin: 0 auto 20px;
     box-shadow: 0 4px 10px rgba(0,0,0,0.3);
     border-radius: 12px;
@@ -129,8 +129,10 @@ button { font-family: inherit; }
 .id-base-img { 
     display: block !important; 
     width: 100%;
-    height: auto; /* ★ここが重要: 縦横比を維持して伸縮する */
-    position: relative; /* 親要素の高さを押し広げる役割 */
+    height: 100%;
+    position: absolute;
+    top: 0; left: 0;
+    object-fit: fill; 
     z-index: 1;
 }
 
@@ -139,7 +141,6 @@ button { font-family: inherit; }
     display: block !important;
     position: absolute;
     z-index: 2;
-    /* 比率はそのまま */
     top: 34.5%; 
     left: 6.9%;
     width: 28.1%; 
@@ -151,13 +152,14 @@ button { font-family: inherit; }
 #id-photo-slot img {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    /* ★修正: 縦横比を崩さず、枠いっぱいに埋める設定 */
+    object-fit: cover !important; 
     display: block;
 }
 
 #id-photo-preview-canvas { display: none; }
 
-/* 3. テキストオーバーレイ (位置調整) */
+/* 3. テキストオーバーレイ (位置微調整) */
 .id-text-overlay { 
     display: block !important;
     position: absolute; 
@@ -168,19 +170,18 @@ button { font-family: inherit; }
     z-index: 3;
     white-space: nowrap;
     text-align: left;
-    /* フォントサイズを少し控えめに */
     font-size: 1.0rem;
 }
 
-/* 学年: 少し上に修正 */
+/* 学年: 少し下に移動 (42% -> 46%) */
 .id-grade-text { 
-    top: 38%; /* 42% -> 38% に上げて微調整 */
+    top: 46%; 
     left: 55%; 
 }
 
-/* 氏名: 大きく上に修正 */
+/* 氏名: 少し上に移動 (62% -> 60%) */
 .id-name-text { 
-    top: 58%; /* 62% -> 58% に上げて微調整 */
+    top: 60%; 
     left: 55%; 
     font-size: 1.2rem;
 }
