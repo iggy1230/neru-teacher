@@ -1,10 +1,11 @@
-// --- user.js (修正版: 画像なりゆき保存対応) ---
+// --- user.js (修正版: 猫耳サイズ1.7 & 位置微調整0.35) ---
 
 let users = JSON.parse(localStorage.getItem('nekoneko_users')) || [];
 let currentUser = null;
 let modelsLoaded = false;
 let enrollFile = null;
 
+// 画像リソース
 const idBase = new Image();
 idBase.crossOrigin = "Anonymous"; 
 idBase.src = 'student-id-base.png?' + new Date().getTime();
@@ -19,7 +20,7 @@ decoMuzzle.src = 'muzzle.png?' + new Date().getTime();
 
 document.addEventListener('DOMContentLoaded', () => {
     renderUserList();
-    loadFaceModels();
+    loadFaceModels(); 
     setupEnrollmentPhotoInputs();
     setupTextInputEvents();
     updateIDPreviewText();
@@ -41,17 +42,196 @@ function updateIDPreviewText() {
     if (gradeEl) gradeEl.innerText = gradeVal ? (gradeVal + "年生") : "";
 }
 
-function updatePhotoPreview(file) {
+// AIモデル読み込み
+async function loadFaceModels() {
+    if (modelsLoaded) return;
+    const status = document.getElementById('loading-models');
+    const btn = document.getElementById('complete-btn');
+
+    if(status) status.innerText = "猫化AIを準備中にゃ... 📷";
+    if(btn) btn.disabled = true;
+
+    try {
+        const MODEL_URL = 'https://cdn.jsdelivr.net/gh/cgarciagl/face-api.js@0.22.2/weights';
+        await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
+        await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+        
+        modelsLoaded = true;
+        console.log("FaceAPI Models Loaded!");
+        
+        if(status) status.innerText = "AI準備完了にゃ！";
+        if(btn) btn.disabled = false;
+        
+        if(enrollFile) updatePhotoPreview(enrollFile);
+
+    } catch (e) {
+        console.error("Model Load Error:", e);
+        if(status) status.innerText = "AIの準備に失敗したにゃ…(手動モード)";
+        if(btn) btn.disabled = false;
+    }
+}
+
+// AI用リサイズ (800pxで認識精度維持)
+async function resizeForAI(img, maxSize = 800) {
+    return new Promise(resolve => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        if (width > height) {
+            if (width > maxSize) { height *= maxSize / width; width = maxSize; }
+        } else {
+            if (height > maxSize) { width *= maxSize / height; height = maxSize; }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        resolve(canvas);
+    });
+}
+
+// 顔中心トリミング計算
+function calculateFaceCrop(imgW, imgH, detection, targetRatioW_H) {
+    if (!detection) {
+        let cropW = imgW;
+        let cropH = cropW / targetRatioW_H;
+        if (cropH > imgH) {
+            cropH = imgH;
+            cropW = cropH * targetRatioW_H;
+        }
+        return {
+            x: (imgW - cropW) / 2,
+            y: (imgH - cropH) / 2,
+            w: cropW,
+            h: cropH
+        };
+    }
+
+    const box = detection.detection.box;
+    const faceCX = box.x + box.width / 2;
+    const faceCY = box.y + box.height / 2;
+
+    const FACE_SCALE_TARGET = 0.55;
+    
+    let cropW = box.width / FACE_SCALE_TARGET;
+    let cropH = cropW / targetRatioW_H;
+
+    if (cropW > imgW) {
+        cropW = imgW;
+        cropH = cropW / targetRatioW_H;
+    }
+    if (cropH > imgH) {
+        cropH = imgH;
+        cropW = cropH * targetRatioW_H;
+    }
+
+    let sx = faceCX - cropW / 2;
+    let sy = faceCY - cropH / 2;
+
+    if (sx < 0) sx = 0;
+    if (sy < 0) sy = 0;
+    if (sx + cropW > imgW) sx = imgW - cropW;
+    if (sy + cropH > imgH) sy = imgH - cropH;
+
+    return { x: sx, y: sy, w: cropW, h: cropH };
+}
+
+// プレビュー更新
+async function updatePhotoPreview(file) {
     enrollFile = file;
     const slot = document.getElementById('id-photo-slot');
     if (!slot) return;
-    slot.innerHTML = '';
-    const img = document.createElement('img');
+
+    slot.innerHTML = '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#666;font-size:0.8rem;font-weight:bold;">🐱 顔を探してるにゃ...</div>';
+
+    const img = new Image();
     img.src = URL.createObjectURL(file);
-    img.style.width = '100%';
-    img.style.height = '100%';
-    img.style.objectFit = 'cover';
-    slot.appendChild(img);
+    await new Promise(r => img.onload = r);
+
+    let detection = null;
+    let aiImg = null;
+    
+    if (modelsLoaded) {
+        try {
+            aiImg = await resizeForAI(img);
+            // minConfidence: 0.3 で端の顔も認識
+            const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 });
+            detection = await faceapi.detectSingleFace(aiImg, options).withFaceLandmarks();
+        } catch (e) { console.error(e); }
+    }
+
+    const slotRect = slot.getBoundingClientRect();
+    const targetAspect = slotRect.width / slotRect.height || 0.68;
+
+    const aiScale = aiImg ? (img.width / aiImg.width) : 1;
+    
+    let scaledDetection = null;
+    if (detection) {
+        const box = detection.detection.box;
+        scaledDetection = {
+            detection: {
+                box: {
+                    x: box.x * aiScale,
+                    y: box.y * aiScale,
+                    width: box.width * aiScale,
+                    height: box.height * aiScale
+                }
+            }
+        };
+    }
+
+    const crop = calculateFaceCrop(img.width, img.height, scaledDetection, targetAspect);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = slotRect.width * 2;
+    canvas.height = slotRect.height * 2;
+    
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    canvas.style.objectFit = 'contain';
+    
+    const ctx = canvas.getContext('2d');
+    
+    ctx.drawImage(img, crop.x, crop.y, crop.w, crop.h, 0, 0, canvas.width, canvas.height);
+    
+    slot.innerHTML = '';
+    slot.appendChild(canvas);
+
+    if (detection) {
+        const landmarks = detection.landmarks;
+        const nose = landmarks.getNose()[3];
+        const leftEyeBrow = landmarks.getLeftEyeBrow()[2];
+        const rightEyeBrow = landmarks.getRightEyeBrow()[2];
+
+        const drawScale = canvas.width / crop.w;
+
+        const transX = (x) => (x * aiScale - crop.x) * drawScale;
+        const transY = (y) => (y * aiScale - crop.y) * drawScale;
+        const transW = (w) => (w * aiScale) * drawScale;
+
+        if (decoMuzzle.complete) {
+            const nX = transX(nose.x);
+            const nY = transY(nose.y);
+            const faceW = transW(detection.detection.box.width);
+            const muzW = faceW * 0.8;
+            const muzH = muzW * 0.8;
+            ctx.drawImage(decoMuzzle, nX - muzW/2, nY - muzH/2.5, muzW, muzH);
+        }
+
+        if (decoEars.complete) {
+            const browX = transX((leftEyeBrow.x + rightEyeBrow.x)/2);
+            const browY = transY((leftEyeBrow.y + rightEyeBrow.y)/2);
+            const faceW = transW(detection.detection.box.width);
+            
+            // ★修正: 耳サイズ係数 1.9 -> 1.7
+            const earW = faceW * 1.7;
+            const earH = earW * 0.7;
+            
+            // ★修正: オフセット係数 0.45 -> 0.35 (浅く被る)
+            const earOffset = earH * 0.35; 
+            
+            ctx.drawImage(decoEars, browX - earW/2, browY - earH + earOffset, earW, earH);
+        }
+    }
 }
 
 function setupEnrollmentPhotoInputs() {
@@ -65,44 +245,6 @@ function setupEnrollmentPhotoInputs() {
     if (camInput) camInput.onchange = (e) => handleFile(e.target.files[0]);
     const albInput = document.getElementById('student-photo-input-album');
     if (albInput) albInput.onchange = (e) => handleFile(e.target.files[0]);
-}
-
-async function loadFaceModels() {
-    if (modelsLoaded) return;
-    const status = document.getElementById('loading-models');
-    if(status) status.innerText = "猫化AIを準備中にゃ... 📷";
-    try {
-        const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
-        await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
-        await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
-        modelsLoaded = true;
-        if(status) status.innerText = "準備完了にゃ！";
-        const btn = document.getElementById('complete-btn');
-        if(btn) btn.disabled = false;
-    } catch (e) {
-        if(status) status.innerText = "手動モードで入学できるにゃ🐾";
-        const btn = document.getElementById('complete-btn');
-        if(btn) btn.disabled = false;
-    }
-}
-
-async function resizeForAI(img, maxSize = 600) {
-    return new Promise(resolve => {
-        const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
-        if (width > height) {
-            if (width > maxSize) { height *= maxSize / width; width = maxSize; }
-        } else {
-            if (height > maxSize) { width *= maxSize / height; height = maxSize; }
-        }
-        canvas.width = width;
-        canvas.height = height;
-        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-        const i = new Image();
-        i.onload = () => resolve(i);
-        i.src = canvas.toDataURL();
-    });
 }
 
 let enrollStream = null;
@@ -152,10 +294,8 @@ function closeEnrollCamera() {
     if (modal) modal.classList.add('hidden');
 }
 
-// ★修正: 画像なりゆき保存対応
-// 元画像のサイズに合わせてCanvasを作成し、座標も比率に合わせて計算する
+// 保存処理: 顔オートズーム＆合成対応
 async function renderForSave() {
-    // 1. ベース画像を読み込む
     const img = new Image();
     img.crossOrigin = "Anonymous";
     
@@ -165,110 +305,119 @@ async function renderForSave() {
             img.onerror = reject;
             img.src = 'student-id-base.png?' + new Date().getTime();
         });
-    } catch (e) {
-        console.error("Base image error:", e);
-        return null;
-    }
+    } catch (e) { return null; }
 
-    // 2. Canvasサイズを画像本来のサイズに設定（これで歪まない！）
     const canvas = document.createElement('canvas');
     canvas.width = img.width;
     canvas.height = img.height;
     const ctx = canvas.getContext('2d');
 
-    // 3. 座標計算用の比率を算出 (基準: 640x400)
     const BASE_W = 640;
     const BASE_H = 400;
     const rx = canvas.width / BASE_W;
     const ry = canvas.height / BASE_H;
 
-    // 背景描画
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-    // 4. 写真描画（比率に合わせて座標変換）
     if (enrollFile) {
         try {
             const photoImg = new Image();
             photoImg.src = URL.createObjectURL(enrollFile);
             await new Promise(r => photoImg.onload = r);
 
-            // 基準座標(640x400用)
-            // 枠: x35, y143, w195, h180
             const destX = 35 * rx;
             const destY = 143 * ry;
             const destW = 195 * rx;
             const destH = 180 * ry;
             
-            // アスペクト比維持のためのクロップ計算
-            const scale = Math.max(destW / photoImg.width, destH / photoImg.height);
-            const cropW = destW / scale;
-            const cropH = destH / scale;
-            const cropX = (photoImg.width - cropW) / 2;
-            const cropY = (photoImg.height - cropH) / 2;
+            const targetAspect = destW / destH;
+
+            let detection = null;
+            let aiImg = null;
+            let aiScale = 1;
+
+            if (modelsLoaded) {
+                // 保存時も800px & 0.3
+                aiImg = await resizeForAI(photoImg);
+                const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 });
+                detection = await faceapi.detectSingleFace(aiImg, options).withFaceLandmarks();
+                aiScale = photoImg.width / aiImg.width;
+            }
+
+            let scaledDetection = null;
+            if (detection) {
+                const box = detection.detection.box;
+                scaledDetection = {
+                    detection: {
+                        box: {
+                            x: box.x * aiScale,
+                            y: box.y * aiScale,
+                            width: box.width * aiScale,
+                            height: box.height * aiScale
+                        }
+                    }
+                };
+            }
+
+            const crop = calculateFaceCrop(photoImg.width, photoImg.height, scaledDetection, targetAspect);
 
             ctx.save();
             ctx.beginPath();
-            // 角丸も比率に合わせて少し調整
             ctx.roundRect(destX, destY, destW, destH, 2 * rx);
             ctx.clip(); 
-            ctx.drawImage(photoImg, cropX, cropY, cropW, cropH, destX, destY, destW, destH);
+            ctx.drawImage(photoImg, crop.x, crop.y, crop.w, crop.h, destX, destY, destW, destH);
             ctx.restore();
 
-            // 猫化AI (座標変換あり)
-            if (modelsLoaded) {
-                const aiImg = await resizeForAI(photoImg);
-                const detection = await faceapi.detectSingleFace(aiImg).withFaceLandmarks();
-                if (detection) {
-                    const landmarks = detection.landmarks;
-                    const nose = landmarks.getNose()[3];
-                    const leftEyeBrow = landmarks.getLeftEyeBrow()[2];
-                    const rightEyeBrow = landmarks.getRightEyeBrow()[2];
-                    const aiScale = photoImg.width / aiImg.width;
+            if (detection) {
+                const landmarks = detection.landmarks;
+                const nose = landmarks.getNose()[3];
+                const leftEyeBrow = landmarks.getLeftEyeBrow()[2];
+                const rightEyeBrow = landmarks.getRightEyeBrow()[2];
+
+                const drawScale = destW / crop.w;
+
+                const transX = (x) => (x * aiScale - crop.x) * drawScale + destX;
+                const transY = (y) => (y * aiScale - crop.y) * drawScale + destY;
+                const transW = (w) => (w * aiScale) * drawScale;
+
+                if (decoMuzzle.complete) {
+                    const nX = transX(nose.x);
+                    const nY = transY(nose.y);
+                    const faceW = transW(detection.detection.box.width);
+                    const muzW = faceW * 0.8;
+                    const muzH = muzW * 0.8;
+                    ctx.drawImage(decoMuzzle, nX - muzW/2, nY - muzH/2.5, muzW, muzH);
+                }
+                
+                if (decoEars.complete) {
+                    const browX = transX((leftEyeBrow.x + rightEyeBrow.x)/2);
+                    const browY = transY((leftEyeBrow.y + rightEyeBrow.y)/2);
+                    const faceW = transW(detection.detection.box.width);
                     
-                    try {
-                        if (decoMuzzle.complete) {
-                            // 鼻位置計算
-                            const nX = destX + (nose.x * aiScale - cropX) * scale;
-                            const nY = destY + (nose.y * aiScale - cropY) * scale;
-                            // マズルサイズ計算
-                            const faceW = detection.detection.box.width * aiScale * scale;
-                            const muzW = faceW * 0.8;
-                            const muzH = muzW * 0.8;
-                            ctx.drawImage(decoMuzzle, nX - muzW/2, nY - muzH/2.5, muzW, muzH);
-                        }
-                        if (decoEars.complete) {
-                            // 耳位置計算
-                            const browX = ((leftEyeBrow.x + rightEyeBrow.x)/2) * aiScale;
-                            const browY = ((leftEyeBrow.y + rightEyeBrow.y)/2) * aiScale;
-                            const eX = destX + (browX - cropX) * scale;
-                            const eY = destY + (browY - cropY) * scale;
-                            const faceW = detection.detection.box.width * aiScale * scale;
-                            const earW = faceW * 2.2;
-                            const earH = earW * 0.7;
-                            ctx.drawImage(decoEars, eX - earW/2, eY - earH + (10 * ry), earW, earH);
-                        }
-                    } catch(ex) {}
+                    // ★修正: サイズ1.7
+                    const earW = faceW * 1.7;
+                    const earH = earW * 0.7;
+
+                    // ★修正: オフセット0.35
+                    const earOffset = earH * 0.35;
+
+                    ctx.drawImage(decoEars, browX - earW/2, browY - earH + earOffset, earW, earH);
                 }
             }
         } catch(e) { console.error(e); }
     }
 
-    // 5. テキスト描画（比率に合わせて座標とフォントサイズ変換）
     const nameVal = document.getElementById('new-student-name').value;
     const gradeVal = document.getElementById('new-student-grade').value;
     
     ctx.fillStyle = "#333"; 
-    // フォントサイズも画像の幅に合わせてスケール (基準32px)
     const fontSize = 32 * rx;
     ctx.font = `bold ${fontSize}px 'M PLUS Rounded 1c', sans-serif`;
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
 
-    // テキスト基準座標
     const textX = 346 * rx;
-    
-    // Y座標調整済み: 168, 231
     if (gradeVal) ctx.fillText(gradeVal + "年生", textX, 168 * ry); 
     if (nameVal) ctx.fillText(nameVal, textX, 231 * ry);
 
@@ -291,7 +440,6 @@ async function processAndCompleteEnrollment() {
     btn.innerText = "作成中にゃ...";
     await new Promise(r => setTimeout(r, 100));
 
-    // 画像生成を実行
     const photoData = await renderForSave();
 
     let finalPhoto = photoData;
