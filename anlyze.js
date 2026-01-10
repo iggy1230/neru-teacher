@@ -1,4 +1,4 @@
-// --- anlyze.js (UI即時遷移 & 問題文読み上げ & カリカリ更新改善) ---
+// --- anlyze.js (修正版: 即時反映・即時遷移・ハート修正) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -105,7 +105,6 @@ function selectMode(m) {
     stopLiveChat(); gameRunning = false;
     const icon = document.querySelector('.nell-avatar-wrap img'); if(icon) icon.src = defaultIcon;
     
-    // ★修正: モード選択時に確実にカリカリ表示を更新
     document.getElementById('mini-karikari-display').classList.remove('hidden'); 
     updateMiniKarikari();
 
@@ -133,17 +132,38 @@ window.setAnalyzeMode = function(type) {
     }
 };
 
-// --- ★修正: UI遷移を最優先にする ---
+// --- ★修正: 画像選択後、即座にクロップモーダルへ ---
 const handleFileUpload = async (file) => {
     if (isAnalyzing || !file) return;
     
-    // 1. まずUIを即座に切り替える (前の画面を残さない)
+    // 1. アップロード画面を消す
     document.getElementById('upload-controls').classList.add('hidden');
-    document.getElementById('thinking-view').classList.remove('hidden');
     
-    // 2. その後にメッセージ更新と処理開始
-    updateNellMessage("書類の場所を探してるにゃ…", "thinking");
-    updateProgress(10);
+    // 2. 「考え中画面(thinking-view)」は出さずに、即クロップモーダルを開く
+    const modal = document.getElementById('cropper-modal');
+    modal.classList.remove('hidden');
+    
+    // モーダル内を「読み込み中」表示にする
+    const wrapper = document.querySelector('.cropper-wrapper');
+    // Canvasなどを一時的に隠してローディングを出す
+    const canvas = document.getElementById('crop-canvas');
+    canvas.style.opacity = '0';
+    
+    // ローディング表示があれば使う、なければ作る
+    let loader = document.getElementById('crop-loader');
+    if (!loader) {
+        loader = document.createElement('div');
+        loader.id = 'crop-loader';
+        loader.style.position = 'absolute';
+        loader.style.top = '50%';
+        loader.style.left = '50%';
+        loader.style.transform = 'translate(-50%, -50%)';
+        loader.style.color = 'white';
+        loader.style.fontWeight = 'bold';
+        loader.innerText = '📷 画像を読み込んでるにゃ...';
+        wrapper.appendChild(loader);
+    }
+    loader.style.display = 'block';
 
     const reader = new FileReader();
     reader.onload = async (e) => {
@@ -154,6 +174,7 @@ const handleFileUpload = async (file) => {
             const lowResBase64 = resizeImageForDetect(cropImg, 1000);
             
             try {
+                // 自動検出API
                 const res = await fetch('/detect-document', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -186,8 +207,13 @@ const handleFileUpload = async (file) => {
                 ];
             }
 
-            document.getElementById('thinking-view').classList.add('hidden');
+            // 準備完了：ローディングを消してCanvasを表示
+            loader.style.display = 'none';
+            canvas.style.opacity = '1';
+            
+            // アップロード画面の状態もリセットしておく(キャンセル時用)
             document.getElementById('upload-controls').classList.remove('hidden');
+            
             updateNellMessage("ここを読み取るにゃ？", "normal");
             initCustomCropper();
         };
@@ -365,11 +391,12 @@ function performPerspectiveCrop(sourceCanvas, points) {
 
 async function startAnalysis(b64) {
     isAnalyzing = true;
-    const up = document.getElementById('upload-controls'); if(up) up.classList.add('hidden');
-    const th = document.getElementById('thinking-view'); if(th) th.classList.remove('hidden');
-    const backBtn = document.getElementById('main-back-btn'); if(backBtn) backBtn.classList.add('hidden');
     
-    // ★修正: セリフ変更
+    // クロップモーダルを消して、考え中画面を出す
+    document.getElementById('cropper-modal').classList.add('hidden');
+    document.getElementById('thinking-view').classList.remove('hidden');
+    document.getElementById('main-back-btn').classList.add('hidden');
+    
     let msg = `ふむふむ…\n${currentUser.grade}年生の${currentSubject}の問題だにゃ…`;
     updateNellMessage(msg, "thinking"); 
     
@@ -395,21 +422,20 @@ async function startAnalysis(b64) {
         clearInterval(timer); updateProgress(100);
         
         setTimeout(() => { 
-            if(th) th.classList.add('hidden'); if(backBtn) backBtn.classList.add('hidden');
+            document.getElementById('thinking-view').classList.add('hidden'); 
+            document.getElementById('main-back-btn').classList.remove('hidden');
             
-            // ★修正: 最初の問題文を取得して読み上げる
-            const firstQuestion = data[0] ? data[0].question : "問題が見つからなかったにゃ…";
-
             if (currentMode === 'explain' || currentMode === 'review') { 
                 renderProblemSelection(); 
-                updateNellMessage(firstQuestion, "normal"); 
+                // ★修正: 読めたにゃ！に戻す
+                updateNellMessage("読めたにゃ！", "happy"); 
             } else { 
                 showGradingView(); 
-                updateNellMessage(firstQuestion, "normal"); 
+                updateNellMessage("読めたにゃ！", "happy"); 
             }
         }, 800);
     } catch (err) { 
-        clearInterval(timer); document.getElementById('thinking-view').classList.add('hidden'); document.getElementById('upload-controls').classList.remove('hidden'); if(backBtn) backBtn.classList.remove('hidden');
+        clearInterval(timer); document.getElementById('thinking-view').classList.add('hidden'); document.getElementById('upload-controls').classList.remove('hidden'); if(document.getElementById('main-back-btn')) document.getElementById('main-back-btn').classList.remove('hidden');
         updateNellMessage("エラーだにゃ…", "thinking"); 
     } finally { isAnalyzing = false; }
 }
@@ -471,6 +497,7 @@ function revealAnswer() {
     updateNellMessage(`答えは「${selectedProblem.correct_answer}」だにゃ！`, "gentle"); 
 }
 
+// --- Live Chat ---
 async function startLiveChat() {
     const btn = document.getElementById('mic-btn');
     if (liveSocket) { stopLiveChat(); return; }
@@ -566,7 +593,7 @@ function playLivePcmAudio(base64) {
 function floatTo16BitPCM(float32Array) { const buffer = new ArrayBuffer(float32Array.length * 2); const view = new DataView(buffer); let offset = 0; for (let i = 0; i < float32Array.length; i++, offset += 2) { let s = Math.max(-1, Math.min(1, float32Array[i])); view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true); } return buffer; }
 function downsampleBuffer(buffer, sampleRate, outSampleRate) { if (outSampleRate >= sampleRate) return buffer; const ratio = sampleRate / outSampleRate; const newLength = Math.round(buffer.length / ratio); const result = new Float32Array(newLength); let offsetResult = 0, offsetBuffer = 0; while (offsetResult < result.length) { const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio); let accum = 0, count = 0; for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) { accum += buffer[i]; count++; } result[offsetResult] = accum / count; offsetResult++; offsetBuffer = nextOffsetBuffer; } return result; }
 function arrayBufferToBase64(buffer) { let binary = ''; const bytes = new Uint8Array(buffer); for (let i = 0; i < bytes.byteLength; i++) { binary += String.fromCharCode(bytes[i]); } return window.btoa(binary); }
-// ★修正: カリカリ表示を確実に更新する関数
+
 function updateMiniKarikari() { 
     if(currentUser) { 
         const miniCount = document.getElementById('mini-karikari-count');
@@ -575,7 +602,42 @@ function updateMiniKarikari() {
         if(mainCount) mainCount.innerText = currentUser.karikari; 
     } 
 }
-function showKarikariEffect(amount) { const container = document.querySelector('.nell-avatar-wrap'); if(container) { const floatText = document.createElement('div'); floatText.className = 'floating-text'; floatText.innerText = amount > 0 ? `+${amount}` : `${amount}`; floatText.style.color = amount > 0 ? '#ff9100' : '#ff5252'; floatText.style.right = '0px'; floatText.style.top = '0px'; container.appendChild(floatText); setTimeout(() => floatText.remove(), 1500); } const heartCont = document.getElementById('heart-container'); if(heartCont) { for(let i=0; i<8; i++) { const heart = document.createElement('div'); heart.className = 'heart-particle'; heart.innerText = amount > 0 ? '✨' : '💗'; heart.style.left = (Math.random()*80 + 10) + '%'; heart.style.top = (Math.random()*50 + 20) + '%'; heart.style.animationDelay = (Math.random()*0.5) + 's'; heartCont.appendChild(heart); setTimeout(() => heart.remove(), 1500); } } }
+
+// ★修正: ハートエフェクトの位置とスタイル
+function showKarikariEffect(amount) { 
+    const container = document.querySelector('.nell-avatar-wrap'); 
+    if(container) { 
+        // 浮き出る数字
+        const floatText = document.createElement('div'); 
+        floatText.className = 'floating-text'; 
+        floatText.innerText = amount > 0 ? `+${amount}` : `${amount}`; 
+        floatText.style.color = amount > 0 ? '#ff9100' : '#ff5252'; 
+        floatText.style.right = '0px'; 
+        floatText.style.top = '0px'; 
+        container.appendChild(floatText); 
+        setTimeout(() => floatText.remove(), 1500); 
+    } 
+    
+    const heartCont = document.getElementById('heart-container'); 
+    if(heartCont) { 
+        for(let i=0; i<8; i++) { 
+            const heart = document.createElement('div'); 
+            heart.className = 'heart-particle'; 
+            heart.innerText = amount > 0 ? '✨' : '💗'; 
+            
+            // ★修正: 強制的に絶対配置＆範囲を広げる
+            heart.style.position = 'absolute';
+            // -20%〜100%の範囲でランダム配置 (頭の上や横にも出るように)
+            heart.style.left = (Math.random() * 120 - 10) + '%'; 
+            heart.style.top = (Math.random() * 100 - 20) + '%'; 
+            
+            heart.style.animationDelay = (Math.random()*0.5) + 's'; 
+            heartCont.appendChild(heart); 
+            setTimeout(() => heart.remove(), 1500); 
+        } 
+    } 
+}
+
 function renderProblemSelection() { document.getElementById('problem-selection-view').classList.remove('hidden'); const l=document.getElementById('transcribed-problem-list'); l.innerHTML=""; transcribedProblems.forEach(p=>{ l.innerHTML += `<div class="prob-card"><div><span class="q-label">${p.label||'?'}</span>${p.question.substring(0,20)}...</div><button class="main-btn blue-btn" style="width:auto;padding:10px" onclick="startHint(${p.id})">教えて</button></div>`; }); }
 function showGradingView() { document.getElementById('grade-sheet-container').classList.remove('hidden'); document.getElementById('final-view').classList.remove('hidden'); const backBtn = document.getElementById('main-back-btn'); if(backBtn) backBtn.classList.add('hidden'); renderWorksheet(); }
 function renderWorksheet() { const l=document.getElementById('problem-list-grade'); if(!l)return; l.innerHTML=""; transcribedProblems.forEach((p,i)=>{ l.innerHTML+=`<div class="problem-row"><div><span class="q-label">${p.label||'?'}</span>${p.question}</div><div style="display:flex;gap:5px"><input class="student-ans-input" value="${p.student_answer}" onchange="updateAns(${i},this.value)"><div class="judgment-mark ${p.status}">${p.status==='correct'?'⭕️':p.status==='incorrect'?'❌':''}</div><button class="mini-teach-btn" onclick="startHint(${p.id})">教えて</button></div></div>`; }); const f=document.createElement('div'); f.style.textAlign="center"; f.style.marginTop="20px"; f.innerHTML=`<button onclick="finishGrading()" class="main-btn orange-btn">✨ ぜんぶわかったにゃ！</button>`; l.appendChild(f); }
@@ -585,33 +647,51 @@ function updateAns(i, v) {
     const n = val => val.toString().replace(/\s/g, '').replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0)).replace(/cm|ｍ|ｍｍ|円|個|L/g, '').replace(/[×＊]/g, '*').replace(/[÷／]/g, '/');
     if (n(v) === n(transcribedProblems[i].correct_answer) && v !== "") { 
         transcribedProblems[i].status = 'correct'; 
-        updateNellMessage("正解にゃ！修正ありがとうにゃ。", "happy"); 
+        updateNellMessage("正解にゃ！", "happy"); 
         if (currentUser.mistakes) { currentUser.mistakes = currentUser.mistakes.filter(m => m.question !== transcribedProblems[i].question); }
     } else { 
         transcribedProblems[i].status = 'incorrect'; 
-        updateNellMessage("まだ違うみたいだにゃ……", "thinking"); 
+        updateNellMessage("まだ違うみたいだにゃ…", "thinking"); 
         if (!currentUser.mistakes.some(m => m.question === transcribedProblems[i].question)) { currentUser.mistakes.push({...transcribedProblems[i], subject: currentSubject}); }
     } 
     saveAndSync(); 
     renderWorksheet(); 
 }
 
+// ★修正: カリカリ即時反映 (updateNellMessageの前に更新処理)
 window.finishGrading = async function() { 
     const btn = document.querySelector('button.main-btn.orange-btn');
     if(btn) btn.disabled = true;
+    
+    // 1. 先に付与・保存・表示更新
+    if (currentUser) { 
+        currentUser.karikari += 100; 
+        saveAndSync(); 
+        updateMiniKarikari(); 
+        showKarikariEffect(100); 
+    } 
+    
+    // 2. その後しゃべる
     await updateNellMessage("よくがんばったにゃ！カリカリ100個あげるにゃ！", "excited"); 
-    if (currentUser) { currentUser.karikari += 100; saveAndSync(); updateMiniKarikari(); showKarikariEffect(100); } 
+    
     setTimeout(() => { if(typeof backToLobby === 'function') backToLobby(true); }, 3000); 
 };
 
 window.pressAllSolved = function() { 
     const btn = document.querySelector('button.main-btn.orange-btn');
     if(btn) btn.disabled = true;
+    
+    // 1. 先に付与・保存・表示更新
     if (currentUser) {
-        currentUser.karikari += 100; saveAndSync(); showKarikariEffect(100);
-        updateNellMessage("よくがんばったにゃ！カリカリ100個あげるにゃ！", "excited")
-        .then(() => { setTimeout(() => { if(typeof backToLobby === 'function') backToLobby(true); }, 3000); });
+        currentUser.karikari += 100; 
+        saveAndSync(); 
+        updateMiniKarikari();
+        showKarikariEffect(100);
     }
+    
+    // 2. その後しゃべる
+    updateNellMessage("よくがんばったにゃ！カリカリ100個あげるにゃ！", "excited")
+    .then(() => { setTimeout(() => { if(typeof backToLobby === 'function') backToLobby(true); }, 3000); });
 };
 
 function pressThanks() { if(currentMode==='grade') showGradingView(); else backToProblemSelection(); }
@@ -625,8 +705,8 @@ function setSubject(s) {
 }
 
 function giveLunch() {
-    if (currentUser.karikari < 1) return updateNellMessage("カリカリがないにゃ……", "thinking");
-    updateNellMessage("もぐもぐ……", "normal");
+    if (currentUser.karikari < 1) return updateNellMessage("カリカリがないにゃ…", "thinking");
+    updateNellMessage("もぐもぐ…", "normal");
     currentUser.karikari--; saveAndSync(); updateMiniKarikari(); showKarikariEffect(-1); lunchCount++;
     fetch('/lunch-reaction', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
