@@ -1,4 +1,4 @@
-// --- anlyze.js (高解像度クロップ & AI自動位置合わせ対応) ---
+// --- anlyze.js (UI即時遷移 & 問題文読み上げ & カリカリ更新改善) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -24,7 +24,6 @@ let gameCanvas, ctx, ball, paddle, bricks, score, gameRunning = false, gameAnimI
 
 // Cropper Variables
 let cropImg = new Image();
-// 初期値（AI判定前のデフォルト）
 let cropPoints = [{x:0,y:0}, {x:100,y:0}, {x:100,y:100}, {x:0,y:100}];
 let activeHandle = -1;
 let videoStream = null;
@@ -105,7 +104,10 @@ function selectMode(m) {
     if (backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = backToLobby; }
     stopLiveChat(); gameRunning = false;
     const icon = document.querySelector('.nell-avatar-wrap img'); if(icon) icon.src = defaultIcon;
-    document.getElementById('mini-karikari-display').classList.remove('hidden'); updateMiniKarikari();
+    
+    // ★修正: モード選択時に確実にカリカリ表示を更新
+    document.getElementById('mini-karikari-display').classList.remove('hidden'); 
+    updateMiniKarikari();
 
     if (m === 'chat') {
         document.getElementById('chat-view').classList.remove('hidden');
@@ -131,28 +133,27 @@ window.setAnalyzeMode = function(type) {
     }
 };
 
-// --- ★修正: ファイルアップロード時にAI検出を挟む ---
+// --- ★修正: UI遷移を最優先にする ---
 const handleFileUpload = async (file) => {
     if (isAnalyzing || !file) return;
     
-    // UI: 書類を探しています...
-    updateNellMessage("書類の場所を探してるにゃ…", "thinking");
+    // 1. まずUIを即座に切り替える (前の画面を残さない)
     document.getElementById('upload-controls').classList.add('hidden');
     document.getElementById('thinking-view').classList.remove('hidden');
+    
+    // 2. その後にメッセージ更新と処理開始
+    updateNellMessage("書類の場所を探してるにゃ…", "thinking");
     updateProgress(10);
 
     const reader = new FileReader();
     reader.onload = async (e) => {
         const rawBase64 = e.target.result;
         
-        // 画像読み込み
         cropImg = new Image();
         cropImg.onload = async () => {
-            // サーバーに投げるための軽量画像を作る (Max 1000px)
             const lowResBase64 = resizeImageForDetect(cropImg, 1000);
             
             try {
-                // 文書検出APIをコール
                 const res = await fetch('/detect-document', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -160,9 +161,7 @@ const handleFileUpload = async (file) => {
                 });
                 const data = await res.json();
                 
-                // 座標をセット (なければ全体)
                 if (data.points && data.points.length === 4) {
-                    // 画像サイズ(px)に変換
                     const w = cropImg.width;
                     const h = cropImg.height;
                     cropPoints = data.points.map(p => ({
@@ -170,7 +169,6 @@ const handleFileUpload = async (file) => {
                         y: (p.y / 100) * h
                     }));
                 } else {
-                    // デフォルト: 四隅から少し内側
                     const w = cropImg.width;
                     const h = cropImg.height;
                     cropPoints = [
@@ -188,9 +186,8 @@ const handleFileUpload = async (file) => {
                 ];
             }
 
-            // モーダル表示へ
             document.getElementById('thinking-view').classList.add('hidden');
-            document.getElementById('upload-controls').classList.remove('hidden'); // 裏で戻しておく
+            document.getElementById('upload-controls').classList.remove('hidden');
             updateNellMessage("ここを読み取るにゃ？", "normal");
             initCustomCropper();
         };
@@ -209,40 +206,33 @@ function resizeImageForDetect(img, maxLen) {
     return canvas.toDataURL('image/jpeg', 0.6);
 }
 
-// --- ★修正: 高解像度クロップUI ---
 function initCustomCropper() {
     const modal = document.getElementById('cropper-modal');
     modal.classList.remove('hidden');
     
     const canvas = document.getElementById('crop-canvas');
-    // 解像度ダウンを防ぐため、canvasサイズは画像の実サイズ(ただし巨大すぎる場合は制限)
     const MAX_CANVAS_SIZE = 2500;
     let w = cropImg.width;
     let h = cropImg.height;
     
-    // あまりにも巨大な画像はCanvas制限にかかるのでリサイズ
     if (w > MAX_CANVAS_SIZE || h > MAX_CANVAS_SIZE) {
         const scale = Math.min(MAX_CANVAS_SIZE / w, MAX_CANVAS_SIZE / h);
         w *= scale; h *= scale;
-        // cropPoints もスケール変換が必要
         cropPoints = cropPoints.map(p => ({ x: p.x * scale, y: p.y * scale }));
     }
 
     canvas.width = w; 
     canvas.height = h;
     
-    // 見た目はCSSで画面に合わせる
     canvas.style.width = '100%';
     canvas.style.height = '100%';
     canvas.style.objectFit = 'contain';
 
     const ctx = canvas.getContext('2d');
-    // 元画像を描画
     ctx.drawImage(cropImg, 0, 0, w, h);
     
     updateCropUI(canvas);
     
-    // イベントリスナー設定
     const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl'];
     handles.forEach((id, idx) => {
         const el = document.getElementById(id);
@@ -254,23 +244,17 @@ function initCustomCropper() {
         if (activeHandle === -1) return;
         e.preventDefault();
         
-        // 座標変換: 画面上のクリック位置 -> Canvas内部の高解像度座標
         const rect = canvas.getBoundingClientRect();
-        
-        // Canvasは object-fit: contain なので、実表示領域を計算する必要がある
         const imgRatio = canvas.width / canvas.height;
         const rectRatio = rect.width / rect.height;
         
         let drawX, drawY, drawW, drawH;
-        
         if (imgRatio > rectRatio) {
-            // 横に合わせて縦に余白
             drawW = rect.width;
             drawH = rect.width / imgRatio;
             drawX = 0;
             drawY = (rect.height - drawH) / 2;
         } else {
-            // 縦に合わせて横に余白
             drawH = rect.height;
             drawW = rect.height * imgRatio;
             drawY = 0;
@@ -280,20 +264,16 @@ function initCustomCropper() {
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         
-        // 余白を除いた画像エリア内での相対座標 (0.0 ~ 1.0)
         let relX = (clientX - rect.left - drawX) / drawW;
         let relY = (clientY - rect.top - drawY) / drawH;
         
-        // 範囲制限
         relX = Math.max(0, Math.min(1, relX));
         relY = Math.max(0, Math.min(1, relY));
 
-        // Canvas座標に戻す
         cropPoints[activeHandle] = {
             x: relX * canvas.width,
             y: relY * canvas.height
         };
-        
         updateCropUI(canvas);
     };
     const end = () => { activeHandle = -1; };
@@ -308,7 +288,6 @@ function initCustomCropper() {
     document.getElementById('cropper-ok-btn').onclick = () => {
         modal.classList.add('hidden');
         window.onmousemove = null; window.ontouchmove = null;
-        // 高解像度Canvasからクロップ
         const croppedBase64 = performPerspectiveCrop(canvas, cropPoints);
         startAnalysis(croppedBase64);
     };
@@ -316,8 +295,6 @@ function initCustomCropper() {
 
 function updateCropUI(canvas) {
     const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl'];
-    
-    // 表示座標への変換ロジック
     const rect = canvas.getBoundingClientRect();
     const imgRatio = canvas.width / canvas.height;
     const rectRatio = rect.width / rect.height;
@@ -354,7 +331,6 @@ function updateCropUI(canvas) {
     svg.style.width = canvas.offsetWidth + 'px'; 
     svg.style.height = canvas.offsetHeight + 'px';
     
-    // SVG内の座標はCanvasコンテナ相対
     const toSvg = (p) => ({
         x: (p.x / canvas.width) * drawW + drawX,
         y: (p.y / canvas.height) * drawH + drawY
@@ -370,25 +346,20 @@ function performPerspectiveCrop(sourceCanvas, points) {
     const maxX = Math.max(...points.map(p => p.x));
     const minY = Math.min(...points.map(p => p.y));
     const maxY = Math.max(...points.map(p => p.y));
-    
     const w = maxX - minX;
     const h = maxY - minY;
     
     const tempCv = document.createElement('canvas');
-    // 出力サイズは大きすぎないように制限 (Geminiへ送るため)
     const MAX_OUT = 1536;
     let outW = w, outH = h;
     if (outW > MAX_OUT || outH > MAX_OUT) {
         const s = Math.min(MAX_OUT/outW, MAX_OUT/outH);
         outW *= s; outH *= s;
     }
-    
     tempCv.width = outW;
     tempCv.height = outH;
-    
     const ctx = tempCv.getContext('2d');
     ctx.drawImage(sourceCanvas, minX, minY, w, h, 0, 0, outW, outH);
-    
     return tempCv.toDataURL('image/jpeg', 0.85).split(',')[1];
 }
 
@@ -398,8 +369,10 @@ async function startAnalysis(b64) {
     const th = document.getElementById('thinking-view'); if(th) th.classList.remove('hidden');
     const backBtn = document.getElementById('main-back-btn'); if(backBtn) backBtn.classList.add('hidden');
     
-    let msg = `読んでるにゃ…\n${currentUser.grade}年生の${currentSubject}…`;
+    // ★修正: セリフ変更
+    let msg = `ふむふむ…\n${currentUser.grade}年生の${currentSubject}の問題だにゃ…`;
     updateNellMessage(msg, "thinking"); 
+    
     updateProgress(0); 
     let p = 0; const timer = setInterval(() => { if (p < 90) { p += 3; updateProgress(p); } }, 500);
 
@@ -420,9 +393,20 @@ async function startAnalysis(b64) {
              if (p.student_answer && n(p.student_answer) === n(p.correct_answer)) p.status = 'correct'; else if (p.student_answer) p.status = 'incorrect';
         });
         clearInterval(timer); updateProgress(100);
+        
         setTimeout(() => { 
             if(th) th.classList.add('hidden'); if(backBtn) backBtn.classList.add('hidden');
-            if (currentMode === 'explain' || currentMode === 'review') { renderProblemSelection(); updateNellMessage("読めたにゃ！", "happy"); } else { showGradingView(); }
+            
+            // ★修正: 最初の問題文を取得して読み上げる
+            const firstQuestion = data[0] ? data[0].question : "問題が見つからなかったにゃ…";
+
+            if (currentMode === 'explain' || currentMode === 'review') { 
+                renderProblemSelection(); 
+                updateNellMessage(firstQuestion, "normal"); 
+            } else { 
+                showGradingView(); 
+                updateNellMessage(firstQuestion, "normal"); 
+            }
         }, 800);
     } catch (err) { 
         clearInterval(timer); document.getElementById('thinking-view').classList.add('hidden'); document.getElementById('upload-controls').classList.remove('hidden'); if(backBtn) backBtn.classList.remove('hidden');
@@ -582,7 +566,15 @@ function playLivePcmAudio(base64) {
 function floatTo16BitPCM(float32Array) { const buffer = new ArrayBuffer(float32Array.length * 2); const view = new DataView(buffer); let offset = 0; for (let i = 0; i < float32Array.length; i++, offset += 2) { let s = Math.max(-1, Math.min(1, float32Array[i])); view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true); } return buffer; }
 function downsampleBuffer(buffer, sampleRate, outSampleRate) { if (outSampleRate >= sampleRate) return buffer; const ratio = sampleRate / outSampleRate; const newLength = Math.round(buffer.length / ratio); const result = new Float32Array(newLength); let offsetResult = 0, offsetBuffer = 0; while (offsetResult < result.length) { const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio); let accum = 0, count = 0; for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) { accum += buffer[i]; count++; } result[offsetResult] = accum / count; offsetResult++; offsetBuffer = nextOffsetBuffer; } return result; }
 function arrayBufferToBase64(buffer) { let binary = ''; const bytes = new Uint8Array(buffer); for (let i = 0; i < bytes.byteLength; i++) { binary += String.fromCharCode(bytes[i]); } return window.btoa(binary); }
-function updateMiniKarikari() { if(currentUser) { document.getElementById('mini-karikari-count').innerText = currentUser.karikari; document.getElementById('karikari-count').innerText = currentUser.karikari; } }
+// ★修正: カリカリ表示を確実に更新する関数
+function updateMiniKarikari() { 
+    if(currentUser) { 
+        const miniCount = document.getElementById('mini-karikari-count');
+        const mainCount = document.getElementById('karikari-count');
+        if(miniCount) miniCount.innerText = currentUser.karikari; 
+        if(mainCount) mainCount.innerText = currentUser.karikari; 
+    } 
+}
 function showKarikariEffect(amount) { const container = document.querySelector('.nell-avatar-wrap'); if(container) { const floatText = document.createElement('div'); floatText.className = 'floating-text'; floatText.innerText = amount > 0 ? `+${amount}` : `${amount}`; floatText.style.color = amount > 0 ? '#ff9100' : '#ff5252'; floatText.style.right = '0px'; floatText.style.top = '0px'; container.appendChild(floatText); setTimeout(() => floatText.remove(), 1500); } const heartCont = document.getElementById('heart-container'); if(heartCont) { for(let i=0; i<8; i++) { const heart = document.createElement('div'); heart.className = 'heart-particle'; heart.innerText = amount > 0 ? '✨' : '💗'; heart.style.left = (Math.random()*80 + 10) + '%'; heart.style.top = (Math.random()*50 + 20) + '%'; heart.style.animationDelay = (Math.random()*0.5) + 's'; heartCont.appendChild(heart); setTimeout(() => heart.remove(), 1500); } } }
 function renderProblemSelection() { document.getElementById('problem-selection-view').classList.remove('hidden'); const l=document.getElementById('transcribed-problem-list'); l.innerHTML=""; transcribedProblems.forEach(p=>{ l.innerHTML += `<div class="prob-card"><div><span class="q-label">${p.label||'?'}</span>${p.question.substring(0,20)}...</div><button class="main-btn blue-btn" style="width:auto;padding:10px" onclick="startHint(${p.id})">教えて</button></div>`; }); }
 function showGradingView() { document.getElementById('grade-sheet-container').classList.remove('hidden'); document.getElementById('final-view').classList.remove('hidden'); const backBtn = document.getElementById('main-back-btn'); if(backBtn) backBtn.classList.add('hidden'); renderWorksheet(); }
@@ -593,11 +585,11 @@ function updateAns(i, v) {
     const n = val => val.toString().replace(/\s/g, '').replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0)).replace(/cm|ｍ|ｍｍ|円|個|L/g, '').replace(/[×＊]/g, '*').replace(/[÷／]/g, '/');
     if (n(v) === n(transcribedProblems[i].correct_answer) && v !== "") { 
         transcribedProblems[i].status = 'correct'; 
-        updateNellMessage("正解にゃ！", "happy"); 
+        updateNellMessage("正解にゃ！修正ありがとうにゃ。", "happy"); 
         if (currentUser.mistakes) { currentUser.mistakes = currentUser.mistakes.filter(m => m.question !== transcribedProblems[i].question); }
     } else { 
         transcribedProblems[i].status = 'incorrect'; 
-        updateNellMessage("まだ違うみたいだにゃ…", "thinking"); 
+        updateNellMessage("まだ違うみたいだにゃ……", "thinking"); 
         if (!currentUser.mistakes.some(m => m.question === transcribedProblems[i].question)) { currentUser.mistakes.push({...transcribedProblems[i], subject: currentSubject}); }
     } 
     saveAndSync(); 
@@ -607,7 +599,7 @@ function updateAns(i, v) {
 window.finishGrading = async function() { 
     const btn = document.querySelector('button.main-btn.orange-btn');
     if(btn) btn.disabled = true;
-    await updateNellMessage("よくがんばったにゃ！カリカリ100個あげる！", "excited"); 
+    await updateNellMessage("よくがんばったにゃ！カリカリ100個あげるにゃ！", "excited"); 
     if (currentUser) { currentUser.karikari += 100; saveAndSync(); updateMiniKarikari(); showKarikariEffect(100); } 
     setTimeout(() => { if(typeof backToLobby === 'function') backToLobby(true); }, 3000); 
 };
@@ -617,7 +609,7 @@ window.pressAllSolved = function() {
     if(btn) btn.disabled = true;
     if (currentUser) {
         currentUser.karikari += 100; saveAndSync(); showKarikariEffect(100);
-        updateNellMessage("よくがんばったにゃ！カリカリ100個あげる！", "excited")
+        updateNellMessage("よくがんばったにゃ！カリカリ100個あげるにゃ！", "excited")
         .then(() => { setTimeout(() => { if(typeof backToLobby === 'function') backToLobby(true); }, 3000); });
     }
 };
@@ -633,8 +625,8 @@ function setSubject(s) {
 }
 
 function giveLunch() {
-    if (currentUser.karikari < 1) return updateNellMessage("カリカリがないにゃ…", "thinking");
-    updateNellMessage("もぐもぐ…", "normal");
+    if (currentUser.karikari < 1) return updateNellMessage("カリカリがないにゃ……", "thinking");
+    updateNellMessage("もぐもぐ……", "normal");
     currentUser.karikari--; saveAndSync(); updateMiniKarikari(); showKarikariEffect(-1); lunchCount++;
     fetch('/lunch-reaction', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
