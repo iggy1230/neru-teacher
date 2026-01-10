@@ -178,7 +178,7 @@ app.post('/analyze', async (req, res) => {
         const { image, mode, grade, subject, analysisType } = req.body;
         
         let modelName = "gemini-2.0-flash-exp"; 
-        if (analysisType === 'precision') modelName = "gemini-1.5-pro"; 
+        if (analysisType === 'precision') modelName = "gemini-2.5-pro"; 
 
         const model = genAI.getGenerativeModel({
             model: modelName,
