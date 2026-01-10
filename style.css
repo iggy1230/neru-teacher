@@ -1,4 +1,4 @@
-/* --- style.css (最終版: テキスト位置修正済・画像なりゆき維持) --- */
+/* --- style.css (最終版: 校門背景変更・ガイド枠変更・テキスト位置修正済・画像なりゆき維持) --- */
 
 body {
     font-family: 'M PLUS Rounded 1c', "Sawarabi Gothic", sans-serif;
@@ -85,6 +85,41 @@ button { font-family: inherit; }
     z-index: 100; font-size: 1rem; box-shadow: 0 2px 0 #78909c;
 }
 
+/* --- ★修正: 校門画面 (#screen-gate) 専用スタイル --- */
+#screen-gate {
+    /* 画面全体を覆うように固定配置 */
+    position: fixed;
+    top: 0; 
+    left: 0;
+    width: 100%; 
+    height: 100%;
+    
+    /* 背景画像を校門用に変更 */
+    background-image: url('classroom0-bg.png');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    
+    /* body背景より上に、タイトルよりは下に */
+    z-index: 1500; 
+    
+    /* スクロール可能にする */
+    overflow-y: auto;
+    
+    /* コンテンツのレイアウト */
+    display: flex;
+    flex-direction: column;
+    align-items: center; /* 中央揃え */
+    padding-top: 40px;
+    padding-bottom: 40px;
+}
+
+/* 校門画面の中身の幅制限 */
+#screen-gate > * {
+    width: 100%;
+    max-width: 600px;
+}
+
 /* 校門・ユーザーリスト */
 .section-title {
     text-align: center; font-size: 1.5rem; color: white;
@@ -113,83 +148,36 @@ button { font-family: inherit; }
     box-shadow: 0 2px 4px rgba(0,0,0,0.2); z-index: 10;
 }
 
-/* --- ★学生証レイアウト (画像なりゆき方式) --- */
+/* 学生証レイアウト */
 .id-card-wrap {
     position: relative;
     width: 100%;
     max-width: 320px;
-    height: auto; /* ★重要: 画像に合わせて伸びる */
+    height: auto; 
     margin: 0 auto 20px;
-    
     background-color: transparent;
     box-shadow: 0 4px 10px rgba(0,0,0,0.3);
     border-radius: 12px;
     overflow: hidden;
 }
-
-/* 1. ベース画像 (この画像が枠の高さを決める) */
 .id-base-img { 
-    display: block !important; 
-    width: 100%;
-    height: auto !important; 
-    position: relative !important; 
-    z-index: 1;
+    display: block !important; width: 100%; height: auto !important; position: relative !important; z-index: 1;
 }
-
-/* 2. 写真表示エリア */
 #id-photo-slot {
-    display: block !important;
-    position: absolute;
-    z-index: 2;
-    top: 35.75%; 
-    left: 5.5%;
-    width: 30.5%; 
-    height: 45%; 
-    background-color: #ddd;
-    border-radius: 2px;
-    overflow: hidden;
+    display: block !important; position: absolute; z-index: 2;
+    top: 35.75%; left: 5.5%; width: 30.5%; height: 45%; 
+    background-color: #ddd; border-radius: 2px; overflow: hidden;
 }
-
-#id-photo-slot img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover !important; 
-    display: block;
-}
-
+#id-photo-slot img { width: 100%; height: 100%; object-fit: cover !important; display: block; }
 #id-photo-preview-canvas { display: none; }
-
-/* 3. テキストオーバーレイ (位置調整済み) */
 .id-text-overlay { 
-    display: block !important;
-    position: absolute; 
-    color: #333; 
-    font-weight: bold; 
-    font-family: 'M PLUS Rounded 1c', sans-serif;
-    pointer-events: none; 
-    z-index: 3;
-    white-space: nowrap;
-    text-align: left;
-    line-height: 1;
+    display: block !important; position: absolute; color: #333; font-weight: bold; 
+    font-family: 'M PLUS Rounded 1c', sans-serif; pointer-events: none; z-index: 3;
+    white-space: nowrap; text-align: left; line-height: 1;
 }
-
-/* 学年: 41% -> 39.5% (1.5%上へ修正) */
-.id-grade-text { 
-    top: 38.5%; 
-    left: 56%; 
-    font-size: 1.3rem;
-}
-
-/* 氏名: 56.75% -> 55.25% (1.5%上へ修正) */
-.id-name-text { 
-    top: 54.25%; 
-    left: 56%; 
-    font-size: 1.3rem;
-}
-
-@media (max-width: 350px) {
-    .id-grade-text, .id-name-text { font-size: 1.1rem; }
-}
+.id-grade-text { top: 38.5%; left: 56%; font-size: 1.3rem; }
+.id-name-text { top: 54.25%; left: 56%; font-size: 1.3rem; }
+@media (max-width: 350px) { .id-grade-text, .id-name-text { font-size: 1.1rem; } }
 
 .styled-input, .styled-select { width: 80%; padding: 12px; margin: 10px auto; display: block; border: 2px solid #ff85a1; border-radius: 10px; font-size: 1rem; }
 
@@ -266,7 +254,17 @@ button { font-family: inherit; }
 .camera-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: space-between; }
 .camera-container { position: relative; width: 100%; flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; }
 #camera-video, #cropper-img { width: 100%; height: 100%; object-fit: contain; }
-.camera-guide-box { position: absolute; width: 70%; aspect-ratio: 1; border: 3px solid rgba(255, 255, 255, 0.8); border-radius: 10px; pointer-events: none; }
+
+/* カメラガイド枠 (縦長幅広) */
+.camera-guide-box { 
+    position: absolute; 
+    width: 85%; 
+    aspect-ratio: 3/4; 
+    border: 3px solid rgba(255, 255, 255, 0.8); 
+    border-radius: 10px; 
+    pointer-events: none; 
+}
+
 .camera-guide-box p { color: white; background: rgba(0,0,0,0.5); padding: 5px 10px; border-radius: 15px; margin-top: -40px; font-weight: bold; }
 .camera-controls { width: 100%; height: 120px; background: #222; display: flex; align-items: center; justify-content: space-around; padding-bottom: 20px; }
 .camera-shutter-btn { width: 70px; height: 70px; border-radius: 50%; background: white; border: 5px solid #ccc; cursor: pointer; }

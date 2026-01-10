@@ -1,7 +1,10 @@
-// --- ui.js (完全版: タイトル遷移・音声被り防止) ---
+// --- ui.js (修正版: backToTitle追加・遷移ロジック整理) ---
 
 function switchScreen(to) {
+    // すべてのスクリーンを隠す
     document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+    
+    // ターゲットを表示
     const target = document.getElementById(to);
     if (target) {
         target.classList.remove('hidden');
@@ -35,30 +38,36 @@ function switchView(id) {
     }
 }
 
-// --- タイトル・ロビー制御 ---
+// --- 画面遷移関数 ---
 
-// 1. タイトルから開始
+// 1. タイトルから開始 -> 校門へ
 function startApp() {
     switchScreen('screen-gate');
     // BGMがあればここで再生
 }
 
-// 2. ゲートに戻る
-function backToGate() {
-    switchScreen('screen-title'); // ゲートではなくタイトルに戻す仕様に変更
+// 2. タイトルに戻る (★追加: これがないとボタンが反応しません)
+function backToTitle() {
+    switchScreen('screen-title');
 }
 
-// 3. ロビーに戻る (音声制御追加)
+// 3. 校門に戻る
+function backToGate() {
+    switchScreen('screen-gate');
+}
+
+// 4. ロビーに戻る (音声制御追加)
 function backToLobby(suppressGreeting = false) {
     switchScreen('screen-lobby');
     
     // suppressGreetingが true なら挨拶しない (ぜんぶわかった時など)
     // 指定がなければ挨拶する
-    // ただしイベントリスナーなどから呼ばれるとEventオブジェクトが入るので型チェック
     const shouldGreet = (typeof suppressGreeting === 'boolean') ? !suppressGreeting : true;
 
-    if (shouldGreet && currentUser && typeof getNellGreeting === 'function' && typeof updateNellMessage === 'function') {
-        updateNellMessage(getNellGreeting(currentUser), "happy");
+    if (shouldGreet && currentUser && typeof updateNellMessage === 'function') {
+        // user.jsやanlyze.jsで定義されている関数や変数を参照
+        // 挨拶ロジックが単純なメッセージ更新のみの場合
+        updateNellMessage(`おかえり、${currentUser.name}さん！`, "happy");
     }
 }
 
