@@ -1,5 +1,3 @@
-// --- server.js (修正完全版: モデル名修正) ---
-
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import express from 'express';
@@ -34,27 +32,34 @@ try {
     console.error("Init Error:", e.message); 
 }
 
+// --- 文書検出API (精度向上版) ---
 app.post('/detect-document', async (req, res) => {
     try {
         const { image } = req.body;
         if (!image) return res.status(400).json({ error: "No image" });
 
-        // ★修正: 最新かつ安定しているモデルを使用
         const model = genAI.getGenerativeModel({
             model: "gemini-2.0-flash-exp", 
             generationConfig: { responseMimeType: "application/json" }
         });
 
         const prompt = `
-        画像内にある「メインの書類（ノート、プリント、教科書）」の四隅の座標を検出してください。
+        画像内にある「メインの書類（ノート、プリント、教科書）」の領域を特定し、四隅の座標を出力してください。
         
-        【出力ルール】
-        - JSON形式
-        - キーは "points"
-        - 左上(TL), 右上(TR), 右下(BR), 左下(BL) の順に4点の座標を格納
-        - 座標 x, y は画像全体に対するパーセンテージ(0〜100)で出力
+        【重要ルール】
+        1. 画像全体ではなく、写っている「紙」の輪郭を探してください。
+        2. 背景（机や床）を除外し、紙の角（コーナー）を特定してください。
+        3. もし紙がはみ出している場合は、画像の四隅（0,0 / 100,0 / 100,100 / 0,100）を選択してください。
         
-        例: { "points": [{ "x": 10, "y": 10 }, { "x": 90, "y": 10 }, { "x": 90, "y": 90 }, { "x": 10, "y": 90 }] }
+        【出力形式 (JSONのみ)】
+        {
+          "points": [
+            { "x": 左上のXパーセント(0-100), "y": 左上のYパーセント(0-100) },
+            { "x": 右上のXパーセント, "y": 右上のYパーセント },
+            { "x": 右下のXパーセント, "y": 右下のYパーセント },
+            { "x": 左下のXパーセント, "y": 左下のYパーセント }
+          ]
+        }
         `;
 
         const result = await model.generateContent([
@@ -62,11 +67,17 @@ app.post('/detect-document', async (req, res) => {
             { text: prompt }
         ]);
 
-        const json = JSON.parse(result.response.text());
+        let text = result.response.text();
+        // JSONブロックの抽出を強化
+        const match = text.match(/\{[\s\S]*\}/);
+        if (match) text = match[0];
+
+        const json = JSON.parse(text);
         res.json(json);
     } catch (e) {
         console.error("Detect Error:", e);
-        res.json({ points: [{x:5,y:5}, {x:95,y:5}, {x:95,y:95}, {x:5,y:95}] });
+        // エラー時はデフォルト（全体）を返す
+        res.json({ points: [{x:0,y:0}, {x:100,y:0}, {x:100,y:100}, {x:0,y:100}] });
     }
 });
 
@@ -80,6 +91,9 @@ function createSSML(text, mood) {
         .replace(/[\u{1F600}-\u{1F6FF}]/gu, '')
         .replace(/🐾|✨|⭐|🎵|🐟|🎤|⭕️|❌/g, '')
         .replace(/&/g, 'と').replace(/[<>"']/g, ' ');
+
+    // 箇条書き記号などを削除
+    cleanText = cleanText.replace(/^[・-]\s*/gm, '');
 
     if (cleanText.length < 5 || cleanText.includes("どの教科")) {
         return `<speak>${cleanText}</speak>`;
@@ -105,6 +119,7 @@ app.post('/synthesize', async (req, res) => {
     }
 });
 
+// --- ゲーム実況API (修正版: 候補羅列防止) ---
 app.post('/game-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
@@ -112,15 +127,21 @@ app.post('/game-reaction', async (req, res) => {
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         let prompt = "";
         let mood = "excited";
+        
         if (type === 'start') {
-            prompt = `あなたはネル先生。生徒「${name}」がゲーム開始。「${name}さん！カリカリいっぱいゲットしてにゃ！」とだけ言って。`;
+            prompt = `あなたはネル先生。生徒「${name}」がゲーム開始。「${name}さん！カリカリいっぱいゲットしてにゃ！」とだけ言って。余計な言葉は不要。`;
         } else if (type === 'end') {
-            prompt = `あなたはネル先生。ゲーム終了。スコア${score}個(最大20)。スコアに応じて褒めるか励まして。20文字以内。語尾「にゃ」。`;
+            prompt = `あなたはネル先生。ゲーム終了。スコア${score}個(最大20)。スコアに応じて褒めるか励ます言葉を【1つだけ】出力して。20文字以内。語尾「にゃ」。候補を羅列しないでください。`;
         } else {
-            prompt = `ネル先生の実況。状況: ${type}。「うまい！」「すごい！」など5文字程度。語尾「にゃ」。`;
+            prompt = `ネル先生の実況。状況: ${type}。「うまい！」「すごい！」など5文字程度の一言だけ。語尾「にゃ」。`;
         }
+        
         const result = await model.generateContent(prompt);
-        res.json({ reply: result.response.text().trim(), mood: mood });
+        let reply = result.response.text().trim();
+        // 改行が含まれていたら1行目だけを使う（念のため）
+        if (reply.includes('\n')) reply = reply.split('\n')[0];
+        
+        res.json({ reply, mood });
     } catch (err) {
         res.json({ reply: "がんばれにゃ！", mood: "excited" });
     }
@@ -161,7 +182,7 @@ app.post('/analyze', async (req, res) => {
         const { image, mode, grade, subject, analysisType } = req.body;
         
         let modelName = "gemini-2.0-flash-exp"; 
-        if (analysisType === 'precision') modelName = "gemini-2.5-pro"; // じっくりモードはPro
+        if (analysisType === 'precision') modelName = "gemini-1.5-pro"; 
 
         const model = genAI.getGenerativeModel({
             model: modelName,
