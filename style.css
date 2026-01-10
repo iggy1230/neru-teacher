@@ -1,4 +1,4 @@
-/* --- style.css (位置・トリミング微調整版) --- */
+/* --- style.css (最終版: テキスト位置修正済・画像なりゆき維持) --- */
 
 body {
     font-family: 'M PLUS Rounded 1c', "Sawarabi Gothic", sans-serif;
@@ -95,9 +95,10 @@ button { font-family: inherit; }
 .user-card { background: transparent; padding: 0; text-align: center; cursor: pointer; position: relative; transition: transform 0.1s; }
 .user-card:active { transform: scale(0.95); }
 .user-card img {
-    width: 100%; height: auto; aspect-ratio: 1.6; object-fit: contain;
+    width: 100%; height: auto; object-fit: contain;
     border-radius: 8px; background-color: transparent !important;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.2); display: block;
+    filter: drop-shadow(0 4px 4px rgba(0,0,0,0.3));
+    display: block;
 }
 .card-karikari-badge {
     position: absolute; bottom: 5px; left: 5px;
@@ -112,51 +113,53 @@ button { font-family: inherit; }
     box-shadow: 0 2px 4px rgba(0,0,0,0.2); z-index: 10;
 }
 
-/* --- ★学生証レイアウト --- */
+/* --- ★学生証レイアウト (画像なりゆき方式) --- */
 .id-card-wrap {
     position: relative;
     width: 100%;
     max-width: 320px;
-    aspect-ratio: 1.6 / 1; 
+    height: auto; /* ★重要: 画像に合わせて伸びる */
     margin: 0 auto 20px;
+    
+    background-color: transparent;
     box-shadow: 0 4px 10px rgba(0,0,0,0.3);
     border-radius: 12px;
     overflow: hidden;
-    background: white;
 }
 
-/* 1. ベース画像 */
+/* 1. ベース画像 (この画像が枠の高さを決める) */
 .id-base-img { 
     display: block !important; 
     width: 100%;
-    height: auto !important; /* 自然な比率を維持 */
+    height: auto !important; 
     position: relative !important; 
     z-index: 1;
 }
 
-/* 2. 写真表示エリア (修正: 高さ縮小でトリミング) */
+/* 2. 写真表示エリア */
 #id-photo-slot {
     display: block !important;
     position: absolute;
     z-index: 2;
-    top: 36%;  /* 34.5% -> 36% (少し下げた) */
-    left: 6.9%;
-    width: 28.1%; 
-    height: 46%; /* 50% -> 46% (少し高さを縮めた＝トリミング) */
+    top: 35.75%; 
+    left: 5.5%;
+    width: 30.5%; 
+    height: 45%; 
     background-color: #ddd;
+    border-radius: 2px;
     overflow: hidden;
 }
 
 #id-photo-slot img {
     width: 100%;
     height: 100%;
-    object-fit: cover !important; /* 枠いっぱいに埋める */
+    object-fit: cover !important; 
     display: block;
 }
 
 #id-photo-preview-canvas { display: none; }
 
-/* 3. テキストオーバーレイ (位置修正) */
+/* 3. テキストオーバーレイ (位置調整済み) */
 .id-text-overlay { 
     display: block !important;
     position: absolute; 
@@ -167,26 +170,25 @@ button { font-family: inherit; }
     z-index: 3;
     white-space: nowrap;
     text-align: left;
+    line-height: 1;
 }
 
-/* 学年: 下へ移動 (42% -> 46%) */
+/* 学年: 41% -> 39.5% (1.5%上へ修正) */
 .id-grade-text { 
-    top: 46%; 
-    left: 55%; 
-    font-size: 1.1rem;
+    top: 38.5%; 
+    left: 56%; 
+    font-size: 1.3rem;
 }
 
-/* 氏名: 上へ移動 (56% -> 53%) */
+/* 氏名: 56.75% -> 55.25% (1.5%上へ修正) */
 .id-name-text { 
-    top: 53%; 
-    left: 55%; 
-    font-size: 1.2rem;
+    top: 54.25%; 
+    left: 56%; 
+    font-size: 1.3rem;
 }
 
-/* 画面が小さい時用の文字サイズ調整 */
 @media (max-width: 350px) {
-    .id-grade-text { font-size: 0.9rem; }
-    .id-name-text { font-size: 1.1rem; }
+    .id-grade-text, .id-name-text { font-size: 1.1rem; }
 }
 
 .styled-input, .styled-select { width: 80%; padding: 12px; margin: 10px auto; display: block; border: 2px solid #ff85a1; border-radius: 10px; font-size: 1rem; }
