@@ -1,4 +1,4 @@
-/* --- style.css (最終版: 校門背景変更・ガイド枠変更・テキスト位置修正済・画像なりゆき維持) --- */
+/* --- style.css (最終版: ゲーム背景黒板化・ガイド枠縦長・他調整済) --- */
 
 body {
     font-family: 'M PLUS Rounded 1c', "Sawarabi Gothic", sans-serif;
@@ -85,42 +85,17 @@ button { font-family: inherit; }
     z-index: 100; font-size: 1rem; box-shadow: 0 2px 0 #78909c;
 }
 
-/* --- ★修正: 校門画面 (#screen-gate) 専用スタイル --- */
+/* 校門画面 */
 #screen-gate {
-    /* 画面全体を覆うように固定配置 */
-    position: fixed;
-    top: 0; 
-    left: 0;
-    width: 100%; 
-    height: 100%;
-    
-    /* 背景画像を校門用に変更 */
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
     background-image: url('classroom0-bg.png');
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
-    
-    /* body背景より上に、タイトルよりは下に */
-    z-index: 1500; 
-    
-    /* スクロール可能にする */
-    overflow-y: auto;
-    
-    /* コンテンツのレイアウト */
-    display: flex;
-    flex-direction: column;
-    align-items: center; /* 中央揃え */
-    padding-top: 40px;
-    padding-bottom: 40px;
+    background-size: cover; background-position: center; background-repeat: no-repeat;
+    z-index: 1500; overflow-y: auto;
+    display: flex; flex-direction: column; align-items: center;
+    padding-top: 40px; padding-bottom: 40px;
 }
+#screen-gate > * { width: 100%; max-width: 600px; }
 
-/* 校門画面の中身の幅制限 */
-#screen-gate > * {
-    width: 100%;
-    max-width: 600px;
-}
-
-/* 校門・ユーザーリスト */
 .section-title {
     text-align: center; font-size: 1.5rem; color: white;
     text-shadow: 2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000; margin: 20px 0; font-weight: 900;
@@ -150,19 +125,11 @@ button { font-family: inherit; }
 
 /* 学生証レイアウト */
 .id-card-wrap {
-    position: relative;
-    width: 100%;
-    max-width: 320px;
-    height: auto; 
-    margin: 0 auto 20px;
-    background-color: transparent;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-    border-radius: 12px;
-    overflow: hidden;
+    position: relative; width: 100%; max-width: 320px; height: auto; 
+    margin: 0 auto 20px; background-color: transparent;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3); border-radius: 12px; overflow: hidden;
 }
-.id-base-img { 
-    display: block !important; width: 100%; height: auto !important; position: relative !important; z-index: 1;
-}
+.id-base-img { display: block !important; width: 100%; height: auto !important; position: relative !important; z-index: 1; }
 #id-photo-slot {
     display: block !important; position: absolute; z-index: 2;
     top: 35.75%; left: 5.5%; width: 30.5%; height: 45%; 
@@ -225,7 +192,15 @@ button { font-family: inherit; }
 }
 @keyframes popIn { 0% { transform: scale(0.8); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 .game-container { display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%; }
-#game-canvas { border: 4px solid #8d6e63; border-radius: 10px; background: #fffde7; box-shadow: 0 4px 0 rgba(0,0,0,0.1); }
+
+/* ★修正: ゲーム画面背景を黒板色に変更 */
+#game-canvas { 
+    border: 4px solid #8d6e63; 
+    border-radius: 10px; 
+    background: #2e7d32; /* 黒板色 */
+    box-shadow: 0 4px 0 rgba(0,0,0,0.1); 
+}
+
 .game-ui { text-align: center; margin-top: 10px; }
 .game-ui p { font-size: 1.2rem; font-weight: bold; color: #d84315; }
 .problem-selection-card { height: 400px; display: flex; flex-direction: column; }
@@ -257,14 +232,9 @@ button { font-family: inherit; }
 
 /* カメラガイド枠 (縦長幅広) */
 .camera-guide-box { 
-    position: absolute; 
-    width: 85%; 
-    aspect-ratio: 3/4; 
-    border: 3px solid rgba(255, 255, 255, 0.8); 
-    border-radius: 10px; 
-    pointer-events: none; 
+    position: absolute; width: 85%; aspect-ratio: 3/4; 
+    border: 3px solid rgba(255, 255, 255, 0.8); border-radius: 10px; pointer-events: none; 
 }
-
 .camera-guide-box p { color: white; background: rgba(0,0,0,0.5); padding: 5px 10px; border-radius: 15px; margin-top: -40px; font-weight: bold; }
 .camera-controls { width: 100%; height: 120px; background: #222; display: flex; align-items: center; justify-content: space-around; padding-bottom: 20px; }
 .camera-shutter-btn { width: 70px; height: 70px; border-radius: 50%; background: white; border: 5px solid #ccc; cursor: pointer; }
