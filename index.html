@@ -6,15 +6,17 @@
     <title>🐾猫後市立ねこづか小学校</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Sawarabi+Gothic&family=M+PLUS+Rounded+1c:wght@700;900&family=Kiwi+Maru:wght@900&display=swap" rel="stylesheet">
+    <!-- 顔認識ライブラリ -->
     <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <!-- クロップ用ライブラリ (今回は独自実装を使用するためCDN不要ですが念のため残します) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css" rel="stylesheet">
 </head>
 <body>
     <canvas id="hanamaru-canvas"></canvas>
     <canvas id="deco-canvas" style="display:none;"></canvas>
     
     <div id="mini-karikari-display" class="mini-karikari-display hidden"><span>🍖</span><span id="mini-karikari-count">0</span></div>
-
-    <div class="version-tag">Build: v16.1.0-PerspectiveCropFix</div>
 
     <div id="app-container">
         <!-- 0. タイトル画面 -->
@@ -23,6 +25,7 @@
             <div class="title-btn-container">
                 <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
             </div>
+            <div class="version-tag">Build: v16.1.0-CropFix</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -61,8 +64,8 @@
                 </div>
             </div>
 
-            <input type="text" id="new-student-name" class="styled-input" placeholder="おなまえ" oninput="updateIDPreview()">
-            <select id="new-student-grade" class="styled-select" onchange="updateIDPreview()">
+            <input type="text" id="new-student-name" class="styled-input" placeholder="おなまえ" oninput="updateIDPreviewText()">
+            <select id="new-student-grade" class="styled-select" onchange="updateIDPreviewText()">
                 <option value="" disabled selected>学年</option>
                 <option value="1">1年生</option><option value="2">2年生</option><option value="3">3年生</option>
                 <option value="4">4年生</option><option value="5">5年生</option><option value="6">6年生</option>
@@ -95,7 +98,6 @@
             </header>
             
             <div class="operation-layout">
-                <!-- ネル先生 -->
                 <div class="nell-chat">
                     <div class="nell-avatar-wrap">
                         <img src="nell-normal.png" class="nell-img" id="nell-face">
@@ -104,7 +106,6 @@
                     <div class="chat-bubble"><p id="nell-text"></p></div>
                 </div>
 
-                <!-- 教科選択 -->
                 <div id="subject-selection-view" class="hidden">
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
                         <button onclick="setSubject('こくご')" class="main-btn pink-btn">こくご</button>
@@ -114,21 +115,18 @@
                     </div>
                 </div>
 
-                <!-- 黒板 -->
                 <div id="chalkboard" class="chalkboard hidden"></div>
 
                 <div class="work-area">
-                    <!-- 宿題アップロード (モード選択付き) -->
                     <div id="upload-controls" class="hidden">
-                        <p style="text-align:center; font-weight:bold; margin-bottom:5px;">分析モードを選んでにゃ！</p>
+                        <p style="text-align:center; margin-bottom:10px;">宿題をみせてね！</p>
                         
-                        <!-- モード切替ボタン -->
+                        <!-- ★復活: 読み取りモード選択ボタン -->
                         <div style="display:flex; justify-content:center; gap:10px; margin-bottom:15px;">
-                            <button onclick="setAnalyzeMode('fast')" id="mode-btn-fast" class="main-btn pink-btn" style="margin:0; flex:1; font-size:0.9rem;">🚀 高速<br><span style="font-size:0.7rem">いつもの</span></button>
-                            <button onclick="setAnalyzeMode('precision')" id="mode-btn-precision" class="main-btn gray-btn" style="margin:0; flex:1; font-size:0.9rem;">✨ 精密<br><span style="font-size:0.7rem">じっくり</span></button>
+                            <button id="mode-btn-fast" onclick="setAnalyzeMode('fast')" class="main-btn pink-btn" style="width:45%; margin:0; font-size:0.9rem; padding:10px;">🚀 サクサク</button>
+                            <button id="mode-btn-precision" onclick="setAnalyzeMode('precision')" class="main-btn gray-btn" style="width:45%; margin:0; font-size:0.9rem; padding:10px;">🧐 じっくり</button>
                         </div>
 
-                        <p style="text-align:center; margin-bottom:10px;">宿題をみせてね！</p>
                         <div class="upload-buttons-container">
                             <button id="start-webcam-btn" class="camera-btn-large" style="background:#ff9800; box-shadow:0 6px 0 #e65100; font-size:1rem; padding:10px;">
                                 📹 アプリで撮影
@@ -143,19 +141,15 @@
                                     <input type="file" id="hw-input-album" accept="image/*" style="display:none;">
                                 </label>
                             </div>
-                            <!-- 互換用 -->
-                            <input type="file" id="hw-input" accept="image/*" style="display:none;">
                         </div>
                     </div>
 
-                    <!-- 解析中 -->
                     <div id="thinking-view" class="hidden">
                         <img src="nell-inspect.png" class="loader-inspect-img">
                         <div class="progress-container"><div id="progress-bar" class="progress-bar"></div></div>
                         <p id="thinking-status">考え中... <span id="progress-percent">0</span>%</p>
                     </div>
 
-                    <!-- 問題リスト -->
                     <div id="problem-selection-view" class="hidden">
                         <div class="problem-selection-card">
                             <div class="problem-scroll-area" id="transcribed-problem-list"></div>
@@ -163,7 +157,6 @@
                         </div>
                     </div>
 
-                    <!-- 最終ビュー -->
                     <div id="final-view" class="hidden">
                         <div id="grade-sheet-container" class="hidden">
                             <div class="glass-card" id="problem-list-grade" style="background:white; border-radius:15px; padding:10px;"></div>
@@ -173,12 +166,12 @@
                                 <div class="hint-step-badge" id="hint-step-label">考え方</div>
                                 <button onclick="showNextHint()" id="next-hint-btn" class="main-btn blue-btn">次のヒント！</button>
                                 <button onclick="revealAnswer()" id="reveal-answer-btn" class="main-btn orange-btn hidden">答えを見る🐾</button>
+                                <div id="answer-display-area" class="answer-box hidden">ネル先生の答え：<br><span id="final-answer-text"></span></div>
                             </div>
                             <button onclick="pressThanks()" class="main-btn pink-btn">✨ ありがとう！</button>
                         </div>
                     </div>
 
-                    <!-- チャット -->
                     <div id="chat-view" class="hidden">
                         <div class="glass-card" style="text-align:center; padding:20px;">
                             <p style="font-size:0.9rem; color:#666;">マイクを押して話しかけてね</p>
@@ -187,7 +180,6 @@
                         </div>
                     </div>
 
-                    <!-- 給食 -->
                     <div id="lunch-view" class="hidden">
                         <div class="glass-card" style="text-align:center; padding:20px;">
                             <p style="font-size:1.2rem; font-weight:900;">ネル先生にお給食をあげる？</p>
@@ -200,7 +192,7 @@
             </div>
         </section>
         
-        <!-- ゲーム -->
+        <!-- 5. ゲーム -->
         <section id="screen-game" class="screen hidden">
             <div class="nell-chat">
                 <div class="nell-avatar-wrap">
@@ -219,7 +211,7 @@
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">ロビーにもどる</button>
         </section>
 
-        <!-- 出席簿 -->
+        <!-- 6. 出席簿 -->
         <section id="screen-attendance" class="screen hidden">
             <h2 class="section-title">📅 出席簿</h2>
             <div class="glass-card">
@@ -229,7 +221,7 @@
         </section>
     </div>
 
-    <!-- カメラモーダル -->
+    <!-- カメラ撮影モーダル (宿題読み取り用 & 学生証用 兼用) -->
     <div id="camera-modal" class="camera-modal hidden">
         <div class="camera-container">
             <video id="camera-video" autoplay playsinline></video>
@@ -242,21 +234,20 @@
         <canvas id="camera-canvas" style="display:none;"></canvas>
     </div>
 
-    <!-- ★独自クロップモーダル (Canvas + ハンドル) -->
+    <!-- ★修正: クロップモーダル (高解像度対応UI) -->
     <div id="cropper-modal" class="camera-modal hidden">
         <div class="cropper-wrapper">
             <canvas id="crop-canvas"></canvas>
-            <!-- 4つのハンドル -->
-            <div id="handle-tl" class="crop-handle"></div>
-            <div id="handle-tr" class="crop-handle"></div>
-            <div id="handle-bl" class="crop-handle"></div>
-            <div id="handle-br" class="crop-handle"></div>
-            <!-- 枠線用SVG -->
-            <svg id="crop-lines" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;"></svg>
+            <svg id="crop-lines" style="position:absolute; top:0; left:0; pointer-events:none; width:100%; height:100%;">
+                <!-- 補助線はJSで描画 -->
+            </svg>
+            <div id="handle-tl" class="crop-handle" style="top:0; left:0;"></div>
+            <div id="handle-tr" class="crop-handle" style="top:0; right:0;"></div>
+            <div id="handle-br" class="crop-handle" style="bottom:0; right:0;"></div>
+            <div id="handle-bl" class="crop-handle" style="bottom:0; left:0;"></div>
         </div>
         <div class="camera-controls">
             <button id="cropper-cancel-btn" class="main-btn gray-btn" style="width:100px;">やめる</button>
-            <p style="color:white; font-weight:bold;">四隅を合わせてね</p>
             <button id="cropper-ok-btn" class="main-btn pink-btn" style="width:120px;">決定！</button>
         </div>
     </div>
