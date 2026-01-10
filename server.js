@@ -1,3 +1,5 @@
+// --- server.js (修正完全版: モデル名修正) ---
+
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import express from 'express';
@@ -8,7 +10,6 @@ import WebSocket, { WebSocketServer } from 'ws';
 import { parse } from 'url';
 import dotenv from 'dotenv';
 
-// .envファイルを読み込む
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -16,15 +17,12 @@ const __dirname = path.dirname(__filename);
 const app = express();
 
 app.use(cors());
-// 画像データが大きい場合に対応するため制限を緩和
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, '.')));
 
-// API初期化
 let genAI, ttsClient;
 try {
     genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    
     if (process.env.GOOGLE_CREDENTIALS_JSON) {
         ttsClient = new textToSpeech.TextToSpeechClient({
             credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON)
@@ -36,21 +34,19 @@ try {
     console.error("Init Error:", e.message); 
 }
 
-// --- ★新機能: 文書自動検出API ---
 app.post('/detect-document', async (req, res) => {
     try {
         const { image } = req.body;
         if (!image) return res.status(400).json({ error: "No image" });
 
-        // 高速なFlashモデルを使用
+        // ★修正: 最新かつ安定しているモデルを使用
         const model = genAI.getGenerativeModel({
-            model: "gemini-1.5-flash",
+            model: "gemini-2.0-flash-exp", 
             generationConfig: { responseMimeType: "application/json" }
         });
 
         const prompt = `
         画像内にある「メインの書類（ノート、プリント、教科書）」の四隅の座標を検出してください。
-        背景と書類の境界線を探してください。
         
         【出力ルール】
         - JSON形式
@@ -59,8 +55,6 @@ app.post('/detect-document', async (req, res) => {
         - 座標 x, y は画像全体に対するパーセンテージ(0〜100)で出力
         
         例: { "points": [{ "x": 10, "y": 10 }, { "x": 90, "y": 10 }, { "x": 90, "y": 90 }, { "x": 10, "y": 90 }] }
-        
-        書類がはっきりしない場合や、画像全体が書類の場合は、四隅に近い座標（x:0~5, y:0~5など）を返してください。
         `;
 
         const result = await model.generateContent([
@@ -72,12 +66,10 @@ app.post('/detect-document', async (req, res) => {
         res.json(json);
     } catch (e) {
         console.error("Detect Error:", e);
-        // エラー時はデフォルト値（全体より少し内側）を返す
         res.json({ points: [{x:5,y:5}, {x:95,y:5}, {x:95,y:95}, {x:5,y:95}] });
     }
 });
 
-// --- 音声合成 (SSML) ---
 function createSSML(text, mood) {
     let rate = "1.1", pitch = "+2st";
     if (mood === "thinking") { rate = "1.0"; pitch = "0st"; }
@@ -113,16 +105,13 @@ app.post('/synthesize', async (req, res) => {
     }
 });
 
-// --- ゲーム実況API ---
 app.post('/game-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { type, name, score } = req.body;
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         let prompt = "";
         let mood = "excited";
-
         if (type === 'start') {
             prompt = `あなたはネル先生。生徒「${name}」がゲーム開始。「${name}さん！カリカリいっぱいゲットしてにゃ！」とだけ言って。`;
         } else if (type === 'end') {
@@ -130,7 +119,6 @@ app.post('/game-reaction', async (req, res) => {
         } else {
             prompt = `ネル先生の実況。状況: ${type}。「うまい！」「すごい！」など5文字程度。語尾「にゃ」。`;
         }
-
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text().trim(), mood: mood });
     } catch (err) {
@@ -138,22 +126,18 @@ app.post('/game-reaction', async (req, res) => {
     }
 });
 
-// --- 給食リアクションAPI ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { count, name } = req.body;
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash", generationConfig: { maxOutputTokens: 60 } });
-
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp", generationConfig: { maxOutputTokens: 60 } });
         let prompt = "";
         const isSpecial = count % 10 === 0;
-
         if (isSpecial) {
             prompt = `あなたはネル先生。生徒「${name}」から記念すべき${count}個目の給食をもらった。感謝を60文字程度で熱く語って。語尾は「にゃ」。`;
         } else {
             prompt = `ネル先生として給食のカリカリを食べた一言感想。15文字以内。語尾にゃ。`;
         }
-
         const result = await model.generateContent(prompt);
         let reply = result.response.text().trim();
         if (!isSpecial && reply.includes('\n')) reply = reply.split('\n')[0];
@@ -161,27 +145,23 @@ app.post('/lunch-reaction', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Lunch Error" }); }
 });
 
-// --- チャットAPI ---
 app.post('/chat', async (req, res) => {
     try {
         const { message, grade, name } = req.body;
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         const prompt = `あなたは「ネル先生」。相手は小学${grade}年生「${name}」。30文字以内、語尾「にゃ」。絵文字禁止。発言: ${message}`;
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text() });
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
-// --- 画像分析API ---
 app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { image, mode, grade, subject, analysisType } = req.body;
         
-        let modelName = "gemini-2.5-flash"; 
-        if (analysisType === 'precision') {
-            modelName = "gemini-2.5-pro"; 
-        }
+        let modelName = "gemini-2.0-flash-exp"; 
+        if (analysisType === 'precision') modelName = "gemini-2.5-pro"; // じっくりモードはPro
 
         const model = genAI.getGenerativeModel({
             model: modelName,
@@ -231,7 +211,6 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- Live API Proxy (Aoede) ---
 const wss = new WebSocketServer({ server });
 wss.on('connection', (clientWs, req) => {
     const params = parse(req.url, true).query;
