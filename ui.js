@@ -1,4 +1,4 @@
-// --- ui.js (修正版: backToTitle追加・遷移ロジック整理) ---
+// --- ui.js (完全版: 画面遷移・ボタン制御) ---
 
 function switchScreen(to) {
     // すべてのスクリーンを隠す
@@ -46,7 +46,7 @@ function startApp() {
     // BGMがあればここで再生
 }
 
-// 2. タイトルに戻る (★追加: これがないとボタンが反応しません)
+// 2. タイトルに戻る
 function backToTitle() {
     switchScreen('screen-title');
 }
@@ -56,17 +56,15 @@ function backToGate() {
     switchScreen('screen-gate');
 }
 
-// 4. ロビーに戻る (音声制御追加)
+// 4. ロビーに戻る
 function backToLobby(suppressGreeting = false) {
     switchScreen('screen-lobby');
     
-    // suppressGreetingが true なら挨拶しない (ぜんぶわかった時など)
-    // 指定がなければ挨拶する
+    // 挨拶をするかどうか
     const shouldGreet = (typeof suppressGreeting === 'boolean') ? !suppressGreeting : true;
 
-    if (shouldGreet && currentUser && typeof updateNellMessage === 'function') {
-        // user.jsやanlyze.jsで定義されている関数や変数を参照
-        // 挨拶ロジックが単純なメッセージ更新のみの場合
+    // currentUserが存在するか確認してから挨拶
+    if (shouldGreet && typeof currentUser !== 'undefined' && currentUser && typeof updateNellMessage === 'function') {
         updateNellMessage(`おかえり、${currentUser.name}さん！`, "happy");
     }
 }
@@ -127,6 +125,7 @@ function updateProgress(p) {
     if (txt) txt.innerText = Math.floor(p);
 }
 
+// 最初のクリックでオーディオコンテキストを初期化（ブラウザ制限対策）
 document.addEventListener('click', () => {
     if (window.initAudioContext) {
         window.initAudioContext().catch(e => console.log("Audio Init:", e));

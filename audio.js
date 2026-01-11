@@ -1,4 +1,4 @@
-// --- audio.js (重複完全防止版) ---
+// --- audio.js (完全版) ---
 
 let audioCtx = null;
 let currentSource = null;
@@ -30,9 +30,9 @@ async function speakNell(text, mood = "normal") {
     if (abortController) {
         abortController.abort();
     }
-    abortController = new AbortController(); // 新しいコントローラー作成
+    abortController = new AbortController();
 
-    // 3. 口パクOFF（一旦リセット）
+    // 3. 口パクOFF
     window.isNellSpeaking = false;
 
     await window.initAudioContext();
@@ -42,7 +42,7 @@ async function speakNell(text, mood = "normal") {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text, mood }),
-            signal: abortController.signal // キャンセル信号を紐付け
+            signal: abortController.signal
         });
 
         if (!res.ok) throw new Error("TTS Error");
@@ -54,7 +54,6 @@ async function speakNell(text, mood = "normal") {
 
         const buffer = await audioCtx.decodeAudioData(bytes.buffer);
         
-        // デコード中に別の音声リクエストが来ていたら再生しない
         if (abortController.signal.aborted) return;
 
         const source = audioCtx.createBufferSource();
@@ -62,14 +61,11 @@ async function speakNell(text, mood = "normal") {
         source.connect(audioCtx.destination);
         currentSource = source;
         
-        // ★再生開始
         window.isNellSpeaking = true;
         source.start(0);
 
         return new Promise(resolve => {
             source.onended = () => {
-                // 最後まで再生された場合のみOFFにする
-                // (途中で次のが来て強制停止された場合は、次のやつがONにするので触らない)
                 if (currentSource === source) {
                     window.isNellSpeaking = false;
                     currentSource = null;
@@ -79,16 +75,9 @@ async function speakNell(text, mood = "normal") {
         });
 
     } catch (e) {
-        // キャンセルされたエラーなら無視、それ以外はログ出力
         if (e.name !== 'AbortError') {
             console.error("Audio Error:", e);
             window.isNellSpeaking = false;
         }
     }
-}
-
-async function updateNellMessage(t, mood = "normal") {
-    const el = document.getElementById('nell-text');
-    if (el) el.innerText = t;
-    return await speakNell(t, mood);
 }
