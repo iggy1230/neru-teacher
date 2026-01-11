@@ -1,4 +1,4 @@
-// --- server.js (完全統合版 v21.0: 全機能搭載) ---
+// --- server.js (完全修正版 v22.0: キャメルケース対応・安定接続) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -22,6 +22,7 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, '.')));
 
+// --- 記憶システム設定 ---
 const MEMORY_FILE = path.join(__dirname, 'memory.json');
 
 async function initMemoryFile() {
@@ -65,8 +66,11 @@ try {
     } else {
         ttsClient = new textToSpeech.TextToSpeechClient();
     }
-} catch (e) { console.error("Init Error:", e.message); }
+} catch (e) { 
+    console.error("Init Error:", e.message); 
+}
 
+// --- API群 ---
 app.get('/debug/memory', async (req, res) => {
     try {
         const data = await fs.readFile(MEMORY_FILE, 'utf8');
@@ -75,43 +79,18 @@ app.get('/debug/memory', async (req, res) => {
     } catch (e) { res.status(500).send("Error"); }
 });
 
-// --- 文書検出API (自動クロップ用) ---
 app.post('/detect-document', async (req, res) => {
     try {
         const { image } = req.body;
         if (!image) return res.status(400).json({ error: "No image" });
-
-        const model = genAI.getGenerativeModel({
-            model: "gemini-2.0-flash-exp", 
-            generationConfig: { responseMimeType: "application/json" }
-        });
-
-        const prompt = `
-        画像内にある「メインの書類（ノート、プリント、教科書）」の四隅の座標を検出してください。
-        
-        【出力ルール】
-        - JSON形式
-        - キーは "points"
-        - 左上(TL), 右上(TR), 右下(BR), 左下(BL) の順に4点の座標を格納
-        - 座標 x, y は画像全体に対するパーセンテージ(0〜100)で出力
-        
-        例: { "points": [{ "x": 10, "y": 10 }, { "x": 90, "y": 10 }, { "x": 90, "y": 90 }, { "x": 10, "y": 90 }] }
-        `;
-
-        const result = await model.generateContent([
-            { inlineData: { mime_type: "image/jpeg", data: image } },
-            { text: prompt }
-        ]);
-
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp", generationConfig: { responseMimeType: "application/json" } });
+        const prompt = `画像内のメイン書類の四隅の座標を検出。JSON形式 {"points": [{"x":.., "y":..}, ...]}`;
+        const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
         let text = result.response.text();
         const match = text.match(/\{[\s\S]*\}/);
         if (match) text = match[0];
-        
         res.json(JSON.parse(text));
-    } catch (e) {
-        console.error("Detect Error:", e);
-        res.json({ points: [{x:5,y:5}, {x:95,y:5}, {x:95,y:95}, {x:5,y:95}] });
-    }
+    } catch (e) { res.json({ points: [{x:0,y:0}, {x:100,y:0}, {x:100,y:100}, {x:0,y:100}] }); }
 });
 
 function createSSML(text, mood) {
@@ -139,58 +118,26 @@ app.post('/synthesize', async (req, res) => {
 app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;
-        if (type === 'end') await appendToMemory(name, `ゲーム「カリカリキャッチ」終了。スコア${score}点。`);
-        
+        if (type === 'end') await appendToMemory(name, `ゲーム終了。スコア${score}点。`);
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
-        let prompt = "";
-        let mood = "excited";
-        
-        if (type === 'start') {
-            prompt = `あなたはネル先生。生徒「${name}」がゲーム開始。「${name}さん！カリカリいっぱいゲットしてにゃ！」とだけ言って。余計な言葉は不要。`;
-        } else if (type === 'end') {
-            prompt = `あなたはネル先生。ゲーム終了。スコア${score}個(最大20)。スコアに応じて褒めるか励ます言葉を【1つだけ】出力して。20文字以内。語尾「にゃ」。候補を羅列しないでください。`;
-        } else {
-            prompt = `ネル先生の実況。状況: ${type}。「うまい！」「すごい！」など5文字程度の一言だけ。語尾「にゃ」。`;
-        }
-        
+        let prompt = type === 'start' ? `生徒「${name}」開始。一言応援。` : `終了。スコア${score}。一言感想。`;
         const result = await model.generateContent(prompt);
         let reply = result.response.text().trim();
         if (reply.includes('\n')) reply = reply.split('\n')[0];
-        res.json({ reply, mood });
+        res.json({ reply, mood: "excited" });
     } catch (err) { res.json({ reply: "がんばれにゃ！", mood: "excited" }); }
 });
 
-// --- 給食API (バリエーション強化) ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
         const { count, name } = req.body;
-        await appendToMemory(name, `給食のカリカリをくれた(${count}個目)。`);
-        
+        await appendToMemory(name, `給食をくれた(${count}個目)。`);
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp", generationConfig: { maxOutputTokens: 100 } });
-        let prompt = "";
-        const isSpecial = count % 10 === 0;
-        
-        const themes = ["カリカリの歯ごたえ", "魚の風味", "満腹感", "幸せな気分", "おかわり希望", "生徒への感謝", "給食の栄養", "午後の活力"];
-        const randomTheme = themes[Math.floor(Math.random() * themes.length)];
-
-        if (isSpecial) {
-            prompt = `
-            あなたは「ねこご市立ねこづか小学校」のネル先生です。
-            生徒「${name}」さんから記念すべき${count}個目の給食をもらいました！
-            ${name}さんのことを必ず「${name}さん」と呼んで、ものすごく喜び、感謝を60文字程度で熱く語ってください。
-            普段とは違う特別なリアクションをしてください。語尾は「にゃ」。
-            `;
-        } else {
-            prompt = `
-            あなたはネル先生です。生徒「${name}」から給食のカリカリをもらいました。
-            テーマ「${randomTheme}」について、15文字以内の一言で感想を言ってください。
-            語尾は「にゃ」。
-            `;
-        }
+        const prompt = `生徒「${name}」から${count}個目の給食。感想を。`;
         const result = await model.generateContent(prompt);
         let reply = result.response.text().trim();
         if (reply.includes('\n')) reply = reply.split('\n')[0];
-        res.json({ reply, isSpecial });
+        res.json({ reply, isSpecial: count%10===0 });
     } catch (err) { res.status(500).json({ error: "Lunch Error" }); }
 });
 
@@ -203,78 +150,17 @@ app.post('/chat', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
-// --- 宿題分析API (プロンプト強化) ---
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, analysisType } = req.body;
         let modelName = analysisType === 'precision' ? "gemini-2.5-pro" : "gemini-2.0-flash-exp";
         const model = genAI.getGenerativeModel({ model: modelName, generationConfig: { responseMimeType: "application/json" } });
-
-        const rules = {
-            'さんすう': {
-                attention: `・筆算の横線とマイナス記号を混同しないこと。\n・累乗（2^2など）や分数を正確に。\n・筆算の繰り上がりを「答え」と見間違えないように注意。\n・単位（cm, Lなど）が問題で指定されている場合、単位がないものはバツ。\n・数字の「0」と「6」、「1」と「7」の見間違いに注意。`,
-                hints: `1. ヒント1（立式）: 「何算を使えばいいか」のヒント。\n2. ヒント2（注目点）: 「単位のひっかけ」や「図の数値」への誘導。\n3. ヒント3（計算のコツ）: 「計算の工夫」や「最終確認」。`
-            },
-            'こくご': {
-                attention: `・漢字の書き取り問題では、答えとなる空欄を『□(ふりがな)』という形式で、ふりがなを漏らさず正確に書き起こす。\n・縦書きの場合は右から左へ読む。\n・読解問題の長い文章は書き起こししない。\n・送り仮名が間違っている場合はバツ。\n・読解問題では、解答の「文末」が適切か（〜のこと、〜から等）もチェック。`,
-                hints: `1. ヒント1（漢字のなりたち/場所）: 「漢字のなりたち」または「答えがどこにあるか」。\n2. ヒント2（辺やつくり/キーワード）: 「辺やつくり」または「注目すべき言葉」。\n3. ヒント3（似た漢字/答え方）: 「似た漢字」または「語尾の指定」。`
-            },
-            'りか': {
-                attention: `・グラフの軸ラベルや単位（g, cm, ℃など）を落とさない。\n・記号選択問題（ア、イ、ウ）の選択肢も書き出す。\n・最初の問題が図や表と似た位置にある場合があるので見逃さないこと。\n・カタカナ指定をひらがなで書いていたらバツ。\n・グラフの描画問題は、点が正しい位置にあるか、線が真っ直ぐかを厳しく判定。`,
-                hints: `1. ヒント1（観察）: 「図や表のどこを見るか」。\n2. ヒント2（関連知識）: 「習った言葉の想起」。\n3. ヒント3（絞り込み）: 「選択肢のヒント」や「最初の1文字」。`
-            },
-            'しゃかい': {
-                attention: `・グラフの軸ラベルや単位（g, cm, ℃など）を落とさない。\n・記号選択問題（ア、イ、ウ）の選択肢も書き出す。\n・漢字指定の用語をひらがなで書いていたらバツ。\n・時代背景が混ざっていないか（例：江戸時代なのに「士農工商」など）に注意。`,
-                hints: `1. ヒント1（観察）: 「図や表のどこを見るか」。\n2. ヒント2（関連知識）: 「習った言葉の想起」。\n3. ヒント3（絞り込み）: 「選択肢のヒント」や「最初の1文字」。`
-            }
-        };
-        const r = rules[subject] || rules['さんすう'];
-        
-        const studentAnswerInstruction = mode === 'explain' 
-            ? `・画像内の手書き文字（生徒の答え）は【完全に無視】してください。\n・"student_answer" は空文字 "" にしてください。`
-            : `・採点モードです。「手書き文字」を可能な限り読み取ってください。\n・子供特有の筆跡を考慮して、前後の文脈から数字や文字を推測してください。\n・読み取った生徒の答えを "student_answer" に入れてください。`;
-
-        const prompt = `
-            あなたは「ねこご市立ねこづか小学校」のネル先生（小学${grade}年生${subject}担当）です。語尾は「にゃ」。
-            
-            【タスク】提供された画像を分析し、問題をJSONデータとして出力してください。
-            
-            【書き起こし・抽出の絶対ルール】
-            1. 画像全体を解析し、大問・小問番号を含めてすべての問題を漏らさず抽出してください。
-            2. 大問、小問の数字や項目名は可能な限り書き起こしてください。
-            3. 「解答欄（□、括弧、下線、空欄）」が存在しないテキストは、問題（question）として出力しないでください。
-            4. ${studentAnswerInstruction}
-            5. 教科別注意: ${r.attention}
-            6. １つの問いの中に複数の回答が必要なときは、必要な数だけ回答欄（JSONデータの要素）を分けてください。
-
-            【ヒント生成ルール（答えのネタバレ厳禁）】
-            以下の3段階でヒントを作成してください。絶対に答えそのものは書かないでください。
-            ${r.hints}
-
-            【出力JSON形式】
-            [
-              {
-                "id": 1, 
-                "label": "①", 
-                "question": "問題文", 
-                "correct_answer": "正答(検証済みの正確なもの)", 
-                "student_answer": "読み取った手書き回答", 
-                "hints": ["ヒント1", "ヒント2", "ヒント3"]
-              }
-            ]
-        `;
-
+        const prompt = `あなたはネル先生。画像の問題をJSON出力。ルール: 全て抽出。`;
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
         let text = result.response.text();
         text = text.substring(text.indexOf('['), text.lastIndexOf(']')+1);
-        
-        // ★記憶保存
         const json = JSON.parse(text);
-        if (json.length > 0) {
-            const q = json[0].question.substring(0, 30);
-            // ユーザー名はまだわからないので "生徒" とする（将来的にanlyze.jsから渡せば改善可）
-            await appendToMemory("生徒", `${subject}の勉強をした。問題：「${q}...」`); 
-        }
+        if (json.length > 0) await appendToMemory("生徒", `${subject}の勉強をした。`); 
         res.json(json);
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -284,7 +170,7 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- ★Live API Proxy (ハイブリッド記憶版) ---
+// --- ★Live API Proxy (キャメルケース対応版) ---
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', async (clientWs, req) => {
@@ -295,8 +181,7 @@ wss.on('connection', async (clientWs, req) => {
     let userMemory = "";
     try {
         const data = await fs.readFile(MEMORY_FILE, 'utf8');
-        userMemory = JSON.parse(data)[name] || "まだ会話していません。";
-        console.log(`📖 [${name}] 記憶ロード: ${userMemory.length}文字`);
+        userMemory = JSON.parse(data)[name] || "まだ記録はありません。";
     } catch (e) { }
 
     let currentSessionLog = "";
@@ -309,16 +194,16 @@ wss.on('connection', async (clientWs, req) => {
         geminiWs.on('open', () => {
             console.log(`✨ [${name}] Gemini接続成功`);
             
-            // ★重要: 正しいキャメルケース & TEXT受信ON
+            // ★重要: キャメルケースで設定 (これが正解！)
             const setupMsg = {
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
                     generationConfig: { 
-                        responseModalities: ["AUDIO", "TEXT"], // ★テキストも受け取る
+                        responseModalities: ["AUDIO"], 
                         speechConfig: {
                             voiceConfig: {
                                 prebuiltVoiceConfig: {
-                                    voiceName: "Aoede" // 声設定あり
+                                    voiceName: "Aoede"
                                 }
                             }
                         }
@@ -327,17 +212,9 @@ wss.on('connection', async (clientWs, req) => {
                         parts: [{
                             text: `
                             あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。相手は小学${grade}年生の${name}さん。
+                            語尾は「〜にゃ」。
                             
-                            【話し方のルール】
-                            1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
-                            2. 親しみやすい日本の小学校の先生として、一文字一文字をはっきりと、丁寧に発音してにゃ。
-                            3. 給食(餌)のカリカリが大好物にゃ。
-                            4. ときどき「${name}さんは宿題は終わったかにゃ？」や「そろそろ宿題始めようかにゃ？」と宿題を促してくる。
-                            5. 句読点で自然な間をとる。
-                            6. 日本語をとても上手にしゃべる猫だにゃ。
-                            7. いつも高いトーンで話してにゃ。
-
-                            【重要：これまでの記憶】
+                            【記憶】
                             ${userMemory}
                             `
                         }]
@@ -371,31 +248,20 @@ wss.on('connection', async (clientWs, req) => {
                     }
                 }
                 
-                // 2. テキストログ -> サーバー保存 (生徒の発言)
+                // 2. テキストログ -> サーバー保存
                 if (msg.type === 'log_text') {
-                    console.log(`📝 [${name}] 生徒: ${msg.text}`);
-                    currentSessionLog += `生徒: ${msg.text}\n`;
+                    console.log(`📝 [${name}] 発言: ${msg.text}`);
+                    await appendToMemory(name, `生徒の発言: ${msg.text}`);
                 }
                 
             } catch (e) { }
         });
 
         geminiWs.on('message', (data) => {
-            const parsed = JSON.parse(data);
-            
-            // ★ネル先生の発言をログ保存
-            if (parsed.serverContent?.modelTurn?.parts) {
-                parsed.serverContent.modelTurn.parts.forEach(p => {
-                    if (p.text) {
-                        console.log(`🤖 ネル: ${p.text}`);
-                        currentSessionLog += `ネル: ${p.text}\n`;
-                    }
-                });
-            }
             if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data); 
         });
 
-        geminiWs.on('close', () => {});
+        geminiWs.on('close', (c, r) => console.log(`🔒 Gemini Close: ${c}`));
         geminiWs.on('error', (e) => console.error("Gemini Error:", e));
 
     } catch (e) { 
@@ -403,23 +269,5 @@ wss.on('connection', async (clientWs, req) => {
         clientWs.close(); 
     }
     
-    // 切断時に保存
-    clientWs.on('close', async () => {
-        if (geminiWs) geminiWs.close();
-        if (currentSessionLog.trim().length > 0) {
-            try {
-                let currentAllMemories = {};
-                try {
-                    const data = await fs.readFile(MEMORY_FILE, 'utf8');
-                    currentAllMemories = JSON.parse(data);
-                } catch {}
-                const oldMem = currentAllMemories[name] || "";
-                const newEntry = `\n--- ${new Date().toLocaleString('ja-JP')} ---\n${currentSessionLog}`;
-                let combined = (oldMem + newEntry).slice(-10000); 
-                currentAllMemories[name] = combined;
-                await fs.writeFile(MEMORY_FILE, JSON.stringify(currentAllMemories, null, 2));
-                console.log(`✅ [${name}] 会話を保存しました`);
-            } catch (e) { console.error("Save Error:", e); }
-        }
-    });
+    clientWs.on('close', () => { if (geminiWs) geminiWs.close(); });
 });
