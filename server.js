@@ -1,4 +1,4 @@
-// --- server.js (完全版 v25.1: 検出・分析精度向上) ---
+// --- server.js (完全版 v26.0: 読み取り精度向上・プロンプト緩和) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -11,6 +11,7 @@ import { parse } from 'url';
 import dotenv from 'dotenv';
 import fs from 'fs/promises';
 
+// .envファイルを読み込む
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -28,6 +29,7 @@ async function initMemoryFile() {
         await fs.access(MEMORY_FILE);
     } catch {
         await fs.writeFile(MEMORY_FILE, JSON.stringify({}));
+        console.log("📝 新しい記憶ファイル(memory.json)を作成しました");
     }
 }
 initMemoryFile();
@@ -72,7 +74,7 @@ app.get('/debug/memory', async (req, res) => {
     } catch (e) { res.status(500).send("Error"); }
 });
 
-// --- 文書検出API (強化版) ---
+// --- 文書検出API ---
 app.post('/detect-document', async (req, res) => {
     try {
         const { image } = req.body;
@@ -89,7 +91,6 @@ app.post('/detect-document', async (req, res) => {
         【重要】
         ・ページ内の小さなイラストや囲み枠ではなく、**紙の端（輪郭）**を探してください。
         ・背景（机や床）と紙の境界線を特定してください。
-        ・紙の一部しか写っていない場合は、画像全体の四隅を選択してください。
         
         【出力形式 (JSON)】
         {
@@ -114,7 +115,6 @@ app.post('/detect-document', async (req, res) => {
         res.json(JSON.parse(text));
     } catch (e) {
         console.error("Detect Error:", e);
-        // エラー時はデフォルト値を返す
         res.json({ points: [{x:5,y:5}, {x:95,y:5}, {x:95,y:95}, {x:5,y:95}] });
     }
 });
@@ -182,53 +182,92 @@ app.post('/chat', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
-// --- 宿題分析API (JSON形式の安定化) ---
+// --- ★修正: 宿題分析API (プロンプト大幅緩和) ---
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, analysisType } = req.body;
+        
+        // じっくりモードはPro、それ以外はFlash
         let modelName = analysisType === 'precision' ? "gemini-1.5-pro" : "gemini-2.0-flash-exp";
-        const model = genAI.getGenerativeModel({ model: modelName, generationConfig: { responseMimeType: "application/json" } });
+        
+        // ★修正: JSONモードを一旦解除し、テキストで生成させてから正規表現で抜く方が安定する場合があるが、
+        // 今回は「指示の緩和」で対応する。
+        const model = genAI.getGenerativeModel({
+            model: modelName,
+            // JSONモードは維持（これ自体は強力なので）
+            generationConfig: { responseMimeType: "application/json" }
+        });
 
         const rules = {
-            'さんすう': { attention: `・筆算の横線とマイナス記号を混同しない。\n・累乗や分数を正確に。\n・筆算の繰り上がりを「答え」と見間違えない。`, hints: `1.立式のヒント 2.単位や図のヒント 3.計算のコツ` },
-            'こくご': { attention: `・縦書きは右から左へ読む。\n・解答欄（□）は『□(読み仮名)』形式で。\n・送り仮名ミスはバツ。`, hints: `1.漢字のなりたち 2.注目すべき言葉 3.文末の指定` },
-            'りか': { attention: `・グラフの軸ラベルや単位を落とさない。\n・選択肢も書き出す。\n・カタカナ指定をひらがなで書いたらバツ。`, hints: `1.図表の見方 2.関連知識 3.選択肢の絞り込み` },
-            'しゃかい': { attention: `・地図記号や年表を正確に読み取る。\n・漢字指定をひらがなで書いたらバツ。`, hints: `1.資料の注目点 2.時代の背景 3.キーワード` }
+            'さんすう': `・数式、筆算、図形問題などを抽出。\n・数字の読み間違いに注意。`,
+            'こくご': `・漢字、文章読解、言葉の問題を抽出。\n・縦書きは右から左へ。`,
+            'りか': `・実験、観察、図表問題を抽出。\n・記号選択肢も書き出す。`,
+            'しゃかい': `・地図、年表、用語問題を抽出。`
         };
         const r = rules[subject] || rules['さんすう'];
-        const studentAnswerInstruction = mode === 'explain' ? `・手書き文字（生徒の答え）は無視し、student_answerは空文字にする。` : `・採点モード。手書き文字を可能な限り読み取りstudent_answerに入れる。`;
+        
+        const studentAnswerInstruction = mode === 'explain' 
+            ? `・"student_answer" は空文字 "" にしてください。`
+            : `・手書き文字（生徒の答え）があれば "student_answer" に入れる。なければ空文字。`;
 
+        // ★修正: プロンプトを緩和し、とにかく抽出させる
         const prompt = `
-            あなたはネル先生（小学${grade}年生${subject}担当）。語尾は「にゃ」。
-            画像の問題をJSONデータとして出力してください。
-            【ルール】
-            1. 全ての問題を抽出。
-            2. 「解答欄」がないテキストは問題として扱わない。
-            3. ${studentAnswerInstruction}
-            4. 教科別注意: ${r.attention}
-            5. １つの問いの中に複数の回答が必要なときは、必要な数だけ回答欄（JSONデータの要素）を分けてください。
+            あなたは「ねこご市立ねこづか小学校」のネル先生（小学${grade}年生${subject}担当）です。語尾は「にゃ」。
             
-            【重要】
-            必ず有効なJSON配列形式で出力してください。Markdownのコードブロックは不要です。
+            【タスク】
+            画像に含まれる「問題」と思われる部分をすべて抽出し、JSONデータにしてください。
+            
+            【超重要ルール】
+            1. **多少読み取りにくくても、問題文らしきものがあればすべて書き出してください。**
+            2. 解答欄の有無に関わらず、設問文があれば抽出対象です。
+            3. ${studentAnswerInstruction}
+            4. １つの大問に複数の小問がある場合は、別々のアイテムとして出力してください。
+
+            【ヒント生成】
+            正解を直接書かず、3段階のヒントを作成してください。
 
             【出力JSON形式】
-            [{"id": 1, "label": "①", "question": "問題文", "correct_answer": "正答", "student_answer": "", "hints": ["ヒント1", "ヒント2", "ヒント3"]}]
+            [
+              {
+                "id": 1, 
+                "label": "①", 
+                "question": "ここに問題文を書き写す", 
+                "correct_answer": "正解", 
+                "student_answer": "", 
+                "hints": ["ヒント1", "ヒント2", "ヒント3"]
+              }
+            ]
         `;
 
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
         let text = result.response.text();
         
-        // JSON抽出の強化
-        const firstBracket = text.indexOf('[');
-        const lastBracket = text.lastIndexOf(']');
-        if (firstBracket !== -1 && lastBracket !== -1) {
-            text = text.substring(firstBracket, lastBracket + 1);
+        // ★修正: JSON抽出ロジック強化 (Markdownコードブロック除去)
+        // ```json [ ... ] ``` のような形式にも対応
+        const jsonMatch = text.match(/\[\s*\{[\s\S]*\}\s*\]/);
+        if (jsonMatch) {
+            text = jsonMatch[0];
+        } else {
+            // 配列が見つからない場合、全体をパースしてみる
+            // それでもダメなら空配列
         }
-        
-        const json = JSON.parse(text);
+
+        let json;
+        try {
+            json = JSON.parse(text);
+        } catch (e) {
+            console.error("JSON Parse Fail:", text);
+            // 失敗時は空配列を返すのではなくエラーを投げる
+            throw new Error("読み取れなかったにゃ。もう一度きれいに撮ってほしいにゃ！");
+        }
+
         if (json.length > 0) await appendToMemory("生徒", `${subject}の勉強をした。`); 
         res.json(json);
-    } catch (err) { res.status(500).json({ error: err.message }); }
+
+    } catch (err) { 
+        console.error("Analyze API Error:", err.message);
+        res.status(500).json({ error: err.message }); 
+    }
 });
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
@@ -236,7 +275,7 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- Live API Proxy ---
+// --- Live API Proxy (音声通話安定版) ---
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', async (clientWs, req) => {
@@ -247,10 +286,9 @@ wss.on('connection', async (clientWs, req) => {
     let userMemory = "";
     try {
         const data = await fs.readFile(MEMORY_FILE, 'utf8');
-        userMemory = JSON.parse(data)[name] || "";
+        userMemory = JSON.parse(data)[name] || "まだ会話していません。";
     } catch (e) { }
 
-    let currentSessionLog = "";
     let geminiWs = null;
     const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${process.env.GEMINI_API_KEY}`;
     
@@ -269,13 +307,16 @@ wss.on('connection', async (clientWs, req) => {
                     }, 
                     systemInstruction: {
                         parts: [{
-                            text: `あなたはネル先生。語尾は「〜にゃ」。相手は小学${grade}年生の${name}さん。記憶:${userMemory.slice(-3000)}`
+                            text: `
+                            あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。相手は小学${grade}年生の${name}さん。
+                            語尾は「〜にゃ」。
+                            【記憶】${userMemory.slice(-2000)}
+                            `
                         }]
                     }
                 }
             };
             geminiWs.send(JSON.stringify(setupMsg));
-            
             if (clientWs.readyState === WebSocket.OPEN) {
                 clientWs.send(JSON.stringify({ type: "server_ready" }));
             }
@@ -298,7 +339,6 @@ wss.on('connection', async (clientWs, req) => {
                     }
                 }
                 if (msg.type === 'log_text') {
-                    currentSessionLog += `生徒: ${msg.text}\n`;
                     await appendToMemory(name, `生徒の発言: ${msg.text}`);
                 }
             } catch (e) { }
@@ -311,10 +351,5 @@ wss.on('connection', async (clientWs, req) => {
         geminiWs.on('close', () => {});
     } catch (e) { clientWs.close(); }
     
-    clientWs.on('close', async () => {
-        if (geminiWs) geminiWs.close();
-        if (currentSessionLog.trim().length > 0) {
-            await appendToMemory(name, currentSessionLog);
-        }
-    });
+    clientWs.on('close', () => { if (geminiWs) geminiWs.close(); });
 });
