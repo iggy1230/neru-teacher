@@ -1,4 +1,4 @@
-// --- server.js (完全版 v20.0: ネル先生の発言記録ON & 安定接続) ---
+// --- server.js (最終安定版: 音声通話優先 & ユーザー発言記録) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -164,7 +164,7 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- Live API Proxy (ネル先生の記憶も保存) ---
+// --- ★Live API Proxy (安定版: AUDIOのみ・ユーザー発言記録) ---
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', async (clientWs, req) => {
@@ -175,10 +175,11 @@ wss.on('connection', async (clientWs, req) => {
     let userMemory = "";
     try {
         const data = await fs.readFile(MEMORY_FILE, 'utf8');
-        userMemory = JSON.parse(data)[name] || "まだ会話していません。";
+        userMemory = JSON.parse(data)[name] || "";
         console.log(`📖 [${name}] 記憶ロード: ${userMemory.length}文字`);
     } catch (e) { }
 
+    // 今回のセッションでのユーザー発言を溜める
     let currentSessionLog = "";
     let geminiWs = null;
     const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${process.env.GEMINI_API_KEY}`;
@@ -189,16 +190,16 @@ wss.on('connection', async (clientWs, req) => {
         geminiWs.on('open', () => {
             console.log(`✨ [${name}] Gemini接続成功`);
             
-            // ★重要: 正しいキャメルケース & TEXT受信ON
+            // ★重要: エラー1007回避のため AUDIO のみに設定
             const setupMsg = {
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
                     generationConfig: { 
-                        responseModalities: ["AUDIO", "TEXT"], // ★テキストも受け取る
+                        responseModalities: ["AUDIO"], // ここはAUDIOのみ！
                         speechConfig: {
                             voiceConfig: {
                                 prebuiltVoiceConfig: {
-                                    voiceName: "Aoede"
+                                    voiceName: "Aoede" // 声は指定OK
                                 }
                             }
                         }
@@ -206,11 +207,11 @@ wss.on('connection', async (clientWs, req) => {
                     systemInstruction: {
                         parts: [{
                             text: `
-                            あなたは「ねこご市立、ねこづか小学校」のネル先生。語尾は「〜にゃ」。
-                            相手は小学${grade}年生の${name}さん。
+                            あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。相手は小学${grade}年生の${name}さん。
+                            語尾は「〜にゃ」。
                             
                             【重要：これまでの記憶】
-                            ${userMemory.slice(-3000)}
+                            ${userMemory}
                             `
                         }]
                     }
@@ -223,10 +224,12 @@ wss.on('connection', async (clientWs, req) => {
             }
         });
 
-        // クライアント -> Gemini
+        // クライアントからのメッセージ処理
         clientWs.on('message', async (data) => {
             try {
                 const msg = JSON.parse(data.toString());
+                
+                // 1. 音声データ -> Geminiへ
                 if (msg.base64Audio) {
                     if (geminiWs.readyState === WebSocket.OPEN) {
                          const geminiMsg = {
@@ -240,32 +243,23 @@ wss.on('connection', async (clientWs, req) => {
                         geminiWs.send(JSON.stringify(geminiMsg));
                     }
                 }
-                // 生徒の発言ログ保存
+                
+                // 2. テキストログ -> サーバーで保存 (これが記憶になる！)
                 if (msg.type === 'log_text') {
                     console.log(`📝 [${name}] 生徒: ${msg.text}`);
-                    currentSessionLog += `生徒: ${msg.text}\n`;
+                    currentSessionLog += `生徒: ${msg.text}\n`; // ユーザーの発言を記録
                 }
+                
             } catch (e) { }
         });
 
-        // Gemini -> クライアント
         geminiWs.on('message', (data) => {
-            const parsed = JSON.parse(data);
-            
-            // ★ネル先生の発言をログ保存
-            if (parsed.serverContent?.modelTurn?.parts) {
-                parsed.serverContent.modelTurn.parts.forEach(p => {
-                    if (p.text) {
-                        console.log(`🤖 ネル: ${p.text}`);
-                        currentSessionLog += `ネル: ${p.text}\n`;
-                    }
-                });
-            }
+            // 音声データをクライアントに返す
             if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data); 
         });
-
+        
         geminiWs.on('close', (c, r) => {
-             if(c !== 1000) console.log(`🔒 Gemini Close: ${c} ${r}`);
+            if(c !== 1000) console.log(`🔒 Gemini Close: ${c} ${r}`);
         });
 
     } catch (e) { 
@@ -273,7 +267,7 @@ wss.on('connection', async (clientWs, req) => {
         clientWs.close(); 
     }
     
-    // 切断時に保存
+    // 切断時に「ユーザーの発言記録」を保存
     clientWs.on('close', async () => {
         if (geminiWs) geminiWs.close();
         if (currentSessionLog.trim().length > 0) {
@@ -285,11 +279,11 @@ wss.on('connection', async (clientWs, req) => {
                 } catch {}
                 const oldMem = currentAllMemories[name] || "";
                 const newEntry = `\n--- ${new Date().toLocaleString('ja-JP')} ---\n${currentSessionLog}`;
-                // 記憶容量制限
+                // 最新10000文字保持
                 let combined = (oldMem + newEntry).slice(-10000); 
                 currentAllMemories[name] = combined;
                 await fs.writeFile(MEMORY_FILE, JSON.stringify(currentAllMemories, null, 2));
-                console.log(`✅ [${name}] 会話ログを保存しました`);
+                console.log(`✅ [${name}] ユーザー発言を保存しました`);
             } catch (e) { console.error("Save Error:", e); }
         }
     });
