@@ -1,4 +1,4 @@
-// --- user.js (復元版: オートズーム & 即時エフェクト & 猫耳調整済) ---
+// --- user.js (修正版: 学生証作成機能の復旧) ---
 
 let users = JSON.parse(localStorage.getItem('nekoneko_users')) || [];
 let currentUser = null;
@@ -57,12 +57,9 @@ async function loadFaceModels() {
         await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
         
         modelsLoaded = true;
-        console.log("FaceAPI Models Loaded!");
-        
         if(status) status.innerText = "AI準備完了にゃ！";
         if(btn) btn.disabled = false;
         
-        // 既に画像があれば反映（オートズーム適用）
         if(enrollFile) updatePhotoPreview(enrollFile);
 
     } catch (e) {
@@ -90,159 +87,70 @@ async function resizeForAI(img, maxSize = 800) {
     });
 }
 
-// ★顔を中心にトリミング領域を計算する関数
-function calculateFaceCrop(imgW, imgH, detection, targetRatioW_H) {
-    // 顔がない場合は中央トリミング
-    if (!detection) {
-        let cropW = imgW;
-        let cropH = cropW / targetRatioW_H;
-        if (cropH > imgH) {
-            cropH = imgH;
-            cropW = cropH * targetRatioW_H;
-        }
-        return {
-            x: (imgW - cropW) / 2,
-            y: (imgH - cropH) / 2,
-            w: cropW,
-            h: cropH
-        };
-    }
-
-    // 顔がある場合
-    const box = detection.detection.box;
-    const faceCX = box.x + box.width / 2;
-    const faceCY = box.y + box.height / 2;
-
-    // 顔が枠の幅の55%を占めるようにする
-    const FACE_SCALE_TARGET = 0.55;
-    
-    let cropW = box.width / FACE_SCALE_TARGET;
-    let cropH = cropW / targetRatioW_H;
-
-    // 画像からはみ出さないように補正
-    if (cropW > imgW) {
-        cropW = imgW;
-        cropH = cropW / targetRatioW_H;
-    }
-    if (cropH > imgH) {
-        cropH = imgH;
-        cropW = cropH * targetRatioW_H;
-    }
-
-    // 中心座標から左上座標を計算
-    let sx = faceCX - cropW / 2;
-    let sy = faceCY - cropH / 2;
-
-    // 画像範囲外チェック
-    if (sx < 0) sx = 0;
-    if (sy < 0) sy = 0;
-    if (sx + cropW > imgW) sx = imgW - cropW;
-    if (sy + cropH > imgH) sy = imgH - cropH;
-
-    return { x: sx, y: sy, w: cropW, h: cropH };
-}
-
-// ★プレビュー更新（顔オートズーム＆即時合成）
+// プレビュー更新 (標準クロップ・猫耳調整済)
 async function updatePhotoPreview(file) {
     enrollFile = file;
     const slot = document.getElementById('id-photo-slot');
     if (!slot) return;
 
-    slot.innerHTML = '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#666;font-size:0.8rem;font-weight:bold;">🐱 顔を探してるにゃ...</div>';
+    slot.innerHTML = '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#666;font-size:0.8rem;font-weight:bold;">🐱 加工中にゃ...</div>';
 
     const img = new Image();
     img.src = URL.createObjectURL(file);
     await new Promise(r => img.onload = r);
 
-    // AI処理
-    let detection = null;
-    let aiImg = null;
-    
-    if (modelsLoaded) {
-        try {
-            aiImg = await resizeForAI(img);
-            // 検出精度重視 (0.3)
-            const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 });
-            detection = await faceapi.detectSingleFace(aiImg, options).withFaceLandmarks();
-        } catch (e) { console.error(e); }
-    }
-
-    // プレビュー枠のアスペクト比を取得
-    const slotRect = slot.getBoundingClientRect();
-    const targetAspect = slotRect.width / slotRect.height || 0.68;
-
-    const aiScale = aiImg ? (img.width / aiImg.width) : 1;
-    
-    let scaledDetection = null;
-    if (detection) {
-        const box = detection.detection.box;
-        scaledDetection = {
-            detection: {
-                box: {
-                    x: box.x * aiScale,
-                    y: box.y * aiScale,
-                    width: box.width * aiScale,
-                    height: box.height * aiScale
-                }
-            }
-        };
-    }
-
-    // クロップ領域計算
-    const crop = calculateFaceCrop(img.width, img.height, scaledDetection, targetAspect);
-
-    // Canvas作成 (高画質表示用)
     const canvas = document.createElement('canvas');
-    canvas.width = slotRect.width * 2;
-    canvas.height = slotRect.height * 2;
+    canvas.width = img.width;
+    canvas.height = img.height;
     
     canvas.style.width = '100%';
     canvas.style.height = '100%';
-    canvas.style.objectFit = 'contain';
+    canvas.style.objectFit = 'cover'; 
     
     const ctx = canvas.getContext('2d');
-    
-    // トリミング描画
-    ctx.drawImage(img, crop.x, crop.y, crop.w, crop.h, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0);
     
     slot.innerHTML = '';
     slot.appendChild(canvas);
 
-    // 合成描画 (プレビュー時)
-    if (detection) {
-        const landmarks = detection.landmarks;
-        const nose = landmarks.getNose()[3];
-        const leftEyeBrow = landmarks.getLeftEyeBrow()[2];
-        const rightEyeBrow = landmarks.getRightEyeBrow()[2];
-
-        // 描画先のスケール
-        const drawScale = canvas.width / crop.w;
-
-        // 座標変換関数
-        const transX = (x) => (x * aiScale - crop.x) * drawScale;
-        const transY = (y) => (y * aiScale - crop.y) * drawScale;
-        const transW = (w) => (w * aiScale) * drawScale;
-
-        if (decoMuzzle.complete) {
-            const nX = transX(nose.x);
-            const nY = transY(nose.y);
-            const faceW = transW(detection.detection.box.width);
-            const muzW = faceW * 0.8;
-            const muzH = muzW * 0.8;
-            ctx.drawImage(decoMuzzle, nX - muzW/2, nY - muzH/2.5, muzW, muzH);
-        }
-
-        if (decoEars.complete) {
-            const browX = transX((leftEyeBrow.x + rightEyeBrow.x)/2);
-            const browY = transY((leftEyeBrow.y + rightEyeBrow.y)/2);
-            const faceW = transW(detection.detection.box.width);
+    if (modelsLoaded) {
+        try {
+            const aiImg = await resizeForAI(img);
+            const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 });
+            const detection = await faceapi.detectSingleFace(aiImg, options).withFaceLandmarks();
             
-            // 調整値: サイズ1.7, 位置0.35
-            const earW = faceW * 1.7;
-            const earH = earW * 0.7;
-            const earOffset = earH * 0.35; 
-            
-            ctx.drawImage(decoEars, browX - earW/2, browY - earH + earOffset, earW, earH);
+            if (detection) {
+                const landmarks = detection.landmarks;
+                const nose = landmarks.getNose()[3];
+                const leftEyeBrow = landmarks.getLeftEyeBrow()[2];
+                const rightEyeBrow = landmarks.getRightEyeBrow()[2];
+
+                const scale = img.width / aiImg.width;
+
+                if (decoMuzzle.complete) {
+                    const nX = nose.x * scale;
+                    const nY = nose.y * scale;
+                    const faceW = detection.detection.box.width * scale;
+                    const muzW = faceW * 0.8;
+                    const muzH = muzW * 0.8;
+                    ctx.drawImage(decoMuzzle, nX - muzW/2, nY - muzH/2.5, muzW, muzH);
+                }
+
+                if (decoEars.complete) {
+                    const browX = ((leftEyeBrow.x + rightEyeBrow.x)/2) * scale;
+                    const browY = ((leftEyeBrow.y + rightEyeBrow.y)/2) * scale;
+                    const faceW = detection.detection.box.width * scale;
+                    
+                    // 調整: サイズ1.7, 位置0.35
+                    const earW = faceW * 1.7;
+                    const earH = earW * 0.7;
+                    const earOffset = earH * 0.35; 
+                    
+                    ctx.drawImage(decoEars, browX - earW/2, browY - earH + earOffset, earW, earH);
+                }
+            }
+        } catch (e) {
+            console.error("Preview AI Error:", e);
         }
     }
 }
@@ -307,7 +215,7 @@ function closeEnrollCamera() {
     if (modal) modal.classList.add('hidden');
 }
 
-// ★保存処理: 顔オートズーム＆合成対応
+// 保存処理
 async function renderForSave() {
     const img = new Image();
     img.crossOrigin = "Anonymous";
@@ -325,6 +233,7 @@ async function renderForSave() {
     canvas.height = img.height;
     const ctx = canvas.getContext('2d');
 
+    // 640x400基準の比率
     const BASE_W = 640;
     const BASE_H = 400;
     const rx = canvas.width / BASE_W;
@@ -344,74 +253,56 @@ async function renderForSave() {
             const destW = 195 * rx;
             const destH = 180 * ry;
             
-            const targetAspect = destW / destH;
-
-            let detection = null;
-            let aiImg = null;
-            let aiScale = 1;
-
-            if (modelsLoaded) {
-                aiImg = await resizeForAI(photoImg);
-                const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 });
-                detection = await faceapi.detectSingleFace(aiImg, options).withFaceLandmarks();
-                aiScale = photoImg.width / aiImg.width;
-            }
-
-            let scaledDetection = null;
-            if (detection) {
-                const box = detection.detection.box;
-                scaledDetection = {
-                    detection: {
-                        box: {
-                            x: box.x * aiScale,
-                            y: box.y * aiScale,
-                            width: box.width * aiScale,
-                            height: box.height * aiScale
-                        }
-                    }
-                };
-            }
-
-            const crop = calculateFaceCrop(photoImg.width, photoImg.height, scaledDetection, targetAspect);
+            const scale = Math.max(destW / photoImg.width, destH / photoImg.height);
+            const cropW = destW / scale;
+            const cropH = destH / scale;
+            const cropX = (photoImg.width - cropW) / 2;
+            const cropY = (photoImg.height - cropH) / 2;
 
             ctx.save();
             ctx.beginPath();
             ctx.roundRect(destX, destY, destW, destH, 2 * rx);
             ctx.clip(); 
-            ctx.drawImage(photoImg, crop.x, crop.y, crop.w, crop.h, destX, destY, destW, destH);
+            ctx.drawImage(photoImg, cropX, cropY, cropW, cropH, destX, destY, destW, destH);
             ctx.restore();
 
-            if (detection) {
-                const landmarks = detection.landmarks;
-                const nose = landmarks.getNose()[3];
-                const leftEyeBrow = landmarks.getLeftEyeBrow()[2];
-                const rightEyeBrow = landmarks.getRightEyeBrow()[2];
-
-                const drawScale = destW / crop.w;
-
-                const transX = (x) => (x * aiScale - crop.x) * drawScale + destX;
-                const transY = (y) => (y * aiScale - crop.y) * drawScale + destY;
-                const transW = (w) => (w * aiScale) * drawScale;
-
-                if (decoMuzzle.complete) {
-                    const nX = transX(nose.x);
-                    const nY = transY(nose.y);
-                    const faceW = transW(detection.detection.box.width);
-                    const muzW = faceW * 0.8;
-                    const muzH = muzW * 0.8;
-                    ctx.drawImage(decoMuzzle, nX - muzW/2, nY - muzH/2.5, muzW, muzH);
-                }
+            if (modelsLoaded) {
+                const aiImg = await resizeForAI(photoImg);
+                const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 });
+                const detection = await faceapi.detectSingleFace(aiImg, options).withFaceLandmarks();
                 
-                if (decoEars.complete) {
-                    const browX = transX((leftEyeBrow.x + rightEyeBrow.x)/2);
-                    const browY = transY((leftEyeBrow.y + rightEyeBrow.y)/2);
-                    const faceW = transW(detection.detection.box.width);
-                    
-                    const earW = faceW * 1.7;
-                    const earH = earW * 0.7;
-                    const earOffset = earH * 0.35;
+                if (detection) {
+                    const landmarks = detection.landmarks;
+                    const nose = landmarks.getNose()[3];
+                    const leftEyeBrow = landmarks.getLeftEyeBrow()[2];
+                    const rightEyeBrow = landmarks.getRightEyeBrow()[2];
+                    const aiScale = photoImg.width / aiImg.width;
 
-                    ctx.drawImage(decoEars, browX - earW/2, browY - earH + earOffset, earW, earH);
+                    // 座標変換
+                    const transX = (val) => (val - cropX) * scale + destX;
+                    const transY = (val) => (val - cropY) * scale + destY;
+                    const transS = (val) => val * scale;
+
+                    if (decoMuzzle.complete) {
+                        const nX = transX(nose.x * aiScale);
+                        const nY = transY(nose.y * aiScale);
+                        const faceW = transS(detection.detection.box.width * aiScale);
+                        const muzW = faceW * 0.8;
+                        const muzH = muzW * 0.8;
+                        ctx.drawImage(decoMuzzle, nX - muzW/2, nY - muzH/2.5, muzW, muzH);
+                    }
+                    
+                    if (decoEars.complete) {
+                        const browX = transX(((leftEyeBrow.x + rightEyeBrow.x)/2) * aiScale);
+                        const browY = transY(((leftEyeBrow.y + rightEyeBrow.y)/2) * aiScale);
+                        const faceW = transS(detection.detection.box.width * aiScale);
+                        
+                        const earW = faceW * 1.7;
+                        const earH = earW * 0.7;
+                        const earOffset = earH * 0.35;
+
+                        ctx.drawImage(decoEars, browX - earW/2, browY - earH + earOffset, earW, earH);
+                    }
                 }
             }
         } catch(e) { console.error(e); }

@@ -6,9 +6,8 @@
     <title>🐾猫後市立ねこづか小学校</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Sawarabi+Gothic&family=M+PLUS+Rounded+1c:wght@700;900&family=Kiwi+Maru:wght@900&display=swap" rel="stylesheet">
-    <!-- 顔認識ライブラリ -->
     <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-    <!-- クロップ用 (独自実装用スタイル) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css" rel="stylesheet">
 </head>
 <body>
@@ -24,7 +23,7 @@
             <div class="title-btn-container">
                 <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
             </div>
-            <div class="version-tag">Build: v18.1.0-FinalIntegrated</div>
+            <div class="version-tag">Build: v18.1.0-Complete</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -86,6 +85,7 @@
                 <button onclick="selectMode('chat')" class="main-btn blue-btn">🎤 こじんめんだん</button>
                 <button onclick="selectMode('lunch')" class="main-btn pink-btn">🍽️ おいしい給食</button>
                 <button onclick="showAttendance()" class="main-btn gray-btn">📅 出席簿をみる</button>
+                <!-- ★修正: タイトルに戻るボタン -->
                 <button onclick="backToTitle()" class="main-btn gray-btn">👋 帰宅する</button>
             </div>
         </section>

@@ -1,12 +1,13 @@
-// --- audio.js (最終完全版) ---
+// --- audio.js (完全版) ---
 
 let audioCtx = null;
 let currentSource = null;
-let abortController = null; 
+let abortController = null; // 通信キャンセル用
 
+// 口パク管理用グローバル変数
 window.isNellSpeaking = false;
 
-// 外部から初期化するための関数
+// 外部から初期化
 window.initAudioContext = async function() {
     if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -16,20 +17,22 @@ window.initAudioContext = async function() {
     }
 };
 
-// 単発のTTS再生用（補助）
 async function speakNell(text, mood = "normal") {
     if (!text || text === "") return;
 
+    // 1. 前の音声を停止
     if (currentSource) {
         try { currentSource.stop(); } catch(e) {}
         currentSource = null;
     }
 
+    // 2. 前の通信（読み込み中）があればキャンセル
     if (abortController) {
         abortController.abort();
     }
     abortController = new AbortController();
 
+    // 3. 口パクOFF
     window.isNellSpeaking = false;
 
     await window.initAudioContext();
