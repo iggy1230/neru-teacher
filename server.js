@@ -1,4 +1,4 @@
-// --- server.js (完全版 v16.8: 声設定Aoede復元・接続修正) ---
+// --- server.js (完全版 v16.9: 鉄壁の接続構成) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -148,7 +148,7 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- ★Live API Proxy (修正版: 声設定復活) ---
+// --- ★Live API Proxy (鉄壁版) ---
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', async (clientWs, req) => {
@@ -173,24 +173,18 @@ wss.on('connection', async (clientWs, req) => {
         geminiWs.on('open', () => {
             console.log(`✨ [${name}] Gemini接続成功`);
             
-            // ★修正: speech_config を復活させ、構造を正しく記述
+            // ★修正: 最もシンプルな設定 (声設定なし)
             const setupMsg = {
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
                     generation_config: { 
-                        response_modalities: ["AUDIO", "TEXT"],
-                        speech_config: { 
-                            voice_config: { 
-                                prebuilt_voice_config: { 
-                                    voice_name: "Aoede" 
-                                } 
-                            } 
-                        }
+                        response_modalities: ["AUDIO", "TEXT"]
+                        // speech_config は削除 (デフォルトの声を使用)
                     }, 
                     system_instruction: {
                         parts: [{
                             text: `
-                            あなたは「ねこご市立ねこづか小学校」のネル先生だにゃ。相手は小学${grade}年生の${name}さん。
+                            あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。相手は小学${grade}年生の${name}さん。
                             語尾は「〜にゃ」。
                             
                             過去の会話記憶:
@@ -207,10 +201,10 @@ wss.on('connection', async (clientWs, req) => {
             }
         });
 
+        // エラーログ
         geminiWs.on('close', (code, reason) => {
             console.log(`\n🔒 Gemini WS Closed. Code: ${code}, Reason: ${reason}`);
         });
-        
         geminiWs.on('error', (e) => {
             console.error("\n❌ Gemini WS Error:", e);
         });
