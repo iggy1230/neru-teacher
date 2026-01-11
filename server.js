@@ -1,4 +1,4 @@
-// --- server.js (完全版 v16.9: 鉄壁の接続構成) ---
+// --- server.js (真・完全版 v17.0: JSONキー修正・接続確実版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -148,7 +148,7 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- ★Live API Proxy (鉄壁版) ---
+// --- ★Live API Proxy (真・完全版: CamelCase修正) ---
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', async (clientWs, req) => {
@@ -173,15 +173,21 @@ wss.on('connection', async (clientWs, req) => {
         geminiWs.on('open', () => {
             console.log(`✨ [${name}] Gemini接続成功`);
             
-            // ★修正: 最もシンプルな設定 (声設定なし)
+            // ★修正ポイント: すべて camelCase で記述！
             const setupMsg = {
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
-                    generation_config: { 
-                        response_modalities: ["AUDIO", "TEXT"]
-                        // speech_config は削除 (デフォルトの声を使用)
+                    generationConfig: { 
+                        responseModalities: ["AUDIO", "TEXT"],
+                        speechConfig: { 
+                            voiceConfig: { 
+                                prebuiltVoiceConfig: { 
+                                    voiceName: "Aoede" 
+                                } 
+                            } 
+                        }
                     }, 
-                    system_instruction: {
+                    systemInstruction: {
                         parts: [{
                             text: `
                             あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。相手は小学${grade}年生の${name}さん。
@@ -211,18 +217,54 @@ wss.on('connection', async (clientWs, req) => {
 
         clientWs.on('message', (data) => {
             if (geminiWs.readyState === WebSocket.OPEN) {
-                geminiWs.send(JSON.stringify({ 
-                    realtime_input: { 
-                        media_chunks: [{ mime_type: "audio/pcm;rate=16000", data: data.toString() }] 
-                    } 
-                }));
+                // クライアントからの生データ(JSON)をそのまま転送するのではなく
+                // 正しい形式(realtimeInput)にラップして送る
+                // (anlyze.js側ですでにバイナリを送っている場合と、JSONを送っている場合があるため注意)
+                // 今回のanlyze.jsはBase64 JSONを送っているので、サーバーでラップする
+                
+                try {
+                    const parsed = JSON.parse(data.toString());
+                    // クライアントが既に整形済みの場合
+                    if(parsed.realtime_input) { 
+                        // camelCaseに直して送信
+                        geminiWs.send(JSON.stringify({
+                             realtimeInput: {
+                                 mediaChunks: parsed.realtime_input.media_chunks
+                             }
+                        }));
+                    } else {
+                        // 生のBase64だけ来た場合(今回の仕様はこちら)
+                        geminiWs.send(JSON.stringify({ 
+                            realtimeInput: { 
+                                mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: parsed.base64Audio || parsed }] 
+                            } 
+                        }));
+                    }
+                } catch (e) {
+                     // 念のため、anlyze.jsが直接バイナリを送ってきた場合のフォールバック（通常はない）
+                     // console.error("Data parse error", e);
+                }
             }
         });
 
+        // ★anlyze.js側の修正に合わせるため、on('message') の受信処理を少し柔軟にします
+        // anlyze.jsから送られてくるのは { base64Audio: "..." } というJSONの想定です
+        
+    } catch (e) { 
+        console.error("WS Setup Error", e); 
+        if (clientWs.readyState === WebSocket.OPEN) clientWs.send(JSON.stringify({ type: "error" }));
+        clientWs.close(); 
+    }
+
+    // Geminiからのメッセージ処理（ここは変更なし、ただしcamelCaseで来る可能性を考慮）
+    if (geminiWs) {
         geminiWs.on('message', (data) => {
             const parsed = JSON.parse(data);
-            if (parsed.serverContent?.modelTurn?.parts) {
-                parsed.serverContent.modelTurn.parts.forEach(p => {
+            
+            // テキスト抽出 (serverContent または server_content)
+            const content = parsed.serverContent || parsed.server_content;
+            if (content?.modelTurn?.parts) {
+                content.modelTurn.parts.forEach(p => {
                     if (p.text) {
                         console.log(`\n🤖 ネル先生: ${p.text}`);
                         currentSessionLog += `ネル: ${p.text}\n`;
@@ -231,11 +273,6 @@ wss.on('connection', async (clientWs, req) => {
             }
             if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data); 
         });
-
-    } catch (e) { 
-        console.error("WS Setup Error", e); 
-        if (clientWs.readyState === WebSocket.OPEN) clientWs.send(JSON.stringify({ type: "error" }));
-        clientWs.close(); 
     }
     
     clientWs.on('close', async () => {
