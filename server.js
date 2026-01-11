@@ -1,4 +1,4 @@
-// --- server.js (記憶定着版 v17.0: テキスト受信ON) ---
+// --- server.js (復旧版: 音声通話機能の復活・エラー1007回避) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -148,7 +148,7 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- ★Live API Proxy (記憶定着版) ---
+// --- ★Live API Proxy (復旧版: 1007エラー回避) ---
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', async (clientWs, req) => {
@@ -156,14 +156,12 @@ wss.on('connection', async (clientWs, req) => {
     const grade = params.grade || "1";
     const name = decodeURIComponent(params.name || "生徒");
     
-    // 1. 記憶をロード
     let userMemory = "";
     try {
         const data = await fs.readFile(MEMORY_FILE, 'utf8');
-        const allMemories = JSON.parse(data);
-        userMemory = allMemories[name] || "まだ会話していません。";
+        userMemory = JSON.parse(data)[name] || "";
         console.log(`📖 [${name}] 記憶ロード: ${userMemory.length}文字`);
-    } catch (e) { console.error("Memory Load Error:", e); }
+    } catch (e) { }
 
     let currentSessionLog = "";
     let geminiWs = null;
@@ -175,17 +173,20 @@ wss.on('connection', async (clientWs, req) => {
         geminiWs.on('open', () => {
             console.log(`✨ [${name}] Gemini接続成功`);
             
-            // ★重要: スネークケース & テキスト受信ON
+            // ★重要: 設定を最小限にし、response_modalitiesも削除（デフォルトの音声のみ動作に任せる）
             const setupMsg = {
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
-                    generation_config: { 
-                        response_modalities: ["AUDIO", "TEXT"], // ★ここが重要！
-                        // speech_config は削除 (接続優先)
-                    }, 
+                    // generation_config を削除してデフォルト設定にする
+                    // これで "Invalid Argument" (1007) を回避
                     system_instruction: {
                         parts: [{
-                            text: `あなたは「ねこご市立ねこづか小学校」のネル先生。語尾は「にゃ」。相手は小学${grade}年生の${name}さん。記憶:${userMemory.slice(-1000)}`
+                            text: `
+                            あなたは「ねこご市立、ねこづか小学校」のネル先生。
+                            語尾は「〜にゃ」。
+                            相手は小学${grade}年生の${name}さん。
+                            記憶:${userMemory.slice(-1000)}
+                            `
                         }]
                     }
                 }
@@ -197,7 +198,7 @@ wss.on('connection', async (clientWs, req) => {
             }
         });
 
-        // エラー詳細ログ
+        // エラーログ
         geminiWs.on('close', (code, reason) => {
             console.log(`\n🔒 Gemini WS Closed. Code: ${code}, Reason: ${reason}`);
         });
@@ -205,7 +206,6 @@ wss.on('connection', async (clientWs, req) => {
             console.error("\n❌ Gemini WS Error:", e);
         });
 
-        // クライアント -> Gemini (音声転送)
         clientWs.on('message', (data) => {
             if (geminiWs.readyState === WebSocket.OPEN) {
                 try {
@@ -219,22 +219,16 @@ wss.on('connection', async (clientWs, req) => {
                         }
                     };
                     geminiWs.send(JSON.stringify(msg));
-                } catch(e) { console.error("Audio Send Error", e); }
+                } catch(e) { }
             }
         });
 
-        // Gemini -> クライアント
         geminiWs.on('message', (data) => {
             const parsed = JSON.parse(data);
-            // ★テキストが来たらログに溜める
-            if (parsed.serverContent?.modelTurn?.parts) {
-                parsed.serverContent.modelTurn.parts.forEach(p => {
-                    if (p.text) {
-                        console.log(`🤖 ネル: ${p.text}`); // ログで確認！
-                        currentSessionLog += `ネル: ${p.text}\n`;
-                    }
-                });
-            }
+            
+            // テキストが来ないためログ保存はできないが、音声は転送する
+            // 将来的にテキストも来るようになったらここで保存処理を復活させる
+            
             if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data); 
         });
 
@@ -243,25 +237,8 @@ wss.on('connection', async (clientWs, req) => {
         clientWs.close(); 
     }
     
-    // 2. 切断時に記憶を保存
     clientWs.on('close', async () => {
         if (geminiWs) geminiWs.close();
-        if (currentSessionLog.trim().length > 0) {
-            try {
-                let currentAllMemories = {};
-                try {
-                    const data = await fs.readFile(MEMORY_FILE, 'utf8');
-                    currentAllMemories = JSON.parse(data);
-                } catch {}
-                const oldMem = currentAllMemories[name] || "";
-                const newEntry = `\n--- ${new Date().toLocaleString('ja-JP')} ---\n${currentSessionLog}`;
-                let combined = (oldMem + newEntry).slice(-10000); 
-                currentAllMemories[name] = combined;
-                await fs.writeFile(MEMORY_FILE, JSON.stringify(currentAllMemories, null, 2));
-                console.log(`✅ [${name}] 会話を保存しました！(${currentSessionLog.length}文字)`);
-            } catch (e) { console.error("Save Error:", e); }
-        } else {
-            console.log(`⚠️ [${name}] テキスト受信なしのため保存せず`);
-        }
+        console.log(`👋 [${name}] 切断`);
     });
 });
