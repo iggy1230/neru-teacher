@@ -1,5 +1,3 @@
-// --- server.js (修正版: userMemory受け入れ対応) ---
-
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import express from 'express';
@@ -10,7 +8,6 @@ import WebSocket, { WebSocketServer } from 'ws';
 import { parse } from 'url';
 import dotenv from 'dotenv';
 
-// .envファイルを読み込む
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -18,16 +15,12 @@ const __dirname = path.dirname(__filename);
 const app = express();
 
 app.use(cors());
-// 画像データが大きい場合に対応するため制限を緩和
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, '.')));
 
-// API初期化
 let genAI, ttsClient;
 try {
     genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    
-    // Google Cloud TTSの初期化
     if (process.env.GOOGLE_CREDENTIALS_JSON) {
         ttsClient = new textToSpeech.TextToSpeechClient({
             credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON)
@@ -39,15 +32,14 @@ try {
     console.error("Init Error:", e.message); 
 }
 
-// --- 文書検出API ---
+// 文書検出API
 app.post('/detect-document', async (req, res) => {
     try {
         const { image } = req.body;
         if (!image) return res.status(400).json({ error: "No image" });
 
-        // 高速なFlashモデルを使用
         const model = genAI.getGenerativeModel({
-            model: "gemini-2.0-flash-exp",
+            model: "gemini-2.0-flash-exp", 
             generationConfig: { responseMimeType: "application/json" }
         });
 
@@ -72,12 +64,10 @@ app.post('/detect-document', async (req, res) => {
         res.json(json);
     } catch (e) {
         console.error("Detect Error:", e);
-        // エラー時はデフォルト値（全体より少し内側）を返す
         res.json({ points: [{x:5,y:5}, {x:95,y:5}, {x:95,y:95}, {x:5,y:95}] });
     }
 });
 
-// --- 音声合成 (SSML) ---
 function createSSML(text, mood) {
     let rate = "1.1", pitch = "+2st";
     if (mood === "thinking") { rate = "1.0"; pitch = "0st"; }
@@ -113,24 +103,20 @@ app.post('/synthesize', async (req, res) => {
     }
 });
 
-// --- ゲーム実況API ---
 app.post('/game-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { type, name, score } = req.body;
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
-
         let prompt = "";
         let mood = "excited";
-
         if (type === 'start') {
-            prompt = `あなたはネル先生。生徒「${name}」がゲーム開始。「${name}さん！カリカリいっぱいゲットしてにゃ！」とだけ言って。`;
+            prompt = `あなたはネル先生。生徒「${name}」がゲーム開始。「${name}さん！カリカリいっぱいゲットしてにゃ！」とだけ言って。余計な言葉は不要。`;
         } else if (type === 'end') {
-            prompt = `あなたはネル先生。ゲーム終了。スコア${score}個(最大20)。スコアに応じて褒めるか励まして。20文字以内。語尾「にゃ」。`;
+            prompt = `あなたはネル先生。ゲーム終了。スコア${score}個(最大20)。スコアに応じて褒めるか励ます言葉を【1つだけ】出力して。20文字以内。語尾「にゃ」。候補を羅列しないでください。`;
         } else {
-            prompt = `ネル先生の実況。状況: ${type}。「うまい！」「すごい！」など5文字程度。語尾「にゃ」。`;
+            prompt = `ネル先生の実況。状況: ${type}。「うまい！」「すごい！」など5文字程度の一言だけ。語尾「にゃ」。`;
         }
-
         const result = await model.generateContent(prompt);
         let reply = result.response.text().trim();
         if (reply.includes('\n')) reply = reply.split('\n')[0];
@@ -140,17 +126,21 @@ app.post('/game-reaction', async (req, res) => {
     }
 });
 
-// --- 給食リアクションAPI ---
+// ★修正: 給食リアクションの強化
 app.post('/lunch-reaction', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { count, name } = req.body;
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp", generationConfig: { maxOutputTokens: 60 } });
-
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp", generationConfig: { maxOutputTokens: 100 } });
         let prompt = "";
         const isSpecial = count % 10 === 0;
+        
+        // バリエーションを増やすためのテーマ選び
+        const themes = ["カリカリの歯ごたえ", "魚の風味", "満腹感", "幸せな気分", "おかわり希望", "生徒への感謝", "給食の栄養", "午後の活力"];
+        const randomTheme = themes[Math.floor(Math.random() * themes.length)];
 
         if (isSpecial) {
+            // ★修正: 「さん」付けを強制
             prompt = `
             あなたは「ねこご市立ねこづか小学校」のネル先生です。
             生徒「${name}」さんから記念すべき${count}個目の給食をもらいました！
@@ -158,9 +148,12 @@ app.post('/lunch-reaction', async (req, res) => {
             普段とは違う特別なリアクションをしてください。語尾は「にゃ」。
             `;
         } else {
-            prompt = `あなたはネル先生。生徒「${name}」から給食のカリカリをもらった。15文字以内の一言感想。語尾にゃ。`;
+            prompt = `
+            あなたはネル先生です。生徒「${name}」から給食のカリカリをもらいました。
+            テーマ「${randomTheme}」について、15文字以内の一言で感想を言ってください。
+            語尾は「にゃ」。
+            `;
         }
-
         const result = await model.generateContent(prompt);
         let reply = result.response.text().trim();
         if (!isSpecial && reply.includes('\n')) reply = reply.split('\n')[0];
@@ -168,43 +161,127 @@ app.post('/lunch-reaction', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Lunch Error" }); }
 });
 
-// --- 画像分析API ---
+app.post('/chat', async (req, res) => {
+    try {
+        const { message, grade, name } = req.body;
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+        const prompt = `あなたは「ネル先生」。相手は小学${grade}年生「${name}」。30文字以内、語尾「にゃ」。絵文字禁止。発言: ${message}`;
+        const result = await model.generateContent(prompt);
+        res.json({ reply: result.response.text() });
+    } catch (err) { res.status(500).json({ error: "Chat Error" }); }
+});
+
+// ★修正: 分析ロジックの強化
 app.post('/analyze', async (req, res) => {
     try {
         if (!genAI) throw new Error("GenAI not ready");
         const { image, mode, grade, subject, analysisType } = req.body;
         
         let modelName = "gemini-2.0-flash-exp"; 
-        if (analysisType === 'precision') modelName = "gemini-2.5-pro";
+        if (analysisType === 'precision') modelName = "gemini-2.5-pro"; 
 
         const model = genAI.getGenerativeModel({
             model: modelName,
             generationConfig: { responseMimeType: "application/json" }
         });
 
+        // 教科別詳細ルール
         const rules = {
-            'さんすう': { attention: `・筆算の横線とマイナス記号を混同しない。\n・累乗や分数を正確に。`, hints: `1.立式のヒント 2.単位や図のヒント 3.計算のコツ`, grading: `・筆算の繰り上がりを答えと見間違えない。\n・単位忘れはバツ。\n・0と6、1と7の見間違いに注意。` },
-            'こくご': { attention: `・縦書きです。右上から読んでください。\n・解答欄（□）は『□(読み仮名)』形式で。`, hints: `1.漢字のなりたち 2.注目すべき言葉 3.文末の指定`, grading: `・送り仮名ミスはバツ。\n・文末（〜こと）が合っているかチェック。` },
-            'りか': { attention: `・グラフの軸ラベルや単位を落とさない。\n・選択肢も書き出す。`, hints: `1.図表の見方 2.関連知識 3.選択肢の絞り込み`, grading: `・カタカナ指定をひらがなで書いたらバツ。` },
-            'しゃかい': { attention: `・地図記号や年表を正確に読み取る。`, hints: `1.資料の注目点 2.時代の背景 3.キーワード`, grading: `・漢字指定をひらがなで書いたらバツ。` }
+            'さんすう': {
+                attention: `
+                ・筆算の横線とマイナス記号を混同しないこと。
+                ・累乗（2^2など）や分数を正確に認識すること。
+                ・筆算の繰り上がりを「答え」と見間違えないように注意してにゃ。
+                ・単位（cm, Lなど）が問題で指定されている場合、単位がないものはバツにしてにゃ。
+                ・数字の「0」と「6」、「1」と「7」の見間違いに注意して、慎重に判定してにゃ。
+                `,
+                hints: `
+                1. ヒント1（立式）: 「何算を使えばいいか」のヒント（例：全部でいくつ？と聞かれているから足し算にゃ）。
+                2. ヒント2（注目点）: 「単位のひっかけ」や「図の数値」への誘導（例：cmをmに直すのを忘れてないかにゃ？）。
+                3. ヒント3（計算のコツ）: 「計算の工夫」や「最終確認」（例：一の位から順番に計算してみるにゃ）。
+                `
+            },
+            'こくご': {
+                attention: `
+                ・漢字の書き取り問題では、答えとなる空欄を『□(ふりがな)』という形式で、ふりがなを漏らさず正確に書き起こしてください。
+                ・縦書きの場合は右から左へ読むこと。
+                ・読解問題の長い文章は書き起こししない。
+                ・送り仮名が間違っている場合はバツだにゃ。
+                ・読解問題では、解答の「文末」が適切か（〜のこと、〜から等）もチェックしてにゃ。
+                `,
+                hints: `
+                1. ヒント1（漢字のなりたち/場所）: 「漢字のなりたち」または「答えがどこにあるか」を教える。
+                2. ヒント2（辺やつくり/キーワード）: 「辺やつくり」または「注目すべき言葉」を教える。
+                3. ヒント3（似た漢字/答え方）: 「似た漢字」または「語尾の指定」を教える。
+                `
+            },
+            'りか': {
+                attention: `
+                ・グラフの軸ラベルや単位（g, cm, ℃など）を落とさないこと。
+                ・記号選択問題（ア、イ、ウ）の選択肢も書き出すこと。
+                ・最初の問題が図や表と似た位置にある場合があるので見逃さないこと。
+                ・カタカナ指定（例：ジョウロ、アルコールランプ）をひらがなで書いていたらバツにしてにゃ。
+                ・グラフの描画問題は、点が正しい位置にあるか、線が真っ直ぐかを厳しく判定してにゃ。
+                `,
+                hints: `
+                1. ヒント1（観察）: 「図や表のどこを見るか」（例：グラフが急に上がっているところを探してみてにゃ）。
+                2. ヒント2（関連知識）: 「習った言葉の想起」（例：この実験で使った、あの青い液体の名前は何だったかにゃ？）。
+                3. ヒント3（絞り込み）: 「選択肢のヒント」や「最初の1文字」（例：『平』から始まる4文字の時代にゃ）。
+                `
+            },
+            'しゃかい': {
+                attention: `
+                ・グラフの軸ラベルや単位（g, cm, ℃など）を落とさないこと。
+                ・記号選択問題（ア、イ、ウ）の選択肢も書き出すこと。
+                ・最初の問題が図や表と似た位置にある場合があるので見逃さないこと。
+                ・漢字指定の用語（例：都道府県名）をひらがなで書いていたらバツにゃ。
+                ・時代背景が混ざっていないか（例：江戸時代なのに「士農工商」など）に注意してにゃ。
+                `,
+                hints: `
+                1. ヒント1（観察）: 「図や表のどこを見るか」（例：グラフが急に上がっているところを探してみてにゃ）。
+                2. ヒント2（関連知識）: 「習った言葉の想起」（例：この実験で使った、あの青い液体の名前は何だったかにゃ？）。
+                3. ヒント3（絞り込み）: 「選択肢のヒント」や「最初の1文字」（例：『平』から始まる4文字の時代にゃ）。
+                `
+            }
         };
         const r = rules[subject] || rules['さんすう'];
+        
         const studentAnswerInstruction = mode === 'explain' 
             ? `・画像内の手書き文字（生徒の答え）は【完全に無視】してください。\n・"student_answer" は空文字 "" にしてください。`
-            : `・生徒の手書き文字を可能な限り読み取り "student_answer" に入れてください。`;
+            : `
+            ・採点モードです。「手書き文字」を可能な限り読み取ってください。
+            ・子供特有の筆跡を考慮して、前後の文脈から数字や文字を推測してください。
+            ・読み取った生徒の答えを "student_answer" に入れてください。
+            `;
 
         const prompt = `
             あなたは「ねこご市立ねこづか小学校」のネル先生（小学${grade}年生${subject}担当）です。語尾は「にゃ」。
+            
             【タスク】提供された画像を分析し、問題をJSONデータとして出力してください。
-            【ルール】
-            1. 全ての問題を抽出。
-            2. 「解答欄」がないテキストは問題として扱わない。
-            3. ${studentAnswerInstruction}
-            4. 教科別注意: ${r.attention}
-            【ヒント生成 (答えネタバレ厳禁)】${r.hints}
+            
+            【書き起こし・抽出の絶対ルール】
+            1. 画像全体を解析し、大問・小問番号を含めてすべての問題を漏らさず抽出してください。
+            2. 大問、小問の数字や項目名は可能な限り書き起こしてください。
+            3. 「解答欄（□、括弧、下線、空欄）」が存在しないテキストは、問題（question）として出力しないでください。
+            4. ${studentAnswerInstruction}
+            5. 教科別注意: ${r.attention}
+            6. １つの問いの中に複数の回答が必要なときは、必要な数だけ回答欄（JSONデータの要素）を分けてください。
+
+            【ヒント生成ルール（答えのネタバレ厳禁）】
+            以下の3段階でヒントを作成してください。絶対に答えそのものは書かないでください。
+            ${r.hints}
+
             【出力JSON形式】
-            [{"id": 1, "label": "①", "question": "問題文", "correct_answer": "正解", "student_answer": "", "hints": ["ヒント1", "ヒント2", "ヒント3"]}]
-            ${mode === 'grade' ? `【採点基準】\n${r.grading}` : ''}
+            [
+              {
+                "id": 1, 
+                "label": "①", 
+                "question": "問題文", 
+                "correct_answer": "正答(検証済みの正確なもの)", 
+                "student_answer": "読み取った手書き回答", 
+                "hints": ["ヒント1", "ヒント2", "ヒント3"]
+              }
+            ]
         `;
 
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
@@ -248,10 +325,29 @@ wss.on('connection', (clientWs, req) => {
                     }, 
                     system_instruction: {
                         parts: [{
-                            // ★修正: memoryを埋め込み
-                            text: `あなたはネル先生。語尾は「〜にゃ」。相手は小学${grade}年生の${name}さん。
-                            【記憶】${memory}
-                            短い言葉で明るく話して。`
+                            // ★修正: こじんめんだんモードの詳細指示
+                            text: `
+                            あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。相手は小学${grade}年生の${name}さん。
+                            
+                            【話し方のルール】
+                            1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
+                            2. 親しみやすい日本の小学校の先生として、一文字一文字をはっきりと、丁寧に発音してにゃ。
+                            3. 特に最初や最後の音を、一文字抜かしたり消したりせずに、最初から最後までしっかり声に出して喋るのがコツだにゃ。
+                            4. 落ち着いた日本語のリズムを大切にして、親しみやすく話してにゃ。
+                            5. 給食(餌)のカリカリが大好物にゃ。
+                            6. とにかく何でも知っているにゃ。
+                            7. ときどき「${name}さんは宿題は終わったかにゃ？」や「そろそろ宿題始めようかにゃ？」と宿題を促してくる。
+                            8. 句読点で自然な間をとる。
+                            9. 日本語をとても上手にしゃべる猫だにゃ。
+                            10. いつも高いトーンで話してにゃ。
+
+                            【NGなこと】
+                            ・ロボットみたいに不自然に区切るのではなく、繋がりのある滑らかな日本語でお願いにゃ。
+                            ・早口になりすぎて、言葉の一部が消えてしまうのはダメだにゃ。
+
+                            【記憶】
+                            ${memory}
+                            `
                         }]
                     }
                 }
