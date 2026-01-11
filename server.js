@@ -1,4 +1,4 @@
-// --- server.js (真・完全版 v17.0: JSONキー修正・接続確実版) ---
+// --- server.js (最終接続確認版: 最小構成・スネークケース) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -11,7 +11,6 @@ import { parse } from 'url';
 import dotenv from 'dotenv';
 import fs from 'fs/promises';
 
-// .envファイルを読み込む
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -22,7 +21,6 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, '.')));
 
-// --- 記憶システム設定 ---
 const MEMORY_FILE = path.join(__dirname, 'memory.json');
 
 async function initMemoryFile() {
@@ -30,12 +28,10 @@ async function initMemoryFile() {
         await fs.access(MEMORY_FILE);
     } catch {
         await fs.writeFile(MEMORY_FILE, JSON.stringify({}));
-        console.log("📝 新しい記憶ファイル(memory.json)を作成しました");
     }
 }
 initMemoryFile();
 
-// --- APIクライアント初期化 ---
 let genAI, ttsClient;
 try {
     genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -50,7 +46,7 @@ try {
     console.error("Init Error:", e.message); 
 }
 
-// --- デバッグ用API ---
+// --- 通常API群 ---
 app.get('/debug/memory', async (req, res) => {
     try {
         const data = await fs.readFile(MEMORY_FILE, 'utf8');
@@ -59,7 +55,6 @@ app.get('/debug/memory', async (req, res) => {
     } catch (e) { res.status(500).send("Error"); }
 });
 
-// --- 文書検出API ---
 app.post('/detect-document', async (req, res) => {
     try {
         const { image } = req.body;
@@ -74,7 +69,6 @@ app.post('/detect-document', async (req, res) => {
     } catch (e) { res.json({ points: [{x:0,y:0}, {x:100,y:0}, {x:100,y:100}, {x:0,y:100}] }); }
 });
 
-// --- TTS API ---
 function createSSML(text, mood) {
     let rate = "1.1", pitch = "+2st";
     if (mood === "thinking") { rate = "1.0"; pitch = "0st"; }
@@ -135,7 +129,7 @@ app.post('/analyze', async (req, res) => {
         const { image, mode, grade, subject, analysisType } = req.body;
         let modelName = analysisType === 'precision' ? "gemini-1.5-pro" : "gemini-2.0-flash-exp";
         const model = genAI.getGenerativeModel({ model: modelName, generationConfig: { responseMimeType: "application/json" } });
-        const prompt = `あなたはネル先生（小学${grade}年生${subject}担当）。画像の問題をJSON出力。ルール: 全て抽出。hints3段階。出力JSON形式: [{"id":1, "label":"①", "question":"...", "correct_answer":"...", "student_answer":"", "hints":[...]}]`;
+        const prompt = `あなたはネル先生。画像の問題をJSON出力。ルール: 全て抽出。`;
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
         let text = result.response.text();
         text = text.substring(text.indexOf('['), text.lastIndexOf(']')+1);
@@ -148,7 +142,7 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- ★Live API Proxy (真・完全版: CamelCase修正) ---
+// --- ★Live API Proxy (最小構成・スネークケース) ---
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', async (clientWs, req) => {
@@ -160,8 +154,8 @@ wss.on('connection', async (clientWs, req) => {
     try {
         const data = await fs.readFile(MEMORY_FILE, 'utf8');
         userMemory = JSON.parse(data)[name] || "";
-        console.log(`📖 [${name}] 記憶ロード完了: ${userMemory.length}文字`);
-    } catch (e) { console.error("Memory Load Error:", e); }
+        console.log(`📖 [${name}] 記憶ロード: ${userMemory.length}文字`);
+    } catch (e) { }
 
     let currentSessionLog = "";
     let geminiWs = null;
@@ -173,29 +167,14 @@ wss.on('connection', async (clientWs, req) => {
         geminiWs.on('open', () => {
             console.log(`✨ [${name}] Gemini接続成功`);
             
-            // ★修正ポイント: すべて camelCase で記述！
+            // ★重要: スネークケースで、余計な設定を排除
             const setupMsg = {
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
-                    generationConfig: { 
-                        responseModalities: ["AUDIO", "TEXT"],
-                        speechConfig: { 
-                            voiceConfig: { 
-                                prebuiltVoiceConfig: { 
-                                    voiceName: "Aoede" 
-                                } 
-                            } 
-                        }
-                    }, 
-                    systemInstruction: {
+                    // generation_config は一旦削除（デフォルトで動作させる）
+                    system_instruction: {
                         parts: [{
-                            text: `
-                            あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。相手は小学${grade}年生の${name}さん。
-                            語尾は「〜にゃ」。
-                            
-                            過去の会話記憶:
-                            ${userMemory.slice(-2000)} 
-                            `
+                            text: `あなたは「ねこご市立ねこづか小学校」のネル先生。語尾は「にゃ」。相手は小学${grade}年生の${name}さん。記憶:${userMemory.slice(-1000)}`
                         }]
                     }
                 }
@@ -207,7 +186,7 @@ wss.on('connection', async (clientWs, req) => {
             }
         });
 
-        // エラーログ
+        // エラー詳細ログ
         geminiWs.on('close', (code, reason) => {
             console.log(`\n🔒 Gemini WS Closed. Code: ${code}, Reason: ${reason}`);
         });
@@ -215,64 +194,43 @@ wss.on('connection', async (clientWs, req) => {
             console.error("\n❌ Gemini WS Error:", e);
         });
 
+        // クライアント -> Gemini (音声転送)
         clientWs.on('message', (data) => {
             if (geminiWs.readyState === WebSocket.OPEN) {
-                // クライアントからの生データ(JSON)をそのまま転送するのではなく
-                // 正しい形式(realtimeInput)にラップして送る
-                // (anlyze.js側ですでにバイナリを送っている場合と、JSONを送っている場合があるため注意)
-                // 今回のanlyze.jsはBase64 JSONを送っているので、サーバーでラップする
-                
                 try {
-                    const parsed = JSON.parse(data.toString());
-                    // クライアントが既に整形済みの場合
-                    if(parsed.realtime_input) { 
-                        // camelCaseに直して送信
-                        geminiWs.send(JSON.stringify({
-                             realtimeInput: {
-                                 mediaChunks: parsed.realtime_input.media_chunks
-                             }
-                        }));
-                    } else {
-                        // 生のBase64だけ来た場合(今回の仕様はこちら)
-                        geminiWs.send(JSON.stringify({ 
-                            realtimeInput: { 
-                                mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: parsed.base64Audio || parsed }] 
-                            } 
-                        }));
-                    }
-                } catch (e) {
-                     // 念のため、anlyze.jsが直接バイナリを送ってきた場合のフォールバック（通常はない）
-                     // console.error("Data parse error", e);
-                }
+                    // anlyze.jsは生のBase64を送ってくる前提
+                    const base64Audio = data.toString();
+                    
+                    const msg = {
+                        realtime_input: {
+                            media_chunks: [{
+                                mime_type: "audio/pcm;rate=16000",
+                                data: base64Audio
+                            }]
+                        }
+                    };
+                    geminiWs.send(JSON.stringify(msg));
+                } catch(e) { console.error("Audio Send Error", e); }
             }
         });
 
-        // ★anlyze.js側の修正に合わせるため、on('message') の受信処理を少し柔軟にします
-        // anlyze.jsから送られてくるのは { base64Audio: "..." } というJSONの想定です
-        
-    } catch (e) { 
-        console.error("WS Setup Error", e); 
-        if (clientWs.readyState === WebSocket.OPEN) clientWs.send(JSON.stringify({ type: "error" }));
-        clientWs.close(); 
-    }
-
-    // Geminiからのメッセージ処理（ここは変更なし、ただしcamelCaseで来る可能性を考慮）
-    if (geminiWs) {
+        // Gemini -> クライアント
         geminiWs.on('message', (data) => {
             const parsed = JSON.parse(data);
-            
-            // テキスト抽出 (serverContent または server_content)
-            const content = parsed.serverContent || parsed.server_content;
-            if (content?.modelTurn?.parts) {
-                content.modelTurn.parts.forEach(p => {
+            if (parsed.serverContent?.modelTurn?.parts) {
+                parsed.serverContent.modelTurn.parts.forEach(p => {
                     if (p.text) {
-                        console.log(`\n🤖 ネル先生: ${p.text}`);
+                        console.log(`🤖 ネル: ${p.text}`);
                         currentSessionLog += `ネル: ${p.text}\n`;
                     }
                 });
             }
             if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data); 
         });
+
+    } catch (e) { 
+        console.error("WS Setup Error", e); 
+        clientWs.close(); 
     }
     
     clientWs.on('close', async () => {
@@ -289,7 +247,7 @@ wss.on('connection', async (clientWs, req) => {
                 let combined = (oldMem + newEntry).slice(-10000); 
                 currentAllMemories[name] = combined;
                 await fs.writeFile(MEMORY_FILE, JSON.stringify(currentAllMemories, null, 2));
-                console.log(`✅ [${name}] 会話を保存しました`);
+                console.log(`✅ 保存完了`);
             } catch (e) { console.error("Save Error:", e); }
         }
     });
