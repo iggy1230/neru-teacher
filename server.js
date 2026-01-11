@@ -225,7 +225,7 @@ app.post('/analyze', async (req, res) => {
         const { image, mode, grade, subject, analysisType } = req.body;
         
         let modelName = "gemini-2.0-flash-exp"; 
-        if (analysisType === 'precision') modelName = "gemini-2.5-pro"; 
+        if (analysisType === 'precision') modelName = "gemini-1.5-pro"; 
 
         const model = genAI.getGenerativeModel({
             model: modelName,
@@ -304,7 +304,7 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- ★Live API Proxy (Server-side Memory) ---
+// --- ★Live API Proxy (Server-side Memory 修正版) ---
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', async (clientWs, req) => {
@@ -338,30 +338,16 @@ wss.on('connection', async (clientWs, req) => {
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
                     generation_config: { 
-                        response_modalities: ["AUDIO"], 
+                        // ★重要修正: TEXTを追加して、テキストも返してもらう
+                        response_modalities: ["AUDIO", "TEXT"], 
                         speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }, language_code: "ja-JP" } 
                     }, 
                     system_instruction: {
                         parts: [{
                             text: `
                             あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。相手は小学${grade}年生の${name}さん。
+                            語尾は必ず「〜にゃ」をつけて。
                             
-                            【話し方のルール】
-                            1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
-                            2. 親しみやすい日本の小学校の先生として、一文字一文字をはっきりと、丁寧に発音してにゃ。
-                            3. 特に最初や最後の音を、一文字抜かしたり消したりせずに、最初から最後までしっかり声に出して喋るのがコツだにゃ。
-                            4. 落ち着いた日本語のリズムを大切にして、親しみやすく話してにゃ。
-                            5. 給食(餌)のカリカリが大好物にゃ。
-                            6. とにかく何でも知っているにゃ。
-                            7. ときどき「${name}さんは宿題は終わったかにゃ？」や「そろそろ宿題始めようかにゃ？」と宿題を促してくる。
-                            8. 句読点で自然な間をとる。
-                            9. 日本語をとても上手にしゃべる猫だにゃ。
-                            10. いつも高いトーンで話してにゃ。
-
-                            【NGなこと】
-                            ・ロボットみたいに不自然に区切るのではなく、繋がりのある滑らかな日本語でお願いにゃ。
-                            ・早口になりすぎて、言葉の一部が消えてしまうのはダメだにゃ。
-
                             【重要：過去の記憶】
                             以下は、${name}さんとのこれまでの会話の記録（ネル先生の発言録）だにゃ。
                             この内容を踏まえて、話がつながるように会話してにゃ。
@@ -369,6 +355,8 @@ wss.on('connection', async (clientWs, req) => {
                             === 記憶ここから ===
                             ${userMemory}
                             === 記憶ここまで ===
+                            
+                            明るく元気に、短めの文章で話してにゃ。
                             `
                         }]
                     }
@@ -386,7 +374,7 @@ wss.on('connection', async (clientWs, req) => {
         geminiWs.on('message', (data) => {
             const parsed = JSON.parse(data);
             
-            // ★発言をログに記録
+            // ★発言をログに記録 (p.text が来るようになった！)
             if (parsed.serverContent?.modelTurn?.parts) {
                 parsed.serverContent.modelTurn.parts.forEach(p => {
                     if (p.text) {
@@ -401,12 +389,12 @@ wss.on('connection', async (clientWs, req) => {
         geminiWs.on('close', () => { console.log("Gemini WS Closed"); });
     } catch (e) { console.error("WS Setup Error", e); clientWs.close(); }
     
-    // 2. 切断時に記憶を保存 (再読み込みしてから追記)
+    // 2. 切断時に記憶を保存
     clientWs.on('close', async () => {
         if (geminiWs) geminiWs.close();
         
         if (currentSessionLog.trim().length > 0) {
-            console.log(`💾 [${name}] 会話終了。保存処理を開始します...`);
+            console.log(`\n💾 [${name}] 会話終了。保存処理を開始します...`);
             try {
                 let currentAllMemories = {};
                 try {
@@ -415,7 +403,6 @@ wss.on('connection', async (clientWs, req) => {
                 } catch {}
 
                 const oldMem = currentAllMemories[name] || "";
-                
                 const timestamp = new Date().toLocaleString('ja-JP');
                 const newEntry = `\n--- ${timestamp} の会話 ---\n${currentSessionLog}`;
                 
@@ -432,7 +419,7 @@ wss.on('connection', async (clientWs, req) => {
                 console.error("❌ Memory Save Error:", e);
             }
         } else {
-            console.log(`⚠️ [${name}] 今回は会話が記録されませんでした。`);
+            console.log(`⚠️ [${name}] 今回は会話が記録されませんでした。(テキストデータなし)`);
         }
     });
 });
