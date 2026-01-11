@@ -1,4 +1,4 @@
-// --- anlyze.js (完全修正版 v24.0: クロップハンドル修正 & 安定動作) ---
+// --- anlyze.js (完全修正版 v25.0: クロップ座標・切り抜き安定化) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -25,11 +25,8 @@ let recognition = null;
 let gameCanvas, ctx, ball, paddle, bricks, score, gameRunning = false, gameAnimId = null;
 
 let cropImg = new Image();
-// 初期値を安全な位置 (10%, 90%) に設定
-let cropPoints = [
-    {x: 50, y: 50}, {x: 200, y: 50}, 
-    {x: 200, y: 200}, {x: 50, y: 200}
-];
+// 初期値は空にしておき、画像ロード時に設定
+let cropPoints = []; 
 let activeHandle = -1;
 let videoStream = null;
 
@@ -66,6 +63,7 @@ function startMouthAnimation() {
 }
 startMouthAnimation();
 
+// --- 記憶システム ---
 function saveToNellMemory(role, text) {
     let history = JSON.parse(localStorage.getItem('nell_memory') || '[]');
     history.push({ role: role, text: text, time: new Date().toISOString() });
@@ -77,10 +75,15 @@ async function updateNellMessage(t, mood = "normal") {
     let targetId = document.getElementById('screen-game').classList.contains('hidden') ? 'nell-text' : 'nell-text-game';
     const el = document.getElementById(targetId);
     if (el) el.innerText = t;
+
     if (t && t.includes("もぐもぐ")) { try { sfxBori.currentTime = 0; sfxBori.play(); } catch(e){} }
     if (!t || t.includes("ちょっと待ってて") || t.includes("もぐもぐ")) return;
+    
     saveToNellMemory('nell', t);
-    if (typeof speakNell === 'function') { await speakNell(t, mood); }
+
+    if (typeof speakNell === 'function') {
+        await speakNell(t, mood);
+    }
 }
 
 window.selectMode = function(m) {
@@ -94,6 +97,7 @@ window.selectMode = function(m) {
     const icon = document.querySelector('.nell-avatar-wrap img'); if(icon) icon.src = defaultIcon;
     document.getElementById('mini-karikari-display').classList.remove('hidden'); 
     updateMiniKarikari();
+
     if (m === 'chat') {
         document.getElementById('chat-view').classList.remove('hidden');
         updateNellMessage("「おはなしする」を押してね！", "gentle");
@@ -183,7 +187,7 @@ function endGame(c) {
     setTimeout(()=>{ alert(c?`すごい！全クリだにゃ！\nカリカリ ${score} 個ゲット！`:`おしい！\nカリカリ ${score} 個ゲット！`); if(currentUser&&score>0){currentUser.karikari+=score;if(typeof saveAndSync==='function')saveAndSync();updateMiniKarikari();showKarikariEffect(score);} }, 500);
 }
 
-// --- クロップ & 分析 (修正: ハンドル位置調整) ---
+// --- 画像アップロード & クロップ処理 ---
 const handleFileUpload = async (file) => {
     if (isAnalyzing || !file) return;
     document.getElementById('upload-controls').classList.add('hidden');
@@ -194,6 +198,7 @@ const handleFileUpload = async (file) => {
     const canvas = document.getElementById('crop-canvas');
     canvas.style.opacity = '0';
     
+    // ローディング表示
     let loader = document.getElementById('crop-loader');
     if (!loader) {
         loader = document.createElement('div');
@@ -214,6 +219,16 @@ const handleFileUpload = async (file) => {
         const rawBase64 = e.target.result;
         cropImg = new Image();
         cropImg.onload = async () => {
+            
+            // ★重要: 画像ロード直後にまずデフォルト座標を設定
+            const w = cropImg.width;
+            const h = cropImg.height;
+            cropPoints = [
+                {x: w*0.1, y: h*0.1}, {x: w*0.9, y: h*0.1},
+                {x: w*0.9, y: h*0.9}, {x: w*0.1, y: h*0.9}
+            ];
+
+            // 検出用軽量画像を作成してAPIへ
             const lowResBase64 = resizeImageForDetect(cropImg, 1000);
             try {
                 const res = await fetch('/detect-document', {
@@ -223,30 +238,16 @@ const handleFileUpload = async (file) => {
                 });
                 const data = await res.json();
                 
-                // ★修正: AIが座標を見つけた場合と、見つけられなかった場合(デフォルト)の処理
-                const w = cropImg.width;
-                const h = cropImg.height;
-
+                // 座標があれば更新、なければデフォルト維持
                 if (data.points && data.points.length === 4) {
                     cropPoints = data.points.map(p => ({
                         x: Math.max(0, Math.min(w, (p.x / 100) * w)), // はみ出し防止
                         y: Math.max(0, Math.min(h, (p.y / 100) * h))
                     }));
-                } else {
-                    // 見つからなかった場合のデフォルト: 四隅から少し内側
-                    cropPoints = [
-                        {x: w*0.1, y: h*0.1}, {x: w*0.9, y: h*0.1},
-                        {x: w*0.9, y: h*0.9}, {x: w*0.1, y: h*0.9}
-                    ];
                 }
             } catch(err) {
-                console.error("Detect failed", err);
-                const w = cropImg.width;
-                const h = cropImg.height;
-                cropPoints = [
-                    {x: w*0.1, y: h*0.1}, {x: w*0.9, y: h*0.1},
-                    {x: w*0.9, y: h*0.9}, {x: w*0.1, y: h*0.9}
-                ];
+                console.error("Detect failed, using default points", err);
+                // エラー時は何もしない（デフォルト座標が既にセットされているため）
             }
 
             loader.style.display = 'none';
@@ -271,14 +272,13 @@ function resizeImageForDetect(img, maxLen) {
     return canvas.toDataURL('image/jpeg', 0.6);
 }
 
-// ★修正: クロップ初期化と座標計算
 function initCustomCropper() {
     const modal = document.getElementById('cropper-modal');
     modal.classList.remove('hidden');
     
     const canvas = document.getElementById('crop-canvas');
     
-    // Canvasサイズは元画像のサイズに合わせる (ただし巨大すぎる場合は制限)
+    // Canvasサイズ設定
     const MAX_CANVAS_SIZE = 2500;
     let w = cropImg.width;
     let h = cropImg.height;
@@ -286,14 +286,13 @@ function initCustomCropper() {
     if (w > MAX_CANVAS_SIZE || h > MAX_CANVAS_SIZE) {
         const scale = Math.min(MAX_CANVAS_SIZE / w, MAX_CANVAS_SIZE / h);
         w *= scale; h *= scale;
-        // 座標もスケール変換
+        // 画像リサイズ時は座標も合わせる
         cropPoints = cropPoints.map(p => ({ x: p.x * scale, y: p.y * scale }));
     }
 
     canvas.width = w; 
     canvas.height = h;
     
-    // CSSで画面内に収める
     canvas.style.width = '100%';
     canvas.style.height = '100%';
     canvas.style.objectFit = 'contain';
@@ -314,7 +313,6 @@ function initCustomCropper() {
         if (activeHandle === -1) return;
         e.preventDefault();
         
-        // Canvasの表示領域（実際に画像が見えている部分）を計算
         const rect = canvas.getBoundingClientRect();
         const imgRatio = canvas.width / canvas.height;
         const rectRatio = rect.width / rect.height;
@@ -322,13 +320,11 @@ function initCustomCropper() {
         let drawX, drawY, drawW, drawH;
         
         if (imgRatio > rectRatio) {
-            // 横に合わせて縦に余白
             drawW = rect.width;
             drawH = rect.width / imgRatio;
             drawX = 0;
             drawY = (rect.height - drawH) / 2;
         } else {
-            // 縦に合わせて横に余白
             drawH = rect.height;
             drawW = rect.height * imgRatio;
             drawY = 0;
@@ -338,15 +334,12 @@ function initCustomCropper() {
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         
-        // 余白を除いた画像エリア内での相対座標 (0.0 ~ 1.0)
         let relX = (clientX - rect.left - drawX) / drawW;
         let relY = (clientY - rect.top - drawY) / drawH;
         
-        // 範囲制限 (0~1)
         relX = Math.max(0, Math.min(1, relX));
         relY = Math.max(0, Math.min(1, relY));
 
-        // 元画像の座標系に戻す
         cropPoints[activeHandle] = {
             x: relX * canvas.width,
             y: relY * canvas.height
@@ -367,12 +360,12 @@ function initCustomCropper() {
     document.getElementById('cropper-ok-btn').onclick = () => {
         modal.classList.add('hidden');
         window.onmousemove = null; window.ontouchmove = null;
+        // クロップ実行
         const croppedBase64 = performPerspectiveCrop(canvas, cropPoints);
         startAnalysis(croppedBase64);
     };
 }
 
-// ★修正: ハンドル位置を画面上の正しい位置に計算
 function updateCropUI(canvas) {
     const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl'];
     const rect = canvas.getBoundingClientRect();
@@ -422,14 +415,28 @@ function updateCropUI(canvas) {
     svg.innerHTML = `<polyline points="${ptsStr} ${svgPts[0].x},${svgPts[0].y}" style="fill:rgba(255,255,255,0.2);stroke:#ff4081;stroke-width:2;stroke-dasharray:5" />`;
 }
 
+// ★修正: 座標のはみ出し防止処理 (データ空対策)
 function performPerspectiveCrop(sourceCanvas, points) {
-    const minX = Math.min(...points.map(p => p.x));
-    const maxX = Math.max(...points.map(p => p.x));
-    const minY = Math.min(...points.map(p => p.y));
-    const maxY = Math.max(...points.map(p => p.y));
+    // 座標がCanvas内に収まるようにクランプ
+    const clampX = (x) => Math.max(0, Math.min(sourceCanvas.width, x));
+    const clampY = (y) => Math.max(0, Math.min(sourceCanvas.height, y));
+
+    const validPoints = points.map(p => ({
+        x: clampX(p.x),
+        y: clampY(p.y)
+    }));
+
+    const minX = Math.min(...validPoints.map(p => p.x));
+    const maxX = Math.max(...validPoints.map(p => p.x));
+    const minY = Math.min(...validPoints.map(p => p.y));
+    const maxY = Math.max(...validPoints.map(p => p.y));
     
-    const w = maxX - minX;
-    const h = maxY - minY;
+    let w = maxX - minX;
+    let h = maxY - minY;
+
+    // サイズが0にならないように最低限を確保
+    if (w < 1) w = 1;
+    if (h < 1) h = 1;
     
     const tempCv = document.createElement('canvas');
     // 解像度維持のため大きめのサイズで出力
@@ -444,6 +451,7 @@ function performPerspectiveCrop(sourceCanvas, points) {
     tempCv.height = outH;
     
     const ctx = tempCv.getContext('2d');
+    // 安全な座標を使って切り抜き
     ctx.drawImage(sourceCanvas, minX, minY, w, h, 0, 0, outW, outH);
     
     return tempCv.toDataURL('image/jpeg', 0.85).split(',')[1];
@@ -560,7 +568,7 @@ function revealAnswer() {
     updateNellMessage(`答えは「${selectedProblem.correct_answer}」だにゃ！`, "gentle"); 
 }
 
-// --- Live Chat (URLパラメータからmemoryを除去) ---
+// --- Live Chat (記憶送信) ---
 async function startLiveChat() {
     const btn = document.getElementById('mic-btn');
     if (liveSocket) { stopLiveChat(); return; }
@@ -600,6 +608,14 @@ async function startLiveChat() {
                     data = JSON.parse(event.data);
                 }
 
+                // エラー通知ハンドリング
+                if (data.type === "error") {
+                    console.error("Server Error:", data.message);
+                    updateNellMessage("エラーが発生したにゃ…もう一度試してにゃ", "thinking");
+                    stopLiveChat();
+                    return;
+                }
+
                 if (data.type === "server_ready") {
                     clearTimeout(connectionTimeout); 
                     if(btn) { btn.innerText = "📞 つながった！(終了)"; btn.style.background = "#ff5252"; btn.disabled = false; }
@@ -607,9 +623,12 @@ async function startLiveChat() {
                     await startMicrophone();
                 }
 
-                // サーバーから音声が来た場合
                 if (data.serverContent?.modelTurn?.parts) {
                     data.serverContent.modelTurn.parts.forEach(p => {
+                        if (p.text) {
+                            nellSpeechAccumulator += p.text;
+                            chatTranscript += `ネル: ${p.text}\n`;
+                        }
                         if (p.inlineData) playLivePcmAudio(p.inlineData.data);
                     });
                 }
