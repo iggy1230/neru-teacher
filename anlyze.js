@@ -1,4 +1,4 @@
-// --- anlyze.js (記憶システム実装版) ---
+// --- anlyze.js (記憶システム改良版: ターン制記憶 & ユーザー発話検知) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -17,6 +17,9 @@ let stopSpeakingTimer = null;
 let currentTtsSource = null;
 let chatTranscript = ""; 
 let nextStartTime = 0;
+
+// ★改良: ネル先生の返答を一時的に溜める変数
+let currentNellResponse = "";
 
 let gameCanvas, ctx, ball, paddle, bricks, score, gameRunning = false, gameAnimId = null;
 
@@ -39,26 +42,20 @@ const subjectImages = {
 const defaultIcon = 'nell-normal.png'; 
 const talkIcon = 'nell-talk.png';
 
-// --- ★記憶システム用関数 ---
+// --- 記憶システム用関数 ---
 
 // 1. 会話を保存する関数
 function saveToNellMemory(role, text) {
-    // 既存のメモを読み出す
     let history = JSON.parse(localStorage.getItem('nell_memory') || '[]');
-    
-    // 新しい会話を追加
     history.push({ role: role, text: text, time: new Date().toISOString() });
-    
     // 最新の20件だけ残す
     if (history.length > 20) history.shift();
-    
     localStorage.setItem('nell_memory', JSON.stringify(history));
 }
 
 // 2. サーバー送信用に文字列化する関数
 function getNellMemoryString() {
     const history = JSON.parse(localStorage.getItem('nell_memory') || '[]');
-    // Geminiが理解しやすい形式に整形
     return history.map(h => `${h.role === 'user' ? 'User' : 'Nell'}: ${h.text}`).join('\n');
 }
 
@@ -92,7 +89,7 @@ async function updateNellMessage(t, mood = "normal") {
     if (t && t.includes("もぐもぐ")) { try { sfxBori.currentTime = 0; sfxBori.play(); } catch(e){} }
     if (!t || t.includes("ちょっと待ってて") || t.includes("もぐもぐ")) { if(el) el.innerText = t; return; }
     
-    // ★記憶: テキストメッセージ（システム発話）も保存しておく
+    // システムメッセージもネル先生の発言として記憶
     if (t && t.length > 0) saveToNellMemory('nell', t);
 
     try {
@@ -212,6 +209,7 @@ const handleFileUpload = async (file) => {
             }
             loader.style.display = 'none';
             canvas.style.opacity = '1';
+            document.getElementById('upload-controls').classList.remove('hidden');
             updateNellMessage("ここを読み取るにゃ？", "normal");
             initCustomCropper();
         };
@@ -474,7 +472,7 @@ function revealAnswer() {
     updateNellMessage(`答えは「${selectedProblem.correct_answer}」だにゃ！`, "gentle"); 
 }
 
-// --- Live Chat (記憶送信) ---
+// --- Live Chat ---
 async function startLiveChat() {
     const btn = document.getElementById('mic-btn');
     if (liveSocket) { stopLiveChat(); return; }
@@ -490,12 +488,9 @@ async function startLiveChat() {
         
         // ★記憶をURLにセット
         const fullMemory = getNellMemoryString();
-        // 長すぎる場合は最新1000文字程度に
         const safeMemory = fullMemory.slice(-1000); 
         
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        // paramsの名前をserver.jsに合わせる (server.jsは query.memory を読んでいる)
-        // 修正: server.jsのparamは `memory`
         const url = `${wsProto}//${location.host}?grade=${currentUser.grade}&name=${encodeURIComponent(currentUser.name)}&memory=${encodeURIComponent(safeMemory)}`;
         
         liveSocket = new WebSocket(url);
@@ -515,11 +510,20 @@ async function startLiveChat() {
                 data.serverContent.modelTurn.parts.forEach(p => {
                     if (p.text) {
                         chatTranscript += `ネル: ${p.text}\n`;
-                        // ★記憶: ネル先生の返答を保存
-                        saveToNellMemory('nell', p.text);
+                        // ★溜め込む
+                        currentNellResponse += p.text;
                     }
                     if (p.inlineData) playLivePcmAudio(p.inlineData.data);
                 });
+            }
+            
+            // ★改良: ターン終了時に保存
+            if (data.serverContent?.turnComplete) {
+                if (currentNellResponse.trim().length > 0) {
+                    saveToNellMemory('nell', currentNellResponse);
+                    console.log("Memory saved:", currentNellResponse);
+                    currentNellResponse = ""; // リセット
+                }
             }
         };
         liveSocket.onclose = () => { stopLiveChat(); if(btn) btn.innerText = "接続切れちゃった…"; };
@@ -534,8 +538,7 @@ function stopLiveChat() {
     window.isNellSpeaking = false;
     const btn = document.getElementById('mic-btn');
     if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; btn.style.boxShadow = "none"; }
-    // 古い形式の保存は削除（新しいsaveToNellMemoryがあるので）
-    // saveAndSync(); 
+    // 記憶保存は onmessage で行っているためここでは不要
 }
 
 async function startMicrophone() {
@@ -547,12 +550,28 @@ async function startMicrophone() {
         const source = audioContext.createMediaStreamSource(mediaStream);
         workletNode = new AudioWorkletNode(audioContext, 'pcm-processor');
         source.connect(workletNode);
+        
+        // ★初期化
+        window.userIsSpeakingNow = false;
+
         workletNode.port.onmessage = (event) => {
             const inputData = event.data;
+            
+            // 音量チェック
             let sum = 0; for(let i=0; i<inputData.length; i++) sum += inputData[i] * inputData[i];
             const volume = Math.sqrt(sum / inputData.length);
+            
             const btn = document.getElementById('mic-btn');
             if (btn) btn.style.boxShadow = volume > 0.01 ? `0 0 ${10 + volume * 500}px #ffeb3b` : "none";
+            
+            // ★改良: ユーザー発話検知＆記憶
+            if (volume > 0.01 && !window.userIsSpeakingNow) {
+                saveToNellMemory('user', '(ユーザーがお話し中...)');
+                window.userIsSpeakingNow = true;
+                // 5秒間は連続記録しない
+                setTimeout(() => { window.userIsSpeakingNow = false; }, 5000);
+            }
+
             setTimeout(() => {
                 if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return;
                 const downsampled = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
