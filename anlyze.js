@@ -1,4 +1,4 @@
-// --- anlyze.js (完全復旧版 v36.0: 構文エラー修正・全機能統合) ---
+// --- anlyze.js (完全版 v37.0: 音声バッファ増量・記憶送信復活) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -251,13 +251,13 @@ const handleFileUpload = async (file) => {
                         x: Math.max(0, Math.min(w, (p.x / 100) * w)),
                         y: Math.max(0, Math.min(h, (p.y / 100) * h))
                     }));
-                    
-                    // 安全策: 小さすぎる場合は無視
+
                     const minX = Math.min(...detectedPoints.map(p => p.x));
                     const maxX = Math.max(...detectedPoints.map(p => p.x));
                     const minY = Math.min(...detectedPoints.map(p => p.y));
                     const maxY = Math.max(...detectedPoints.map(p => p.y));
                     
+                    // 安全策: 小さすぎる場合は無視
                     if ((maxX - minX) > w * 0.2 && (maxY - minY) > h * 0.2) {
                         cropPoints = detectedPoints;
                     }
@@ -406,6 +406,7 @@ function performPerspectiveCrop(sourceCanvas, points) {
     let w = maxX - minX;
     let h = maxY - minY;
     
+    // 安全策
     if (w < 1) w = 1;
     if (h < 1) h = 1;
 
@@ -432,13 +433,10 @@ async function startAnalysis(b64) {
     document.getElementById('thinking-view').classList.remove('hidden');
     document.getElementById('upload-controls').classList.add('hidden');
     document.getElementById('main-back-btn').classList.add('hidden');
-    
     let msg = `ふむふむ…\n${currentUser.grade}年生の${currentSubject}の問題だにゃ…`;
     updateNellMessage(msg, "thinking"); 
-    
     updateProgress(0); 
     let p = 0; const timer = setInterval(() => { if (p < 90) { p += 3; updateProgress(p); } }, 500);
-
     try {
         const res = await fetch('/analyze', { 
             method: 'POST', 
@@ -500,10 +498,8 @@ function startHint(id) {
     if (window.initAudioContext) window.initAudioContext().catch(e=>{});
     selectedProblem = transcribedProblems.find(p => p.id == id); 
     if (!selectedProblem) { return updateNellMessage("データエラーだにゃ", "thinking"); }
-    
     const uiIds = ['subject-selection-view', 'upload-controls', 'problem-selection-view', 'grade-sheet-container', 'final-view', 'hint-detail-container', 'chalkboard', 'answer-display-area'];
     uiIds.forEach(i => { const el = document.getElementById(i); if(el) el.classList.add('hidden'); });
-    
     document.getElementById('final-view').classList.remove('hidden'); document.getElementById('hint-detail-container').classList.remove('hidden');
     const board = document.getElementById('chalkboard'); if(board) { board.innerText = selectedProblem.question; board.classList.remove('hidden'); }
     const ansArea = document.getElementById('answer-display-area'); if(ansArea) ansArea.classList.add('hidden');
@@ -603,7 +599,6 @@ async function startLiveChat() {
                     await startMicrophone();
                 }
 
-                // サーバーから音声が来た場合
                 if (data.serverContent?.modelTurn?.parts) {
                     data.serverContent.modelTurn.parts.forEach(p => {
                         if (p.inlineData) playLivePcmAudio(p.inlineData.data);
@@ -705,7 +700,7 @@ async function startMicrophone() {
                 setTimeout(() => { window.userIsSpeakingNow = false; }, 5000);
             }
 
-            // 750ms遅延送信
+            // 750ms遅延送信 (音声の頭切れ防止)
             setTimeout(() => {
                 if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return;
                 const downsampled = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
