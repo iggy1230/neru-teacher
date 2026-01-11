@@ -17,6 +17,7 @@ window.initAudioContext = async function() {
     }
 };
 
+// 単発のTTS再生用（anlyze.jsのupdateNellMessageがメインだが、補助的に使用）
 async function speakNell(text, mood = "normal") {
     if (!text || text === "") return;
 
@@ -26,7 +27,7 @@ async function speakNell(text, mood = "normal") {
         currentSource = null;
     }
 
-    // 2. 前の通信（読み込み中）があればキャンセル
+    // 2. 前の通信があればキャンセル
     if (abortController) {
         abortController.abort();
     }

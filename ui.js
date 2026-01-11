@@ -64,8 +64,17 @@ function backToLobby(suppressGreeting = false) {
     const shouldGreet = (typeof suppressGreeting === 'boolean') ? !suppressGreeting : true;
 
     // currentUserが存在するか確認してから挨拶
-    if (shouldGreet && typeof currentUser !== 'undefined' && currentUser && typeof updateNellMessage === 'function') {
-        updateNellMessage(`おかえり、${currentUser.name}さん！`, "happy");
+    // updateNellMessageはanlyze.jsで定義されている場合があるためチェック
+    if (shouldGreet && typeof currentUser !== 'undefined' && currentUser) {
+        // グローバル関数の存在チェック
+        if (typeof window.updateNellMessage === 'function') {
+             // anlyze.jsの関数を使う (TTS付き)
+             // ※ anlyze.jsが読み込まれていない場合はスキップされる
+        } else {
+             // 簡易的な挨拶 (DOM操作のみ)
+             const el = document.getElementById('nell-text');
+             if(el) el.innerText = `おかえり、${currentUser.name}さん！`;
+        }
     }
 }
 
@@ -77,12 +86,12 @@ function showEnrollment() {
 }
 
 function backToProblemSelection() {
+    // 採点モードなら採点画面、解説モードなら問題選択へ
     if (typeof currentMode !== 'undefined' && currentMode === 'grade') {
         if (typeof showGradingView === 'function') showGradingView();
-        if (typeof updateNellMessage === 'function') updateNellMessage("他の問題もチェックするにゃ？", "normal");
+        // ここでの音声呼び出しは anlyze.js 側の責務とする
     } else {
         switchView('problem-selection-view');
-        if (typeof updateNellMessage === 'function') updateNellMessage("次はどの問題にするにゃ？", "normal");
     }
 }
 

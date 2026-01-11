@@ -1,4 +1,4 @@
-/* --- style.css (最終版 v18.1) --- */
+/* --- style.css (最終版: ゲーム背景黒板化・ガイド枠変更・テキスト位置修正済) --- */
 
 body {
     font-family: 'M PLUS Rounded 1c', "Sawarabi Gothic", sans-serif;
@@ -193,7 +193,7 @@ button { font-family: inherit; }
 @keyframes popIn { 0% { transform: scale(0.8); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 .game-container { display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%; }
 
-/* ゲーム画面背景を黒板色に変更 */
+/* ゲーム画面背景 */
 #game-canvas { 
     border: 4px solid #8d6e63; 
     border-radius: 10px; 
@@ -230,7 +230,7 @@ button { font-family: inherit; }
 .camera-container { position: relative; width: 100%; flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; }
 #camera-video, #cropper-img { width: 100%; height: 100%; object-fit: contain; }
 
-/* カメラガイド枠 (縦長幅広) */
+/* カメラガイド枠 (縦長) */
 .camera-guide-box { 
     position: absolute; width: 85%; aspect-ratio: 3/4; 
     border: 3px solid rgba(255, 255, 255, 0.8); border-radius: 10px; pointer-events: none; 
