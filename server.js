@@ -1,4 +1,4 @@
-// --- server.js (完全修正版 v22.0: キャメルケース対応・安定接続) ---
+// --- server.js (完全版 v25.1: 検出・分析精度向上) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -11,7 +11,6 @@ import { parse } from 'url';
 import dotenv from 'dotenv';
 import fs from 'fs/promises';
 
-// .envファイルを読み込む
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -22,7 +21,6 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, '.')));
 
-// --- 記憶システム設定 ---
 const MEMORY_FILE = path.join(__dirname, 'memory.json');
 
 async function initMemoryFile() {
@@ -30,12 +28,10 @@ async function initMemoryFile() {
         await fs.access(MEMORY_FILE);
     } catch {
         await fs.writeFile(MEMORY_FILE, JSON.stringify({}));
-        console.log("📝 新しい記憶ファイル(memory.json)を作成しました");
     }
 }
 initMemoryFile();
 
-// --- 記憶追記用関数 ---
 async function appendToMemory(name, text) {
     if (!name || !text) return;
     try {
@@ -66,11 +62,8 @@ try {
     } else {
         ttsClient = new textToSpeech.TextToSpeechClient();
     }
-} catch (e) { 
-    console.error("Init Error:", e.message); 
-}
+} catch (e) { console.error("Init Error:", e.message); }
 
-// --- API群 ---
 app.get('/debug/memory', async (req, res) => {
     try {
         const data = await fs.readFile(MEMORY_FILE, 'utf8');
@@ -79,18 +72,51 @@ app.get('/debug/memory', async (req, res) => {
     } catch (e) { res.status(500).send("Error"); }
 });
 
+// --- 文書検出API (強化版) ---
 app.post('/detect-document', async (req, res) => {
     try {
         const { image } = req.body;
         if (!image) return res.status(400).json({ error: "No image" });
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp", generationConfig: { responseMimeType: "application/json" } });
-        const prompt = `画像内のメイン書類の四隅の座標を検出。JSON形式 {"points": [{"x":.., "y":..}, ...]}`;
-        const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
+
+        const model = genAI.getGenerativeModel({
+            model: "gemini-2.0-flash-exp", 
+            generationConfig: { responseMimeType: "application/json" }
+        });
+
+        const prompt = `
+        画像内にある「学習ドリル」や「プリント」の**ページ全体**の四隅の座標を検出してください。
+        
+        【重要】
+        ・ページ内の小さなイラストや囲み枠ではなく、**紙の端（輪郭）**を探してください。
+        ・背景（机や床）と紙の境界線を特定してください。
+        ・紙の一部しか写っていない場合は、画像全体の四隅を選択してください。
+        
+        【出力形式 (JSON)】
+        {
+          "points": [
+            { "x": 左上(0-100), "y": 左上(0-100) },
+            { "x": 右上, "y": 右上 },
+            { "x": 右下, "y": 右下 },
+            { "x": 左下, "y": 左下 }
+          ]
+        }
+        `;
+
+        const result = await model.generateContent([
+            { inlineData: { mime_type: "image/jpeg", data: image } },
+            { text: prompt }
+        ]);
+
         let text = result.response.text();
         const match = text.match(/\{[\s\S]*\}/);
         if (match) text = match[0];
+        
         res.json(JSON.parse(text));
-    } catch (e) { res.json({ points: [{x:0,y:0}, {x:100,y:0}, {x:100,y:100}, {x:0,y:100}] }); }
+    } catch (e) {
+        console.error("Detect Error:", e);
+        // エラー時はデフォルト値を返す
+        res.json({ points: [{x:5,y:5}, {x:95,y:5}, {x:95,y:95}, {x:5,y:95}] });
+    }
 });
 
 function createSSML(text, mood) {
@@ -133,11 +159,17 @@ app.post('/lunch-reaction', async (req, res) => {
         const { count, name } = req.body;
         await appendToMemory(name, `給食をくれた(${count}個目)。`);
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp", generationConfig: { maxOutputTokens: 100 } });
-        const prompt = `生徒「${name}」から${count}個目の給食。感想を。`;
+        let prompt = "";
+        const isSpecial = count % 10 === 0;
+        if (isSpecial) {
+            prompt = `あなたは「ねこご市立ねこづか小学校」のネル先生。生徒「${name}」さんから記念すべき${count}個目の給食をもらった。${name}さんのことを必ず「${name}さん」と呼んで、ものすごく喜び、感謝を60文字程度で熱く語って。語尾は「にゃ」。`;
+        } else {
+            prompt = `あなたはネル先生。生徒「${name}」から給食のカリカリをもらった。15文字以内の一言で感想。語尾「にゃ」。`;
+        }
         const result = await model.generateContent(prompt);
         let reply = result.response.text().trim();
         if (reply.includes('\n')) reply = reply.split('\n')[0];
-        res.json({ reply, isSpecial: count%10===0 });
+        res.json({ reply, isSpecial });
     } catch (err) { res.status(500).json({ error: "Lunch Error" }); }
 });
 
@@ -150,15 +182,49 @@ app.post('/chat', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Chat Error" }); }
 });
 
+// --- 宿題分析API (JSON形式の安定化) ---
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, analysisType } = req.body;
-        let modelName = analysisType === 'precision' ? "gemini-2.5-pro" : "gemini-2.0-flash-exp";
+        let modelName = analysisType === 'precision' ? "gemini-1.5-pro" : "gemini-2.0-flash-exp";
         const model = genAI.getGenerativeModel({ model: modelName, generationConfig: { responseMimeType: "application/json" } });
-        const prompt = `あなたはネル先生。画像の問題をJSON出力。ルール: 全て抽出。`;
+
+        const rules = {
+            'さんすう': { attention: `・筆算の横線とマイナス記号を混同しない。\n・累乗や分数を正確に。\n・筆算の繰り上がりを「答え」と見間違えない。`, hints: `1.立式のヒント 2.単位や図のヒント 3.計算のコツ` },
+            'こくご': { attention: `・縦書きは右から左へ読む。\n・解答欄（□）は『□(読み仮名)』形式で。\n・送り仮名ミスはバツ。`, hints: `1.漢字のなりたち 2.注目すべき言葉 3.文末の指定` },
+            'りか': { attention: `・グラフの軸ラベルや単位を落とさない。\n・選択肢も書き出す。\n・カタカナ指定をひらがなで書いたらバツ。`, hints: `1.図表の見方 2.関連知識 3.選択肢の絞り込み` },
+            'しゃかい': { attention: `・地図記号や年表を正確に読み取る。\n・漢字指定をひらがなで書いたらバツ。`, hints: `1.資料の注目点 2.時代の背景 3.キーワード` }
+        };
+        const r = rules[subject] || rules['さんすう'];
+        const studentAnswerInstruction = mode === 'explain' ? `・手書き文字（生徒の答え）は無視し、student_answerは空文字にする。` : `・採点モード。手書き文字を可能な限り読み取りstudent_answerに入れる。`;
+
+        const prompt = `
+            あなたはネル先生（小学${grade}年生${subject}担当）。語尾は「にゃ」。
+            画像の問題をJSONデータとして出力してください。
+            【ルール】
+            1. 全ての問題を抽出。
+            2. 「解答欄」がないテキストは問題として扱わない。
+            3. ${studentAnswerInstruction}
+            4. 教科別注意: ${r.attention}
+            5. １つの問いの中に複数の回答が必要なときは、必要な数だけ回答欄（JSONデータの要素）を分けてください。
+            
+            【重要】
+            必ず有効なJSON配列形式で出力してください。Markdownのコードブロックは不要です。
+
+            【出力JSON形式】
+            [{"id": 1, "label": "①", "question": "問題文", "correct_answer": "正答", "student_answer": "", "hints": ["ヒント1", "ヒント2", "ヒント3"]}]
+        `;
+
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
         let text = result.response.text();
-        text = text.substring(text.indexOf('['), text.lastIndexOf(']')+1);
+        
+        // JSON抽出の強化
+        const firstBracket = text.indexOf('[');
+        const lastBracket = text.lastIndexOf(']');
+        if (firstBracket !== -1 && lastBracket !== -1) {
+            text = text.substring(firstBracket, lastBracket + 1);
+        }
+        
         const json = JSON.parse(text);
         if (json.length > 0) await appendToMemory("生徒", `${subject}の勉強をした。`); 
         res.json(json);
@@ -170,7 +236,7 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- ★Live API Proxy (キャメルケース対応版) ---
+// --- Live API Proxy ---
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', async (clientWs, req) => {
@@ -181,7 +247,7 @@ wss.on('connection', async (clientWs, req) => {
     let userMemory = "";
     try {
         const data = await fs.readFile(MEMORY_FILE, 'utf8');
-        userMemory = JSON.parse(data)[name] || "まだ記録はありません。";
+        userMemory = JSON.parse(data)[name] || "";
     } catch (e) { }
 
     let currentSessionLog = "";
@@ -192,31 +258,18 @@ wss.on('connection', async (clientWs, req) => {
         geminiWs = new WebSocket(GEMINI_URL);
         
         geminiWs.on('open', () => {
-            console.log(`✨ [${name}] Gemini接続成功`);
-            
-            // ★重要: キャメルケースで設定 (これが正解！)
             const setupMsg = {
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
                     generationConfig: { 
                         responseModalities: ["AUDIO"], 
                         speechConfig: {
-                            voiceConfig: {
-                                prebuiltVoiceConfig: {
-                                    voiceName: "Aoede"
-                                }
-                            }
+                            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } }
                         }
                     }, 
                     systemInstruction: {
                         parts: [{
-                            text: `
-                            あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。相手は小学${grade}年生の${name}さん。
-                            語尾は「〜にゃ」。
-                            
-                            【記憶】
-                            ${userMemory}
-                            `
+                            text: `あなたはネル先生。語尾は「〜にゃ」。相手は小学${grade}年生の${name}さん。記憶:${userMemory.slice(-3000)}`
                         }]
                     }
                 }
@@ -228,12 +281,9 @@ wss.on('connection', async (clientWs, req) => {
             }
         });
 
-        // クライアントからのメッセージ処理
         clientWs.on('message', async (data) => {
             try {
                 const msg = JSON.parse(data.toString());
-                
-                // 1. 音声データ -> Geminiへ
                 if (msg.base64Audio) {
                     if (geminiWs.readyState === WebSocket.OPEN) {
                          const geminiMsg = {
@@ -247,27 +297,24 @@ wss.on('connection', async (clientWs, req) => {
                         geminiWs.send(JSON.stringify(geminiMsg));
                     }
                 }
-                
-                // 2. テキストログ -> サーバー保存
                 if (msg.type === 'log_text') {
-                    console.log(`📝 [${name}] 発言: ${msg.text}`);
+                    currentSessionLog += `生徒: ${msg.text}\n`;
                     await appendToMemory(name, `生徒の発言: ${msg.text}`);
                 }
-                
             } catch (e) { }
         });
 
         geminiWs.on('message', (data) => {
             if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data); 
         });
-
-        geminiWs.on('close', (c, r) => console.log(`🔒 Gemini Close: ${c}`));
-        geminiWs.on('error', (e) => console.error("Gemini Error:", e));
-
-    } catch (e) { 
-        console.error("WS Setup Error", e); 
-        clientWs.close(); 
-    }
+        
+        geminiWs.on('close', () => {});
+    } catch (e) { clientWs.close(); }
     
-    clientWs.on('close', () => { if (geminiWs) geminiWs.close(); });
+    clientWs.on('close', async () => {
+        if (geminiWs) geminiWs.close();
+        if (currentSessionLog.trim().length > 0) {
+            await appendToMemory(name, currentSessionLog);
+        }
+    });
 });
