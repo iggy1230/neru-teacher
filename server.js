@@ -288,6 +288,8 @@ wss.on('connection', async (clientWs, req) => {
                     model: "models/gemini-2.0-flash-exp",
                     generationConfig: { 
                         responseModalities: ["AUDIO"], 
+                       speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }, language_code: "ja-JP" }
+
                     }, 
                     systemInstruction: {
                         parts: [{
