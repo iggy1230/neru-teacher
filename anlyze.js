@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v16.5: タイムアウト & エラー処理強化) ---
+// --- anlyze.js (完全版 v18.0: ハイブリッド音声認識) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -19,6 +19,9 @@ let chatTranscript = "";
 let nextStartTime = 0;
 let nellSpeechAccumulator = ""; 
 let connectionTimeout = null;
+
+// ★追加: 音声認識用
+let recognition = null;
 
 let gameCanvas, ctx, ball, paddle, bricks, score, gameRunning = false, gameAnimId = null;
 
@@ -60,7 +63,7 @@ function startMouthAnimation() {
 }
 startMouthAnimation();
 
-// --- 記憶システム ---
+// --- 記憶システム (クライアント側はバックアップのみ) ---
 function saveToNellMemory(role, text) {
     let history = JSON.parse(localStorage.getItem('nell_memory') || '[]');
     history.push({ role: role, text: text, time: new Date().toISOString() });
@@ -109,18 +112,14 @@ async function updateNellMessage(t, mood = "normal") {
 function selectMode(m) {
     currentMode = m; 
     switchScreen('screen-main'); 
-    
     const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'lunch-view'];
     ids.forEach(id => { const el = document.getElementById(id); if (el) el.classList.add('hidden'); });
-    
     const backBtn = document.getElementById('main-back-btn');
     if (backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = backToLobby; }
     stopLiveChat(); gameRunning = false;
     const icon = document.querySelector('.nell-avatar-wrap img'); if(icon) icon.src = defaultIcon;
-    
     document.getElementById('mini-karikari-display').classList.remove('hidden'); 
     updateMiniKarikari();
-
     if (m === 'chat') {
         document.getElementById('chat-view').classList.remove('hidden');
         updateNellMessage("「おはなしする」を押してね！", "gentle");
@@ -145,7 +144,7 @@ window.setAnalyzeMode = function(type) {
     }
 };
 
-// ... (クロップ関連関数は省略せずそのまま記述) ...
+// ... (クロップ関連関数は省略せずそのまま) ...
 const handleFileUpload = async (file) => {
     if (isAnalyzing || !file) return;
     document.getElementById('upload-controls').classList.add('hidden');
@@ -392,6 +391,7 @@ async function startAnalysis(b64) {
     } finally { isAnalyzing = false; }
 }
 
+// ... (hint, game functions etc. omit for brevity, keeping same logic) ...
 const camIn = document.getElementById('hw-input-camera');
 if(camIn) camIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
 const albIn = document.getElementById('hw-input-album');
@@ -449,7 +449,7 @@ function revealAnswer() {
     updateNellMessage(`答えは「${selectedProblem.correct_answer}」だにゃ！`, "gentle"); 
 }
 
-// --- ★Live Chat (修正: タイムアウト処理・エラーハンドリング強化) ---
+// --- Live Chat (修正: タイムアウト処理 & 音声認識連携) ---
 async function startLiveChat() {
     const btn = document.getElementById('mic-btn');
     if (liveSocket) { stopLiveChat(); return; }
@@ -464,13 +464,13 @@ async function startLiveChat() {
         nextStartTime = audioContext.currentTime;
         
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        // URLに記憶を含めない (サーバー側で読み込むため)
+        // URLには記憶を含めない
         const url = `${wsProto}//${location.host}?grade=${currentUser.grade}&name=${encodeURIComponent(currentUser.name)}`;
         
         liveSocket = new WebSocket(url);
         liveSocket.binaryType = "blob";
         
-        // ★追加: 10秒経ってもつながらなかったらリセット
+        // タイムアウト設定
         connectionTimeout = setTimeout(() => {
             if (liveSocket && liveSocket.readyState !== WebSocket.OPEN) {
                 updateNellMessage("なかなかつながらないにゃ…", "thinking");
@@ -489,37 +489,18 @@ async function startLiveChat() {
                     data = JSON.parse(event.data);
                 }
 
-                // ★追加: サーバーからのエラー通知ハンドリング
-                if (data.type === "error") {
-                    console.error("Server Error:", data.message);
-                    updateNellMessage("エラーが発生したにゃ…もう一度試してにゃ", "thinking");
-                    stopLiveChat();
-                    return;
-                }
-
                 if (data.type === "server_ready") {
-                    clearTimeout(connectionTimeout); // 成功したらタイマー解除
+                    clearTimeout(connectionTimeout); 
                     if(btn) { btn.innerText = "📞 つながった！(終了)"; btn.style.background = "#ff5252"; btn.disabled = false; }
                     updateNellMessage("お待たせ！なんでも話してにゃ！", "happy");
                     await startMicrophone();
                 }
 
+                // サーバーから音声が来た場合
                 if (data.serverContent?.modelTurn?.parts) {
                     data.serverContent.modelTurn.parts.forEach(p => {
-                        if (p.text) {
-                            nellSpeechAccumulator += p.text;
-                            chatTranscript += `ネル: ${p.text}\n`;
-                        }
                         if (p.inlineData) playLivePcmAudio(p.inlineData.data);
                     });
-                }
-
-                if (data.serverContent?.turnComplete) {
-                    if (nellSpeechAccumulator.trim() !== "") {
-                        // クライアント側でもバックアップとして保存
-                        saveToNellMemory('nell', nellSpeechAccumulator);
-                        nellSpeechAccumulator = ""; 
-                    }
                 }
             } catch (e) { console.error("WS Message Error:", e); }
         };
@@ -536,6 +517,12 @@ async function startLiveChat() {
 
 function stopLiveChat() {
     if (connectionTimeout) clearTimeout(connectionTimeout);
+    // 音声認識停止
+    if (recognition) {
+        try { recognition.stop(); } catch(e) {}
+        recognition = null;
+    }
+    
     if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
     if (workletNode) { workletNode.port.postMessage('stop'); workletNode.disconnect(); workletNode = null; }
     if (liveSocket) { liveSocket.close(); liveSocket = null; }
@@ -547,6 +534,28 @@ function stopLiveChat() {
 
 async function startMicrophone() {
     try {
+        // 1. Web Speech API (文字起こし用)
+        if ('webkitSpeechRecognition' in window) {
+            recognition = new webkitSpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = false;
+            recognition.lang = 'ja-JP';
+
+            recognition.onresult = (event) => {
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        const transcript = event.results[i][0].transcript;
+                        // ★重要: 文字ログをサーバーへ送信
+                        if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
+                            liveSocket.send(JSON.stringify({ type: 'log_text', text: transcript }));
+                        }
+                    }
+                }
+            };
+            recognition.start();
+        }
+
+        // 2. Audio Worklet (音声配信用)
         mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1 } });
         const processorCode = `class PcmProcessor extends AudioWorkletProcessor { constructor() { super(); this.bufferSize = 2048; this.buffer = new Float32Array(this.bufferSize); this.index = 0; } process(inputs, outputs, parameters) { const input = inputs[0]; if (input.length > 0) { const channel = input[0]; for (let i = 0; i < channel.length; i++) { this.buffer[this.index++] = channel[i]; if (this.index >= this.bufferSize) { this.port.postMessage(this.buffer); this.index = 0; } } } return true; } } registerProcessor('pcm-processor', PcmProcessor);`;
         const blob = new Blob([processorCode], { type: 'application/javascript' });
@@ -555,8 +564,6 @@ async function startMicrophone() {
         workletNode = new AudioWorkletNode(audioContext, 'pcm-processor');
         source.connect(workletNode);
         
-        window.userIsSpeakingNow = false;
-
         workletNode.port.onmessage = (event) => {
             const inputData = event.data;
             let sum = 0; for(let i=0; i<inputData.length; i++) sum += inputData[i] * inputData[i];
@@ -565,16 +572,16 @@ async function startMicrophone() {
             const btn = document.getElementById('mic-btn');
             if (btn) btn.style.boxShadow = volume > 0.01 ? `0 0 ${10 + volume * 500}px #ffeb3b` : "none";
             
-            // サーバー側で音声を受信しているので、ここではログ記録は省略するか、必要に応じて有効化
-            // if (volume > 0.05 && !window.userIsSpeakingNow) { ... }
-
-            // ★修正: 遅延なしで即送信
-            if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
-                const downsampled = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
-                const pcmBuffer = floatTo16BitPCM(downsampled);
-                const base64Audio = arrayBufferToBase64(pcmBuffer);
-                liveSocket.send(base64Audio);
-            }
+            // ★重要: JSONでラップして送信 (server.js側で対応済み)
+            setTimeout(() => {
+                if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
+                    const downsampled = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
+                    const pcmBuffer = floatTo16BitPCM(downsampled);
+                    const base64Audio = arrayBufferToBase64(pcmBuffer);
+                    
+                    liveSocket.send(JSON.stringify({ base64Audio: base64Audio }));
+                }
+            }, 250);
         };
     } catch(e) { updateNellMessage("マイクエラー", "thinking"); }
 }
