@@ -1,10 +1,8 @@
-// --- ui.js (完全版: 画面遷移・ボタン制御) ---
+// --- ui.js (最終完全版: ボタン動作・画面遷移) ---
 
+// 画面を切り替える基本関数
 function switchScreen(to) {
-    // すべてのスクリーンを隠す
     document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
-    
-    // ターゲットを表示
     const target = document.getElementById(to);
     if (target) {
         target.classList.remove('hidden');
@@ -12,6 +10,7 @@ function switchScreen(to) {
     }
 }
 
+// 教室内のビュー（黒板や問題など）を切り替える関数
 function switchView(id) {
     const ids = [
         'subject-selection-view', 
@@ -38,68 +37,56 @@ function switchView(id) {
     }
 }
 
-// --- 画面遷移関数 ---
+// --- ボタンから呼ばれる関数群 ---
 
-// 1. タイトルから開始 -> 校門へ
+// タイトル画面 -> 校門へ
 function startApp() {
     switchScreen('screen-gate');
-    // BGMがあればここで再生
+    // 音声コンテキストの初期化（ブラウザ制限対策）
+    if (window.initAudioContext) window.initAudioContext();
 }
 
-// 2. タイトルに戻る
+// 校門/ロビー -> タイトルへ
 function backToTitle() {
     switchScreen('screen-title');
 }
 
-// 3. 校門に戻る
+// 入学/ロビー -> 校門へ
 function backToGate() {
     switchScreen('screen-gate');
 }
 
-// 4. ロビーに戻る
+// 教室/ゲーム -> ロビーへ
 function backToLobby(suppressGreeting = false) {
     switchScreen('screen-lobby');
     
-    // 挨拶をするかどうか
+    // 挨拶をするかどうか判定
     const shouldGreet = (typeof suppressGreeting === 'boolean') ? !suppressGreeting : true;
 
-    // currentUserが存在するか確認してから挨拶
-    // updateNellMessageはanlyze.jsで定義されている場合があるためチェック
     if (shouldGreet && typeof currentUser !== 'undefined' && currentUser) {
-        // グローバル関数の存在チェック
-        if (typeof window.updateNellMessage === 'function') {
-             // anlyze.jsの関数を使う (TTS付き)
-             // ※ anlyze.jsが読み込まれていない場合はスキップされる
+        // anlyze.jsの関数があれば呼ぶ、なければDOM直接操作
+        if (typeof updateNellMessage === 'function') {
+            updateNellMessage(`おかえり、${currentUser.name}さん！`, "happy");
         } else {
-             // 簡易的な挨拶 (DOM操作のみ)
-             const el = document.getElementById('nell-text');
-             if(el) el.innerText = `おかえり、${currentUser.name}さん！`;
+            const el = document.getElementById('nell-text');
+            if(el) el.innerText = `おかえり、${currentUser.name}さん！`;
         }
     }
 }
 
-// --- その他ボタンアクション ---
-
+// 入学手続き画面へ
 function showEnrollment() {
     switchScreen('screen-enrollment');
     if (typeof loadFaceModels === 'function') loadFaceModels();
 }
 
-function backToProblemSelection() {
-    // 採点モードなら採点画面、解説モードなら問題選択へ
-    if (typeof currentMode !== 'undefined' && currentMode === 'grade') {
-        if (typeof showGradingView === 'function') showGradingView();
-        // ここでの音声呼び出しは anlyze.js 側の責務とする
-    } else {
-        switchView('problem-selection-view');
-    }
-}
-
+// 出席簿画面へ
 function showAttendance() {
     switchScreen('screen-attendance');
     if (typeof renderAttendance === 'function') renderAttendance();
 }
 
+// 出席簿の描画ロジック
 function renderAttendance() {
     const grid = document.getElementById('attendance-grid');
     if (!grid || !currentUser) return;
@@ -127,6 +114,7 @@ function renderAttendance() {
     }
 }
 
+// プログレスバー更新
 function updateProgress(p) {
     const bar = document.getElementById('progress-bar');
     if (bar) bar.style.width = p + '%';
@@ -134,7 +122,7 @@ function updateProgress(p) {
     if (txt) txt.innerText = Math.floor(p);
 }
 
-// 最初のクリックでオーディオコンテキストを初期化（ブラウザ制限対策）
+// グローバルクリックイベント（音声再生許可のため）
 document.addEventListener('click', () => {
     if (window.initAudioContext) {
         window.initAudioContext().catch(e => console.log("Audio Init:", e));
