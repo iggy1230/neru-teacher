@@ -1,3 +1,5 @@
+// --- server.js (完全版 v16.5: 接続エラー通知強化) ---
+
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import express from 'express';
@@ -9,6 +11,7 @@ import { parse } from 'url';
 import dotenv from 'dotenv';
 import fs from 'fs/promises';
 
+// .envファイルを読み込む
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -19,6 +22,7 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, '.')));
 
+// --- 記憶システム設定 ---
 const MEMORY_FILE = path.join(__dirname, 'memory.json');
 
 async function initMemoryFile() {
@@ -31,6 +35,7 @@ async function initMemoryFile() {
 }
 initMemoryFile();
 
+// --- APIクライアント初期化 ---
 let genAI, ttsClient;
 try {
     genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -45,6 +50,7 @@ try {
     console.error("Init Error:", e.message); 
 }
 
+// --- 各種API (変更なし) ---
 app.get('/debug/memory', async (req, res) => {
     try {
         const data = await fs.readFile(MEMORY_FILE, 'utf8');
@@ -140,7 +146,7 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- ★Live API Proxy (修正版) ---
+// --- ★Live API Proxy (エラー通知強化版) ---
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', async (clientWs, req) => {
@@ -152,7 +158,6 @@ wss.on('connection', async (clientWs, req) => {
     try {
         const data = await fs.readFile(MEMORY_FILE, 'utf8');
         userMemory = JSON.parse(data)[name] || "まだ会話していません。";
-        console.log(`📖 [${name}] 記憶ロード完了: ${userMemory.length}文字`);
     } catch (e) { console.error("Memory Load Error:", e); }
 
     let currentSessionLog = "";
@@ -164,7 +169,6 @@ wss.on('connection', async (clientWs, req) => {
         
         geminiWs.on('open', () => {
             console.log(`✨ [${name}] Gemini接続成功`);
-            // ★修正: シンプルな設定構造に変更
             const setupMsg = {
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
@@ -180,14 +184,24 @@ wss.on('connection', async (clientWs, req) => {
                 }
             };
             geminiWs.send(JSON.stringify(setupMsg));
+            
+            // クライアントに準備完了を通知
+            if (clientWs.readyState === WebSocket.OPEN) {
+                clientWs.send(JSON.stringify({ type: "server_ready" }));
+            }
         });
 
-        // クライアント -> Gemini (音声)
+        // Geminiエラー時
+        geminiWs.on('error', (e) => {
+            console.error("Gemini WS Error:", e);
+            if (clientWs.readyState === WebSocket.OPEN) {
+                // クライアントにエラーを通知
+                clientWs.send(JSON.stringify({ type: "error", message: "Gemini接続エラー" }));
+            }
+        });
+
         clientWs.on('message', (data) => {
             if (geminiWs.readyState === WebSocket.OPEN) {
-                // 音声受信ログ (多すぎるので50回に1回表示)
-                if (Math.random() < 0.02) process.stdout.write('🎵');
-                
                 geminiWs.send(JSON.stringify({ 
                     realtime_input: { 
                         media_chunks: [{ mime_type: "audio/pcm;rate=16000", data: data.toString() }] 
@@ -196,13 +210,11 @@ wss.on('connection', async (clientWs, req) => {
             }
         });
 
-        // Gemini -> クライアント (音声+テキスト)
         geminiWs.on('message', (data) => {
             const parsed = JSON.parse(data);
             if (parsed.serverContent?.modelTurn?.parts) {
                 parsed.serverContent.modelTurn.parts.forEach(p => {
                     if (p.text) {
-                        console.log(`\n🤖 ネル先生: ${p.text}`);
                         currentSessionLog += `ネル: ${p.text}\n`;
                     }
                 });
@@ -211,9 +223,14 @@ wss.on('connection', async (clientWs, req) => {
         });
 
         geminiWs.on('close', () => console.log("\n🔒 Gemini WS Closed"));
-        geminiWs.on('error', (e) => console.error("Gemini WS Error:", e));
 
-    } catch (e) { console.error("WS Setup Error", e); clientWs.close(); }
+    } catch (e) { 
+        console.error("WS Setup Error", e); 
+        if (clientWs.readyState === WebSocket.OPEN) {
+            clientWs.send(JSON.stringify({ type: "error", message: "サーバーエラー" }));
+        }
+        clientWs.close(); 
+    }
     
     clientWs.on('close', async () => {
         if (geminiWs) geminiWs.close();
@@ -229,10 +246,7 @@ wss.on('connection', async (clientWs, req) => {
                 let combined = (oldMem + newEntry).slice(-10000); 
                 currentAllMemories[name] = combined;
                 await fs.writeFile(MEMORY_FILE, JSON.stringify(currentAllMemories, null, 2));
-                console.log(`✅ [${name}] 会話を保存しました！`);
             } catch (e) { console.error("Save Error:", e); }
-        } else {
-            console.log(`⚠️ [${name}] 会話ログなし`);
         }
     });
 });
