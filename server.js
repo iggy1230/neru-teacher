@@ -1,4 +1,4 @@
-// --- server.js (最終接続確認版: 最小構成・スネークケース) ---
+// --- server.js (記憶定着版 v17.0: テキスト受信ON) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -11,6 +11,7 @@ import { parse } from 'url';
 import dotenv from 'dotenv';
 import fs from 'fs/promises';
 
+// .envファイルを読み込む
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -21,6 +22,7 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, '.')));
 
+// --- 記憶システム設定 ---
 const MEMORY_FILE = path.join(__dirname, 'memory.json');
 
 async function initMemoryFile() {
@@ -28,10 +30,12 @@ async function initMemoryFile() {
         await fs.access(MEMORY_FILE);
     } catch {
         await fs.writeFile(MEMORY_FILE, JSON.stringify({}));
+        console.log("📝 新しい記憶ファイル(memory.json)を作成しました");
     }
 }
 initMemoryFile();
 
+// --- APIクライアント初期化 ---
 let genAI, ttsClient;
 try {
     genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -46,7 +50,7 @@ try {
     console.error("Init Error:", e.message); 
 }
 
-// --- 通常API群 ---
+// --- デバッグ用API ---
 app.get('/debug/memory', async (req, res) => {
     try {
         const data = await fs.readFile(MEMORY_FILE, 'utf8');
@@ -55,6 +59,7 @@ app.get('/debug/memory', async (req, res) => {
     } catch (e) { res.status(500).send("Error"); }
 });
 
+// --- 文書検出API ---
 app.post('/detect-document', async (req, res) => {
     try {
         const { image } = req.body;
@@ -69,6 +74,7 @@ app.post('/detect-document', async (req, res) => {
     } catch (e) { res.json({ points: [{x:0,y:0}, {x:100,y:0}, {x:100,y:100}, {x:0,y:100}] }); }
 });
 
+// --- TTS API ---
 function createSSML(text, mood) {
     let rate = "1.1", pitch = "+2st";
     if (mood === "thinking") { rate = "1.0"; pitch = "0st"; }
@@ -129,7 +135,7 @@ app.post('/analyze', async (req, res) => {
         const { image, mode, grade, subject, analysisType } = req.body;
         let modelName = analysisType === 'precision' ? "gemini-1.5-pro" : "gemini-2.0-flash-exp";
         const model = genAI.getGenerativeModel({ model: modelName, generationConfig: { responseMimeType: "application/json" } });
-        const prompt = `あなたはネル先生。画像の問題をJSON出力。ルール: 全て抽出。`;
+        const prompt = `あなたはネル先生（小学${grade}年生${subject}担当）。画像の問題をJSON出力。ルール: 全て抽出。hints3段階。出力JSON形式: [{"id":1, "label":"①", "question":"...", "correct_answer":"...", "student_answer":"", "hints":[...]}]`;
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
         let text = result.response.text();
         text = text.substring(text.indexOf('['), text.lastIndexOf(']')+1);
@@ -142,7 +148,7 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- ★Live API Proxy (最小構成・スネークケース) ---
+// --- ★Live API Proxy (記憶定着版) ---
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', async (clientWs, req) => {
@@ -150,12 +156,14 @@ wss.on('connection', async (clientWs, req) => {
     const grade = params.grade || "1";
     const name = decodeURIComponent(params.name || "生徒");
     
+    // 1. 記憶をロード
     let userMemory = "";
     try {
         const data = await fs.readFile(MEMORY_FILE, 'utf8');
-        userMemory = JSON.parse(data)[name] || "";
+        const allMemories = JSON.parse(data);
+        userMemory = allMemories[name] || "まだ会話していません。";
         console.log(`📖 [${name}] 記憶ロード: ${userMemory.length}文字`);
-    } catch (e) { }
+    } catch (e) { console.error("Memory Load Error:", e); }
 
     let currentSessionLog = "";
     let geminiWs = null;
@@ -167,11 +175,14 @@ wss.on('connection', async (clientWs, req) => {
         geminiWs.on('open', () => {
             console.log(`✨ [${name}] Gemini接続成功`);
             
-            // ★重要: スネークケースで、余計な設定を排除
+            // ★重要: スネークケース & テキスト受信ON
             const setupMsg = {
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
-                    // generation_config は一旦削除（デフォルトで動作させる）
+                    generation_config: { 
+                        response_modalities: ["AUDIO", "TEXT"], // ★ここが重要！
+                        // speech_config は削除 (接続優先)
+                    }, 
                     system_instruction: {
                         parts: [{
                             text: `あなたは「ねこご市立ねこづか小学校」のネル先生。語尾は「にゃ」。相手は小学${grade}年生の${name}さん。記憶:${userMemory.slice(-1000)}`
@@ -198,9 +209,7 @@ wss.on('connection', async (clientWs, req) => {
         clientWs.on('message', (data) => {
             if (geminiWs.readyState === WebSocket.OPEN) {
                 try {
-                    // anlyze.jsは生のBase64を送ってくる前提
                     const base64Audio = data.toString();
-                    
                     const msg = {
                         realtime_input: {
                             media_chunks: [{
@@ -217,10 +226,11 @@ wss.on('connection', async (clientWs, req) => {
         // Gemini -> クライアント
         geminiWs.on('message', (data) => {
             const parsed = JSON.parse(data);
+            // ★テキストが来たらログに溜める
             if (parsed.serverContent?.modelTurn?.parts) {
                 parsed.serverContent.modelTurn.parts.forEach(p => {
                     if (p.text) {
-                        console.log(`🤖 ネル: ${p.text}`);
+                        console.log(`🤖 ネル: ${p.text}`); // ログで確認！
                         currentSessionLog += `ネル: ${p.text}\n`;
                     }
                 });
@@ -233,6 +243,7 @@ wss.on('connection', async (clientWs, req) => {
         clientWs.close(); 
     }
     
+    // 2. 切断時に記憶を保存
     clientWs.on('close', async () => {
         if (geminiWs) geminiWs.close();
         if (currentSessionLog.trim().length > 0) {
@@ -247,8 +258,10 @@ wss.on('connection', async (clientWs, req) => {
                 let combined = (oldMem + newEntry).slice(-10000); 
                 currentAllMemories[name] = combined;
                 await fs.writeFile(MEMORY_FILE, JSON.stringify(currentAllMemories, null, 2));
-                console.log(`✅ 保存完了`);
+                console.log(`✅ [${name}] 会話を保存しました！(${currentSessionLog.length}文字)`);
             } catch (e) { console.error("Save Error:", e); }
+        } else {
+            console.log(`⚠️ [${name}] テキスト受信なしのため保存せず`);
         }
     });
 });
