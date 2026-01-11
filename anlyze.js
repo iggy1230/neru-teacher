@@ -1,4 +1,4 @@
-// --- anlyze.js (記憶システム強化版: バッファリング保存 & ユーザー発話検知) ---
+// --- anlyze.js (修正完全版: 記憶システム確定版) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -18,9 +18,8 @@ let currentTtsSource = null;
 let chatTranscript = ""; 
 let nextStartTime = 0;
 
-// ★改良: Liveチャット用バッファ変数
-let currentLiveResponseBuffer = "";
-let saveNellTimer = null; // 保存用タイマー
+// ★改良: ネル先生の言葉を溜める変数
+let nellSpeechAccumulator = ""; 
 
 let gameCanvas, ctx, ball, paddle, bricks, score, gameRunning = false, gameAnimId = null;
 
@@ -69,7 +68,7 @@ function saveToNellMemory(role, text) {
     let history = JSON.parse(localStorage.getItem('nell_memory') || '[]');
     history.push({ role: role, text: text, time: new Date().toISOString() });
     
-    // ★改良: 記憶容量を50件に増やす
+    // 記憶容量を50件確保
     if (history.length > 50) history.shift();
     
     localStorage.setItem('nell_memory', JSON.stringify(history));
@@ -473,7 +472,7 @@ function revealAnswer() {
     updateNellMessage(`答えは「${selectedProblem.correct_answer}」だにゃ！`, "gentle"); 
 }
 
-// --- Live Chat ---
+// --- Live Chat (記憶送信) ---
 async function startLiveChat() {
     const btn = document.getElementById('mic-btn');
     if (liveSocket) { stopLiveChat(); return; }
@@ -497,36 +496,45 @@ async function startLiveChat() {
         liveSocket.binaryType = "blob";
         
         liveSocket.onopen = () => { console.log("WS Open"); };
+        
+        // ★改良: メッセージ処理
         liveSocket.onmessage = async (event) => {
             let data;
-            if (event.data instanceof Blob) { data = JSON.parse(await event.data.text()); } else { data = JSON.parse(event.data); }
-            
-            if (data.type === "server_ready") {
-                if(btn) { btn.innerText = "📞 つながった！(終了)"; btn.style.background = "#ff5252"; btn.disabled = false; }
-                updateNellMessage("お待たせ！なんでも話してにゃ！", "happy");
-                await startMicrophone();
-            }
-            if (data.serverContent?.modelTurn?.parts) {
-                data.serverContent.modelTurn.parts.forEach(p => {
-                    if (p.text) {
-                        chatTranscript += `ネル: ${p.text}\n`;
-                        currentLiveResponseBuffer += p.text;
+            try {
+                if (event.data instanceof Blob) {
+                    data = JSON.parse(await event.data.text());
+                } else {
+                    data = JSON.parse(event.data);
+                }
+
+                if (data.type === "server_ready") {
+                    if(btn) { btn.innerText = "📞 つながった！(終了)"; btn.style.background = "#ff5252"; btn.disabled = false; }
+                    updateNellMessage("お待たせ！なんでも話してにゃ！", "happy");
+                    await startMicrophone();
+                }
+
+                // 1. テキスト蓄積
+                if (data.serverContent?.modelTurn?.parts) {
+                    data.serverContent.modelTurn.parts.forEach(p => {
+                        if (p.text) {
+                            nellSpeechAccumulator += p.text;
+                            chatTranscript += `ネル: ${p.text}\n`;
+                        }
+                        if (p.inlineData) playLivePcmAudio(p.inlineData.data);
+                    });
+                }
+
+                // 2. ターン終了判定と保存
+                if (data.serverContent?.turnComplete) {
+                    if (nellSpeechAccumulator.trim() !== "") {
+                        saveToNellMemory('nell', nellSpeechAccumulator);
+                        console.log("Memory saved:", nellSpeechAccumulator);
+                        nellSpeechAccumulator = ""; 
                     }
-                    if (p.inlineData) playLivePcmAudio(p.inlineData.data);
-                });
-            }
-            
-            // ★改良: ターン終了時バッファリング保存
-            if (data.serverContent?.turnComplete || data.serverContent?.modelTurn?.parts) {
-                clearTimeout(saveNellTimer);
-                saveNellTimer = setTimeout(() => {
-                    if (currentLiveResponseBuffer.trim().length > 0) {
-                        saveToNellMemory('nell', currentLiveResponseBuffer);
-                        currentLiveResponseBuffer = "";
-                    }
-                }, 1500);
-            }
+                }
+            } catch (e) { console.error("WS Message Error:", e); }
         };
+        
         liveSocket.onclose = () => { stopLiveChat(); if(btn) btn.innerText = "接続切れちゃった…"; };
     } catch (e) { alert("エラー: " + e.message); stopLiveChat(); }
 }
@@ -561,7 +569,7 @@ async function startMicrophone() {
             const btn = document.getElementById('mic-btn');
             if (btn) btn.style.boxShadow = volume > 0.01 ? `0 0 ${10 + volume * 500}px #ffeb3b` : "none";
             
-            // ★改良: ユーザー発話検知 (閾値 0.05 に変更)
+            // ユーザー発話検知 (閾値 0.05)
             if (volume > 0.05 && !window.userIsSpeakingNow) {
                 saveToNellMemory('user', '（お話し中...）');
                 window.userIsSpeakingNow = true;
@@ -630,7 +638,7 @@ window.pressAllSolved = function() {
     if (currentUser) {
         currentUser.karikari += 100; saveAndSync(); showKarikariEffect(100);
         updateMiniKarikari(); 
-        updateNellMessage("よくがんばったにゃ！カリカリ100個あげるにゃ！", "excited")
+        updateNellMessage("よくがんばったにゃ！カリカリ100個あげる！", "excited")
         .then(() => { setTimeout(() => { if(typeof backToLobby === 'function') backToLobby(true); }, 3000); });
     }
 };
