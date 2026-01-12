@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v63.0: 記憶ロジック修正・終了メッセージ修正) ---
+// --- anlyze.js (完全版 v64.0: 記憶保存条件緩和) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -141,7 +141,6 @@ window.setSubject = function(s) {
     document.getElementById('upload-controls').classList.remove('hidden'); 
     updateNellMessage(`${currentSubject}の問題をみせてにゃ！`, "happy"); 
     
-    // 戻るボタンの制御
     const backBtn = document.getElementById('main-back-btn');
     if (backBtn) {
         backBtn.classList.remove('hidden');
@@ -322,7 +321,7 @@ function movePaddle(e) {
 function touchPaddle(e) { 
     e.preventDefault(); 
     const rect = gameCanvas.getBoundingClientRect(); 
-    const scaleX = gameCanvas.width / rect.width;
+    const scaleX = gameCanvas.width / rect.width; 
     const rx = (e.touches[0].clientX - rect.left) * scaleX; 
     if(rx > 0 && rx < gameCanvas.width) paddle.x = rx - paddle.w/2; 
 }
@@ -587,7 +586,7 @@ async function startAnalysis(b64) {
         
         setTimeout(() => { 
             document.getElementById('thinking-view').classList.add('hidden'); 
-            // 修正: 戻るボタンは非表示のまま (UI設計変更)
+            // 修正: 戻るボタンは非表示 (UI設計変更)
             // document.getElementById('main-back-btn').classList.remove('hidden');
             const doneMsg = "読めたにゃ！";
             
@@ -704,7 +703,7 @@ function stopLiveChat() {
     if (workletNode) { workletNode.port.postMessage('stop'); workletNode.disconnect(); workletNode = null; }
     
     // ソケットを閉じる前にフラグをチェックしないと二重実行などでログが消える可能性がある
-    const hasLog = chatTranscript && chatTranscript.length > 5; // ★緩和: 5文字以上あれば保存
+    const hasLog = chatTranscript && chatTranscript.length > 2; // ★緩和: 2文字以上あれば保存
     
     if (liveSocket) { liveSocket.close(); liveSocket = null; }
     if (audioContext) { audioContext.close(); audioContext = null; }
@@ -859,19 +858,26 @@ function renderProblemSelection() {
     l.innerHTML = ""; 
 
     transcribedProblems.forEach(p => { 
+        // 採点モードと統一されたカードデザイン
         const div = document.createElement('div');
         div.className = "grade-item";
         div.style.cssText = `border-bottom:1px solid #eee; padding:15px; margin-bottom:10px; border-radius:10px; background:white; box-shadow: 0 2px 5px rgba(0,0,0,0.05);`;
 
         div.innerHTML = `
             <div style="display:flex; justify-content:space-between; align-items:center;">
+                <!-- 左側: 問題番号 (青色) -->
                 <div style="font-weight:900; color:#4a90e2; font-size:1.5rem; width:50px; text-align:center;">
                     ${p.label || '問'}
                 </div>
+
+                <!-- 右側: コンテンツ -->
                 <div style="flex:1; margin-left:10px;">
+                    <!-- 問題文 -->
                     <div style="font-weight:bold; font-size:1.1rem; margin-bottom:8px; color:#333;">
                         ${p.question.substring(0, 40)}${p.question.length>40?'...':''}
                     </div>
+
+                    <!-- アクションエリア -->
                     <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px;">
                         <div style="flex:1;">
                             <input type="text" placeholder="ここにメモできるよ"

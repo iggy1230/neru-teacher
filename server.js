@@ -1,4 +1,4 @@
-// --- server.js (完全版 v56.0: 給食反応調整・名前呼び頻度抑制・TTS発音修正) ---
+// --- server.js (完全版 v63.0: 記憶力強化・好き嫌い重視) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -115,15 +115,10 @@ function createSSML(text, mood) {
         .replace(/^[・-]\s*/gm, '')
         .replace(/……/g, '<break time="500ms"/>');
 
-    // ★修正: 読み上げ・発音の修正
-    // 助詞の読み替え
+    // 読み上げ・発音の修正
     cleanText = cleanText.replace(/私は/g, 'わたしわ');
     cleanText = cleanText.replace(/ユーザーは/g, 'ユーザーわ');
-    
-    // ゲーム
     cleanText = cleanText.replace(/次/g, 'つぎ');
-    
-    // 算数・記号・漢字
     cleanText = cleanText.replace(/内/g, 'ない');
     cleanText = cleanText.replace(/＋/g, 'たす');
     cleanText = cleanText.replace(/－/g, 'ひく');
@@ -174,7 +169,7 @@ app.post('/game-reaction', async (req, res) => {
     } catch (err) { res.json({ reply: "がんばれにゃ！", mood: "excited" }); }
 });
 
-// --- 4. 給食反応 (修正: 名前呼び頻度抑制) ---
+// --- 4. 給食反応 ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
         const { count, name } = req.body;
@@ -204,15 +199,8 @@ app.post('/lunch-reaction', async (req, res) => {
             ];
             const theme = themes[Math.floor(Math.random() * themes.length)];
             
-            // 名前を呼ぶ頻度を抑制 (約20%)
             const shouldCallName = Math.random() < 0.2;
-            let nameRule = "";
-            
-            if (shouldCallName) {
-                nameRule = `名前「${name}さん」を呼んでください（呼び捨て厳禁）。`;
-            } else {
-                nameRule = `名前は呼ばないでください。いきなり感想から話し始めてください。`;
-            }
+            let nameRule = shouldCallName ? `名前「${name}さん」を呼んでください（呼び捨て厳禁）。` : `名前は呼ばないでください。いきなり感想から話し始めてください。`;
             
             prompt = `
             あなたはネル先生です。生徒「${name}」さんから給食をもらいました。
@@ -230,18 +218,25 @@ app.post('/lunch-reaction', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Lunch Error" }); }
 });
 
-// --- 5. 記憶要約API ---
+// --- 5. 記憶要約API (★重要修正: 好き嫌い重視) ---
 app.post('/summarize-notes', async (req, res) => {
     try {
         const { text } = req.body;
-        if (!text || text.length < 10) return res.json({ notes: [] });
+        // 文字数制限を緩和（一言でも処理する）
+        if (!text || text.length < 2) return res.json({ notes: [] });
 
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         
         const prompt = `
-        以下は先生と生徒の「面談（雑談）」のログです。
-        次回以降の指導や関係づくりに使える情報だけを抽出し、JSON配列にしてください。
-        ルール: 最大3つ、1行20文字以内、雑談除外、事実優先。
+        以下は先生と生徒の会話ログです。
+        次回以降の指導や関係づくりに使える情報をJSON配列にしてください。
+
+        【絶対ルール】
+        1. **「〜が好き」「〜が嫌い」「〜が得意/苦手」「趣味は〜」という記述があれば、些細なことでも必ず抽出してください。**（例: サッカー, ゲーム, 食べ物など）
+        2. 挨拶や意味のない相槌は除外してください。
+        3. 最大3つまで。
+        4. 出力はJSON配列形式 ["サッカーが好き", "算数が不安"] のみ。
+
         ログ：${text.slice(-3000)}
         `;
 
@@ -261,166 +256,70 @@ app.post('/summarize-notes', async (req, res) => {
     } catch (e) { res.json({ notes: [] }); }
 });
 
-// --- 6. 問題分析・採点 (Analyze) ---
+// --- 6. 問題分析・採点 ---
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, analysisType } = req.body;
-        
         let modelName = analysisType === 'precision' ? "gemini-2.5-pro" : "gemini-2.0-flash-exp";
-        
-        const model = genAI.getGenerativeModel({
-            model: modelName,
-            generationConfig: { responseMimeType: "application/json" }
-        });
+        const model = genAI.getGenerativeModel({ model: modelName, generationConfig: { responseMimeType: "application/json" } });
 
-        // 教科別詳細ルール
         const rules = {
             'さんすう': {
                 points: `・筆算の横線とマイナス記号を混同しないこと。\n・累乗（2^2など）や分数を正確に書き起こすこと。`,
-                hints: `
-                  ・ヒント1（立式）: 「何算を使えばいいか」のヒント（例：全部でいくつ？と聞かれているから足し算にゃ）。
-                  ・ヒント2（注目点）: 「単位のひっかけ」や「図の数値」への誘導（例：cmをmに直すのを忘れてないかにゃ？）。
-                  ・ヒント3（計算のコツ）: 「計算の工夫」や「最終確認」（例：一の位から順番に計算してみるにゃ）。`,
-                grading: `
-                  ・筆算の繰り上がりを「答え」と見間違えないように注意してにゃ。
-                  ・単位（cm, Lなど）が問題で指定されている場合、単位がないものはバツにしてにゃ。
-                  ・数字の「0」と「6」、「1」と「7」の見間違いに注意して、慎重に判定してにゃ。`
+                hints: `・ヒント1（立式）: 「何算を使えばいいか」のヒント\n・ヒント2（注目点）: 「単位のひっかけ」や「図の数値」への誘導\n・ヒント3（計算のコツ）: 「計算の工夫」や「最終確認」`,
+                grading: `・筆算の繰り上がりを「答え」と見間違えないように。\n・単位がないものはバツ。\n・数字の0と6、1と7の見間違いに注意。`
             },
             'こくご': {
-                points: `
-                  ・国語の問題は縦書きが多い。縦書きの場合は右から左へ読むこと。
-                  ・漢字の書き取り問題では、答えとなる空欄を『□(ふりがな)』という形式で、ふりがなを漏らさず正確に書き起こしてください。
-                  ・□の横に小さく書いてある文字が(ふりがな)。□の中の漢字を答える問題である。
-                  ・読解問題の長い文章本文は書き起こししない。`,
-                hints: `
-                  ・ヒント1: 「漢字のなりたち」を教える
-                  ・ヒント2: 「辺やつくりや画数」を教える
-                  ・ヒント3: 「似た漢字」を教える
-                  ・読解の場合 ヒント1（場所）: 「答えがどこにあるか」を教える
-                  ・読解の場合 ヒント2（キーワード）: 「注目すべき言葉」を教える
-                  ・読解の場合 ヒント3（答え方）: 「語尾の指定」など`,
-                grading: `
-                  ・送り仮名が間違っている場合はバツだにゃ。
-                  ・読解問題では、解答の「文末」が適切か（〜のこと、〜から等）もチェックしてにゃ。`
+                points: `・縦書きの場合は右から左へ。\n・漢字の書き取りは『□(ふりがな)』形式。\n・読解問題の長い文章本文は書き起こししない。`,
+                hints: `・ヒント1: 「漢字のなりたち」\n・ヒント2: 「辺やつくりや画数」\n・ヒント3: 「似た漢字」\n・読解: 場所、キーワード、答え方の指定`,
+                grading: `・送り仮名ミスはバツ。\n・文末表現（〜こと、〜から等）もチェック。`
             },
             'りか': {
-                points: `
-                  ・グラフの軸ラベルや単位（g, cm, ℃など）を落とさないこと。
-                  ・記号選択問題（ア、イ、ウ）の選択肢も書き出すこと。
-                  ・最初の問題が図や表と似た位置にある場合があるので見逃さないこと。`,
-                hints: `
-                  ・ヒント1（観察）: 「図や表のどこを見るか」（例：グラフが急に上がっているところを探してみてにゃ）。
-                  ・ヒント2（関連知識）: 「習った言葉の想起」（例：この実験で使った、あの青い液体の名前は何だったかにゃ？）。
-                  ・ヒント3（絞り込み）: 「選択肢のヒント」や「最初の1文字」。`,
-                grading: `
-                  ・カタカナ指定（例：ジョウロ、アルコールランプ）をひらがなで書いていたらバツにしてにゃ。
-                  ・グラフの描画問題は、点が正しい位置にあるか、線が真っ直ぐかを厳しく判定してにゃ。`
+                points: `・グラフ軸や単位。\n・記号選択肢も抽出。`,
+                hints: `・ヒント1（観察）: 図や表のどこを見るか\n・ヒント2（関連知識）: 習った言葉の想起\n・ヒント3（絞り込み）: 選択肢のヒント`,
+                grading: `・カタカナ指定をひらがなで書いていたらバツ。`
             },
             'しゃかい': {
-                points: `
-                  ・グラフの軸ラベルや単位（g, cm, ℃など）を落とさないこと。
-                  ・記号選択問題（ア、イ、ウ）の選択肢も書き出すこと。
-                  ・最初の問題が図や表と似た位置にある場合があるので見逃さないこと。`,
-                hints: `
-                  ・ヒント1（観察）: 「図や表のどこを見るか」（例：グラフが急に上がっているところを探してみてにゃ）。
-                  ・ヒント2（関連知識）: 「習った言葉の想起」（例：この実験で使った、あの青い液体の名前は何だったかにゃ？）。
-                  ・ヒント3（絞り込み）: 「選択肢のヒント」や「最初の1文字」（例：『平』から始まる4文字の時代にゃ）。`,
-                grading: `
-                  ・漢字指定の用語（例：都道府県名）をひらがなで書いていたらバツにゃ。
-                  ・時代背景が混ざっていないか（例：江戸時代なのに「士農工商」など）に注意してにゃ。`
+                points: `・グラフ軸や単位。\n・記号選択肢も抽出。`,
+                hints: `・ヒント1（観察）: 図や表のどこを見るか\n・ヒント2（関連知識）: 習った言葉の想起\n・ヒント3（絞り込み）: 選択肢のヒント`,
+                grading: `・漢字指定をひらがなで書いていたらバツ。\n・時代背景の混同に注意。`
             }
         };
         const r = rules[subject] || rules['さんすう'];
         
-        let studentAnswerInstruction = "";
-        let gradingInstruction = "";
-        
-        if (mode === 'explain') {
-            studentAnswerInstruction = `
-            ・「教えて」モードです。画像内の手書き文字（生徒の答え）は【完全に無視】してください。
-            ・"student_answer" は必ず空文字 "" にしてください。
-            `;
-        } else {
-            studentAnswerInstruction = `
-            ・「採点」モードです。「手書き文字」への意識を強化してください。
-            ・子供特有の筆跡を考慮して、前後の文脈から数字や文字を推測してください。
-            ・読み取った生徒の答えを "student_answer" に入れてください。
-            `;
-            gradingInstruction = `
-            【採点基準】
-            ${r.grading}
-            ・ユーザーが答えを修正入力して、それが正解だった場合は「✕」から「○」に変更できるように判定ロジックを考慮してください。
-            ・どの問題も正確に正答を導き出してください。
-            `;
-        }
+        let instruction = mode === 'explain' 
+            ? `・「教えて」モード。画像内の手書き文字（生徒の答え）は【完全に無視】し、"student_answer" は空文字 "" にする。` 
+            : `・「採点」モード。「手書き文字」への意識を強化。子供の筆跡を考慮し、生徒の答えを "student_answer" に入れる。採点基準: ${r.grading}`;
 
         const prompt = `
-            あなたは「ねこご市立ねこづか小学校」のネル先生（小学${grade}年生${subject}担当）です。語尾は「にゃ」。
-            
-            【タスク】
-            画像に含まれる「問題」と思われる部分をすべて抽出し、JSONデータにしてください。
-            
-            【書き起こし・抽出の絶対ルール】
-            1. **多少読み取りにくくても、問題文らしきものがあればすべて書き出してください。**
-            2. 大問、小問の数字や項目名は可能な限り書き起こしてください。
-            3. 解答欄の有無に関わらず、設問文があれば抽出対象です。
-            4. **１つの問いの中に複数の回答が必要なときは、必要な数だけ回答欄（JSONデータの要素）を分けてください。**
-            5. 教科別注目ポイント: ${r.points}
-            6. ${studentAnswerInstruction}
-
-            【ヒント生成ルール】
-            1. **絶対に答えそのものは書かないでください。**
-            2. 十分に検証して必ず正答を導き出した上で、以下の3段階のヒントを作成してください。
-            3. ヒント指針:
-            ${r.hints}
-
-            ${gradingInstruction}
-
-            【出力JSON形式】
-            [
-              {
-                "id": 1, 
-                "label": "①", 
-                "question": "ここに問題文を書き写す", 
-                "correct_answer": "正答(検証済みの正確なもの)", 
-                "student_answer": "読み取った手書き回答(なければ空文字)", 
-                "hints": ["ヒント1", "ヒント2", "ヒント3"]
-              }
-            ]
+            あなたは「ねこご市立ねこづか小学校」のネル先生（小学${grade}年生${subject}担当）。語尾は「にゃ」。
+            画像の問題をJSONデータにしてください。
+            ルール:
+            1. 問題文は全て抽出。
+            2. ${r.points}
+            3. ${instruction}
+            4. ヒント生成: 答えは書かず、3段階のヒントを作成。\n${r.hints}
+            出力JSON: [{ "id": 1, "label": "①", "question": "...", "correct_answer": "...", "student_answer": "...", "hints": [...] }]
         `;
 
         const result = await model.generateContent([{ inlineData: { mime_type: "image/jpeg", data: image } }, { text: prompt }]);
         let text = result.response.text();
-        
         const firstBracket = text.indexOf('[');
         const lastBracket = text.lastIndexOf(']');
-        
         if (firstBracket !== -1 && lastBracket !== -1) {
             text = text.substring(firstBracket, lastBracket + 1);
+            const json = JSON.parse(text);
+            if (json.length > 0) await appendToServerLog("SYSTEM", `分析実行: ${subject}`);
+            res.json(json);
         } else {
             throw new Error("データ形式がおかしいにゃ…");
         }
-        
-        const json = JSON.parse(text);
-        
-        if (json.length > 0) {
-            const q = json[0].question.substring(0, 30);
-            await appendToServerLog("SYSTEM", `分析実行: ${subject} - ${q}...`); 
-        }
-        
-        res.json(json);
-
     } catch (err) { 
-        console.error("Analyze API Error:", err.message);
         res.status(500).json({ error: "AI読み取りエラー: " + err.message }); 
     }
 });
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
-
-// ==========================================
-// サーバー起動 & WebSocket (Live Chat)
-// ==========================================
 
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
@@ -445,76 +344,38 @@ wss.on('connection', async (clientWs, req) => {
                     model: "models/gemini-2.0-flash-exp",
                     generationConfig: { 
                         responseModalities: ["AUDIO"], 
-                        speech_config: { 
-                            voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }, 
-                            language_code: "ja-JP" 
-                        } 
+                        speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }, language_code: "ja-JP" } 
                     }, 
                     systemInstruction: {
                         parts: [{
                             text: `
                             あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。相手は小学${grade}年生の${name}さん。
-                            
-                            【話し方のルール】
-                            1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
-                            2. 親しみやすい日本の小学校の先生として、一文字一文字をはっきりと、丁寧に発音してにゃ。
-                            3. 特に最初や最後の音を、一文字抜かしたり消したりせずに、最初から最後までしっかり声に出して喋るのがコツだにゃ。
-                            4. 落ち着いた日本語のリズムを大切にして、親しみやすく話してにゃ。
-                            5. 給食(餌)のカリカリが大好物にゃ。
-                            6. とにかく何でも知っているにゃ。
-                            7. まれに「${name}さんは宿題は終わったかにゃ？」や「そろそろ宿題始めようかにゃ？」と宿題を促してくる。
-                            8. 句読点で自然な間をとる。
-                            9. 「私は」や「ユーザーは」としゃべるときは「わたしわ」、「ゆーざーわ」と発音する
-                            10. いつも高いトーンで話してにゃ。
-
-                            【NGなこと】
-                            ・ロボットみたいに不自然に区切るのではなく、繋がりのある滑らかな日本語でお願いにゃ。
-                            ・早口になりすぎて、言葉の一部が消えてしまうのはダメだにゃ。
-
-                            【生徒に関するメモ（会話の参考にすること）】
-                            ${memoryContext ? "・" + memoryContext : "・特になし"}
+                            語尾は「にゃ」。親しみやすく。
+                            【NG】ロボットみたいな区切り、早口。
+                            【メモ】${memoryContext ? "・" + memoryContext : "・特になし"}
                             `
                         }]
                     }
                 }
             };
             geminiWs.send(JSON.stringify(setupMsg));
-            
-            if (clientWs.readyState === WebSocket.OPEN) {
-                clientWs.send(JSON.stringify({ type: "server_ready" }));
-            }
+            if (clientWs.readyState === WebSocket.OPEN) clientWs.send(JSON.stringify({ type: "server_ready" }));
         });
 
         clientWs.on('message', async (data) => {
             try {
                 const msg = JSON.parse(data.toString());
-                if (msg.base64Audio) {
-                    if (geminiWs.readyState === WebSocket.OPEN) {
-                         const geminiMsg = {
-                            realtimeInput: {
-                                mediaChunks: [{
-                                    mimeType: "audio/pcm;rate=16000",
-                                    data: msg.base64Audio
-                                }]
-                            }
-                        };
-                        geminiWs.send(JSON.stringify(geminiMsg));
-                    }
+                if (msg.base64Audio && geminiWs.readyState === WebSocket.OPEN) {
+                     geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: msg.base64Audio }] } }));
                 }
-                if (msg.type === 'log_text') {
-                    await appendToServerLog(name, `発言: ${msg.text}`);
-                }
+                if (msg.type === 'log_text') await appendToServerLog(name, `発言: ${msg.text}`);
             } catch (e) { }
         });
 
-        geminiWs.on('message', (data) => {
-            if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data); 
-        });
-        
+        geminiWs.on('message', (data) => { if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data); });
         geminiWs.on('close', () => {});
         geminiWs.on('error', (e) => console.error("Gemini Error:", e));
 
     } catch (e) { clientWs.close(); }
-    
     clientWs.on('close', () => { if (geminiWs) geminiWs.close(); });
 });
