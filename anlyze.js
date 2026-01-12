@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v57.0: 戻るボタン削除・ヒント文言変更) ---
+// --- anlyze.js (完全版 v58.0: ヒント画面戻るボタン削除・ゲームスマホ対応) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -70,7 +70,7 @@ function saveToLocalDebugLog(role, text) {
     localStorage.setItem('nell_debug_log', JSON.stringify(history));
 }
 
-// --- メッセージ更新 (足跡マーク読み上げ回避) ---
+// --- メッセージ更新 ---
 async function updateNellMessage(t, mood = "normal") {
     let targetId = document.getElementById('screen-game').classList.contains('hidden') ? 'nell-text' : 'nell-text-game';
     const el = document.getElementById(targetId);
@@ -161,13 +161,12 @@ window.showGame = function() {
     startBtn.onclick = () => { if (!gameRunning) { initGame(); gameRunning = true; startBtn.disabled = true; drawGame(); } };
 };
 
-// --- ヒント機能 ---
+// --- ヒント機能 (修正: 戻るボタン削除・文言変更) ---
 window.startHint = function(id) {
     if (window.initAudioContext) window.initAudioContext().catch(e=>{});
     selectedProblem = transcribedProblems.find(p => p.id == id); 
     if (!selectedProblem) { return updateNellMessage("データエラーだにゃ", "thinking"); }
     
-    // UI整理
     const uiIds = ['subject-selection-view', 'upload-controls', 'problem-selection-view', 'grade-sheet-container', 'final-view', 'hint-detail-container', 'chalkboard', 'answer-display-area'];
     uiIds.forEach(i => { const el = document.getElementById(i); if(el) el.classList.add('hidden'); });
     
@@ -180,18 +179,9 @@ window.startHint = function(id) {
     const ansArea = document.getElementById('answer-display-area'); 
     if(ansArea) ansArea.classList.add('hidden');
     
+    // ★修正: ヒント画面では「←」ボタンを表示しない (不要なので削除)
     const backBtn = document.getElementById('main-back-btn');
-    if (backBtn) {
-        backBtn.classList.remove('hidden');
-        backBtn.onclick = () => {
-            if (currentMode === 'grade') showGradingView(); else renderProblemSelection();
-            document.getElementById('final-view').classList.add('hidden'); 
-            document.getElementById('hint-detail-container').classList.add('hidden'); 
-            document.getElementById('chalkboard').classList.add('hidden');
-            backBtn.classList.add('hidden'); 
-            updateNellMessage("他も見るにゃ？", "normal");
-        };
-    }
+    if (backBtn) backBtn.classList.add('hidden'); 
     
     hintIndex = 0; 
     // ★修正: 文言変更
@@ -267,13 +257,44 @@ window.pressAllSolved = function() {
     }
 };
 
-// --- ゲーム内部関数 ---
+// --- ゲーム内部関数 (修正: スマホタッチ座標補正) ---
 function fetchGameComment(type, score=0) {
     fetch('/game-reaction', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type, name: currentUser.name, score }) }).then(r=>r.json()).then(d=>{ updateNellMessage(d.reply, d.mood || "excited"); }).catch(e=>{});
 }
-function initGame() { gameCanvas = document.getElementById('game-canvas'); if(!gameCanvas) return; ctx = gameCanvas.getContext('2d'); paddle = { w: 80, h: 10, x: 120, speed: 7 }; ball = { x: 160, y: 350, dx: 3, dy: -3, r: 8 }; score = 0; document.getElementById('game-score').innerText = score; bricks = []; for(let c=0; c<5; c++) for(let r=0; r<4; r++) bricks.push({ x: c*64+10, y: r*35+40, status: 1 }); gameCanvas.removeEventListener("mousemove", movePaddle); gameCanvas.removeEventListener("touchmove", touchPaddle); gameCanvas.addEventListener("mousemove", movePaddle, false); gameCanvas.addEventListener("touchmove", touchPaddle, { passive: false }); }
-function movePaddle(e) { const r=gameCanvas.getBoundingClientRect(), rx=e.clientX-r.left; if(rx>0&&rx<gameCanvas.width) paddle.x=rx-paddle.w/2; }
-function touchPaddle(e) { e.preventDefault(); const r=gameCanvas.getBoundingClientRect(), rx=e.touches[0].clientX-r.left; if(rx>0&&rx<gameCanvas.width) paddle.x=rx-paddle.w/2; }
+function initGame() { 
+    gameCanvas = document.getElementById('game-canvas'); 
+    if(!gameCanvas) return; 
+    ctx = gameCanvas.getContext('2d'); 
+    paddle = { w: 80, h: 10, x: 120, speed: 7 }; 
+    ball = { x: 160, y: 350, dx: 3, dy: -3, r: 8 }; 
+    score = 0; 
+    document.getElementById('game-score').innerText = score; 
+    bricks = []; 
+    for(let c=0; c<5; c++) for(let r=0; r<4; r++) bricks.push({ x: c*64+10, y: r*35+40, status: 1 }); 
+    
+    gameCanvas.removeEventListener("mousemove", movePaddle); 
+    gameCanvas.removeEventListener("touchmove", touchPaddle); 
+    gameCanvas.addEventListener("mousemove", movePaddle, false); 
+    gameCanvas.addEventListener("touchmove", touchPaddle, { passive: false }); 
+}
+
+// ★修正: マウス移動時の座標計算 (リサイズ対応)
+function movePaddle(e) { 
+    const rect = gameCanvas.getBoundingClientRect(); 
+    const scaleX = gameCanvas.width / rect.width; // 描画サイズと表示サイズの比率
+    const rx = (e.clientX - rect.left) * scaleX; 
+    if(rx > 0 && rx < gameCanvas.width) paddle.x = rx - paddle.w/2; 
+}
+
+// ★修正: タッチ移動時の座標計算 (リサイズ対応)
+function touchPaddle(e) { 
+    e.preventDefault(); 
+    const rect = gameCanvas.getBoundingClientRect(); 
+    const scaleX = gameCanvas.width / rect.width;
+    const rx = (e.touches[0].clientX - rect.left) * scaleX; 
+    if(rx > 0 && rx < gameCanvas.width) paddle.x = rx - paddle.w/2; 
+}
+
 function drawGame() {
     if (!gameRunning) return;
     ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height); ctx.font = "20px serif"; bricks.forEach(b => { if(b.status === 1) ctx.fillText("🍖", b.x + 10, b.y + 20); });
@@ -524,7 +545,7 @@ async function startAnalysis(b64) {
         
         setTimeout(() => { 
             document.getElementById('thinking-view').classList.add('hidden'); 
-            // ★修正: 分析完了時は戻るボタンを表示しない (問題リストの左上の「←」削除)
+            // 修正: 戻るボタンは非表示のまま (UI設計変更)
             // document.getElementById('main-back-btn').classList.remove('hidden');
             const doneMsg = "読めたにゃ！";
             
