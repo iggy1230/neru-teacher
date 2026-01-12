@@ -1,4 +1,4 @@
-// --- server.js (完全版 v52.0: 給食反応強化・さん付け徹底) ---
+// --- server.js (完全版 v56.0: 給食反応調整・名前呼び頻度抑制) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -157,7 +157,7 @@ app.post('/game-reaction', async (req, res) => {
     } catch (err) { res.json({ reply: "がんばれにゃ！", mood: "excited" }); }
 });
 
-// --- 4. 給食反応 (修正: さん付け絶対・バリエーション増加・特別時熱弁) ---
+// --- 4. 給食反応 (修正: 名前呼び頻度抑制) ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
         const { count, name } = req.body;
@@ -180,7 +180,6 @@ app.post('/lunch-reaction', async (req, res) => {
             3. 語尾は「にゃ」。60文字程度。
             `;
         } else {
-            // バリエーションを増やす
             const themes = [
                 "カリカリの歯ごたえ", "魚の風味", "チキンの香り", "満腹感", "幸せな気分", 
                 "おかわり希望", "生徒への感謝", "食べる速さ", "元気が出る", "毛艶が良くなる",
@@ -188,10 +187,20 @@ app.post('/lunch-reaction', async (req, res) => {
             ];
             const theme = themes[Math.floor(Math.random() * themes.length)];
             
+            // ★修正: 名前を呼ぶ頻度を抑制 (約20%)
+            const shouldCallName = Math.random() < 0.2;
+            let nameRule = "";
+            
+            if (shouldCallName) {
+                nameRule = `名前「${name}さん」を呼んでください（呼び捨て厳禁）。`;
+            } else {
+                nameRule = `名前は呼ばないでください。いきなり感想から話し始めてください。`;
+            }
+            
             prompt = `
             あなたはネル先生です。生徒「${name}」さんから給食をもらいました。
             【絶対ルール】
-            1. 名前を呼ぶときは必ず「${name}さん」と呼んでください。呼び捨ては厳禁です。
+            1. ${nameRule}
             2. テーマ「${theme}」について、15文字以内の一言でユニークな感想を言ってください。
             3. 語尾は「にゃ」。
             `;
@@ -247,6 +256,7 @@ app.post('/analyze', async (req, res) => {
             generationConfig: { responseMimeType: "application/json" }
         });
 
+        // 教科別詳細ルール
         const rules = {
             'さんすう': {
                 points: `・筆算の横線とマイナス記号を混同しないこと。\n・累乗（2^2など）や分数を正確に書き起こすこと。`,
