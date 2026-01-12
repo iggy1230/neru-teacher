@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v47.0: UI統一・読み上げ修正・採点修正機能) ---
+// --- anlyze.js (完全版 v48.0: メッセージ表示修正・UI統一・読み上げ修正) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -635,8 +635,9 @@ function stopLiveChat() {
     const btn = document.getElementById('mic-btn');
     if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; btn.style.boxShadow = "none"; }
 
+    // ★修正: 要約時のメッセージ削除
     if (chatTranscript && chatTranscript.length > 10 && currentUser && window.NellMemory) {
-        updateNellMessage("面談の記録を整理してるにゃ…", "thinking");
+        // メッセージ削除: updateNellMessage("面談の記録を整理してるにゃ…", "thinking");
         fetch('/summarize-notes', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -646,13 +647,13 @@ function stopLiveChat() {
         .then(data => {
             if (data.notes && data.notes.length > 0) {
                 window.NellMemory.applySummarizedNotes(currentUser.id, data.notes);
-                updateNellMessage("覚えたにゃ！またお話ししようね！", "happy");
+                // メッセージ削除: updateNellMessage("覚えたにゃ！またお話ししようね！", "happy");
             } else {
-                updateNellMessage("またお話ししようね！", "happy");
+                // メッセージ削除
             }
         })
         .catch(e => {
-            updateNellMessage("またお話ししようね！", "happy");
+            // エラー時もメッセージ出さない
         });
     }
 }

@@ -1,4 +1,4 @@
-// --- server.js (完全版 v50.0: 教科別詳細ルール・発音調整解除・チャット人格強化) ---
+// --- server.js (完全版 v51.0: 給食反応調整・チャット人格強化) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -109,7 +109,6 @@ function createSSML(text, mood) {
     if (mood === "gentle") { rate = "0.95"; pitch = "+1st"; }
     if (mood === "excited") { rate = "1.2"; pitch = "+4st"; }
 
-    // ★修正: 特定単語のprosodyタグ置換を削除
     let cleanText = text
         .replace(/[\u{1F600}-\u{1F6FF}]/gu, '')
         .replace(/[<>"']/g, ' ')
@@ -158,7 +157,7 @@ app.post('/game-reaction', async (req, res) => {
     } catch (err) { res.json({ reply: "がんばれにゃ！", mood: "excited" }); }
 });
 
-// --- 4. 給食反応 ---
+// --- 4. 給食反応 (修正: 名前呼び頻度低下・特別時強化) ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
         const { count, name } = req.body;
@@ -172,12 +171,11 @@ app.post('/lunch-reaction', async (req, res) => {
         let prompt = "";
         const isSpecial = count % 10 === 0;
 
-        // ★修正: 呼び捨て厳禁、「さん」付け指示
         if (isSpecial) {
             prompt = `
-            あなたはネル先生です。生徒「${name}」さんから${count}個目の給食をもらいました！
-            必ず「${name}さん」と呼んでください。呼び捨ては禁止です。
-            少し大げさなくらい感謝を伝えてください。語尾は「にゃ」。60文字程度。
+            あなたはネル先生です。生徒「${name}」さんから記念すべき${count}個目の給食をもらいました！
+            必ず「${name}さん」と呼んでください。
+            カリカリへの愛と感謝を、少し大げさなくらい熱く、情熱的に語ってください。語尾は「にゃ」。60文字程度。
             `;
         } else {
             const themes = ["カリカリの歯ごたえ", "魚の風味", "満腹感", "幸せ", "おかわり希望", "感謝"];
@@ -185,7 +183,7 @@ app.post('/lunch-reaction', async (req, res) => {
             
             prompt = `
             あなたはネル先生です。生徒「${name}」さんから給食をもらいました。
-            必ず「${name}さん」と呼んでください。呼び捨ては禁止です。
+            名前は毎回呼ばずに、自然な会話にしてください（時々呼ぶのはOK）。
             テーマ「${theme}」について、15文字以内の一言で感想を言って。語尾は「にゃ」。
             `;
         }
@@ -240,7 +238,7 @@ app.post('/analyze', async (req, res) => {
             generationConfig: { responseMimeType: "application/json" }
         });
 
-        // ★修正: 教科別詳細ルール (書き起こし、ヒント、採点)
+        // 教科別詳細ルール
         const rules = {
             'さんすう': {
                 points: `・筆算の横線とマイナス記号を混同しないこと。\n・累乗（2^2など）や分数を正確に書き起こすこと。`,
@@ -407,7 +405,6 @@ wss.on('connection', async (clientWs, req) => {
         geminiWs = new WebSocket(GEMINI_URL);
         
         geminiWs.on('open', () => {
-            // ★修正: 人格設定・発話ルールの強化
             const setupMsg = {
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
