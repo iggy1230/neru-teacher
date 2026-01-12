@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v58.0: ヒント画面戻るボタン削除・ゲームスマホ対応) ---
+// --- anlyze.js (完全版 v59.0: ゲーム効果音追加・全機能統合) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -29,7 +29,8 @@ let cropPoints = [];
 let activeHandle = -1;
 
 const sfxBori = new Audio('boribori.mp3');
-const sfxHit = new Audio('cat1c.mp3');
+const sfxHit = new Audio('cat1c.mp3'); // ブロックヒット音
+const sfxPaddle = new Audio('poka02.mp3'); // ★追加: パドルヒット音
 const sfxOver = new Audio('gameover.mp3');
 const gameHitComments = ["うまいにゃ！", "すごいにゃ！", "さすがにゃ！", "がんばれにゃ！"];
 
@@ -161,7 +162,7 @@ window.showGame = function() {
     startBtn.onclick = () => { if (!gameRunning) { initGame(); gameRunning = true; startBtn.disabled = true; drawGame(); } };
 };
 
-// --- ヒント機能 (修正: 戻るボタン削除・文言変更) ---
+// --- ヒント機能 ---
 window.startHint = function(id) {
     if (window.initAudioContext) window.initAudioContext().catch(e=>{});
     selectedProblem = transcribedProblems.find(p => p.id == id); 
@@ -179,12 +180,10 @@ window.startHint = function(id) {
     const ansArea = document.getElementById('answer-display-area'); 
     if(ansArea) ansArea.classList.add('hidden');
     
-    // ★修正: ヒント画面では「←」ボタンを表示しない (不要なので削除)
     const backBtn = document.getElementById('main-back-btn');
     if (backBtn) backBtn.classList.add('hidden'); 
     
     hintIndex = 0; 
-    // ★修正: 文言変更
     updateNellMessage("カリカリをくれたらヒントを出してやってもいいにゃ🐾", "thinking"); 
     
     const nextBtn = document.getElementById('next-hint-btn'); 
@@ -257,7 +256,7 @@ window.pressAllSolved = function() {
     }
 };
 
-// --- ゲーム内部関数 (修正: スマホタッチ座標補正) ---
+// --- ゲーム内部関数 ---
 function fetchGameComment(type, score=0) {
     fetch('/game-reaction', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type, name: currentUser.name, score }) }).then(r=>r.json()).then(d=>{ updateNellMessage(d.reply, d.mood || "excited"); }).catch(e=>{});
 }
@@ -278,15 +277,13 @@ function initGame() {
     gameCanvas.addEventListener("touchmove", touchPaddle, { passive: false }); 
 }
 
-// ★修正: マウス移動時の座標計算 (リサイズ対応)
 function movePaddle(e) { 
     const rect = gameCanvas.getBoundingClientRect(); 
-    const scaleX = gameCanvas.width / rect.width; // 描画サイズと表示サイズの比率
+    const scaleX = gameCanvas.width / rect.width; 
     const rx = (e.clientX - rect.left) * scaleX; 
     if(rx > 0 && rx < gameCanvas.width) paddle.x = rx - paddle.w/2; 
 }
 
-// ★修正: タッチ移動時の座標計算 (リサイズ対応)
 function touchPaddle(e) { 
     e.preventDefault(); 
     const rect = gameCanvas.getBoundingClientRect(); 
@@ -310,7 +307,12 @@ function drawGame() {
     if(ball.x+ball.dx > gameCanvas.width-ball.r || ball.x+ball.dx < ball.r) ball.dx *= -1;
     if(ball.y+ball.dy < ball.r) ball.dy *= -1;
     else if(ball.y+ball.dy > gameCanvas.height - ball.r - 20) {
-        if(ball.x > paddle.x && ball.x < paddle.x + paddle.w) { ball.dy *= -1; ball.dx = (ball.x - (paddle.x+paddle.w/2)) * 0.15; } 
+        if(ball.x > paddle.x && ball.x < paddle.x + paddle.w) { 
+            ball.dy *= -1; 
+            ball.dx = (ball.x - (paddle.x+paddle.w/2)) * 0.15;
+            // ★追加: パドルヒット音再生
+            try { sfxPaddle.currentTime = 0; sfxPaddle.play(); } catch(e){}
+        } 
         else if(ball.y+ball.dy > gameCanvas.height-ball.r) { try { sfxOver.currentTime=0; sfxOver.play(); } catch(e){} endGame(false); return; }
     }
     ball.x += ball.dx; ball.y += ball.dy; gameAnimId = requestAnimationFrame(drawGame);
