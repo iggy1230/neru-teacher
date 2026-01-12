@@ -1,4 +1,4 @@
-// --- server.js (完全版 v31.0: 「好き」の発音修正・全機能統合) ---
+// --- server.js (完全版 v32.0: 発音矯正強化) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -37,7 +37,6 @@ initMemoryFile();
 // --- 記憶管理（メモリ変数 + ファイルバックアップ） ---
 let GLOBAL_MEMORIES = {};
 
-// 起動時にロード
 async function loadMemories() {
     try {
         const data = await fs.readFile(MEMORY_FILE, 'utf8');
@@ -54,12 +53,10 @@ async function appendToMemory(name, text) {
     const timestamp = new Date().toLocaleString('ja-JP', { hour: '2-digit', minute: '2-digit' });
     const newLog = `\n[${timestamp}] ${text}`;
     
-    // メモリ更新
     let currentMem = GLOBAL_MEMORIES[name] || "";
     currentMem = (currentMem + newLog).slice(-5000); 
     GLOBAL_MEMORIES[name] = currentMem;
 
-    // ファイル保存（エラーでも止まらない）
     try {
         await fs.writeFile(MEMORY_FILE, JSON.stringify(GLOBAL_MEMORIES, null, 2));
     } catch (e) {
@@ -121,7 +118,6 @@ app.post('/detect-document', async (req, res) => {
     }
 });
 
-// --- ★修正: 音声合成データの生成 (発音矯正) ---
 function createSSML(text, mood) {
     let rate = "1.1"; 
     let pitch = "+2st";
@@ -136,12 +132,8 @@ function createSSML(text, mood) {
         .replace(/^[・-]\s*/gm, '')
         .replace(/……/g, '<break time="500ms"/>');
 
-    // ★発音矯正: 「好き」「大好き」をゆっくりひらがなで読ませる
-    // これにより「す」が消えるのを防ぎます
     cleanText = cleanText.replace(/大好き/g, '<prosody rate="0.9">だいすき</prosody>');
     cleanText = cleanText.replace(/好き/g, '<prosody rate="0.9">すき</prosody>');
-
-    // 語尾の「にゃ」を可愛く
     cleanText = cleanText.replace(/にゃ/g, '<prosody pitch="+3st">にゃ</prosody>');
 
     if (cleanText.length < 5) return `<speak>${cleanText}</speak>`;
@@ -166,7 +158,6 @@ app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;
         if (type === 'end') await appendToMemory(name, `ゲーム終了。スコア${score}点。`);
-        
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         let prompt = "";
         let mood = "excited";
@@ -224,7 +215,7 @@ app.post('/lunch-reaction', async (req, res) => {
         
         const result = await model.generateContent(prompt);
         let reply = result.response.text().trim();
-        if (!isSpecial && reply.includes('\n')) reply = reply.split('\n')[0];
+        if (reply.includes('\n')) reply = reply.split('\n')[0];
         res.json({ reply, isSpecial });
     } catch (err) { res.status(500).json({ error: "Lunch Error" }); }
 });
@@ -249,7 +240,6 @@ app.post('/analyze', async (req, res) => {
             generationConfig: { responseMimeType: "application/json" }
         });
 
-        // 教科別ルール定義
         const rules = {
             'さんすう': {
                 points: `・筆算の横線とマイナス記号を混同しないこと。\n・累乗（2^2など）や分数を正確に書き起こすこと。`,
@@ -327,6 +317,7 @@ app.post('/analyze', async (req, res) => {
         if (firstBracket !== -1 && lastBracket !== -1) {
             text = text.substring(firstBracket, lastBracket + 1);
         } else {
+            console.error("Invalid JSON format:", text);
             throw new Error("データ形式がおかしいにゃ…");
         }
         
@@ -335,6 +326,8 @@ app.post('/analyze', async (req, res) => {
         if (json.length > 0) {
             const q = json[0].question.substring(0, 30);
             await appendToMemory("生徒", `${subject}の勉強をした。問題：「${q}...」`); 
+        } else {
+            console.warn("Empty questions array");
         }
         
         res.json(json);
@@ -368,8 +361,6 @@ wss.on('connection', async (clientWs, req) => {
         geminiWs = new WebSocket(GEMINI_URL);
         
         geminiWs.on('open', () => {
-            console.log(`✨ [${name}] Gemini接続成功`);
-            
             const setupMsg = {
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
@@ -381,14 +372,14 @@ wss.on('connection', async (clientWs, req) => {
                     }, 
                     systemInstruction: {
                         parts: [{
-                            // ★修正: 発音についての指示を追加
+                            // ★修正: 「好き」の発音指示を追加
                             text: `
                             あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。相手は小学${grade}年生の${name}さん。
                             
                             【話し方のルール】
                             1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
                             2. 親しみやすい日本の小学校の先生として、一文字一文字をはっきりと、丁寧に発音してにゃ。
-                            3. 「好き」や「嫌い」などの言葉は、「すき」「きらい」と母音をはっきり発音してにゃ。
+                            3. 「好き」や「嫌い」などの言葉は、「す」や「き」の母音を消さずに、はっきりと「す・き」と発音してにゃ。
                             4. 特に最初や最後の音を、一文字抜かしたり消したりせずに、最初から最後までしっかり声に出して喋るのがコツだにゃ。
                             5. 落ち着いた日本語のリズムを大切にして、親しみやすく話してにゃ。
                             6. 給食(餌)のカリカリが大好物にゃ。
