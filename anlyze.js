@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v61.0: クロップ枠デフォルト形状修正・全機能統合) ---
+// --- anlyze.js (完全版 v61.0: 戻るボタン改善・リスト復帰機能追加) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -129,6 +129,7 @@ window.setAnalyzeMode = function(type) {
     }
 };
 
+// ★修正: 教科選択後の戻るボタン制御
 window.setSubject = function(s) { 
     currentSubject = s; 
     if(typeof currentUser !== 'undefined' && currentUser){
@@ -137,9 +138,26 @@ window.setSubject = function(s) {
         if(typeof saveAndSync === 'function') saveAndSync();
     } 
     const icon = document.querySelector('.nell-avatar-wrap img'); if(icon&&subjectImages[s]){icon.src=subjectImages[s].base; icon.onerror=()=>{icon.src=defaultIcon;};} 
+    
+    // 画面遷移
     document.getElementById('subject-selection-view').classList.add('hidden'); 
     document.getElementById('upload-controls').classList.remove('hidden'); 
     updateNellMessage(`${currentSubject}の問題をみせてにゃ！`, "happy"); 
+
+    // ★追加: 戻るボタンを押すと「教科選択」に戻るようにする
+    const backBtn = document.getElementById('main-back-btn');
+    if (backBtn) {
+        backBtn.classList.remove('hidden');
+        backBtn.onclick = () => {
+            // 教科選択に戻る処理
+            document.getElementById('upload-controls').classList.add('hidden');
+            document.getElementById('subject-selection-view').classList.remove('hidden');
+            updateNellMessage("どの教科にするのかにゃ？", "normal");
+            
+            // 戻るボタンの挙動をロビー戻りにリセット
+            backBtn.onclick = backToLobby;
+        };
+    }
 };
 
 window.giveLunch = function() {
@@ -232,9 +250,35 @@ window.revealAnswer = function() {
     updateNellMessage(`答えは「${selectedProblem.correct_answer}」だにゃ！`, "gentle"); 
 };
 
+// ★追加: 問題リストに戻る関数
+window.backToProblemSelection = function() {
+    document.getElementById('final-view').classList.add('hidden'); 
+    document.getElementById('hint-detail-container').classList.add('hidden'); 
+    document.getElementById('chalkboard').classList.add('hidden');
+    
+    const ansArea = document.getElementById('answer-display-area');
+    if(ansArea) ansArea.classList.add('hidden');
+    const revealBtn = document.getElementById('reveal-answer-btn');
+    if(revealBtn) revealBtn.classList.add('hidden');
+    
+    if (currentMode === 'grade') {
+        showGradingView();
+    } else {
+        renderProblemSelection();
+        updateNellMessage("他も見るにゃ？", "normal");
+    }
+    
+    // 戻るボタン(←)を復活
+    const backBtn = document.getElementById('main-back-btn');
+    if(backBtn) {
+        backBtn.classList.remove('hidden');
+        backBtn.onclick = backToLobby;
+    }
+};
+
+// ★修正: ありがとうボタン
 window.pressThanks = function() {
-    if(currentMode==='grade') showGradingView(); 
-    else backToProblemSelection();
+    window.backToProblemSelection();
 };
 
 window.finishGrading = async function() { 
@@ -355,15 +399,10 @@ const handleFileUpload = async (file) => {
             const w = cropImg.width;
             const h = cropImg.height;
 
-            // ★修正: 初期クロップ位置を必ず「きれいな長方形（10%内側）」にする関数
             const getDefaultRect = (w, h) => [
-                { x: w * 0.1, y: h * 0.1 }, // 左上
-                { x: w * 0.9, y: h * 0.1 }, // 右上
-                { x: w * 0.9, y: h * 0.9 }, // 右下
-                { x: w * 0.1, y: h * 0.9 }  // 左下
+                { x: w * 0.1, y: h * 0.1 }, { x: w * 0.9, y: h * 0.1 },
+                { x: w * 0.9, y: h * 0.9 }, { x: w * 0.1, y: h * 0.9 }
             ];
-
-            // 初期化
             cropPoints = getDefaultRect(w, h);
 
             const lowResBase64 = resizeImageForDetect(cropImg, 1000);
@@ -385,16 +424,14 @@ const handleFileUpload = async (file) => {
                     const minY = Math.min(...detectedPoints.map(p => p.y));
                     const maxY = Math.max(...detectedPoints.map(p => p.y));
                     
-                    // 検出範囲が極端に小さい、または潰れている場合はデフォルトを使用
                     if ((maxX - minX) > w * 0.2 && (maxY - minY) > h * 0.2) {
                         cropPoints = detectedPoints;
                     } else {
-                        cropPoints = getDefaultRect(w, h); // フォールバック
+                        cropPoints = getDefaultRect(w, h);
                     }
                 }
             } catch(err) { 
-                console.error("Detect failed, using default", err);
-                cropPoints = getDefaultRect(w, h); // エラー時フォールバック
+                cropPoints = getDefaultRect(w, h); 
             }
 
             loader.style.display = 'none';
