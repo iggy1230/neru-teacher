@@ -1,4 +1,4 @@
-// --- server.js (完全版 v51.0: 給食反応調整・チャット人格強化) ---
+// --- server.js (完全版 v52.0: 給食反応強化・さん付け徹底) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -157,7 +157,7 @@ app.post('/game-reaction', async (req, res) => {
     } catch (err) { res.json({ reply: "がんばれにゃ！", mood: "excited" }); }
 });
 
-// --- 4. 給食反応 (修正: 名前呼び頻度低下・特別時強化) ---
+// --- 4. 給食反応 (修正: さん付け絶対・バリエーション増加・特別時熱弁) ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
         const { count, name } = req.body;
@@ -174,17 +174,26 @@ app.post('/lunch-reaction', async (req, res) => {
         if (isSpecial) {
             prompt = `
             あなたはネル先生です。生徒「${name}」さんから記念すべき${count}個目の給食をもらいました！
-            必ず「${name}さん」と呼んでください。
-            カリカリへの愛と感謝を、少し大げさなくらい熱く、情熱的に語ってください。語尾は「にゃ」。60文字程度。
+            【絶対ルール】
+            1. 名前を呼ぶときは必ず「${name}さん」と呼んでください。呼び捨ては厳禁です。
+            2. カリカリへの溢れんばかりの愛と、${name}さんへの深い感謝を、少し大げさなくらい熱く、情熱的に語ってください。
+            3. 語尾は「にゃ」。60文字程度。
             `;
         } else {
-            const themes = ["カリカリの歯ごたえ", "魚の風味", "満腹感", "幸せ", "おかわり希望", "感謝"];
+            // バリエーションを増やす
+            const themes = [
+                "カリカリの歯ごたえ", "魚の風味", "チキンの香り", "満腹感", "幸せな気分", 
+                "おかわり希望", "生徒への感謝", "食べる速さ", "元気が出る", "毛艶が良くなる",
+                "午後の授業への活力", "給食の時間が一番好き", "隠し味の予想", "咀嚼音の良さ"
+            ];
             const theme = themes[Math.floor(Math.random() * themes.length)];
             
             prompt = `
             あなたはネル先生です。生徒「${name}」さんから給食をもらいました。
-            名前は毎回呼ばずに、自然な会話にしてください（時々呼ぶのはOK）。
-            テーマ「${theme}」について、15文字以内の一言で感想を言って。語尾は「にゃ」。
+            【絶対ルール】
+            1. 名前を呼ぶときは必ず「${name}さん」と呼んでください。呼び捨ては厳禁です。
+            2. テーマ「${theme}」について、15文字以内の一言でユニークな感想を言ってください。
+            3. 語尾は「にゃ」。
             `;
         }
         
@@ -238,7 +247,6 @@ app.post('/analyze', async (req, res) => {
             generationConfig: { responseMimeType: "application/json" }
         });
 
-        // 教科別詳細ルール
         const rules = {
             'さんすう': {
                 points: `・筆算の横線とマイナス記号を混同しないこと。\n・累乗（2^2など）や分数を正確に書き起こすこと。`,
