@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v48.0: メッセージ表示修正・UI統一・読み上げ修正) ---
+// --- anlyze.js (完全版 v53.0: 教えボタン重複削除・採点音声被り解消) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -70,7 +70,7 @@ function saveToLocalDebugLog(role, text) {
     localStorage.setItem('nell_debug_log', JSON.stringify(history));
 }
 
-// --- メッセージ更新 (足跡マーク読み上げ回避) ---
+// --- メッセージ更新 ---
 async function updateNellMessage(t, mood = "normal") {
     let targetId = document.getElementById('screen-game').classList.contains('hidden') ? 'nell-text' : 'nell-text-game';
     const el = document.getElementById(targetId);
@@ -82,7 +82,6 @@ async function updateNellMessage(t, mood = "normal") {
     saveToLocalDebugLog('nell', t);
 
     if (typeof speakNell === 'function') {
-        // 音声合成時のみ 🐾 を削除
         const textForSpeech = t.replace(/🐾/g, "");
         await speakNell(textForSpeech, mood);
     }
@@ -256,14 +255,22 @@ window.finishGrading = async function() {
     setTimeout(() => { if(typeof backToLobby === 'function') backToLobby(true); }, 3000); 
 };
 
+// ★修正: ぜんぶわかったにゃボタン (確実な無効化と戻る処理)
 window.pressAllSolved = function() { 
-    const btn = document.querySelector('button.main-btn.orange-btn');
-    if(btn) btn.disabled = true;
+    // ID等で特定せずに、押された瞬間にイベントターゲットなどを利用する方が安全だが、
+    // ここではHTML構造上ユニークなボタンを対象にする
+    const btns = document.querySelectorAll('#problem-selection-view button.orange-btn');
+    btns.forEach(b => b.disabled = true); // すべて無効化
+
     if (currentUser) {
         currentUser.karikari += 100; saveAndSync(); showKarikariEffect(100);
         updateMiniKarikari(); 
         updateNellMessage("よくがんばったにゃ！カリカリ100個あげるにゃ！", "excited")
-        .then(() => { setTimeout(() => { if(typeof backToLobby === 'function') backToLobby(true); }, 3000); });
+        .then(() => { 
+            setTimeout(() => { 
+                if(typeof backToLobby === 'function') backToLobby(true); 
+            }, 3000); 
+        });
     }
 };
 
@@ -526,9 +533,15 @@ async function startAnalysis(b64) {
             document.getElementById('thinking-view').classList.add('hidden'); 
             document.getElementById('main-back-btn').classList.remove('hidden');
             const doneMsg = "読めたにゃ！";
+            
             if (currentMode === 'grade') {
                 showGradingView(); 
-                updateNellMessage(doneMsg, "happy"); 
+                // ★修正: 音声被り解消 (読めたにゃ！ -> 完了後 -> 間違ってても...)
+                updateNellMessage(doneMsg, "happy").then(() => {
+                    setTimeout(() => {
+                        updateNellMessage("間違ってても大丈夫！入力しなおしてみてにゃ！", "gentle");
+                    }, 1200);
+                });
             } else { 
                 renderProblemSelection(); 
                 updateNellMessage(doneMsg, "happy"); 
@@ -635,9 +648,7 @@ function stopLiveChat() {
     const btn = document.getElementById('mic-btn');
     if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; btn.style.boxShadow = "none"; }
 
-    // ★修正: 要約時のメッセージ削除
     if (chatTranscript && chatTranscript.length > 10 && currentUser && window.NellMemory) {
-        // メッセージ削除: updateNellMessage("面談の記録を整理してるにゃ…", "thinking");
         fetch('/summarize-notes', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -647,14 +658,9 @@ function stopLiveChat() {
         .then(data => {
             if (data.notes && data.notes.length > 0) {
                 window.NellMemory.applySummarizedNotes(currentUser.id, data.notes);
-                // メッセージ削除: updateNellMessage("覚えたにゃ！またお話ししようね！", "happy");
-            } else {
-                // メッセージ削除
             }
         })
-        .catch(e => {
-            // エラー時もメッセージ出さない
-        });
+        .catch(e => {});
     }
 }
 
@@ -770,12 +776,12 @@ function updateGradingMessage() {
     });
 
     const scoreRate = correctCount / (transcribedProblems.length || 1);
+    // ★修正: 「あと○問直してみるにゃ」を削除し、一律の励ましメッセージへ
     if (scoreRate === 1.0) updateNellMessage(`全問正解だにゃ！天才だにゃ〜！！`, "excited");
-    else if (scoreRate >= 0.5) updateNellMessage(`あと${transcribedProblems.length - correctCount}問！直してみるにゃ！`, "happy");
-    else updateNellMessage(`間違ってても大丈夫！入力し直してみて！`, "gentle");
+    else updateNellMessage(`間違ってても大丈夫！入力し直してみてにゃ！`, "gentle");
 }
 
-// --- スキャン結果表示 (教えてモード: UI統一版) ---
+// --- スキャン結果表示 (教えてモード: UI統一・重複ボタン削除版) ---
 function renderProblemSelection() { 
     document.getElementById('problem-selection-view').classList.remove('hidden'); 
     const l = document.getElementById('transcribed-problem-list'); 
@@ -818,12 +824,8 @@ function renderProblemSelection() {
         l.appendChild(div);
     }); 
     
-    // 全問完了ボタン
-    const btnDiv = document.createElement('div');
-    btnDiv.style.textAlign = "center";
-    btnDiv.style.marginTop = "20px";
-    btnDiv.innerHTML = `<button onclick="pressAllSolved()" class="main-btn orange-btn">✨ ぜんぶわかったにゃ！</button>`;
-    l.appendChild(btnDiv);
+    // ★修正: ここでの「ぜんぶわかったにゃ」ボタン生成を削除
+    // HTML (index.html) 側のボタンを使用するため、JS側では追加しない
 }
 
 // --- 復習モード ---
@@ -838,7 +840,7 @@ function renderMistakeSelection() {
     updateNellMessage("復習するにゃ？", "excited"); 
 }
 
-// --- 採点画面表示 (編集可能版) ---
+// --- 採点画面表示 (編集可能版・音声被り修正) ---
 function showGradingView() {
     document.getElementById('problem-selection-view').classList.add('hidden');
     document.getElementById('final-view').classList.remove('hidden');
@@ -848,14 +850,10 @@ function showGradingView() {
     const container = document.getElementById('problem-list-grade');
     container.innerHTML = "";
 
-    let correctCount = 0;
-
     transcribedProblems.forEach(p => {
         const studentAns = (p.student_answer || "").trim();
         const correctAns = (p.correct_answer || "").trim();
         let isCorrect = (studentAns !== "") && (studentAns === correctAns);
-
-        if (isCorrect) correctCount++;
 
         const mark = isCorrect ? "⭕" : "❌";
         const markColor = isCorrect ? "#ff5252" : "#4a90e2";
@@ -896,5 +894,6 @@ function showGradingView() {
     btnDiv.innerHTML = `<button onclick="finishGrading()" class="main-btn orange-btn">💯 採点おわり！</button>`;
     container.appendChild(btnDiv);
 
-    updateGradingMessage();
+    // ★修正: 初回表示時は音声再生しない (startAnalysisで制御)
+    // updateGradingMessage(); 
 }

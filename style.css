@@ -1,262 +1,293 @@
-/* --- style.css (校門背景変更版) --- */
-
-body {
-    font-family: 'M PLUS Rounded 1c', "Sawarabi Gothic", sans-serif;
-    margin: 0;
-    padding: 0;
-    width: 100%;
-    min-height: 100vh;
-    background-color: #fce4ec;
-    /* デフォルト背景（教室） */
-    background-image: url('classroom-bg.png');
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
-    background-attachment: fixed;
-    color: #333;
-    -webkit-font-smoothing: antialiased;
-    box-sizing: border-box;
-    padding-top: 0;
-    overflow-x: hidden;
+/* --- style.css (v53.0: カメラボタン配置修正) --- */
+:root {
+    --primary-pink: #ff85a1;
+    --primary-blue: #4a90e2;
+    --primary-orange: #ffb74d;
+    --text-color: #333;
+    --bg-color: #fff9f0;
 }
 
-button { font-family: inherit; }
+* { box-sizing: border-box; touch-action: manipulation; }
+
+body {
+    margin: 0; padding: 0;
+    font-family: 'M PLUS Rounded 1c', 'Sawarabi Gothic', sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    overflow-x: hidden;
+    user-select: none;
+}
+
 .hidden { display: none !important; }
 
+/* 画面コンテナ */
 #app-container {
     max-width: 600px;
     margin: 0 auto;
     min-height: 100vh;
     position: relative;
-    padding-bottom: 40px;
+    background: white;
+    box-shadow: 0 0 20px rgba(0,0,0,0.1);
 }
+
+.screen { padding: 20px; padding-bottom: 80px; min-height: 100vh; }
 
 /* タイトル画面 */
 .title-screen {
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    background-image: url('neru-title-bg.png');
-    background-size: cover;
-    background-position: center;
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
+    justify-content: center;
     align-items: center;
-    z-index: 2000;
+    background: linear-gradient(135deg, #ffe0e9 0%, #fff9f0 100%);
+    text-align: center;
 }
 .main-title {
-    margin-top: 80px; font-size: 3rem; color: #d81b60;
-    text-shadow: 4px 4px 0 #fff, -2px -2px 0 #fff;
-    text-align: center; font-weight: 900;
-    animation: floatingTitle 3s ease-in-out infinite;
+    font-family: 'Kiwi Maru', serif;
+    font-size: 2.5rem;
+    color: #d81b60;
+    text-shadow: 2px 2px 0 #fff;
+    margin-bottom: 40px;
 }
-@keyframes floatingTitle { 0% { transform: translateY(0); } 50% { transform: translateY(-15px); } 100% { transform: translateY(0); } }
-.title-btn-container { margin-bottom: 200px; width: 100%; display: flex; justify-content: center; }
-.title-start-btn {
-    background: #ff5252; color: white; font-size: 1.3rem; padding: 15px 40px;
-    border-radius: 50px; border: 4px solid #fff;
-    box-shadow: 0 6px 0 #d32f2f, 0 10px 10px rgba(0,0,0,0.3);
-    width: fit-content; min-width: auto; animation: pulse 2s infinite;
-}
-@keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
-.version-tag {
-    position: absolute; bottom: 10px; left: 0; width: 100%;
-    text-align: center; font-size: 0.7rem; color: rgba(0, 0, 0, 0.4); pointer-events: none;
-}
+.version-tag { position: absolute; bottom: 10px; right: 10px; font-size: 0.7rem; color: #aaa; }
 
-/* 共通ボタン */
+/* ボタン共通スタイル */
 .main-btn {
-    display: block; width: 90%; margin: 10px auto; padding: 15px;
-    border: none; border-radius: 30px; font-size: 1.1rem; font-weight: bold;
-    color: white; cursor: pointer; box-shadow: 0 4px 0 rgba(0,0,0,0.1);
-    transition: transform 0.1s; text-align: center; text-decoration: none;
-}
-.main-btn:active { transform: translateY(2px); box-shadow: none; }
-.pink-btn { background: #ff85a1; box-shadow: 0 4px 0 #d15d7d; }
-.blue-btn { background: #4fc3f7; box-shadow: 0 4px 0 #29b6f6; }
-.orange-btn { background: #ffb74d; box-shadow: 0 4px 0 #f57c00; }
-.yellow-btn { background: #ffd54f; box-shadow: 0 4px 0 #ffca28; color: #5d4037; }
-.gray-btn { background: #b0bec5; box-shadow: 0 4px 0 #78909c; }
-
-.screen { padding: 20px 10px; animation: fadeIn 0.3s ease; }
-@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-
-#main-back-btn {
-    position: absolute; top: 10px; left: 10px;
-    width: auto !important; margin: 0 !important; padding: 8px 20px !important;
-    z-index: 100; font-size: 1rem; box-shadow: 0 2px 0 #78909c;
-}
-
-/* --- ★修正: 校門画面 (#screen-gate) --- */
-#screen-gate {
-    position: fixed; 
-    top: 0; 
-    left: 0; 
-    width: 100%; 
-    height: 100%;
-    
-    /* 背景画像を classroom0-bg.png に変更 */
-    background-image: url('classroom0-bg.png');
-    background-size: cover; 
-    background-position: center; 
-    background-repeat: no-repeat;
-    
-    z-index: 1500; 
-    overflow-y: auto;
-    display: flex; 
-    flex-direction: column; 
-    align-items: center;
-    padding-top: 40px; 
-    padding-bottom: 40px;
-}
-/* 中身の幅制限 */
-#screen-gate > * { width: 100%; max-width: 600px; }
-
-/* 校門・ユーザーリスト */
-.section-title {
-    text-align: center; font-size: 1.5rem; color: white;
-    text-shadow: 2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000; margin: 20px 0; font-weight: 900;
-}
-.gate-layout { display: flex; justify-content: center; align-items: flex-start; gap: 10px; min-height: 300px; margin-top: 20px; }
-.right-user-list { width: 100%; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 15px; padding: 10px; }
-.user-card { background: transparent; padding: 0; text-align: center; cursor: pointer; position: relative; transition: transform 0.1s; }
-.user-card:active { transform: scale(0.95); }
-.user-card img {
-    width: 100%; height: auto; object-fit: contain;
-    border-radius: 8px; background-color: transparent !important;
-    filter: drop-shadow(0 4px 4px rgba(0,0,0,0.3));
     display: block;
+    width: 100%;
+    padding: 15px;
+    margin: 10px 0;
+    border: none;
+    border-radius: 50px;
+    font-size: 1.1rem;
+    font-weight: bold;
+    color: white;
+    cursor: pointer;
+    transition: transform 0.1s;
+    box-shadow: 0 4px 0 rgba(0,0,0,0.15);
+}
+.main-btn:active { transform: translateY(4px); box-shadow: none; }
+.main-btn:disabled { background: #ccc !important; box-shadow: none; cursor: not-allowed; }
+
+.pink-btn { background: var(--primary-pink); box-shadow: 0 6px 0 #e06581; }
+.blue-btn { background: var(--primary-blue); box-shadow: 0 6px 0 #2c5f96; }
+.orange-btn { background: var(--primary-orange); box-shadow: 0 6px 0 #f57c00; }
+.yellow-btn { background: #ffd54f; color: #5d4037; box-shadow: 0 6px 0 #ffa000; }
+.gray-btn { background: #b0bec5; box-shadow: 0 6px 0 #78909c; }
+
+/* ロビー・校門 */
+.gate-layout { margin-top: 20px; }
+.user-card {
+    position: relative;
+    display: inline-block;
+    width: 100px;
+    margin: 10px;
+    text-align: center;
+    cursor: pointer;
+}
+.user-card img {
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    border: 4px solid white;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
 }
 .card-karikari-badge {
-    position: absolute; bottom: 5px; left: 5px;
-    background: rgba(255, 255, 255, 0.95); color: #d84315;
-    font-size: 0.8rem; font-weight: bold; padding: 2px 8px;
-    border-radius: 10px; border: 1px solid #ffab91; pointer-events: none;
+    position: absolute; bottom: 0; right: 5px;
+    background: white; border-radius: 10px;
+    padding: 2px 6px; font-size: 0.8rem;
+    border: 1px solid #ddd;
 }
 .delete-student-btn {
-    position: absolute; top: -5px; right: -5px; width: 28px; height: 28px;
-    border-radius: 50%; background: #ff5252; color: white; border: 2px solid white;
-    font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2); z-index: 10;
+    position: absolute; top: 0; right: 0;
+    background: red; color: white;
+    border: none; border-radius: 50%;
+    width: 24px; height: 24px;
+    font-size: 0.8rem;
 }
 
-/* 学生証レイアウト */
-.id-card-wrap {
-    position: relative; width: 100%; max-width: 320px; height: auto; 
-    margin: 0 auto 20px; background-color: transparent;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.3); border-radius: 12px; overflow: hidden;
+/* ネル先生アバターエリア */
+.nell-chat {
+    display: flex;
+    align-items: flex-start;
+    margin-bottom: 20px;
+    padding-top: 20px;
 }
-.id-base-img { display: block !important; width: 100%; height: auto !important; position: relative !important; z-index: 1; }
-#id-photo-slot {
-    display: block !important; position: absolute; z-index: 2;
-    top: 35.75%; left: 5.5%; width: 30.5%; height: 45%; 
-    background-color: #ddd; border-radius: 2px; overflow: hidden;
+.nell-avatar-wrap {
+    position: relative;
+    width: 100px; height: 100px;
+    flex-shrink: 0;
 }
-#id-photo-slot img { width: 100%; height: 100%; object-fit: cover !important; display: block; }
-#id-photo-preview-canvas { display: none; }
-.id-text-overlay { 
-    display: block !important; position: absolute; color: #333; font-weight: bold; 
-    font-family: 'M PLUS Rounded 1c', sans-serif; pointer-events: none; z-index: 3;
-    white-space: nowrap; text-align: left; line-height: 1;
-}
-.id-grade-text { top: 38.5%; left: 56%; font-size: 1.3rem; }
-.id-name-text { top: 54.25%; left: 56%; font-size: 1.3rem; }
-@media (max-width: 350px) { .id-grade-text, .id-name-text { font-size: 1.1rem; } }
-
-.styled-input, .styled-select { width: 80%; padding: 12px; margin: 10px auto; display: block; border: 2px solid #ff85a1; border-radius: 10px; font-size: 1rem; }
-
-/* ロビー・その他 */
-.lobby-top { text-align: center; margin: 20px 0; }
-.mini-id { transform: scale(0.8); margin-bottom: 0; transform-origin: top center; }
-.karikari-counter {
-    text-align: center; font-size: 1.2rem; font-weight: bold;
-    color: #d84315; background: #fff3e0; padding: 5px 15px;
-    border-radius: 20px; display: inline-block; margin-bottom: 15px;
-    position: relative; left: 50%; transform: translateX(-50%);
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-}
-.lobby-menu { display: grid; gap: 12px; padding: 0 15px; }
-.operation-layout { margin-top: 50px; }
-.nell-chat { display: flex; align-items: flex-end; margin-bottom: 15px; padding: 0 10px; }
-.nell-avatar-wrap { position: relative; width: 100px; height: 100px; flex-shrink: 0; }
 .nell-img { width: 100%; height: 100%; object-fit: contain; }
 .chat-bubble {
-    background: white; border-radius: 20px 20px 20px 0; padding: 15px;
-    margin-left: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); position: relative; flex-grow: 1;
+    background: white;
+    border-radius: 20px;
+    border-top-left-radius: 0;
+    padding: 15px;
+    margin-left: 15px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+    flex-grow: 1;
+    min-height: 80px;
+    display: flex; align-items: center;
 }
-.chat-bubble::after {
-    content: ''; position: absolute; bottom: 0; left: -10px;
-    border-width: 10px 10px 0 0; border-style: solid; border-color: white transparent transparent transparent;
-}
-.chat-bubble p { margin: 0; font-size: 1rem; line-height: 1.5; }
-.chalkboard {
-    background: #2e7d32; color: white; padding: 15px; border: 8px solid #a1887f;
-    border-radius: 5px; margin: 10px; font-family: 'Kiwi Maru', serif; min-height: 100px;
-    box-shadow: inset 0 0 20px rgba(0,0,0,0.2);
-}
-.work-area { background: rgba(255,255,255,0.8); border-radius: 20px; padding: 15px; margin: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
-.camera-btn-large {
-    display: block; width: 100%; padding: 30px 0; background: #66bb6a;
-    color: white; font-weight: bold; font-size: 1.2rem; border-radius: 15px;
-    text-align: center; cursor: pointer; box-shadow: 0 6px 0 #388e3c; margin-bottom: 10px;
-}
-.camera-btn-large:active { transform: translateY(2px); box-shadow: 0 2px 0 #388e3c; }
-.upload-buttons-container { display: flex; flex-direction: column; gap: 10px; width: 100%; }
-.answer-box {
-    background: #fff3e0; border: 3px solid #ffb74d; border-radius: 10px;
-    padding: 15px; margin-top: 15px; text-align: center; font-size: 1.2rem;
-    color: #e65100; font-weight: bold; animation: popIn 0.3s ease;
-}
-@keyframes popIn { 0% { transform: scale(0.8); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
-.game-container { display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%; }
+.chat-bubble p { margin: 0; line-height: 1.6; }
 
-/* ゲーム画面背景を黒板色に変更 */
-#game-canvas { 
-    border: 4px solid #8d6e63; 
-    border-radius: 10px; 
-    background: #2e7d32; 
-    box-shadow: 0 4px 0 rgba(0,0,0,0.1); 
-}
-
-.game-ui { text-align: center; margin-top: 10px; }
-.game-ui p { font-size: 1.2rem; font-weight: bold; color: #d84315; }
-.problem-selection-card { height: 400px; display: flex; flex-direction: column; }
-.problem-scroll-area { flex: 1; overflow-y: auto; padding: 5px; }
-.prob-card {
-    background: white; border-left: 5px solid #ff85a1; padding: 10px;
-    margin-bottom: 10px; border-radius: 5px; display: flex; justify-content: space-between; align-items: center;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-}
-.q-label { font-weight: bold; color: #e91e63; margin-right: 5px; }
-.problem-row { background: #fff; padding: 10px; margin-bottom: 8px; border-radius: 8px; border-bottom: 2px solid #eee; }
-.student-ans-input { font-size: 1rem; padding: 5px; width: 100px; border: 2px solid #ddd; border-radius: 5px; }
-.judgment-mark { font-size: 1.5rem; margin-left: 5px; }
-.mini-teach-btn { background: #2196f3; color: white; border: none; border-radius: 15px; padding: 5px 10px; font-size: 0.8rem; margin-left: auto; }
+/* カリカリ表示 */
 .mini-karikari-display {
-    position: fixed; top: 10px; right: 10px; background: rgba(255,255,255,0.95);
-    padding: 5px 10px; border-radius: 20px; font-weight: bold; color: #d84315;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.2); z-index: 100; display: flex; align-items: center; gap: 5px;
+    position: fixed; top: 10px; right: 10px;
+    background: rgba(255,255,255,0.9);
+    padding: 5px 15px;
+    border-radius: 20px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    z-index: 1000;
+    font-weight: bold;
+    display: flex; align-items: center; gap: 5px;
 }
-.glass-card { background: rgba(255,255,255,0.9); border-radius: 15px; padding: 15px; }
-.attendance-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
-.day-box { background: white; border-radius: 5px; padding: 5px; text-align: center; font-size: 0.8rem; aspect-ratio: 1; display: flex; flex-direction: column; justify-content: center; }
-.loader-inspect-img { width: 200px; display: block; margin: 0 auto; animation: bounce 1s infinite alternate; }
-.progress-bar { height: 10px; background: #ff85a1; width: 0%; transition: width 0.3s; border-radius: 5px; }
-.progress-container { width: 80%; background: #eee; height: 10px; border-radius: 5px; margin: 10px auto; overflow: hidden; }
-.camera-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: space-between; }
-.camera-container { position: relative; width: 100%; flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-#camera-video, #cropper-img { width: 100%; height: 100%; object-fit: contain; }
 
-/* カメラガイド枠 (縦長幅広) */
-.camera-guide-box { 
-    position: absolute; width: 85%; aspect-ratio: 3/4; 
-    border: 3px solid rgba(255, 255, 255, 0.8); border-radius: 10px; pointer-events: none; 
+/* 入学証プレビュー */
+.id-card-wrap {
+    position: relative;
+    width: 320px; height: 200px;
+    margin: 0 auto 20px;
 }
-.camera-guide-box p { color: white; background: rgba(0,0,0,0.5); padding: 5px 10px; border-radius: 15px; margin-top: -40px; font-weight: bold; }
-.camera-controls { width: 100%; height: 120px; background: #222; display: flex; align-items: center; justify-content: space-around; padding-bottom: 20px; }
-.camera-shutter-btn { width: 70px; height: 70px; border-radius: 50%; background: white; border: 5px solid #ccc; cursor: pointer; }
-.camera-shutter-btn:active { transform: scale(0.9); background: #ff5252; }
-.cropper-wrapper { position: relative; width: 100%; flex: 1; background: #222; display: flex; justify-content: center; align-items: center; overflow: hidden; touch-action: none; }
-#crop-canvas { max-width: 95%; max-height: 80vh; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
-.crop-handle { position: absolute; width: 40px; height: 40px; background: rgba(255, 255, 255, 0.4); border: 3px solid #ff4081; border-radius: 50%; transform: translate(-50%, -50%); z-index: 100; touch-action: none; }
-.crop-handle:active { background: #ff4081; transform: translate(-50%, -50%) scale(1.2); }
-#crop-lines polyline { fill: none; stroke: #ff4081; stroke-width: 3; stroke-dasharray: 5; }
+.id-base-img { width: 100%; height: 100%; }
+#id-photo-slot {
+    position: absolute;
+    top: 35.5%; left: 5.5%;
+    width: 30.5%; height: 45%;
+    background: #eee;
+    overflow: hidden;
+    border-radius: 4px;
+}
+.id-text-overlay {
+    position: absolute;
+    font-family: 'M PLUS Rounded 1c', sans-serif;
+    font-weight: bold;
+    color: #333;
+}
+.id-grade-text { top: 40%; left: 54%; font-size: 1.1rem; }
+.id-name-text { top: 56%; left: 54%; font-size: 1.2rem; }
+
+/* フォーム要素 */
+.styled-input, .styled-select {
+    width: 100%; padding: 12px;
+    margin-bottom: 10px;
+    border: 2px solid #eee;
+    border-radius: 10px;
+    font-size: 1rem;
+}
+.upload-buttons-container {
+    margin: 15px 0;
+    display: flex; flex-direction: column; gap: 10px;
+}
+.camera-btn-large {
+    width: 100%; border: none; border-radius: 10px;
+    color: white; font-weight: bold;
+    cursor: pointer; text-align: center;
+    display: flex; justify-content: center; align-items: center;
+}
+
+/* 黒板 */
+.chalkboard {
+    background: #2e7d32;
+    color: white;
+    padding: 20px;
+    border-radius: 10px;
+    border: 8px solid #8d6e63;
+    min-height: 150px;
+    font-family: 'Sawarabi Gothic', serif;
+    margin-bottom: 20px;
+    white-space: pre-wrap;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+}
+
+/* 問題リスト */
+.prob-card {
+    background: white;
+    border: 2px solid #eee;
+    border-radius: 10px;
+    padding: 10px;
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.mini-teach-btn {
+    background: var(--primary-pink);
+    color: white; border: none;
+    border-radius: 15px; padding: 5px 10px;
+    font-size: 0.8rem;
+}
+
+/* カメラ・クロッパーモーダル */
+.camera-modal {
+    position: fixed; top: 0; left: 0;
+    width: 100vw; height: 100vh;
+    background: black;
+    z-index: 2000;
+    display: flex; flex-direction: column;
+}
+.camera-container, .cropper-wrapper {
+    flex: 1; position: relative;
+    display: flex; justify-content: center; align-items: center;
+    overflow: hidden;
+}
+#camera-video, #crop-canvas { max-width: 100%; max-height: 100%; }
+.camera-guide-box {
+    position: absolute;
+    width: 80%; height: 60%;
+    border: 2px dashed rgba(255,255,255,0.7);
+    border-radius: 20px;
+    pointer-events: none;
+    display: flex; justify-content: center; align-items: flex-end;
+}
+.camera-guide-box p { color: white; margin-bottom: 10px; text-shadow: 0 1px 3px black; }
+
+/* カメラコントロール部 (デフォルト) */
+.camera-controls {
+    height: 100px; background: #222;
+    display: flex; justify-content: space-around; align-items: center;
+}
+
+/* ★修正: 学生証カメラ用ボタン配置 (シャッター中央、キャンセル右下) */
+#camera-modal .camera-controls {
+    justify-content: center; /* シャッターを中央に */
+    position: relative;
+}
+#camera-modal #camera-cancel-btn {
+    position: absolute;
+    right: 20px;
+    bottom: 30px; /* 縦位置調整 */
+}
+
+.camera-shutter-btn {
+    width: 60px; height: 60px;
+    border-radius: 50%; background: white;
+    border: 5px solid rgba(200,200,200,0.5);
+}
+.crop-handle {
+    position: absolute;
+    width: 24px; height: 24px;
+    background: rgba(255, 64, 129, 0.8);
+    border: 2px solid white;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    cursor: grab;
+    touch-action: none;
+}
+
+/* その他パーツ */
+.glass-card {
+    background: rgba(255,255,255,0.7);
+    backdrop-filter: blur(10px);
+    border-radius: 15px;
+    border: 1px solid rgba(255,255,255,0.5);
+}
+.floating-text {
+    position: absolute;
+    font-weight: bold; font-size: 1.5rem;
+    animation: floatUp 1.5s ease-out forwards;
+    pointer-events: none;
+}
+@keyframes floatUp {
+    0% { transform: translateY(0); opacity: 1; }
+    100% { transform: translateY(-30px); opacity: 0; }
+}
