@@ -1,4 +1,4 @@
-/* --- style.css (校門背景変更版) --- */
+/* --- style.css (完全版 v55.0: レイアウト維持 + カメラボタン配置修正) --- */
 
 body {
     font-family: 'M PLUS Rounded 1c', "Sawarabi Gothic", sans-serif;
@@ -86,20 +86,17 @@ button { font-family: inherit; }
     z-index: 100; font-size: 1rem; box-shadow: 0 2px 0 #78909c;
 }
 
-/* --- ★修正: 校門画面 (#screen-gate) --- */
+/* 校門画面 (#screen-gate) */
 #screen-gate {
     position: fixed; 
     top: 0; 
     left: 0; 
     width: 100%; 
     height: 100%;
-    
-    /* 背景画像を classroom0-bg.png に変更 */
     background-image: url('classroom0-bg.png');
     background-size: cover; 
     background-position: center; 
     background-repeat: no-repeat;
-    
     z-index: 1500; 
     overflow-y: auto;
     display: flex; 
@@ -108,10 +105,8 @@ button { font-family: inherit; }
     padding-top: 40px; 
     padding-bottom: 40px;
 }
-/* 中身の幅制限 */
 #screen-gate > * { width: 100%; max-width: 600px; }
 
-/* 校門・ユーザーリスト */
 .section-title {
     text-align: center; font-size: 1.5rem; color: white;
     text-shadow: 2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000; margin: 20px 0; font-weight: 900;
@@ -242,6 +237,8 @@ button { font-family: inherit; }
 .loader-inspect-img { width: 200px; display: block; margin: 0 auto; animation: bounce 1s infinite alternate; }
 .progress-bar { height: 10px; background: #ff85a1; width: 0%; transition: width 0.3s; border-radius: 5px; }
 .progress-container { width: 80%; background: #eee; height: 10px; border-radius: 5px; margin: 10px auto; overflow: hidden; }
+
+/* カメラ・クロッパーモーダル */
 .camera-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: space-between; }
 .camera-container { position: relative; width: 100%; flex: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; }
 #camera-video, #cropper-img { width: 100%; height: 100%; object-fit: contain; }
@@ -252,7 +249,21 @@ button { font-family: inherit; }
     border: 3px solid rgba(255, 255, 255, 0.8); border-radius: 10px; pointer-events: none; 
 }
 .camera-guide-box p { color: white; background: rgba(0,0,0,0.5); padding: 5px 10px; border-radius: 15px; margin-top: -40px; font-weight: bold; }
+
+/* カメラコントロール部 (デフォルト) */
 .camera-controls { width: 100%; height: 120px; background: #222; display: flex; align-items: center; justify-content: space-around; padding-bottom: 20px; }
+
+/* ★修正: 学生証カメラ用ボタン配置 (シャッター中央、キャンセル右下) */
+#camera-modal .camera-controls {
+    justify-content: center; /* 中央寄せ */
+    position: relative;
+}
+#camera-modal #camera-cancel-btn {
+    position: absolute;
+    right: 20px;
+    bottom: 30px;
+}
+
 .camera-shutter-btn { width: 70px; height: 70px; border-radius: 50%; background: white; border: 5px solid #ccc; cursor: pointer; }
 .camera-shutter-btn:active { transform: scale(0.9); background: #ff5252; }
 .cropper-wrapper { position: relative; width: 100%; flex: 1; background: #222; display: flex; justify-content: center; align-items: center; overflow: hidden; touch-action: none; }
