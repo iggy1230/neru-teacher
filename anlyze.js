@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v43.0: 採点機能修正・記憶統合) ---
+// --- anlyze.js (完全版 v44.0: 採点修正機能・編集可能UI) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -62,7 +62,7 @@ function startMouthAnimation() {
 }
 startMouthAnimation();
 
-// --- デバッグログ (Local Storage) ---
+// --- デバッグログ ---
 function saveToLocalDebugLog(role, text) {
     let history = JSON.parse(localStorage.getItem('nell_debug_log') || '[]');
     history.push({ role: role, text: text, time: new Date().toISOString() });
@@ -166,11 +166,10 @@ window.startHint = function(id) {
     selectedProblem = transcribedProblems.find(p => p.id == id); 
     if (!selectedProblem) { return updateNellMessage("データエラーだにゃ", "thinking"); }
     
-    // UI一括非表示
+    // UI整理
     const uiIds = ['subject-selection-view', 'upload-controls', 'problem-selection-view', 'grade-sheet-container', 'final-view', 'hint-detail-container', 'chalkboard', 'answer-display-area'];
     uiIds.forEach(i => { const el = document.getElementById(i); if(el) el.classList.add('hidden'); });
     
-    // 必要なUIを表示
     document.getElementById('final-view').classList.remove('hidden'); 
     document.getElementById('hint-detail-container').classList.remove('hidden');
     
@@ -562,11 +561,9 @@ async function startLiveChat() {
         
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
         
-        // 記憶システム統合
         let memoryHint = "";
         if (window.NellMemory && currentUser) {
             memoryHint = window.NellMemory.pickMemoryForContext(currentUser.id, "chat");
-            console.log("今回の記憶ヒント:", memoryHint);
         }
 
         const url = `${wsProto}//${location.host}?grade=${currentUser.grade}&name=${encodeURIComponent(currentUser.name)}&memory=${encodeURIComponent(memoryHint || "")}`;
@@ -636,10 +633,8 @@ function stopLiveChat() {
     const btn = document.getElementById('mic-btn');
     if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; btn.style.boxShadow = "none"; }
 
-    // 記憶システム統合: 要約と保存
     if (chatTranscript && chatTranscript.length > 10 && currentUser && window.NellMemory) {
         updateNellMessage("面談の記録を整理してるにゃ…", "thinking");
-        
         fetch('/summarize-notes', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -655,7 +650,6 @@ function stopLiveChat() {
             }
         })
         .catch(e => {
-            console.error("Summary Error", e);
             updateNellMessage("またお話ししようね！", "happy");
         });
     }
@@ -675,7 +669,6 @@ async function startMicrophone() {
                         const transcript = event.results[i][0].transcript;
                         console.log("🎤 認識:", transcript);
                         chatTranscript += transcript + "\n";
-                        
                         if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
                             liveSocket.send(JSON.stringify({ type: 'log_text', text: transcript }));
                         }
@@ -697,7 +690,6 @@ async function startMicrophone() {
             const inputData = event.data;
             let sum = 0; for(let i=0; i<inputData.length; i++) sum += inputData[i] * inputData[i];
             const volume = Math.sqrt(sum / inputData.length);
-            
             const btn = document.getElementById('mic-btn');
             if (btn) btn.style.boxShadow = volume > 0.01 ? `0 0 ${10 + volume * 500}px #ffeb3b` : "none";
             
@@ -759,7 +751,55 @@ function renderMistakeSelection() {
     updateNellMessage("復習するにゃ？", "excited"); 
 }
 
-// --- 採点画面表示 (修正版: 追加) ---
+// --- リアルタイム採点機能 (新規追加) ---
+window.checkAnswerDynamically = function(id, inputElem) {
+    const newVal = inputElem.value;
+    const problem = transcribedProblems.find(p => p.id === id);
+    if (!problem) return;
+
+    // データ更新
+    problem.student_answer = newVal;
+
+    // 判定ロジック (空白除去して比較)
+    const normalizedStudent = newVal.trim();
+    const normalizedCorrect = (problem.correct_answer || "").trim();
+    const isCorrect = (normalizedStudent !== "") && (normalizedStudent === normalizedCorrect);
+
+    // DOM更新 (アイコンと背景)
+    const container = document.getElementById(`grade-item-${id}`);
+    const markElem = document.getElementById(`mark-${id}`);
+    
+    if (container && markElem) {
+        if (isCorrect) {
+            markElem.innerText = "⭕";
+            markElem.style.color = "#ff5252";
+            container.style.backgroundColor = "#fff5f5";
+        } else {
+            markElem.innerText = "❌";
+            markElem.style.color = "#4a90e2";
+            container.style.backgroundColor = "#f0f8ff";
+        }
+    }
+
+    // 全体のコメント更新
+    updateGradingMessage();
+};
+
+function updateGradingMessage() {
+    let correctCount = 0;
+    transcribedProblems.forEach(p => {
+        const s = (p.student_answer || "").trim();
+        const c = (p.correct_answer || "").trim();
+        if (s !== "" && s === c) correctCount++;
+    });
+
+    const scoreRate = correctCount / (transcribedProblems.length || 1);
+    if (scoreRate === 1.0) updateNellMessage(`全問正解だにゃ！天才だにゃ〜！！`, "excited");
+    else if (scoreRate >= 0.5) updateNellMessage(`あと${transcribedProblems.length - correctCount}問！直してみるにゃ！`, "happy");
+    else updateNellMessage(`間違ってても大丈夫！入力し直してみて！`, "gentle");
+}
+
+// --- 採点画面表示 (編集可能版) ---
 function showGradingView() {
     // UI切り替え
     document.getElementById('problem-selection-view').classList.add('hidden');
@@ -773,7 +813,7 @@ function showGradingView() {
     let correctCount = 0;
 
     transcribedProblems.forEach(p => {
-        // 簡易正誤判定
+        // 初期判定
         const studentAns = (p.student_answer || "").trim();
         const correctAns = (p.correct_answer || "").trim();
         let isCorrect = (studentAns !== "") && (studentAns === correctAns);
@@ -786,30 +826,28 @@ function showGradingView() {
 
         const div = document.createElement('div');
         div.className = "grade-item";
+        div.id = `grade-item-${p.id}`; // リアルタイム更新用ID
         div.style.cssText = `border-bottom:1px solid #eee; padding:15px; margin-bottom:10px; border-radius:10px; ${bgStyle}`;
         
         div.innerHTML = `
             <div style="display:flex; justify-content:space-between; align-items:center;">
-                <div style="font-weight:900; color:${markColor}; font-size:2rem; width:50px; text-align:center;">${mark}</div>
+                <div id="mark-${p.id}" style="font-weight:900; color:${markColor}; font-size:2rem; width:50px; text-align:center;">${mark}</div>
                 <div style="flex:1; margin-left:10px;">
                     <div style="font-size:0.8rem; color:#888; margin-bottom:4px;">${p.label || '問'}</div>
                     <div style="font-weight:bold; font-size:1.1rem; margin-bottom:8px;">${p.question.substring(0, 20)}${p.question.length>20?'...':''}</div>
-                    <div style="display:flex; gap:10px; font-size:0.9rem;">
+                    
+                    <div style="display:flex; gap:10px; font-size:0.9rem; align-items:center;">
                         <div style="flex:1;">
-                            <div style="font-size:0.7rem; color:#666;">キミの答え</div>
-                            <div style="font-weight:bold; color:#333;">${studentAns || "(空欄)"}</div>
+                            <div style="font-size:0.7rem; color:#666;">キミの答え (直せるよ)</div>
+                            <input type="text" value="${studentAns}" 
+                                   oninput="checkAnswerDynamically(${p.id}, this)"
+                                   style="width:100%; padding:8px; border:2px solid #ddd; border-radius:8px; font-size:1rem; font-weight:bold; color:#333;">
                         </div>
-                        <div style="flex:1;">
-                            <div style="font-size:0.7rem; color:#666;">正解</div>
-                            <div style="font-weight:bold; color:#ff4081;">${correctAns}</div>
+                        <div style="width:80px; text-align:right;">
+                            <button class="mini-teach-btn" onclick="startHint(${p.id})">教えて</button>
                         </div>
                     </div>
                 </div>
-            </div>
-            <div style="text-align:right; margin-top:10px;">
-                <button class="mini-teach-btn" style="background:#b0bec5;" onclick="startHint(${p.id})">
-                    ${isCorrect ? '見直す' : 'やり直す'}
-                </button>
             </div>
         `;
         container.appendChild(div);
@@ -821,8 +859,5 @@ function showGradingView() {
     btnDiv.innerHTML = `<button onclick="finishGrading()" class="main-btn orange-btn">💯 採点おわり！</button>`;
     container.appendChild(btnDiv);
 
-    const scoreRate = correctCount / (transcribedProblems.length || 1);
-    if (scoreRate === 1.0) updateNellMessage(`全問正解だにゃ！天才だにゃ〜！！`, "excited");
-    else if (scoreRate >= 0.5) updateNellMessage(`よく頑張ったにゃ！あと${transcribedProblems.length - correctCount}問で見直し完了だにゃ！`, "happy");
-    else updateNellMessage(`難しかったかにゃ？一緒に見直ししよう！`, "gentle");
+    updateGradingMessage();
 }
