@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v60.0: こじんめんだん終了メッセージ変更) ---
+// --- anlyze.js (完全版 v61.0: クロップ枠デフォルト形状修正・全機能統合) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -355,10 +355,16 @@ const handleFileUpload = async (file) => {
             const w = cropImg.width;
             const h = cropImg.height;
 
-            cropPoints = [
-                {x: w*0.1, y: h*0.1}, {x: w*0.9, y: h*0.1},
-                {x: w*0.9, y: h*0.9}, {x: w*0.1, y: h*0.9}
+            // ★修正: 初期クロップ位置を必ず「きれいな長方形（10%内側）」にする関数
+            const getDefaultRect = (w, h) => [
+                { x: w * 0.1, y: h * 0.1 }, // 左上
+                { x: w * 0.9, y: h * 0.1 }, // 右上
+                { x: w * 0.9, y: h * 0.9 }, // 右下
+                { x: w * 0.1, y: h * 0.9 }  // 左下
             ];
+
+            // 初期化
+            cropPoints = getDefaultRect(w, h);
 
             const lowResBase64 = resizeImageForDetect(cropImg, 1000);
             try {
@@ -378,11 +384,18 @@ const handleFileUpload = async (file) => {
                     const maxX = Math.max(...detectedPoints.map(p => p.x));
                     const minY = Math.min(...detectedPoints.map(p => p.y));
                     const maxY = Math.max(...detectedPoints.map(p => p.y));
+                    
+                    // 検出範囲が極端に小さい、または潰れている場合はデフォルトを使用
                     if ((maxX - minX) > w * 0.2 && (maxY - minY) > h * 0.2) {
                         cropPoints = detectedPoints;
+                    } else {
+                        cropPoints = getDefaultRect(w, h); // フォールバック
                     }
                 }
-            } catch(err) { console.error("Detect failed", err); }
+            } catch(err) { 
+                console.error("Detect failed, using default", err);
+                cropPoints = getDefaultRect(w, h); // エラー時フォールバック
+            }
 
             loader.style.display = 'none';
             canvas.style.opacity = '1';
@@ -546,7 +559,7 @@ async function startAnalysis(b64) {
         
         setTimeout(() => { 
             document.getElementById('thinking-view').classList.add('hidden'); 
-            // 修正: 戻るボタンは非表示 (UI設計変更)
+            // 修正: 戻るボタンは非表示のまま (UI設計変更)
             // document.getElementById('main-back-btn').classList.remove('hidden');
             const doneMsg = "読めたにゃ！";
             
