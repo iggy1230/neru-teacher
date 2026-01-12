@@ -30,7 +30,7 @@
             <div class="title-btn-container">
                 <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
             </div>
-            <div class="version-tag">Build: v61.0-ButtonFix</div>
+            <div class="version-tag">Build: v62.0-ButtonAndTTSFix</div>
         </section>
 
         <!-- 1. 校門 (ユーザー選択) -->
@@ -182,7 +182,6 @@
                                 <div id="answer-display-area" class="answer-box hidden">ネル先生の答え：<br><span id="final-answer-text"></span></div>
                             </div>
                             <button onclick="pressThanks()" class="main-btn pink-btn">✨ ありがとう！</button>
-                            <!-- ★追加: 他の問題を見るボタン -->
                             <button onclick="backToProblemSelection()" class="main-btn gray-btn" style="margin-top: 10px;">他の問題を見る</button>
                         </div>
                     </div>
@@ -225,7 +224,8 @@
                     <button id="start-game-btn" class="main-btn pink-btn" style="width: auto;">スタート！</button>
                 </div>
             </div>
-            <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">ロビーにもどる</button>
+            <!-- ★修正: ロビーにもどる -> 教室にもどる -->
+            <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">教室にもどる</button>
         </section>
 
         <!-- 6. 出席簿 -->

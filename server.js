@@ -1,4 +1,4 @@
-// --- server.js (完全版 v56.0: 給食反応調整・名前呼び頻度抑制) ---
+// --- server.js (完全版 v56.0: 給食反応調整・名前呼び頻度抑制・TTS発音修正) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -115,6 +115,23 @@ function createSSML(text, mood) {
         .replace(/^[・-]\s*/gm, '')
         .replace(/……/g, '<break time="500ms"/>');
 
+    // ★修正: 読み上げ・発音の修正
+    // 助詞の読み替え
+    cleanText = cleanText.replace(/私は/g, 'わたしわ');
+    cleanText = cleanText.replace(/ユーザーは/g, 'ユーザーわ');
+    
+    // ゲーム
+    cleanText = cleanText.replace(/次/g, 'つぎ');
+    
+    // 算数・記号・漢字
+    cleanText = cleanText.replace(/内/g, 'ない');
+    cleanText = cleanText.replace(/＋/g, 'たす');
+    cleanText = cleanText.replace(/－/g, 'ひく');
+    cleanText = cleanText.replace(/×/g, 'かける');
+    cleanText = cleanText.replace(/÷/g, 'わる');
+    cleanText = cleanText.replace(/＝/g, 'わ');
+    cleanText = cleanText.replace(/□/g, 'しかく');
+
     if (cleanText.length < 5) return `<speak>${cleanText}</speak>`;
     
     return `<speak><prosody rate="${rate}" pitch="${pitch}">${cleanText}</prosody></speak>`;
@@ -187,7 +204,7 @@ app.post('/lunch-reaction', async (req, res) => {
             ];
             const theme = themes[Math.floor(Math.random() * themes.length)];
             
-            // ★修正: 名前を呼ぶ頻度を抑制 (約20%)
+            // 名前を呼ぶ頻度を抑制 (約20%)
             const shouldCallName = Math.random() < 0.2;
             let nameRule = "";
             
@@ -447,7 +464,7 @@ wss.on('connection', async (clientWs, req) => {
                             6. とにかく何でも知っているにゃ。
                             7. まれに「${name}さんは宿題は終わったかにゃ？」や「そろそろ宿題始めようかにゃ？」と宿題を促してくる。
                             8. 句読点で自然な間をとる。
-                            9. 日本語をとても上手にしゃべる猫だにゃ。
+                            9. 「私は」や「ユーザーは」としゃべるときは「わたしわ」、「ゆーざーわ」と発音する
                             10. いつも高いトーンで話してにゃ。
 
                             【NGなこと】
