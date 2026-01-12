@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v42.0: 記憶システム統合済み) ---
+// --- anlyze.js (完全版 v43.0: 採点機能修正・記憶統合) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -62,7 +62,7 @@ function startMouthAnimation() {
 }
 startMouthAnimation();
 
-// --- 記憶 (Local Storage for Debug) ---
+// --- デバッグログ (Local Storage) ---
 function saveToLocalDebugLog(role, text) {
     let history = JSON.parse(localStorage.getItem('nell_debug_log') || '[]');
     history.push({ role: role, text: text, time: new Date().toISOString() });
@@ -166,9 +166,11 @@ window.startHint = function(id) {
     selectedProblem = transcribedProblems.find(p => p.id == id); 
     if (!selectedProblem) { return updateNellMessage("データエラーだにゃ", "thinking"); }
     
+    // UI一括非表示
     const uiIds = ['subject-selection-view', 'upload-controls', 'problem-selection-view', 'grade-sheet-container', 'final-view', 'hint-detail-container', 'chalkboard', 'answer-display-area'];
     uiIds.forEach(i => { const el = document.getElementById(i); if(el) el.classList.add('hidden'); });
     
+    // 必要なUIを表示
     document.getElementById('final-view').classList.remove('hidden'); 
     document.getElementById('hint-detail-container').classList.remove('hidden');
     
@@ -560,14 +562,13 @@ async function startLiveChat() {
         
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
         
-        // ★記憶システム統合: 過去のメモから1つだけヒントを取り出す
+        // 記憶システム統合
         let memoryHint = "";
         if (window.NellMemory && currentUser) {
             memoryHint = window.NellMemory.pickMemoryForContext(currentUser.id, "chat");
             console.log("今回の記憶ヒント:", memoryHint);
         }
 
-        // URLパラメータに記憶コンテキストを付与
         const url = `${wsProto}//${location.host}?grade=${currentUser.grade}&name=${encodeURIComponent(currentUser.name)}&memory=${encodeURIComponent(memoryHint || "")}`;
         
         liveSocket = new WebSocket(url);
@@ -635,8 +636,7 @@ function stopLiveChat() {
     const btn = document.getElementById('mic-btn');
     if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; btn.style.boxShadow = "none"; }
 
-    // ★記憶システム統合: 面談終了時の要約処理
-    // ログが十分にあり、記憶システムが有効な場合のみ実行
+    // 記憶システム統合: 要約と保存
     if (chatTranscript && chatTranscript.length > 10 && currentUser && window.NellMemory) {
         updateNellMessage("面談の記録を整理してるにゃ…", "thinking");
         
@@ -648,7 +648,6 @@ function stopLiveChat() {
         .then(r => r.json())
         .then(data => {
             if (data.notes && data.notes.length > 0) {
-                // メモリへの反映
                 window.NellMemory.applySummarizedNotes(currentUser.id, data.notes);
                 updateNellMessage("覚えたにゃ！またお話ししようね！", "happy");
             } else {
@@ -675,7 +674,6 @@ async function startMicrophone() {
                     if (event.results[i].isFinal) {
                         const transcript = event.results[i][0].transcript;
                         console.log("🎤 認識:", transcript);
-                        // チャットログに蓄積
                         chatTranscript += transcript + "\n";
                         
                         if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
@@ -759,4 +757,72 @@ function renderMistakeSelection() {
     transcribedProblems = currentUser.mistakes; 
     renderProblemSelection(); 
     updateNellMessage("復習するにゃ？", "excited"); 
+}
+
+// --- 採点画面表示 (修正版: 追加) ---
+function showGradingView() {
+    // UI切り替え
+    document.getElementById('problem-selection-view').classList.add('hidden');
+    document.getElementById('final-view').classList.remove('hidden');
+    document.getElementById('grade-sheet-container').classList.remove('hidden');
+    document.getElementById('hint-detail-container').classList.add('hidden');
+
+    const container = document.getElementById('problem-list-grade');
+    container.innerHTML = "";
+
+    let correctCount = 0;
+
+    transcribedProblems.forEach(p => {
+        // 簡易正誤判定
+        const studentAns = (p.student_answer || "").trim();
+        const correctAns = (p.correct_answer || "").trim();
+        let isCorrect = (studentAns !== "") && (studentAns === correctAns);
+
+        if (isCorrect) correctCount++;
+
+        const mark = isCorrect ? "⭕" : "❌";
+        const markColor = isCorrect ? "#ff5252" : "#4a90e2";
+        const bgStyle = isCorrect ? "background:#fff5f5;" : "background:#f0f8ff;";
+
+        const div = document.createElement('div');
+        div.className = "grade-item";
+        div.style.cssText = `border-bottom:1px solid #eee; padding:15px; margin-bottom:10px; border-radius:10px; ${bgStyle}`;
+        
+        div.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div style="font-weight:900; color:${markColor}; font-size:2rem; width:50px; text-align:center;">${mark}</div>
+                <div style="flex:1; margin-left:10px;">
+                    <div style="font-size:0.8rem; color:#888; margin-bottom:4px;">${p.label || '問'}</div>
+                    <div style="font-weight:bold; font-size:1.1rem; margin-bottom:8px;">${p.question.substring(0, 20)}${p.question.length>20?'...':''}</div>
+                    <div style="display:flex; gap:10px; font-size:0.9rem;">
+                        <div style="flex:1;">
+                            <div style="font-size:0.7rem; color:#666;">キミの答え</div>
+                            <div style="font-weight:bold; color:#333;">${studentAns || "(空欄)"}</div>
+                        </div>
+                        <div style="flex:1;">
+                            <div style="font-size:0.7rem; color:#666;">正解</div>
+                            <div style="font-weight:bold; color:#ff4081;">${correctAns}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div style="text-align:right; margin-top:10px;">
+                <button class="mini-teach-btn" style="background:#b0bec5;" onclick="startHint(${p.id})">
+                    ${isCorrect ? '見直す' : 'やり直す'}
+                </button>
+            </div>
+        `;
+        container.appendChild(div);
+    });
+
+    const btnDiv = document.createElement('div');
+    btnDiv.style.textAlign = "center";
+    btnDiv.style.marginTop = "20px";
+    btnDiv.innerHTML = `<button onclick="finishGrading()" class="main-btn orange-btn">💯 採点おわり！</button>`;
+    container.appendChild(btnDiv);
+
+    const scoreRate = correctCount / (transcribedProblems.length || 1);
+    if (scoreRate === 1.0) updateNellMessage(`全問正解だにゃ！天才だにゃ〜！！`, "excited");
+    else if (scoreRate >= 0.5) updateNellMessage(`よく頑張ったにゃ！あと${transcribedProblems.length - correctCount}問で見直し完了だにゃ！`, "happy");
+    else updateNellMessage(`難しかったかにゃ？一緒に見直ししよう！`, "gentle");
 }
