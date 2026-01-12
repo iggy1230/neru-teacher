@@ -1,6 +1,7 @@
-// --- ui.js (完全版 v60.0: タイトル音追加) ---
+// --- ui.js (完全版 v61.0: ボタン音・肉球ハンコ対応) ---
 
 const sfxChime = new Audio('Jpn_sch_chime.mp3');
+const sfxBtn = new Audio('botan1.mp3'); // ★追加: 通常ボタン音
 
 // 画面を切り替える基本関数
 function switchScreen(to) {
@@ -43,7 +44,6 @@ function switchView(id) {
 
 // タイトル画面 -> 校門へ
 function startApp() {
-    // ★追加: チャイム音再生
     try { sfxChime.currentTime = 0; sfxChime.play(); } catch(e){}
     
     switchScreen('screen-gate');
@@ -91,7 +91,7 @@ function showAttendance() {
     if (typeof renderAttendance === 'function') renderAttendance();
 }
 
-// 出席簿の描画ロジック
+// 出席簿の描画ロジック (★修正: 肉球ハンコ画像対応)
 function renderAttendance() {
     const grid = document.getElementById('attendance-grid');
     if (!grid || !currentUser) return;
@@ -106,13 +106,14 @@ function renderAttendance() {
         
         const div = document.createElement('div');
         div.className = "day-box";
-        div.style.background = hasAttended ? "#e3f2fd" : "#fff";
-        div.style.color = hasAttended ? "#1565c0" : "#999";
+        div.style.background = hasAttended ? "#fff" : "#fff";
+        div.style.color = hasAttended ? "#333" : "#999";
         
+        // ★修正: 出席済みなら画像を、そうでなければ「・」を表示
         div.innerHTML = `
             <div>${d.getMonth()+1}/${d.getDate()}</div>
-            <div style="font-size:1.5rem; line-height:1.5; color: ${hasAttended ? '#ff5252' : '#eee'} !important;">
-                ${hasAttended ? '🐾' : '・'}
+            <div style="height: 30px; display: flex; align-items: center; justify-content: center; color: #eee;">
+                ${hasAttended ? '<img src="nikukyuhanko.png" style="height: 100%; object-fit: contain;">' : '・'}
             </div>
         `;
         grid.appendChild(div);
@@ -133,3 +134,17 @@ document.addEventListener('click', () => {
         window.initAudioContext().catch(e => console.log("Audio Init:", e));
     }
 }, { once: true });
+
+// ★追加: 通常ボタンのクリック音イベント
+document.addEventListener('click', (e) => {
+    // .main-btn クラスを持ち、かつ disabled でない場合
+    if (e.target.classList && e.target.classList.contains('main-btn') && !e.target.disabled) {
+        // タイトル画面のスタートボタン(.title-start-btn)は独自の音が鳴るので除外
+        if (!e.target.classList.contains('title-start-btn')) {
+            try { 
+                sfxBtn.currentTime = 0; 
+                sfxBtn.play(); 
+            } catch(err) {}
+        }
+    }
+});
