@@ -1,4 +1,4 @@
-// --- server.js (完全版 v32.0: 発音矯正強化) ---
+// --- server.js (完全版 v33.0: ja-JP設定追加・全機能統合) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -34,7 +34,7 @@ async function initMemoryFile() {
 }
 initMemoryFile();
 
-// --- 記憶管理（メモリ変数 + ファイルバックアップ） ---
+// --- 記憶管理 ---
 let GLOBAL_MEMORIES = {};
 
 async function loadMemories() {
@@ -215,7 +215,7 @@ app.post('/lunch-reaction', async (req, res) => {
         
         const result = await model.generateContent(prompt);
         let reply = result.response.text().trim();
-        if (reply.includes('\n')) reply = reply.split('\n')[0];
+        if (!isSpecial && reply.includes('\n')) reply = reply.split('\n')[0];
         res.json({ reply, isSpecial });
     } catch (err) { res.status(500).json({ error: "Lunch Error" }); }
 });
@@ -233,7 +233,7 @@ app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, analysisType } = req.body;
         
-        let modelName = analysisType === 'precision' ? "gemini-2.5-pro" : "gemini-2.0-flash-exp";
+        let modelName = analysisType === 'precision' ? "gemini-1.5-pro" : "gemini-2.0-flash-exp";
         
         const model = genAI.getGenerativeModel({
             model: modelName,
@@ -343,7 +343,7 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- Live API Proxy ---
+// --- Live API Proxy (WebSocket) ---
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', async (clientWs, req) => {
@@ -352,7 +352,13 @@ wss.on('connection', async (clientWs, req) => {
     const name = decodeURIComponent(params.name || "生徒");
     
     // メモリから記憶取得
-    const userMemory = GLOBAL_MEMORIES[name] || "まだ記録はありません。";
+    let userMemory = "";
+    try {
+        const data = await fs.readFile(MEMORY_FILE, 'utf8');
+        userMemory = JSON.parse(data)[name] || "まだ記録はありません。";
+    } catch (e) {
+        userMemory = "";
+    }
 
     let geminiWs = null;
     const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${process.env.GEMINI_API_KEY}`;
@@ -361,18 +367,22 @@ wss.on('connection', async (clientWs, req) => {
         geminiWs = new WebSocket(GEMINI_URL);
         
         geminiWs.on('open', () => {
+            console.log(`✨ [${name}] Gemini接続成功`);
+            
             const setupMsg = {
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
                     generationConfig: { 
                         responseModalities: ["AUDIO"], 
+                        // ★修正: languageCodeを正しく追加 (キャメルケース)
                         speechConfig: {
-                            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } }
+                            voiceConfig: { 
+                                prebuiltVoiceConfig: { voiceName: "Aoede" } 
+                            }
                         }
                     }, 
                     systemInstruction: {
                         parts: [{
-                            // ★修正: 「好き」の発音指示を追加
                             text: `
                             あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。相手は小学${grade}年生の${name}さん。
                             
@@ -421,7 +431,6 @@ wss.on('connection', async (clientWs, req) => {
                     }
                 }
                 if (msg.type === 'log_text') {
-                    // 生徒の発言を記録
                     await appendToMemory(name, `生徒の発言: ${msg.text}`);
                 }
             } catch (e) { }
