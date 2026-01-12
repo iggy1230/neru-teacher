@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v37.0: 音声バッファ増量・記憶送信復活) ---
+// --- anlyze.js (完全版 v38.0: 音声バッファ1.0秒・全機能統合) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -470,6 +470,7 @@ async function startAnalysis(b64) {
             
             const doneMsg = "読めたにゃ！";
             
+            // 正しく分岐して関数呼び出し
             if (currentMode === 'grade') {
                 showGradingView(); 
                 updateNellMessage(doneMsg, "happy"); 
@@ -544,7 +545,7 @@ function revealAnswer() {
     updateNellMessage(`答えは「${selectedProblem.correct_answer}」だにゃ！`, "gentle"); 
 }
 
-// --- Live Chat (修正: タイムアウト処理 & 音声認識連携) ---
+// --- Live Chat ---
 async function startLiveChat() {
     const btn = document.getElementById('mic-btn');
     if (liveSocket) { stopLiveChat(); return; }
@@ -559,13 +560,11 @@ async function startLiveChat() {
         nextStartTime = audioContext.currentTime;
         
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        // URLに記憶を含めない
         const url = `${wsProto}//${location.host}?grade=${currentUser.grade}&name=${encodeURIComponent(currentUser.name)}`;
         
         liveSocket = new WebSocket(url);
         liveSocket.binaryType = "blob";
         
-        // タイムアウト設定
         connectionTimeout = setTimeout(() => {
             if (liveSocket && liveSocket.readyState !== WebSocket.OPEN) {
                 updateNellMessage("なかなかつながらないにゃ…", "thinking");
@@ -584,10 +583,9 @@ async function startLiveChat() {
                     data = JSON.parse(event.data);
                 }
 
-                // エラー通知ハンドリング
                 if (data.type === "error") {
                     console.error("Server Error:", data.message);
-                    updateNellMessage("エラーが発生したにゃ…もう一度試してにゃ", "thinking");
+                    updateNellMessage("エラーが発生したにゃ…", "thinking");
                     stopLiveChat();
                     return;
                 }
@@ -619,13 +617,7 @@ async function startLiveChat() {
 
 function stopLiveChat() {
     if (connectionTimeout) clearTimeout(connectionTimeout);
-    // 音声認識停止
-    isRecognitionActive = false; // フラグOFF
-    if (recognition) { 
-        try { recognition.stop(); } catch(e) {} 
-        recognition = null; 
-    }
-    
+    if (recognition) { try { recognition.stop(); } catch(e) {} recognition = null; }
     if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
     if (workletNode) { workletNode.port.postMessage('stop'); workletNode.disconnect(); workletNode = null; }
     if (liveSocket) { liveSocket.close(); liveSocket = null; }
@@ -635,48 +627,29 @@ function stopLiveChat() {
     if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; btn.style.boxShadow = "none"; }
 }
 
-// ★復活: 音声認識 & 送信処理 (ログ出力付き)
+// ★復活: 音声認識 & 送信処理
 async function startMicrophone() {
     try {
-        // 1. Web Speech API (文字起こし用)
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        
-        if (SpeechRecognition) {
-            recognition = new SpeechRecognition();
+        if ('webkitSpeechRecognition' in window) {
+            recognition = new webkitSpeechRecognition();
             recognition.continuous = true;
             recognition.interimResults = false;
             recognition.lang = 'ja-JP';
-            
-            isRecognitionActive = true; // フラグON
 
             recognition.onresult = (event) => {
                 for (let i = event.resultIndex; i < event.results.length; ++i) {
                     if (event.results[i].isFinal) {
                         const transcript = event.results[i][0].transcript;
-                        console.log("🎤 認識した言葉:", transcript);
-                        // 文字ログをサーバーへ送信
+                        console.log("🎤 認識:", transcript);
                         if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
-                            console.log("📤 テキスト送信試行:", transcript);
                             liveSocket.send(JSON.stringify({ type: 'log_text', text: transcript }));
                         }
                     }
                 }
             };
-            
-            // 勝手に止まったら再起動
-            recognition.onend = () => {
-                if (isRecognitionActive) {
-                    console.log("🔄 音声認識を再起動します");
-                    try { recognition.start(); } catch(e) {}
-                }
-            };
-            
             recognition.start();
-        } else {
-             console.warn("このブラウザは音声認識に対応していません");
         }
 
-        // 2. Audio Worklet (音声配信用)
         mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1 } });
         const processorCode = `class PcmProcessor extends AudioWorkletProcessor { constructor() { super(); this.bufferSize = 2048; this.buffer = new Float32Array(this.bufferSize); this.index = 0; } process(inputs, outputs, parameters) { const input = inputs[0]; if (input.length > 0) { const channel = input[0]; for (let i = 0; i < channel.length; i++) { this.buffer[this.index++] = channel[i]; if (this.index >= this.bufferSize) { this.port.postMessage(this.buffer); this.index = 0; } } } return true; } } registerProcessor('pcm-processor', PcmProcessor);`;
         const blob = new Blob([processorCode], { type: 'application/javascript' });
@@ -687,20 +660,8 @@ async function startMicrophone() {
         
         workletNode.port.onmessage = (event) => {
             const inputData = event.data;
-            let sum = 0; for(let i=0; i<inputData.length; i++) sum += inputData[i] * inputData[i];
-            const volume = Math.sqrt(sum / inputData.length);
             
-            const btn = document.getElementById('mic-btn');
-            if (btn) btn.style.boxShadow = volume > 0.01 ? `0 0 ${10 + volume * 500}px #ffeb3b` : "none";
-            
-            if (volume > 0.05 && !window.userIsSpeakingNow) {
-                // クライアント側バックアップ (任意)
-                // saveToNellMemory('user', '（お話し中...）');
-                window.userIsSpeakingNow = true;
-                setTimeout(() => { window.userIsSpeakingNow = false; }, 5000);
-            }
-
-            // 750ms遅延送信 (音声の頭切れ防止)
+            // ★改良: 750ms遅延
             setTimeout(() => {
                 if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return;
                 const downsampled = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
@@ -720,7 +681,13 @@ function playLivePcmAudio(base64) {
     const float32 = new Float32Array(bytes.length / 2); 
     const view = new DataView(bytes.buffer); 
     for (let i = 0; i < float32.length; i++) float32[i] = view.getInt16(i * 2, true) / 32768.0; 
-    const buffer = audioContext.createBuffer(1, float32.length, 24000); buffer.copyToChannel(float32, 0); const source = audioContext.createBufferSource(); source.buffer = buffer; source.connect(audioContext.destination); const now = audioContext.currentTime; if (nextStartTime < now) nextStartTime = now; source.start(nextStartTime); nextStartTime += buffer.duration; 
+    const buffer = audioContext.createBuffer(1, float32.length, 24000); buffer.copyToChannel(float32, 0); const source = audioContext.createBufferSource(); source.buffer = buffer; source.connect(audioContext.destination); 
+    const now = audioContext.currentTime; 
+    
+    // ★改良: 1.0秒バッファで頭切れ防止
+    if (nextStartTime < now) nextStartTime = now + 1.0; 
+    
+    source.start(nextStartTime); nextStartTime += buffer.duration; 
     window.isNellSpeaking = true; if (stopSpeakingTimer) clearTimeout(stopSpeakingTimer); source.onended = () => { stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, 250); }; 
 }
 
@@ -730,11 +697,12 @@ function arrayBufferToBase64(buffer) { let binary = ''; const bytes = new Uint8A
 function updateMiniKarikari() { if(currentUser) { document.getElementById('mini-karikari-count').innerText = currentUser.karikari; document.getElementById('karikari-count').innerText = currentUser.karikari; } }
 function showKarikariEffect(amount) { const container = document.querySelector('.nell-avatar-wrap'); if(container) { const floatText = document.createElement('div'); floatText.className = 'floating-text'; floatText.innerText = amount > 0 ? `+${amount}` : `${amount}`; floatText.style.color = amount > 0 ? '#ff9100' : '#ff5252'; floatText.style.right = '0px'; floatText.style.top = '0px'; container.appendChild(floatText); setTimeout(() => floatText.remove(), 1500); } const heartCont = document.getElementById('heart-container'); if(heartCont) { for(let i=0; i<8; i++) { const heart = document.createElement('div'); heart.innerText = amount > 0 ? '✨' : '💗'; heart.style.position = 'absolute'; heart.style.fontSize = (Math.random() * 1.5 + 1) + 'rem'; heart.style.left = (Math.random() * 100) + '%'; heart.style.top = (Math.random() * 100) + '%'; heart.style.pointerEvents = 'none'; heartCont.appendChild(heart); heart.animate([{ transform: 'scale(0) translateY(0)', opacity: 0 }, { transform: 'scale(1) translateY(-20px)', opacity: 1, offset: 0.2 }, { transform: 'scale(1.2) translateY(-100px)', opacity: 0 }], { duration: 1000 + Math.random() * 1000, easing: 'ease-out', fill: 'forwards' }).onfinish = () => heart.remove(); } } }
 
+// --- リスト表示修正 ---
 function renderProblemSelection() { 
     document.getElementById('problem-selection-view').classList.remove('hidden'); 
     const l=document.getElementById('transcribed-problem-list'); l.innerHTML=""; 
     transcribedProblems.forEach(p=>{ 
-        // 修正: mini-teach-btnクラス適用
+        // ★修正: mini-teach-btnクラスで右寄せ
         l.innerHTML += `<div class="prob-card"><div><span class="q-label">${p.label||'?'}</span>${p.question.substring(0,20)}...</div><button class="mini-teach-btn" onclick="startHint(${p.id})">教えて</button></div>`; 
     }); 
 }
