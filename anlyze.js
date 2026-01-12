@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v53.0: 教えボタン重複削除・採点音声被り解消) ---
+// --- anlyze.js (完全版 v57.0: 戻るボタン削除・ヒント文言変更) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -70,7 +70,7 @@ function saveToLocalDebugLog(role, text) {
     localStorage.setItem('nell_debug_log', JSON.stringify(history));
 }
 
-// --- メッセージ更新 ---
+// --- メッセージ更新 (足跡マーク読み上げ回避) ---
 async function updateNellMessage(t, mood = "normal") {
     let targetId = document.getElementById('screen-game').classList.contains('hidden') ? 'nell-text' : 'nell-text-game';
     const el = document.getElementById(targetId);
@@ -194,7 +194,8 @@ window.startHint = function(id) {
     }
     
     hintIndex = 0; 
-    updateNellMessage("カリカリをくれたらヒントだすにゃ🐾", "thinking"); 
+    // ★修正: 文言変更
+    updateNellMessage("カリカリをくれたらヒントを出してやってもいいにゃ🐾", "thinking"); 
     
     const nextBtn = document.getElementById('next-hint-btn'); 
     const revealBtn = document.getElementById('reveal-answer-btn');
@@ -255,22 +256,14 @@ window.finishGrading = async function() {
     setTimeout(() => { if(typeof backToLobby === 'function') backToLobby(true); }, 3000); 
 };
 
-// ★修正: ぜんぶわかったにゃボタン (確実な無効化と戻る処理)
 window.pressAllSolved = function() { 
-    // ID等で特定せずに、押された瞬間にイベントターゲットなどを利用する方が安全だが、
-    // ここではHTML構造上ユニークなボタンを対象にする
-    const btns = document.querySelectorAll('#problem-selection-view button.orange-btn');
-    btns.forEach(b => b.disabled = true); // すべて無効化
-
+    const btn = document.querySelector('button.main-btn.orange-btn');
+    if(btn) btn.disabled = true;
     if (currentUser) {
         currentUser.karikari += 100; saveAndSync(); showKarikariEffect(100);
         updateMiniKarikari(); 
         updateNellMessage("よくがんばったにゃ！カリカリ100個あげるにゃ！", "excited")
-        .then(() => { 
-            setTimeout(() => { 
-                if(typeof backToLobby === 'function') backToLobby(true); 
-            }, 3000); 
-        });
+        .then(() => { setTimeout(() => { if(typeof backToLobby === 'function') backToLobby(true); }, 3000); });
     }
 };
 
@@ -531,12 +524,12 @@ async function startAnalysis(b64) {
         
         setTimeout(() => { 
             document.getElementById('thinking-view').classList.add('hidden'); 
-            document.getElementById('main-back-btn').classList.remove('hidden');
+            // ★修正: 分析完了時は戻るボタンを表示しない (問題リストの左上の「←」削除)
+            // document.getElementById('main-back-btn').classList.remove('hidden');
             const doneMsg = "読めたにゃ！";
             
             if (currentMode === 'grade') {
                 showGradingView(); 
-                // ★修正: 音声被り解消 (読めたにゃ！ -> 完了後 -> 間違ってても...)
                 updateNellMessage(doneMsg, "happy").then(() => {
                     setTimeout(() => {
                         updateNellMessage("間違ってても大丈夫！入力しなおしてみてにゃ！", "gentle");
@@ -776,9 +769,9 @@ function updateGradingMessage() {
     });
 
     const scoreRate = correctCount / (transcribedProblems.length || 1);
-    // ★修正: 「あと○問直してみるにゃ」を削除し、一律の励ましメッセージへ
     if (scoreRate === 1.0) updateNellMessage(`全問正解だにゃ！天才だにゃ〜！！`, "excited");
-    else updateNellMessage(`間違ってても大丈夫！入力し直してみてにゃ！`, "gentle");
+    else if (scoreRate >= 0.5) updateNellMessage(`あと${transcribedProblems.length - correctCount}問！直してみるにゃ！`, "happy");
+    else updateNellMessage(`間違ってても大丈夫！入力し直してみて！`, "gentle");
 }
 
 // --- スキャン結果表示 (教えてモード: UI統一・重複ボタン削除版) ---
@@ -823,9 +816,6 @@ function renderProblemSelection() {
         `;
         l.appendChild(div);
     }); 
-    
-    // ★修正: ここでの「ぜんぶわかったにゃ」ボタン生成を削除
-    // HTML (index.html) 側のボタンを使用するため、JS側では追加しない
 }
 
 // --- 復習モード ---
@@ -893,7 +883,4 @@ function showGradingView() {
     btnDiv.style.marginTop = "20px";
     btnDiv.innerHTML = `<button onclick="finishGrading()" class="main-btn orange-btn">💯 採点おわり！</button>`;
     container.appendChild(btnDiv);
-
-    // ★修正: 初回表示時は音声再生しない (startAnalysisで制御)
-    // updateGradingMessage(); 
 }

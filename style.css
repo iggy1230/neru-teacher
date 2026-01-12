@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v55.0: レイアウト維持 + カメラボタン配置修正) --- */
+/* --- style.css (完全版 v56.0: 背景固定対応・レイアウト維持) --- */
 
 body {
     font-family: 'M PLUS Rounded 1c', "Sawarabi Gothic", sans-serif;
@@ -7,17 +7,27 @@ body {
     width: 100%;
     min-height: 100vh;
     background-color: #fce4ec;
-    /* デフォルト背景（教室） */
-    background-image: url('classroom-bg.png');
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
-    background-attachment: fixed;
     color: #333;
     -webkit-font-smoothing: antialiased;
     box-sizing: border-box;
     padding-top: 0;
     overflow-x: hidden;
+    position: relative; /* 疑似要素配置のため */
+}
+
+/* ★修正: 背景画像を疑似要素で固定配置 (コンテンツが伸びても拡大しないように) */
+body::before {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100vh;
+    background-image: url('classroom-bg.png');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    z-index: -1;
 }
 
 button { font-family: inherit; }
@@ -253,7 +263,7 @@ button { font-family: inherit; }
 /* カメラコントロール部 (デフォルト) */
 .camera-controls { width: 100%; height: 120px; background: #222; display: flex; align-items: center; justify-content: space-around; padding-bottom: 20px; }
 
-/* ★修正: 学生証カメラ用ボタン配置 (シャッター中央、キャンセル右下) */
+/* 学生証カメラ用ボタン配置 (シャッター中央、キャンセル右下) */
 #camera-modal .camera-controls {
     justify-content: center; /* 中央寄せ */
     position: relative;
