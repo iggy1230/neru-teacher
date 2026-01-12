@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v61.0: 戻るボタン改善・リスト復帰機能追加) ---
+// --- anlyze.js (完全版 v63.0: 記憶ロジック修正・終了メッセージ修正) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -129,7 +129,6 @@ window.setAnalyzeMode = function(type) {
     }
 };
 
-// ★修正: 教科選択後の戻るボタン制御
 window.setSubject = function(s) { 
     currentSubject = s; 
     if(typeof currentUser !== 'undefined' && currentUser){
@@ -138,23 +137,18 @@ window.setSubject = function(s) {
         if(typeof saveAndSync === 'function') saveAndSync();
     } 
     const icon = document.querySelector('.nell-avatar-wrap img'); if(icon&&subjectImages[s]){icon.src=subjectImages[s].base; icon.onerror=()=>{icon.src=defaultIcon;};} 
-    
-    // 画面遷移
     document.getElementById('subject-selection-view').classList.add('hidden'); 
     document.getElementById('upload-controls').classList.remove('hidden'); 
     updateNellMessage(`${currentSubject}の問題をみせてにゃ！`, "happy"); 
-
-    // ★追加: 戻るボタンを押すと「教科選択」に戻るようにする
+    
+    // 戻るボタンの制御
     const backBtn = document.getElementById('main-back-btn');
     if (backBtn) {
         backBtn.classList.remove('hidden');
         backBtn.onclick = () => {
-            // 教科選択に戻る処理
             document.getElementById('upload-controls').classList.add('hidden');
             document.getElementById('subject-selection-view').classList.remove('hidden');
             updateNellMessage("どの教科にするのかにゃ？", "normal");
-            
-            // 戻るボタンの挙動をロビー戻りにリセット
             backBtn.onclick = backToLobby;
         };
     }
@@ -250,7 +244,6 @@ window.revealAnswer = function() {
     updateNellMessage(`答えは「${selectedProblem.correct_answer}」だにゃ！`, "gentle"); 
 };
 
-// ★追加: 問題リストに戻る関数
 window.backToProblemSelection = function() {
     document.getElementById('final-view').classList.add('hidden'); 
     document.getElementById('hint-detail-container').classList.add('hidden'); 
@@ -268,7 +261,6 @@ window.backToProblemSelection = function() {
         updateNellMessage("他も見るにゃ？", "normal");
     }
     
-    // 戻るボタン(←)を復活
     const backBtn = document.getElementById('main-back-btn');
     if(backBtn) {
         backBtn.classList.remove('hidden');
@@ -276,7 +268,6 @@ window.backToProblemSelection = function() {
     }
 };
 
-// ★修正: ありがとうボタン
 window.pressThanks = function() {
     window.backToProblemSelection();
 };
@@ -691,7 +682,12 @@ async function startLiveChat() {
             } catch (e) { console.error("WS Message Error:", e); }
         };
         
-        liveSocket.onclose = () => { stopLiveChat(); if(btn) btn.innerText = "こじんめんだん終了"; };
+        // ★修正: 終了ボタン表示
+        liveSocket.onclose = () => { 
+            stopLiveChat(); 
+            if(btn) btn.innerText = "こじんめんだん終了"; 
+        };
+        
         liveSocket.onerror = (e) => { 
             console.error("WS Error:", e);
             stopLiveChat(); 
@@ -706,6 +702,10 @@ function stopLiveChat() {
     if (recognition) { try { recognition.stop(); } catch(e) {} recognition = null; }
     if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
     if (workletNode) { workletNode.port.postMessage('stop'); workletNode.disconnect(); workletNode = null; }
+    
+    // ソケットを閉じる前にフラグをチェックしないと二重実行などでログが消える可能性がある
+    const hasLog = chatTranscript && chatTranscript.length > 5; // ★緩和: 5文字以上あれば保存
+    
     if (liveSocket) { liveSocket.close(); liveSocket = null; }
     if (audioContext) { audioContext.close(); audioContext = null; }
     window.isNellSpeaking = false;
@@ -713,7 +713,9 @@ function stopLiveChat() {
     const btn = document.getElementById('mic-btn');
     if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; btn.style.boxShadow = "none"; }
 
-    if (chatTranscript && chatTranscript.length > 10 && currentUser && window.NellMemory) {
+    // ★記憶ロジック修正
+    if (hasLog && currentUser && window.NellMemory) {
+        console.log("📝 会話ログを保存中:", chatTranscript);
         fetch('/summarize-notes', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -722,10 +724,14 @@ function stopLiveChat() {
         .then(r => r.json())
         .then(data => {
             if (data.notes && data.notes.length > 0) {
+                console.log("✅ 記憶しました:", data.notes);
                 window.NellMemory.applySummarizedNotes(currentUser.id, data.notes);
             }
         })
-        .catch(e => {});
+        .catch(e => { console.error("保存エラー:", e); });
+        
+        // 送信したらクリアする (二重送信防止)
+        chatTranscript = "";
     }
 }
 
@@ -853,26 +859,19 @@ function renderProblemSelection() {
     l.innerHTML = ""; 
 
     transcribedProblems.forEach(p => { 
-        // 採点モードと統一されたカードデザイン
         const div = document.createElement('div');
         div.className = "grade-item";
         div.style.cssText = `border-bottom:1px solid #eee; padding:15px; margin-bottom:10px; border-radius:10px; background:white; box-shadow: 0 2px 5px rgba(0,0,0,0.05);`;
 
         div.innerHTML = `
             <div style="display:flex; justify-content:space-between; align-items:center;">
-                <!-- 左側: 問題番号 (青色) -->
                 <div style="font-weight:900; color:#4a90e2; font-size:1.5rem; width:50px; text-align:center;">
                     ${p.label || '問'}
                 </div>
-
-                <!-- 右側: コンテンツ -->
                 <div style="flex:1; margin-left:10px;">
-                    <!-- 問題文 -->
                     <div style="font-weight:bold; font-size:1.1rem; margin-bottom:8px; color:#333;">
                         ${p.question.substring(0, 40)}${p.question.length>40?'...':''}
                     </div>
-
-                    <!-- アクションエリア -->
                     <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px;">
                         <div style="flex:1;">
                             <input type="text" placeholder="ここにメモできるよ"
