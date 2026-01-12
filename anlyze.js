@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v45.0: UI統一・全機能統合) ---
+// --- anlyze.js (完全版 v46.0: 読み上げ除外修正・UI統一) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -72,17 +72,21 @@ function saveToLocalDebugLog(role, text) {
 
 // --- メッセージ更新 ---
 async function updateNellMessage(t, mood = "normal") {
+    // 1. 画面表示 (ここは「🐾」を残す)
     let targetId = document.getElementById('screen-game').classList.contains('hidden') ? 'nell-text' : 'nell-text-game';
     const el = document.getElementById(targetId);
     if (el) el.innerText = t;
 
+    // SE再生
     if (t && t.includes("もぐもぐ")) { try { sfxBori.currentTime = 0; sfxBori.play(); } catch(e){} }
     if (!t || t.includes("ちょっと待ってて") || t.includes("もぐもぐ")) return;
     
     saveToLocalDebugLog('nell', t);
 
+    // 2. 音声読み上げ (ここで「🐾」を削除する)
     if (typeof speakNell === 'function') {
-        await speakNell(t, mood);
+        const textForSpeech = t.replace(/🐾/g, ""); // 足跡マークを消去
+        await speakNell(textForSpeech, mood);
     }
 }
 
