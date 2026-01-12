@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v44.0: 採点修正機能・編集可能UI) ---
+// --- anlyze.js (完全版 v45.0: UI統一・全機能統合) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -730,42 +730,17 @@ function arrayBufferToBase64(buffer) { let binary = ''; const bytes = new Uint8A
 function updateMiniKarikari() { if(currentUser) { document.getElementById('mini-karikari-count').innerText = currentUser.karikari; document.getElementById('karikari-count').innerText = currentUser.karikari; } }
 function showKarikariEffect(amount) { const container = document.querySelector('.nell-avatar-wrap'); if(container) { const floatText = document.createElement('div'); floatText.className = 'floating-text'; floatText.innerText = amount > 0 ? `+${amount}` : `${amount}`; floatText.style.color = amount > 0 ? '#ff9100' : '#ff5252'; floatText.style.right = '0px'; floatText.style.top = '0px'; container.appendChild(floatText); setTimeout(() => floatText.remove(), 1500); } const heartCont = document.getElementById('heart-container'); if(heartCont) { for(let i=0; i<8; i++) { const heart = document.createElement('div'); heart.innerText = amount > 0 ? '✨' : '💗'; heart.style.position = 'absolute'; heart.style.fontSize = (Math.random() * 1.5 + 1) + 'rem'; heart.style.left = (Math.random() * 100) + '%'; heart.style.top = (Math.random() * 100) + '%'; heart.style.pointerEvents = 'none'; heartCont.appendChild(heart); heart.animate([{ transform: 'scale(0) translateY(0)', opacity: 0 }, { transform: 'scale(1) translateY(-20px)', opacity: 1, offset: 0.2 }, { transform: 'scale(1.2) translateY(-100px)', opacity: 0 }], { duration: 1000 + Math.random() * 1000, easing: 'ease-out', fill: 'forwards' }).onfinish = () => heart.remove(); } } }
 
-// --- スキャン結果表示 ---
-function renderProblemSelection() { 
-    document.getElementById('problem-selection-view').classList.remove('hidden'); 
-    const l=document.getElementById('transcribed-problem-list'); l.innerHTML=""; 
-    transcribedProblems.forEach(p=>{ 
-        l.innerHTML += `<div class="prob-card"><div><span class="q-label">${p.label||'?'}</span>${p.question.substring(0,20)}...</div><button class="mini-teach-btn" onclick="startHint(${p.id})">教えて</button></div>`; 
-    }); 
-}
-
-// --- 復習モード ---
-function renderMistakeSelection() { 
-    if (!currentUser.mistakes || currentUser.mistakes.length === 0) { 
-        updateNellMessage("ノートは空っぽにゃ！", "happy"); 
-        setTimeout(backToLobby, 2000); 
-        return; 
-    } 
-    transcribedProblems = currentUser.mistakes; 
-    renderProblemSelection(); 
-    updateNellMessage("復習するにゃ？", "excited"); 
-}
-
-// --- リアルタイム採点機能 (新規追加) ---
+// --- リアルタイム採点機能 ---
 window.checkAnswerDynamically = function(id, inputElem) {
     const newVal = inputElem.value;
     const problem = transcribedProblems.find(p => p.id === id);
     if (!problem) return;
 
-    // データ更新
     problem.student_answer = newVal;
-
-    // 判定ロジック (空白除去して比較)
     const normalizedStudent = newVal.trim();
     const normalizedCorrect = (problem.correct_answer || "").trim();
     const isCorrect = (normalizedStudent !== "") && (normalizedStudent === normalizedCorrect);
 
-    // DOM更新 (アイコンと背景)
     const container = document.getElementById(`grade-item-${id}`);
     const markElem = document.getElementById(`mark-${id}`);
     
@@ -780,8 +755,6 @@ window.checkAnswerDynamically = function(id, inputElem) {
             container.style.backgroundColor = "#f0f8ff";
         }
     }
-
-    // 全体のコメント更新
     updateGradingMessage();
 };
 
@@ -799,9 +772,71 @@ function updateGradingMessage() {
     else updateNellMessage(`間違ってても大丈夫！入力し直してみて！`, "gentle");
 }
 
+// --- スキャン結果表示 (教えてモード: UI統一版) ---
+function renderProblemSelection() { 
+    document.getElementById('problem-selection-view').classList.remove('hidden'); 
+    const l = document.getElementById('transcribed-problem-list'); 
+    l.innerHTML = ""; 
+
+    transcribedProblems.forEach(p => { 
+        // 採点モードと統一されたカードデザイン
+        const div = document.createElement('div');
+        div.className = "grade-item";
+        div.style.cssText = `border-bottom:1px solid #eee; padding:15px; margin-bottom:10px; border-radius:10px; background:white; box-shadow: 0 2px 5px rgba(0,0,0,0.05);`;
+
+        div.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <!-- 左側: 問題番号 (青色) -->
+                <div style="font-weight:900; color:#4a90e2; font-size:1.5rem; width:50px; text-align:center;">
+                    ${p.label || '問'}
+                </div>
+
+                <!-- 右側: コンテンツ -->
+                <div style="flex:1; margin-left:10px;">
+                    <!-- 問題文 -->
+                    <div style="font-weight:bold; font-size:1.1rem; margin-bottom:8px; color:#333;">
+                        ${p.question.substring(0, 40)}${p.question.length>40?'...':''}
+                    </div>
+
+                    <!-- アクションエリア -->
+                    <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px;">
+                        <div style="flex:1;">
+                            <input type="text" placeholder="ここにメモできるよ"
+                                   value="${p.student_answer || ''}"
+                                   style="width:100%; padding:8px; border:2px solid #f0f0f0; border-radius:8px; font-size:0.9rem; color:#555;">
+                        </div>
+                        <div style="width:80px; text-align:right;">
+                            <button class="mini-teach-btn" onclick="startHint(${p.id})">教えて</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        l.appendChild(div);
+    }); 
+    
+    // 全問完了ボタン
+    const btnDiv = document.createElement('div');
+    btnDiv.style.textAlign = "center";
+    btnDiv.style.marginTop = "20px";
+    btnDiv.innerHTML = `<button onclick="pressAllSolved()" class="main-btn orange-btn">✨ ぜんぶわかったにゃ！</button>`;
+    l.appendChild(btnDiv);
+}
+
+// --- 復習モード ---
+function renderMistakeSelection() { 
+    if (!currentUser.mistakes || currentUser.mistakes.length === 0) { 
+        updateNellMessage("ノートは空っぽにゃ！", "happy"); 
+        setTimeout(backToLobby, 2000); 
+        return; 
+    } 
+    transcribedProblems = currentUser.mistakes; 
+    renderProblemSelection(); 
+    updateNellMessage("復習するにゃ？", "excited"); 
+}
+
 // --- 採点画面表示 (編集可能版) ---
 function showGradingView() {
-    // UI切り替え
     document.getElementById('problem-selection-view').classList.add('hidden');
     document.getElementById('final-view').classList.remove('hidden');
     document.getElementById('grade-sheet-container').classList.remove('hidden');
@@ -813,7 +848,6 @@ function showGradingView() {
     let correctCount = 0;
 
     transcribedProblems.forEach(p => {
-        // 初期判定
         const studentAns = (p.student_answer || "").trim();
         const correctAns = (p.correct_answer || "").trim();
         let isCorrect = (studentAns !== "") && (studentAns === correctAns);
@@ -826,7 +860,7 @@ function showGradingView() {
 
         const div = document.createElement('div');
         div.className = "grade-item";
-        div.id = `grade-item-${p.id}`; // リアルタイム更新用ID
+        div.id = `grade-item-${p.id}`; 
         div.style.cssText = `border-bottom:1px solid #eee; padding:15px; margin-bottom:10px; border-radius:10px; ${bgStyle}`;
         
         div.innerHTML = `
