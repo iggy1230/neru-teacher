@@ -1,13 +1,13 @@
-/* --- style.css (完全版 v59.0: 配色調整・カラフルボタン) --- */
+/* --- style.css (完全版 v60.0: 学生証拡大・ボタン下部配置) --- */
 
 :root {
-    --primary-pink: #ff8fa3;   /* 少しソフトなピンク */
-    --primary-blue: #6cd4ff;   /* 明るい空色 */
-    --primary-orange: #ffb46e; /* 優しいオレンジ */
-    --primary-yellow: #ffe066; /* クリームイエロー */
-    --primary-green: #88e0a0;  /* ミントグリーン */
-    --primary-purple: #cd99ff; /* ラベンダー */
-    --primary-red: #ff8585;    /* サーモンレッド */
+    --primary-pink: #ff8fa3;
+    --primary-blue: #6cd4ff;
+    --primary-orange: #ffb46e;
+    --primary-yellow: #ffe066;
+    --primary-green: #88e0a0;
+    --primary-purple: #cd99ff;
+    --primary-red: #ff8585;
     --primary-gray: #b0bec5;
     
     --text-color: #333;
@@ -167,7 +167,7 @@ button { font-family: inherit; }
 .main-btn:active { transform: translateY(2px); box-shadow: none; }
 .main-btn:disabled { background: #ccc !important; box-shadow: none; cursor: not-allowed; }
 
-/* ★修正: カラーバリエーション (トーンを統一) */
+/* カラーバリエーション */
 .pink-btn { background: var(--primary-pink); box-shadow: 0 4px 0 #e06b85; }
 .blue-btn { background: var(--primary-blue); box-shadow: 0 4px 0 #4ba3cc; }
 .orange-btn { background: var(--primary-orange); box-shadow: 0 4px 0 #e09230; }
@@ -189,7 +189,7 @@ button { font-family: inherit; }
     box-shadow: 0 2px 0 #78909c;
 }
 
-/* 校門画面 (#screen-gate) */
+/* ★修正: 校門画面 (#screen-gate) レイアウト調整 */
 #screen-gate {
     position: fixed;
     top: 0;
@@ -203,9 +203,9 @@ button { font-family: inherit; }
     z-index: 1500;
     overflow-y: auto;
     display: flex;
-    flex-direction: column;
+    flex-direction: column; /* 縦並び */
     align-items: center;
-    padding: 40px 20px;
+    padding: 40px 20px 20px 20px;
 }
 
 #screen-gate > * {
@@ -213,20 +213,15 @@ button { font-family: inherit; }
     max-width: 600px;
 }
 
-.section-title {
-    text-align: center;
-    font-size: 1.5rem;
-    color: white;
-    text-shadow: 2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000;
-    margin: 20px 0;
-    font-weight: 900;
-}
-
+/* ユーザーリスト部分を伸縮させてボタンを下に押しやる */
 .gate-layout {
     display: flex;
     justify-content: center;
     width: 100%;
     margin-top: 20px;
+    flex-grow: 1; /* これで余白を埋める */
+    align-items: flex-start; /* リストは上寄せ */
+    margin-bottom: 20px;
 }
 
 .right-user-list {
@@ -237,17 +232,23 @@ button { font-family: inherit; }
     justify-items: center;
 }
 
+/* ★修正: 学生証カード (アニメーション追加) */
 .user-card {
     background: transparent;
     padding: 0;
     text-align: center;
     cursor: pointer;
     position: relative;
-    transition: transform 0.1s;
     width: 100px;
+    transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); /* スムーズな拡大 */
+    z-index: 1;
 }
 
-.user-card:active { transform: scale(0.95); }
+/* ホバー/アクティブ時に2倍拡大して最前面へ */
+.user-card:hover, .user-card:active {
+    transform: scale(2.0);
+    z-index: 1000;
+}
 
 .user-card img {
     width: 80px;
@@ -293,6 +294,16 @@ button { font-family: inherit; }
     justify-content: center;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
     z-index: 10;
+}
+
+.section-title {
+    text-align: center;
+    font-size: 1.5rem;
+    color: white;
+    text-shadow: 2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000;
+    margin: 20px 0;
+    font-weight: 900;
+    flex-shrink: 0;
 }
 
 /* 学生証レイアウト */

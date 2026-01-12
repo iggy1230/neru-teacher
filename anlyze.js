@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v59.0: ゲーム効果音追加・全機能統合) ---
+// --- anlyze.js (完全版 v60.0: こじんめんだん終了メッセージ変更) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -29,8 +29,8 @@ let cropPoints = [];
 let activeHandle = -1;
 
 const sfxBori = new Audio('boribori.mp3');
-const sfxHit = new Audio('cat1c.mp3'); // ブロックヒット音
-const sfxPaddle = new Audio('poka02.mp3'); // ★追加: パドルヒット音
+const sfxHit = new Audio('cat1c.mp3');
+const sfxPaddle = new Audio('poka02.mp3'); 
 const sfxOver = new Audio('gameover.mp3');
 const gameHitComments = ["うまいにゃ！", "すごいにゃ！", "さすがにゃ！", "がんばれにゃ！"];
 
@@ -310,7 +310,6 @@ function drawGame() {
         if(ball.x > paddle.x && ball.x < paddle.x + paddle.w) { 
             ball.dy *= -1; 
             ball.dx = (ball.x - (paddle.x+paddle.w/2)) * 0.15;
-            // ★追加: パドルヒット音再生
             try { sfxPaddle.currentTime = 0; sfxPaddle.play(); } catch(e){}
         } 
         else if(ball.y+ball.dy > gameCanvas.height-ball.r) { try { sfxOver.currentTime=0; sfxOver.play(); } catch(e){} endGame(false); return; }
@@ -547,7 +546,7 @@ async function startAnalysis(b64) {
         
         setTimeout(() => { 
             document.getElementById('thinking-view').classList.add('hidden'); 
-            // 修正: 戻るボタンは非表示のまま (UI設計変更)
+            // 修正: 戻るボタンは非表示 (UI設計変更)
             // document.getElementById('main-back-btn').classList.remove('hidden');
             const doneMsg = "読めたにゃ！";
             
@@ -642,7 +641,7 @@ async function startLiveChat() {
             } catch (e) { console.error("WS Message Error:", e); }
         };
         
-        liveSocket.onclose = () => { stopLiveChat(); if(btn) btn.innerText = "接続切れちゃった…"; };
+        liveSocket.onclose = () => { stopLiveChat(); if(btn) btn.innerText = "こじんめんだん終了"; };
         liveSocket.onerror = (e) => { 
             console.error("WS Error:", e);
             stopLiveChat(); 

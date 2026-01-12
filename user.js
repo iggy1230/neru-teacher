@@ -1,9 +1,12 @@
-// --- user.js (完全版 v32.0: 入学祝いメッセージ追加) ---
+// --- user.js (完全版 v60.0: ドア音追加) ---
 
 let users = JSON.parse(localStorage.getItem('nekoneko_users')) || [];
 let currentUser = null;
 let modelsLoaded = false;
 let enrollFile = null;
+
+// 音源
+const sfxDoor = new Audio('class_door1.mp3');
 
 // 画像リソース
 const idBase = new Image();
@@ -357,7 +360,6 @@ async function processAndCompleteEnrollment() {
         users.push(newUser);
         localStorage.setItem('nekoneko_users', JSON.stringify(users)); 
         
-        // ★修正: 入学直後のユーザーIDを記録
         window.justEnrolledId = newUser.id;
 
         renderUserList(); 
@@ -384,10 +386,25 @@ async function processAndCompleteEnrollment() {
     }
 }
 
-function renderUserList() { const list = document.getElementById('user-list'); if(!list) return; list.innerHTML = users.length ? "" : "<p style='text-align:right; font-size:0.75rem; opacity:0.5;'>入学してにゃ</p>"; users.forEach(user => { const div = document.createElement('div'); div.className = "user-card"; div.innerHTML = `<img src="${user.photo}"><div class="card-karikari-badge">🍖${user.karikari || 0}</div><button class="delete-student-btn" onclick="deleteUser(event, ${user.id})">×</button>`; div.onclick = () => login(user); list.appendChild(div); }); }
+function renderUserList() { 
+    const list = document.getElementById('user-list'); 
+    if(!list) return; 
+    list.innerHTML = users.length ? "" : "<p style='text-align:center; width:100%; color:white; font-weight:bold; opacity:0.8;'>まだ誰もいないにゃ</p>"; 
+    
+    users.forEach(user => { 
+        const div = document.createElement('div'); 
+        div.className = "user-card"; 
+        // student-id-base.png が背景の場合は、user.photo をそのまま使う
+        div.innerHTML = `<img src="${user.photo}"><div class="card-karikari-badge">🍖${user.karikari || 0}</div><button class="delete-student-btn" onclick="deleteUser(event, ${user.id})">×</button>`; 
+        div.onclick = () => login(user); 
+        list.appendChild(div); 
+    }); 
+}
 
-// ★修正: ログイン時の挨拶分岐
 function login(user) { 
+    // ★追加: ドア音再生
+    try { sfxDoor.currentTime = 0; sfxDoor.play(); } catch(e){}
+
     currentUser = user; 
     if (!currentUser.attendance) currentUser.attendance = {}; 
     if (!currentUser.memory) currentUser.memory = ""; 
@@ -416,10 +433,9 @@ function login(user) {
     
     switchScreen('screen-lobby'); 
     
-    // ★追加: 入学直後ならお祝いメッセージ
     if (window.justEnrolledId === user.id) {
         updateNellMessage(`${user.name}さん、入学おめでとうだにゃ！`, "excited");
-        window.justEnrolledId = null; // フラグリセット
+        window.justEnrolledId = null; 
     } else if (isBonus) { 
         updateNellMessage("連続出席ボーナス！カリカリ100個プレゼントだにゃ！", "excited"); 
         showKarikariEffect(100); updateMiniKarikari(); 
