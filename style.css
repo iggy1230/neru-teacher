@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v60.0: 学生証拡大・ボタン下部配置) --- */
+/* --- style.css (完全版 v61.0: 校門レイアウト下基準・バッジ重なり解消) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -189,7 +189,7 @@ button { font-family: inherit; }
     box-shadow: 0 2px 0 #78909c;
 }
 
-/* ★修正: 校門画面 (#screen-gate) レイアウト調整 */
+/* 校門画面 (#screen-gate) */
 #screen-gate {
     position: fixed;
     top: 0;
@@ -203,7 +203,7 @@ button { font-family: inherit; }
     z-index: 1500;
     overflow-y: auto;
     display: flex;
-    flex-direction: column; /* 縦並び */
+    flex-direction: column;
     align-items: center;
     padding: 40px 20px 20px 20px;
 }
@@ -213,15 +213,24 @@ button { font-family: inherit; }
     max-width: 600px;
 }
 
-/* ユーザーリスト部分を伸縮させてボタンを下に押しやる */
+.section-title {
+    text-align: center;
+    font-size: 1.5rem;
+    color: white;
+    text-shadow: 2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000;
+    margin: 20px 0;
+    font-weight: 900;
+    flex-shrink: 0;
+}
+
+/* ★修正: リストを下に押し下げる (下基準) */
 .gate-layout {
     display: flex;
     justify-content: center;
     width: 100%;
-    margin-top: 20px;
-    flex-grow: 1; /* これで余白を埋める */
-    align-items: flex-start; /* リストは上寄せ */
+    margin-top: auto; /* これにより可能な限り下に配置される */
     margin-bottom: 20px;
+    align-items: flex-end; /* コンテナの下端に揃える */
 }
 
 .right-user-list {
@@ -230,9 +239,10 @@ button { font-family: inherit; }
     grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
     gap: 15px;
     justify-items: center;
+    align-content: end; /* グリッドアイテムを下に寄せる */
 }
 
-/* ★修正: 学生証カード (アニメーション追加) */
+/* ★修正: 学生証カード (バッジ重なり解消・拡大) */
 .user-card {
     background: transparent;
     padding: 0;
@@ -240,13 +250,18 @@ button { font-family: inherit; }
     cursor: pointer;
     position: relative;
     width: 100px;
-    transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); /* スムーズな拡大 */
+    /* 縦並びにして、バッジを画像の「下」に配置 */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    
+    transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
     z-index: 1;
 }
 
-/* ホバー/アクティブ時に2倍拡大して最前面へ */
 .user-card:hover, .user-card:active {
-    transform: scale(2.0);
+    transform: scale(2.0) translateY(-20px); /* 拡大時に少し上に浮かす */
     z-index: 1000;
 }
 
@@ -261,11 +276,11 @@ button { font-family: inherit; }
     margin: 0 auto;
 }
 
+/* ★修正: バッジを絶対配置から変更し、画像の下にフローさせる */
 .card-karikari-badge {
-    position: absolute;
-    bottom: 5px;
-    left: 50%;
-    transform: translateX(-50%);
+    position: static; /* 絶対配置解除 */
+    transform: none;
+    margin-top: 5px; /* 画像との隙間 */
     background: rgba(255, 255, 255, 0.95);
     color: #d84315;
     font-size: 0.8rem;
@@ -275,6 +290,7 @@ button { font-family: inherit; }
     border: 1px solid #ffab91;
     pointer-events: none;
     white-space: nowrap;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
 .delete-student-btn {
@@ -294,16 +310,6 @@ button { font-family: inherit; }
     justify-content: center;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
     z-index: 10;
-}
-
-.section-title {
-    text-align: center;
-    font-size: 1.5rem;
-    color: white;
-    text-shadow: 2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000;
-    margin: 20px 0;
-    font-weight: 900;
-    flex-shrink: 0;
 }
 
 /* 学生証レイアウト */
