@@ -1,9 +1,15 @@
-/* --- style.css (Complete Version v58.0) --- */
+/* --- style.css (完全版 v59.0: 配色調整・カラフルボタン) --- */
 
 :root {
-    --primary-pink: #ff85a1;
-    --primary-blue: #4a90e2;
-    --primary-orange: #ffb74d;
+    --primary-pink: #ff8fa3;   /* 少しソフトなピンク */
+    --primary-blue: #6cd4ff;   /* 明るい空色 */
+    --primary-orange: #ffb46e; /* 優しいオレンジ */
+    --primary-yellow: #ffe066; /* クリームイエロー */
+    --primary-green: #88e0a0;  /* ミントグリーン */
+    --primary-purple: #cd99ff; /* ラベンダー */
+    --primary-red: #ff8585;    /* サーモンレッド */
+    --primary-gray: #b0bec5;
+    
     --text-color: #333;
     --bg-color: #fff9f0;
 }
@@ -19,14 +25,14 @@ body {
     font-family: 'M PLUS Rounded 1c', 'Sawarabi Gothic', sans-serif;
     background-color: var(--bg-color);
     color: var(--text-color);
-    overflow-x: hidden; /* 横スクロール防止 */
+    overflow-x: hidden;
     position: relative;
     width: 100%;
     min-height: 100vh;
     -webkit-font-smoothing: antialiased;
 }
 
-/* 背景画像を疑似要素で固定配置 (コンテンツが伸びても背景が拡大しないようにする) */
+/* 背景画像を疑似要素で固定配置 */
 body::before {
     content: "";
     position: fixed;
@@ -51,7 +57,7 @@ button { font-family: inherit; }
     min-height: 100vh;
     position: relative;
     padding-bottom: 40px;
-    overflow: hidden; /* 内部要素のはみ出し防止 */
+    overflow: hidden;
 }
 
 /* 各画面共通設定 */
@@ -155,16 +161,21 @@ button { font-family: inherit; }
     transition: transform 0.1s;
     text-align: center;
     text-decoration: none;
+    text-shadow: 1px 1px 0 rgba(0,0,0,0.1);
 }
 
 .main-btn:active { transform: translateY(2px); box-shadow: none; }
 .main-btn:disabled { background: #ccc !important; box-shadow: none; cursor: not-allowed; }
 
-.pink-btn { background: var(--primary-pink); box-shadow: 0 4px 0 #e06581; }
-.blue-btn { background: var(--primary-blue); box-shadow: 0 4px 0 #2c5f96; }
-.orange-btn { background: var(--primary-orange); box-shadow: 0 4px 0 #f57c00; }
-.yellow-btn { background: #ffd54f; box-shadow: 0 4px 0 #ffca28; color: #5d4037; }
-.gray-btn { background: #b0bec5; box-shadow: 0 4px 0 #78909c; }
+/* ★修正: カラーバリエーション (トーンを統一) */
+.pink-btn { background: var(--primary-pink); box-shadow: 0 4px 0 #e06b85; }
+.blue-btn { background: var(--primary-blue); box-shadow: 0 4px 0 #4ba3cc; }
+.orange-btn { background: var(--primary-orange); box-shadow: 0 4px 0 #e09230; }
+.yellow-btn { background: var(--primary-yellow); box-shadow: 0 4px 0 #e0c240; color: #5d4037; text-shadow: none; }
+.green-btn { background: var(--primary-green); box-shadow: 0 4px 0 #5cad72; }
+.purple-btn { background: var(--primary-purple); box-shadow: 0 4px 0 #9c6cc4; }
+.red-btn { background: var(--primary-red); box-shadow: 0 4px 0 #e06060; }
+.gray-btn { background: var(--primary-gray); box-shadow: 0 4px 0 #78909c; }
 
 #main-back-btn {
     position: absolute;
