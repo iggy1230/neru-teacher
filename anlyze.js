@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v77.0: 記憶注入の最終修正・全機能統合) ---
+// --- anlyze.js (完全版 v78.0: 記憶注入の最適化・箇条書きリスト化) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -426,6 +426,7 @@ const handleFileUpload = async (file) => {
                     }
                 }
             } catch(err) { 
+                console.error("Detect failed", err);
                 cropPoints = getDefaultRect(w, h); 
             }
 
@@ -636,28 +637,42 @@ async function startLiveChat() {
         
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
         
-        // ★修正: 記憶の確実な注入 (statusContext生成)
-        // 1. 基本情報
-        let statusSummary = `${currentUser.name}さんは今、お話しにきたにゃ。カリカリは${currentUser.karikari}個持ってるにゃ。`;
+        // ★修正: 記憶の注入ロジック (箇条書きリスト化)
+        // 1. 最新の記憶を取得
+        const nellMemory = JSON.parse(localStorage.getItem(`neruMemory_${currentUser.id}`) || '{"personalLikes":{}, "episodes":[]}');
         
-        // 2. 直前の会話ログ (localStorageから)
-        const savedMemory = JSON.parse(localStorage.getItem('nell_raw_chat_log') || '[]');
-        if (savedMemory.length > 0) {
-            // 直近5件を抽出してテキスト化
-            const recent = savedMemory.slice(-5).map(m => `${m.role === 'nell' ? 'ネル' : '生徒'}: ${m.text}`).join("\n");
-            statusSummary += `\n【直前の会話ログ】\n${recent}`;
+        let memoryList = [];
+        // 好きなものをリスト化
+        if (nellMemory.personalLikes) {
+            Object.keys(nellMemory.personalLikes).forEach(key => {
+                if (nellMemory.personalLikes[key] > 0) {
+                    // キーを日本語に変換 (簡易マッピング)
+                    const label = {
+                        "sports": "スポーツ", "pokemon": "ポケモン", "game": "ゲーム", 
+                        "cat": "猫", "dog": "犬", "art": "お絵かき", "food": "食べ物"
+                    }[key] || key;
+                    memoryList.push(`・${label}が好き`);
+                }
+            });
         }
-        
-        // 3. 構造化された長期記憶 (memory.jsから)
-        if (window.NellMemory) {
-            const memoryHint = window.NellMemory.pickMemoryForContext(currentUser.id, "chat");
-            if (memoryHint) {
-                console.log("💡 注入する長期記憶:", memoryHint);
-                statusSummary += `\n【長期記憶】${memoryHint}`;
-            }
+        // エピソードを追加
+        if (nellMemory.episodes) {
+            nellMemory.episodes.slice(-5).forEach(ep => memoryList.push(`・${ep}`));
         }
 
-        // 4. URL生成
+        const memoryString = memoryList.length > 0 ? memoryList.join("\n") : "特になし";
+
+        // 2. 状況サマリー作成
+        const statusSummary = `
+        ${currentUser.name}さんは今、お話しにきたにゃ。
+        カリカリは${currentUser.karikari}個持ってるにゃ。
+        
+        【重要：${currentUser.name}さんの記憶メモ】
+        ${memoryString}
+        ------------------
+        以上のことを絶対に忘れずに、会話に混ぜてにゃ！
+        `;
+
         const url = `${wsProto}//${location.host}?grade=${currentUser.grade}&name=${encodeURIComponent(currentUser.name)}&status=${encodeURIComponent(statusSummary)}`;
         
         liveSocket = new WebSocket(url);
@@ -700,7 +715,19 @@ async function startLiveChat() {
                 if (data.serverContent?.modelTurn?.parts) {
                     data.serverContent.modelTurn.parts.forEach(p => {
                         if (p.inlineData) playLivePcmAudio(p.inlineData.data);
+                        if (p.text) liveResponseBuffer += p.text;
                     });
+                }
+
+                if (data.serverContent?.turnComplete) {
+                    if (liveResponseBuffer.trim().length > 0) {
+                        saveToNellMemory('nell', liveResponseBuffer); 
+                        if (window.NellMemory) {
+                            const lines = liveResponseBuffer.split(/[。！？」]/);
+                            window.NellMemory.applySummarizedNotes(currentUser.id, lines);
+                        }
+                        liveResponseBuffer = ""; 
+                    }
                 }
             } catch (e) { console.error("WS Message Error:", e); }
         };
@@ -723,7 +750,6 @@ function stopLiveChat() {
     if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
     if (workletNode) { workletNode.port.postMessage('stop'); workletNode.disconnect(); workletNode = null; }
     
-    // ★緩和: 2文字以上
     const hasLog = chatTranscript && chatTranscript.length > 2; 
     
     if (liveSocket) { liveSocket.close(); liveSocket = null; }
@@ -735,7 +761,6 @@ function stopLiveChat() {
 
     if (hasLog && currentUser && window.NellMemory) {
         console.log("📝 保存処理実行:", chatTranscript);
-        // 要約APIへ送信して構造化データを更新
         fetch('/summarize-notes', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -744,6 +769,7 @@ function stopLiveChat() {
         .then(r => r.json())
         .then(data => {
             if (data.notes && data.notes.length > 0) {
+                console.log("✅ 記憶しました:", data.notes);
                 window.NellMemory.applySummarizedNotes(currentUser.id, data.notes);
             }
         })
@@ -758,10 +784,9 @@ async function startMicrophone() {
         if ('webkitSpeechRecognition' in window) {
             recognition = new webkitSpeechRecognition();
             recognition.continuous = true;
-            recognition.interimResults = true; // ★途中経過も取得
+            recognition.interimResults = true;
             recognition.lang = 'ja-JP';
 
-            // ★リアルタイムテキスト表示 & 送信
             recognition.onresult = (event) => {
                 let interimTranscript = '';
                 for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -770,9 +795,8 @@ async function startMicrophone() {
                         console.log("🎤 確定:", transcript);
                         chatTranscript += transcript + "\n";
                         
-                        // ★自分の発言を即時保存 (これが重要)
                         saveToNellMemory('user', transcript);
-
+                        
                         const speechText = document.getElementById('user-speech-text');
                         if(speechText) speechText.innerText = transcript;
                     } else {
@@ -783,7 +807,6 @@ async function startMicrophone() {
                 }
             };
             
-            // ★ゾンビ復活ロジック
             recognition.onend = () => {
                 if (isRecognitionActive && liveSocket && liveSocket.readyState === WebSocket.OPEN) {
                     console.log("🔄 音声認識を再起動します...");
@@ -810,7 +833,6 @@ async function startMicrophone() {
             if (btn) btn.style.boxShadow = volume > 0.01 ? `0 0 ${10 + volume * 500}px #ffeb3b` : "none";
             
             if (volume > 0.05 && !window.userIsSpeakingNow) {
-                // saveToNellMemory('user', '（お話し中...）'); // ログ汚染防止のためコメントアウト
                 window.userIsSpeakingNow = true;
                 setTimeout(() => { window.userIsSpeakingNow = false; }, 5000);
             }
