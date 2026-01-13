@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v61.0: 校門レイアウト下基準・バッジ重なり解消) --- */
+/* --- style.css (完全版 v62.0: リスト縦長化・全機能対応) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -32,7 +32,6 @@ body {
     -webkit-font-smoothing: antialiased;
 }
 
-/* 背景画像を疑似要素で固定配置 */
 body::before {
     content: "";
     position: fixed;
@@ -50,7 +49,6 @@ body::before {
 button { font-family: inherit; }
 .hidden { display: none !important; }
 
-/* 画面コンテナ */
 #app-container {
     max-width: 600px;
     margin: 0 auto;
@@ -60,7 +58,6 @@ button { font-family: inherit; }
     overflow: hidden;
 }
 
-/* 各画面共通設定 */
 .screen {
     padding: 20px;
     padding-bottom: 80px;
@@ -75,7 +72,6 @@ button { font-family: inherit; }
     to { opacity: 1; transform: translateY(0); }
 }
 
-/* タイトル画面 */
 .title-screen {
     position: fixed;
     top: 0;
@@ -145,7 +141,6 @@ button { font-family: inherit; }
     pointer-events: none;
 }
 
-/* 共通ボタン */
 .main-btn {
     display: block;
     width: 100%;
@@ -167,7 +162,6 @@ button { font-family: inherit; }
 .main-btn:active { transform: translateY(2px); box-shadow: none; }
 .main-btn:disabled { background: #ccc !important; box-shadow: none; cursor: not-allowed; }
 
-/* カラーバリエーション */
 .pink-btn { background: var(--primary-pink); box-shadow: 0 4px 0 #e06b85; }
 .blue-btn { background: var(--primary-blue); box-shadow: 0 4px 0 #4ba3cc; }
 .orange-btn { background: var(--primary-orange); box-shadow: 0 4px 0 #e09230; }
@@ -189,7 +183,6 @@ button { font-family: inherit; }
     box-shadow: 0 2px 0 #78909c;
 }
 
-/* 校門画面 (#screen-gate) */
 #screen-gate {
     position: fixed;
     top: 0;
@@ -223,14 +216,13 @@ button { font-family: inherit; }
     flex-shrink: 0;
 }
 
-/* ★修正: リストを下に押し下げる (下基準) */
 .gate-layout {
     display: flex;
     justify-content: center;
     width: 100%;
-    margin-top: auto; /* これにより可能な限り下に配置される */
+    margin-top: auto;
     margin-bottom: 20px;
-    align-items: flex-end; /* コンテナの下端に揃える */
+    align-items: flex-end;
 }
 
 .right-user-list {
@@ -239,10 +231,9 @@ button { font-family: inherit; }
     grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
     gap: 15px;
     justify-items: center;
-    align-content: end; /* グリッドアイテムを下に寄せる */
+    align-content: end;
 }
 
-/* ★修正: 学生証カード (バッジ重なり解消・拡大) */
 .user-card {
     background: transparent;
     padding: 0;
@@ -250,18 +241,16 @@ button { font-family: inherit; }
     cursor: pointer;
     position: relative;
     width: 100px;
-    /* 縦並びにして、バッジを画像の「下」に配置 */
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: flex-end;
-    
     transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
     z-index: 1;
 }
 
 .user-card:hover, .user-card:active {
-    transform: scale(2.0) translateY(-20px); /* 拡大時に少し上に浮かす */
+    transform: scale(2.0) translateY(-20px);
     z-index: 1000;
 }
 
@@ -276,11 +265,10 @@ button { font-family: inherit; }
     margin: 0 auto;
 }
 
-/* ★修正: バッジを絶対配置から変更し、画像の下にフローさせる */
 .card-karikari-badge {
-    position: static; /* 絶対配置解除 */
+    position: static;
     transform: none;
-    margin-top: 5px; /* 画像との隙間 */
+    margin-top: 5px;
     background: rgba(255, 255, 255, 0.95);
     color: #d84315;
     font-size: 0.8rem;
@@ -312,7 +300,6 @@ button { font-family: inherit; }
     z-index: 10;
 }
 
-/* 学生証レイアウト */
 .id-card-wrap {
     position: relative;
     width: 100%;
@@ -385,11 +372,16 @@ button { font-family: inherit; }
     font-size: 1rem;
 }
 
-/* ロビー・その他 */
+.upload-buttons-container {
+    margin: 15px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
 .lobby-top { text-align: center; margin: 20px 0; }
 .mini-id { transform: scale(0.8); margin-bottom: 0; transform-origin: top center; }
 
-/* カリカリカウンター */
 .karikari-counter {
     text-align: center;
     font-size: 1.2rem;
@@ -475,7 +467,6 @@ button { font-family: inherit; }
 }
 
 .camera-btn-large:active { transform: translateY(2px); box-shadow: 0 2px 0 #388e3c; }
-.upload-buttons-container { display: flex; flex-direction: column; gap: 10px; width: 100%; }
 
 .answer-box {
     background: #fff3e0;
@@ -503,7 +494,6 @@ button { font-family: inherit; }
     width: 100%;
 }
 
-/* ゲーム画面: スマホ対応 (幅100%・縦横比維持) */
 #game-canvas {
     border: 4px solid #8d6e63;
     border-radius: 10px;
@@ -518,11 +508,11 @@ button { font-family: inherit; }
 .game-ui { text-align: center; margin-top: 10px; }
 .game-ui p { font-size: 1.2rem; font-weight: bold; color: #d84315; }
 
-/* 問題リストカード: 縦長画面対応 */
+/* ★修正: 問題リストカード (縦長レイアウト統一) */
 .problem-selection-card {
     display: flex;
     flex-direction: column;
-    height: 65vh; /* 画面高さの65%を使用 */
+    height: 65vh; /* 画面高さの65%に統一 */
     min-height: 400px;
 }
 
@@ -532,21 +522,17 @@ button { font-family: inherit; }
     padding: 5px;
 }
 
-.prob-card {
+.prob-card, .grade-item {
     background: white;
-    border-left: 5px solid #ff85a1;
+    border: 2px solid #eee;
+    border-radius: 10px;
     padding: 10px;
     margin-bottom: 10px;
-    border-radius: 5px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
     width: 100%;
 }
-
-.q-label { font-weight: bold; color: #e91e63; margin-right: 5px; }
-.grade-item { width: 100%; }
 
 .mini-teach-btn {
     background: #2196f3;

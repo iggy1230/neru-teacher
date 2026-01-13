@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v83.0: 完了ボタン連打防止・全機能統合) ---
+// --- anlyze.js (完全版 v84.0: trimエラー完全修正・レイアウト統一対応) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -268,7 +268,7 @@ window.backToProblemSelection = function() {
     }
     
     const backBtn = document.getElementById('main-back-btn');
-    if(backBtn) {
+    if (backBtn) {
         backBtn.classList.remove('hidden');
         backBtn.onclick = backToLobby;
     }
@@ -279,7 +279,6 @@ window.pressThanks = function() {
 };
 
 window.finishGrading = async function(btnElement) { 
-    // ★修正: ボタン連打防止
     const btn = btnElement || document.querySelector('#final-view button.orange-btn');
     if(btn) {
         btn.disabled = true;
@@ -298,7 +297,6 @@ window.finishGrading = async function(btnElement) {
 };
 
 window.pressAllSolved = function(btnElement) { 
-    // ★修正: ボタン連打防止
     const btn = btnElement || document.querySelector('#problem-selection-view button.orange-btn');
     if(btn) {
         btn.disabled = true;
@@ -610,7 +608,7 @@ const camIn = document.getElementById('hw-input-camera'); if(camIn) camIn.addEve
 const albIn = document.getElementById('hw-input-album'); if(albIn) albIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
 const oldIn = document.getElementById('hw-input'); if(oldIn) oldIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
 
-// --- Live Chat (Memory Integrated) ---
+// --- Live Chat (Memory Integrated & Real-time Learning) ---
 let liveResponseBuffer = ""; 
 
 async function startLiveChat() {
@@ -689,6 +687,10 @@ async function startLiveChat() {
                 if (data.serverContent?.turnComplete) {
                     if (liveResponseBuffer.trim().length > 0) {
                         saveToNellMemory('nell', liveResponseBuffer); 
+                        if (window.NellMemory) {
+                            const lines = liveResponseBuffer.split(/[。！？」]/);
+                            window.NellMemory.applySummarizedNotes(currentUser.id, lines);
+                        }
                         liveResponseBuffer = ""; 
                     }
                 }
@@ -833,14 +835,15 @@ function updateMiniKarikari() { if(currentUser) { document.getElementById('mini-
 function showKarikariEffect(amount) { const container = document.querySelector('.nell-avatar-wrap'); if(container) { const floatText = document.createElement('div'); floatText.className = 'floating-text'; floatText.innerText = amount > 0 ? `+${amount}` : `${amount}`; floatText.style.color = amount > 0 ? '#ff9100' : '#ff5252'; floatText.style.right = '0px'; floatText.style.top = '0px'; container.appendChild(floatText); setTimeout(() => floatText.remove(), 1500); } const heartCont = document.getElementById('heart-container'); if(heartCont) { for(let i=0; i<8; i++) { const heart = document.createElement('div'); heart.innerText = amount > 0 ? '✨' : '💗'; heart.style.position = 'absolute'; heart.style.fontSize = (Math.random() * 1.5 + 1) + 'rem'; heart.style.left = (Math.random() * 100) + '%'; heart.style.top = (Math.random() * 100) + '%'; heart.style.pointerEvents = 'none'; heartCont.appendChild(heart); heart.animate([{ transform: 'scale(0) translateY(0)', opacity: 0 }, { transform: 'scale(1) translateY(-20px)', opacity: 1, offset: 0.2 }, { transform: 'scale(1.2) translateY(-100px)', opacity: 0 }], { duration: 1000 + Math.random() * 1000, easing: 'ease-out', fill: 'forwards' }).onfinish = () => heart.remove(); } } }
 
 // --- リアルタイム採点機能 ---
+// ★修正: 数値型が来てもエラーにならないように String(...) で変換
 window.checkAnswerDynamically = function(id, inputElem) {
     const newVal = inputElem.value;
     const problem = transcribedProblems.find(p => p.id === id);
     if (!problem) return;
 
-    problem.student_answer = newVal;
-    const normalizedStudent = newVal.trim();
-    const normalizedCorrect = (problem.correct_answer || "").trim();
+    problem.student_answer = String(newVal); // 確実に文字列にする
+    const normalizedStudent = String(newVal).trim();
+    const normalizedCorrect = String(problem.correct_answer || "").trim();
     const isCorrect = (normalizedStudent !== "") && (normalizedStudent === normalizedCorrect);
 
     const container = document.getElementById(`grade-item-${id}`);
@@ -860,11 +863,12 @@ window.checkAnswerDynamically = function(id, inputElem) {
     updateGradingMessage();
 };
 
+// ★修正: ここも数値型対策
 function updateGradingMessage() {
     let correctCount = 0;
     transcribedProblems.forEach(p => {
-        const s = (p.student_answer || "").trim();
-        const c = (p.correct_answer || "").trim();
+        const s = String(p.student_answer || "").trim();
+        const c = String(p.correct_answer || "").trim();
         if (s !== "" && s === c) correctCount++;
     });
 
@@ -909,8 +913,6 @@ function renderProblemSelection() {
         `;
         l.appendChild(div);
     }); 
-    
-    // ★修正: HTML側でボタンを配置しているため、ここでは削除
 }
 
 // --- 復習モード ---
@@ -936,8 +938,9 @@ function showGradingView() {
     container.innerHTML = "";
 
     transcribedProblems.forEach(p => {
-        const studentAns = (p.student_answer || "").trim();
-        const correctAns = (p.correct_answer || "").trim();
+        // ★修正: 数値型対策
+        const studentAns = String(p.student_answer || "").trim();
+        const correctAns = String(p.correct_answer || "").trim();
         let isCorrect = (studentAns !== "") && (studentAns === correctAns);
 
         const mark = isCorrect ? "⭕" : "❌";
