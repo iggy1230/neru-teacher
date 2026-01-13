@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v82.0: trimエラー修正・全機能統合) ---
+// --- anlyze.js (完全版 v86.0: ボタン連打防止・v82ベース) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -268,7 +268,7 @@ window.backToProblemSelection = function() {
     }
     
     const backBtn = document.getElementById('main-back-btn');
-    if(backBtn) {
+    if (backBtn) {
         backBtn.classList.remove('hidden');
         backBtn.onclick = backToLobby;
     }
@@ -278,20 +278,39 @@ window.pressThanks = function() {
     window.backToProblemSelection();
 };
 
-window.finishGrading = async function() { 
-    const btn = document.querySelector('button.main-btn.orange-btn');
-    if(btn) btn.disabled = true;
-    if (currentUser) { currentUser.karikari += 100; saveAndSync(); updateMiniKarikari(); showKarikariEffect(100); } 
+window.finishGrading = async function(btnElement) { 
+    // ★修正: ボタン連打防止 (引数で要素を受け取るか、DOMから取得)
+    const btn = btnElement || document.querySelector('#final-view button.orange-btn');
+    if(btn) {
+        btn.disabled = true;
+        btn.innerText = "採点完了！";
+    }
+
+    if (currentUser) { 
+        currentUser.karikari += 100; 
+        saveAndSync(); 
+        updateMiniKarikari(); 
+        showKarikariEffect(100); 
+    } 
+    
     await updateNellMessage("よくがんばったにゃ！カリカリ100個あげる！", "excited"); 
     setTimeout(() => { if(typeof backToLobby === 'function') backToLobby(true); }, 3000); 
 };
 
-window.pressAllSolved = function() { 
-    const btn = document.querySelector('button.main-btn.orange-btn');
-    if(btn) btn.disabled = true;
+window.pressAllSolved = function(btnElement) { 
+    // ★修正: ボタン連打防止
+    const btn = btnElement || document.querySelector('#problem-selection-view button.orange-btn');
+    if(btn) {
+        btn.disabled = true;
+        btn.innerText = "すごい！";
+    }
+
     if (currentUser) {
-        currentUser.karikari += 100; saveAndSync(); showKarikariEffect(100);
+        currentUser.karikari += 100; 
+        saveAndSync(); 
+        showKarikariEffect(100);
         updateMiniKarikari(); 
+        
         updateNellMessage("よくがんばったにゃ！カリカリ100個あげるにゃ！", "excited")
         .then(() => { setTimeout(() => { if(typeof backToLobby === 'function') backToLobby(true); }, 3000); });
     }
@@ -363,7 +382,7 @@ function endGame(c) {
     setTimeout(()=>{ alert(c?`すごい！全クリだにゃ！\nカリカリ ${score} 個ゲット！`:`おしい！\nカリカリ ${score} 個ゲット！`); if(currentUser&&score>0){currentUser.karikari+=score;if(typeof saveAndSync==='function')saveAndSync();updateMiniKarikari();showKarikariEffect(score);} }, 500);
 }
 
-// --- クロップ & 分析 (★固定枠) ---
+// --- クロップ & 分析 ---
 const handleFileUpload = async (file) => {
     if (isAnalyzing || !file) return;
     document.getElementById('upload-controls').classList.add('hidden');
@@ -401,6 +420,35 @@ const handleFileUpload = async (file) => {
                 { x: w * 0.9, y: h * 0.9 }, { x: w * 0.1, y: h * 0.9 }
             ];
             cropPoints = getDefaultRect(w, h);
+
+            const lowResBase64 = resizeImageForDetect(cropImg, 1000);
+            try {
+                const res = await fetch('/detect-document', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image: lowResBase64.split(',')[1] })
+                });
+                const data = await res.json();
+                
+                if (data.points && data.points.length === 4) {
+                    const detectedPoints = data.points.map(p => ({
+                        x: Math.max(0, Math.min(w, (p.x / 100) * w)),
+                        y: Math.max(0, Math.min(h, (p.y / 100) * h))
+                    }));
+                    const minX = Math.min(...detectedPoints.map(p => p.x));
+                    const maxX = Math.max(...detectedPoints.map(p => p.x));
+                    const minY = Math.min(...detectedPoints.map(p => p.y));
+                    const maxY = Math.max(...detectedPoints.map(p => p.y));
+                    
+                    if ((maxX - minX) > w * 0.2 && (maxY - minY) > h * 0.2) {
+                        cropPoints = detectedPoints;
+                    } else {
+                        cropPoints = getDefaultRect(w, h);
+                    }
+                }
+            } catch(err) { 
+                cropPoints = getDefaultRect(w, h); 
+            }
 
             loader.style.display = 'none';
             canvas.style.opacity = '1';
@@ -609,7 +657,6 @@ async function startLiveChat() {
         
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
         
-        // ★修正: IDベースで読み込み
         let statusSummary = `${currentUser.name}さんは今、お話しにきたにゃ。カリカリは${currentUser.karikari}個持ってるにゃ。`;
         const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
         const savedMemory = JSON.parse(localStorage.getItem(memoryKey) || '[]');
@@ -708,22 +755,8 @@ function stopLiveChat() {
     const btn = document.getElementById('mic-btn');
     if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; btn.style.boxShadow = "none"; }
 
-    if (hasLog && currentUser && window.NellMemory) {
-        console.log("📝 保存処理実行:", chatTranscript);
-        fetch('/summarize-notes', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: chatTranscript })
-        })
-        .then(r => r.json())
-        .then(data => {
-            if (data.notes && data.notes.length > 0) {
-                console.log("✅ 記憶しました:", data.notes);
-                window.NellMemory.applySummarizedNotes(currentUser.id, data.notes);
-            }
-        })
-        .catch(e => { console.error("保存エラー:", e); });
-        
+    if (hasLog && currentUser) {
+        saveToNellMemory('user', chatTranscript);
         chatTranscript = "";
     }
 }
@@ -744,7 +777,6 @@ async function startMicrophone() {
                         console.log("🎤 確定:", transcript);
                         chatTranscript += transcript + "\n";
                         
-                        // ★修正: 即時保存 (IDベース)
                         saveToNellMemory('user', transcript);
                         
                         const speechText = document.getElementById('user-speech-text');
@@ -963,7 +995,7 @@ function showGradingView() {
     const btnDiv = document.createElement('div');
     btnDiv.style.textAlign = "center";
     btnDiv.style.marginTop = "20px";
-    btnDiv.innerHTML = `<button onclick="finishGrading()" class="main-btn orange-btn">💯 採点おわり！</button>`;
+    btnDiv.innerHTML = `<button onclick="finishGrading(this)" class="main-btn orange-btn">💯 採点おわり！</button>`;
     container.appendChild(btnDiv);
 
     updateGradingMessage();
