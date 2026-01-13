@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v84.0: trimエラー完全修正・レイアウト統一対応) ---
+// --- anlyze.js (完全版 v82.0: trimエラー修正・全機能統合) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -268,7 +268,7 @@ window.backToProblemSelection = function() {
     }
     
     const backBtn = document.getElementById('main-back-btn');
-    if (backBtn) {
+    if(backBtn) {
         backBtn.classList.remove('hidden');
         backBtn.onclick = backToLobby;
     }
@@ -278,37 +278,20 @@ window.pressThanks = function() {
     window.backToProblemSelection();
 };
 
-window.finishGrading = async function(btnElement) { 
-    const btn = btnElement || document.querySelector('#final-view button.orange-btn');
-    if(btn) {
-        btn.disabled = true;
-        btn.innerText = "採点完了！";
-    }
-
-    if (currentUser) { 
-        currentUser.karikari += 100; 
-        saveAndSync(); 
-        updateMiniKarikari(); 
-        showKarikariEffect(100); 
-    } 
-    
+window.finishGrading = async function() { 
+    const btn = document.querySelector('button.main-btn.orange-btn');
+    if(btn) btn.disabled = true;
+    if (currentUser) { currentUser.karikari += 100; saveAndSync(); updateMiniKarikari(); showKarikariEffect(100); } 
     await updateNellMessage("よくがんばったにゃ！カリカリ100個あげる！", "excited"); 
     setTimeout(() => { if(typeof backToLobby === 'function') backToLobby(true); }, 3000); 
 };
 
-window.pressAllSolved = function(btnElement) { 
-    const btn = btnElement || document.querySelector('#problem-selection-view button.orange-btn');
-    if(btn) {
-        btn.disabled = true;
-        btn.innerText = "すごい！";
-    }
-
+window.pressAllSolved = function() { 
+    const btn = document.querySelector('button.main-btn.orange-btn');
+    if(btn) btn.disabled = true;
     if (currentUser) {
-        currentUser.karikari += 100; 
-        saveAndSync(); 
-        showKarikariEffect(100);
+        currentUser.karikari += 100; saveAndSync(); showKarikariEffect(100);
         updateMiniKarikari(); 
-        
         updateNellMessage("よくがんばったにゃ！カリカリ100個あげるにゃ！", "excited")
         .then(() => { setTimeout(() => { if(typeof backToLobby === 'function') backToLobby(true); }, 3000); });
     }
@@ -380,7 +363,7 @@ function endGame(c) {
     setTimeout(()=>{ alert(c?`すごい！全クリだにゃ！\nカリカリ ${score} 個ゲット！`:`おしい！\nカリカリ ${score} 個ゲット！`); if(currentUser&&score>0){currentUser.karikari+=score;if(typeof saveAndSync==='function')saveAndSync();updateMiniKarikari();showKarikariEffect(score);} }, 500);
 }
 
-// --- クロップ & 分析 ---
+// --- クロップ & 分析 (★固定枠) ---
 const handleFileUpload = async (file) => {
     if (isAnalyzing || !file) return;
     document.getElementById('upload-controls').classList.add('hidden');
@@ -608,7 +591,7 @@ const camIn = document.getElementById('hw-input-camera'); if(camIn) camIn.addEve
 const albIn = document.getElementById('hw-input-album'); if(albIn) albIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
 const oldIn = document.getElementById('hw-input'); if(oldIn) oldIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
 
-// --- Live Chat (Memory Integrated & Real-time Learning) ---
+// --- Live Chat (Memory Integrated) ---
 let liveResponseBuffer = ""; 
 
 async function startLiveChat() {
@@ -626,6 +609,7 @@ async function startLiveChat() {
         
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
         
+        // ★修正: IDベースで読み込み
         let statusSummary = `${currentUser.name}さんは今、お話しにきたにゃ。カリカリは${currentUser.karikari}個持ってるにゃ。`;
         const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
         const savedMemory = JSON.parse(localStorage.getItem(memoryKey) || '[]');
@@ -760,6 +744,7 @@ async function startMicrophone() {
                         console.log("🎤 確定:", transcript);
                         chatTranscript += transcript + "\n";
                         
+                        // ★修正: 即時保存 (IDベース)
                         saveToNellMemory('user', transcript);
                         
                         const speechText = document.getElementById('user-speech-text');
@@ -835,13 +820,13 @@ function updateMiniKarikari() { if(currentUser) { document.getElementById('mini-
 function showKarikariEffect(amount) { const container = document.querySelector('.nell-avatar-wrap'); if(container) { const floatText = document.createElement('div'); floatText.className = 'floating-text'; floatText.innerText = amount > 0 ? `+${amount}` : `${amount}`; floatText.style.color = amount > 0 ? '#ff9100' : '#ff5252'; floatText.style.right = '0px'; floatText.style.top = '0px'; container.appendChild(floatText); setTimeout(() => floatText.remove(), 1500); } const heartCont = document.getElementById('heart-container'); if(heartCont) { for(let i=0; i<8; i++) { const heart = document.createElement('div'); heart.innerText = amount > 0 ? '✨' : '💗'; heart.style.position = 'absolute'; heart.style.fontSize = (Math.random() * 1.5 + 1) + 'rem'; heart.style.left = (Math.random() * 100) + '%'; heart.style.top = (Math.random() * 100) + '%'; heart.style.pointerEvents = 'none'; heartCont.appendChild(heart); heart.animate([{ transform: 'scale(0) translateY(0)', opacity: 0 }, { transform: 'scale(1) translateY(-20px)', opacity: 1, offset: 0.2 }, { transform: 'scale(1.2) translateY(-100px)', opacity: 0 }], { duration: 1000 + Math.random() * 1000, easing: 'ease-out', fill: 'forwards' }).onfinish = () => heart.remove(); } } }
 
 // --- リアルタイム採点機能 ---
-// ★修正: 数値型が来てもエラーにならないように String(...) で変換
 window.checkAnswerDynamically = function(id, inputElem) {
     const newVal = inputElem.value;
     const problem = transcribedProblems.find(p => p.id === id);
     if (!problem) return;
 
-    problem.student_answer = String(newVal); // 確実に文字列にする
+    // 数値でも文字列に変換して比較
+    problem.student_answer = String(newVal);
     const normalizedStudent = String(newVal).trim();
     const normalizedCorrect = String(problem.correct_answer || "").trim();
     const isCorrect = (normalizedStudent !== "") && (normalizedStudent === normalizedCorrect);
@@ -863,7 +848,6 @@ window.checkAnswerDynamically = function(id, inputElem) {
     updateGradingMessage();
 };
 
-// ★修正: ここも数値型対策
 function updateGradingMessage() {
     let correctCount = 0;
     transcribedProblems.forEach(p => {
@@ -938,7 +922,7 @@ function showGradingView() {
     container.innerHTML = "";
 
     transcribedProblems.forEach(p => {
-        // ★修正: 数値型対策
+        // 安全に文字列化して比較
         const studentAns = String(p.student_answer || "").trim();
         const correctAns = String(p.correct_answer || "").trim();
         let isCorrect = (studentAns !== "") && (studentAns === correctAns);
