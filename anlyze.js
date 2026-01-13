@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v74.0: エラー修正・音声処理安定化) ---
+// --- anlyze.js (完全版 v74.0: クロップ枠形状の安定化) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -63,8 +63,7 @@ function startMouthAnimation() {
 }
 startMouthAnimation();
 
-// --- 記憶保存機能 (共通化) ---
-// ★修正: saveToLocalDebugLog を saveToNellMemory に統合・エイリアス化
+// --- 記憶保存機能 ---
 function saveToNellMemory(role, text) {
     let history = JSON.parse(localStorage.getItem('nell_raw_chat_log') || '[]');
     history.push({ role: role, text: text, time: new Date().toISOString() });
@@ -73,8 +72,7 @@ function saveToNellMemory(role, text) {
     console.log(`[記憶] ${role}: ${text}`);
 }
 
-// エラー回避のためのエイリアス (古い呼び出しに対応)
-const saveToLocalDebugLog = saveToNellMemory;
+const saveToLocalDebugLog = saveToNellMemory; // エイリアス
 
 // --- メッセージ更新 ---
 async function updateNellMessage(t, mood = "normal") {
@@ -84,8 +82,7 @@ async function updateNellMessage(t, mood = "normal") {
 
     if (t && t.includes("もぐもぐ")) { try { sfxBori.currentTime = 0; sfxBori.play(); } catch(e){} }
     if (!t || t.includes("ちょっと待ってて") || t.includes("もぐもぐ")) return;
-    
-    // ログ保存
+
     saveToNellMemory('nell', t);
 
     if (typeof speakNell === 'function') {
@@ -397,6 +394,7 @@ const handleFileUpload = async (file) => {
             const w = cropImg.width;
             const h = cropImg.height;
 
+            // ★修正: 確実な初期位置 (10%パディング長方形)
             const getDefaultRect = (w, h) => [
                 { x: w * 0.1, y: h * 0.1 }, { x: w * 0.9, y: h * 0.1 },
                 { x: w * 0.9, y: h * 0.9 }, { x: w * 0.1, y: h * 0.9 }
@@ -412,6 +410,7 @@ const handleFileUpload = async (file) => {
                 });
                 const data = await res.json();
                 
+                // ★修正: 検出結果の検証とフォールバック強化
                 if (data.points && data.points.length === 4) {
                     const detectedPoints = data.points.map(p => ({
                         x: Math.max(0, Math.min(w, (p.x / 100) * w)),
@@ -422,6 +421,7 @@ const handleFileUpload = async (file) => {
                     const minY = Math.min(...detectedPoints.map(p => p.y));
                     const maxY = Math.max(...detectedPoints.map(p => p.y));
                     
+                    // 台形や小さすぎる場合はデフォルトを使う
                     if ((maxX - minX) > w * 0.2 && (maxY - minY) > h * 0.2) {
                         cropPoints = detectedPoints;
                     } else {
@@ -429,6 +429,7 @@ const handleFileUpload = async (file) => {
                     }
                 }
             } catch(err) { 
+                console.error("Crop detect failed:", err);
                 cropPoints = getDefaultRect(w, h); 
             }
 
@@ -594,8 +595,6 @@ async function startAnalysis(b64) {
         
         setTimeout(() => { 
             document.getElementById('thinking-view').classList.add('hidden'); 
-            // 戻るボタンは非表示
-            // document.getElementById('main-back-btn').classList.remove('hidden');
             const doneMsg = "読めたにゃ！";
             
             if (currentMode === 'grade') {
@@ -623,7 +622,7 @@ const camIn = document.getElementById('hw-input-camera'); if(camIn) camIn.addEve
 const albIn = document.getElementById('hw-input-album'); if(albIn) albIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
 const oldIn = document.getElementById('hw-input'); if(oldIn) oldIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
 
-// --- Live Chat (Memory Integrated & Real-time Learning) ---
+// --- Live Chat (Memory Integrated) ---
 let liveResponseBuffer = ""; 
 
 async function startLiveChat() {
@@ -641,7 +640,6 @@ async function startLiveChat() {
         
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
         
-        // メモ帳から記憶を復元
         let statusSummary = `${currentUser.name}さんは今、お話しにきたにゃ。カリカリは${currentUser.karikari}個持ってるにゃ。`;
         const savedMemory = JSON.parse(localStorage.getItem('nell_raw_chat_log') || '[]');
         if (savedMemory.length > 0) {
@@ -699,11 +697,9 @@ async function startLiveChat() {
                     });
                 }
 
-                // ネル先生が話し終わったら学習＆ログ保存
                 if (data.serverContent?.turnComplete) {
                     if (liveResponseBuffer.trim().length > 0) {
-                        saveToNellMemory('nell', liveResponseBuffer); // 生ログ保存
-                        
+                        saveToNellMemory('nell', liveResponseBuffer); 
                         if (window.NellMemory) {
                             const lines = liveResponseBuffer.split(/[。！？」]/);
                             window.NellMemory.applySummarizedNotes(currentUser.id, lines);
@@ -732,7 +728,6 @@ function stopLiveChat() {
     if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
     if (workletNode) { workletNode.port.postMessage('stop'); workletNode.disconnect(); workletNode = null; }
     
-    // ユーザー発言も保存
     const hasLog = chatTranscript && chatTranscript.length > 2; 
     
     if (liveSocket) { liveSocket.close(); liveSocket = null; }
@@ -742,13 +737,8 @@ function stopLiveChat() {
     const btn = document.getElementById('mic-btn');
     if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; btn.style.boxShadow = "none"; }
 
-    // ★チャットログ保存 (Raw Log)
-    if (hasLog) {
-        saveToNellMemory('user', chatTranscript);
-    }
-
-    // ★記憶システムへの要約送信 (バックグラウンド)
     if (hasLog && currentUser && window.NellMemory) {
+        console.log("📝 保存処理実行:", chatTranscript);
         fetch('/summarize-notes', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -757,10 +747,11 @@ function stopLiveChat() {
         .then(r => r.json())
         .then(data => {
             if (data.notes && data.notes.length > 0) {
+                console.log("✅ 記憶しました:", data.notes);
                 window.NellMemory.applySummarizedNotes(currentUser.id, data.notes);
             }
         })
-        .catch(e => {});
+        .catch(e => { console.error("保存エラー:", e); });
         
         chatTranscript = "";
     }
@@ -771,10 +762,9 @@ async function startMicrophone() {
         if ('webkitSpeechRecognition' in window) {
             recognition = new webkitSpeechRecognition();
             recognition.continuous = true;
-            recognition.interimResults = true; // ★途中経過も取得
+            recognition.interimResults = true;
             recognition.lang = 'ja-JP';
 
-            // ★リアルタイムテキスト表示 & 送信
             recognition.onresult = (event) => {
                 let interimTranscript = '';
                 for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -783,13 +773,10 @@ async function startMicrophone() {
                         console.log("🎤 確定:", transcript);
                         chatTranscript += transcript + "\n";
                         
-                        // ★自分の発言を即時保存
-                        // saveToNellMemory('user', transcript); // stopLiveChatで一括保存するのでここはコメントアウト（重複防止）
-
+                        saveToNellMemory('user', transcript);
+                        
                         const speechText = document.getElementById('user-speech-text');
                         if(speechText) speechText.innerText = transcript;
-
-                        // 音声モードのためテキスト送信は不要 (ログのみ)
                     } else {
                         interimTranscript += event.results[i][0].transcript;
                         const speechText = document.getElementById('user-speech-text');
@@ -798,7 +785,6 @@ async function startMicrophone() {
                 }
             };
             
-            // ★ゾンビ復活ロジック
             recognition.onend = () => {
                 if (isRecognitionActive && liveSocket && liveSocket.readyState === WebSocket.OPEN) {
                     console.log("🔄 音声認識を再起動します...");
@@ -824,9 +810,8 @@ async function startMicrophone() {
             const btn = document.getElementById('mic-btn');
             if (btn) btn.style.boxShadow = volume > 0.01 ? `0 0 ${10 + volume * 500}px #ffeb3b` : "none";
             
-            // ★修正: ここで呼び出す関数名を統一
             if (volume > 0.05 && !window.userIsSpeakingNow) {
-                saveToNellMemory('user', '（お話し中...）'); // デバッグログ用
+                saveToNellMemory('user', '（お話し中...）');
                 window.userIsSpeakingNow = true;
                 setTimeout(() => { window.userIsSpeakingNow = false; }, 5000);
             }
@@ -983,7 +968,9 @@ function showGradingView() {
                     <div style="display:flex; gap:10px; font-size:0.9rem; align-items:center;">
                         <div style="flex:1;">
                             <div style="font-size:0.7rem; color:#666;">キミの答え (直せるよ)</div>
-                            <input type="text" value="${studentAns}" oninput="checkAnswerDynamically(${p.id}, this)" style="width:100%; padding:8px; border:2px solid #ddd; border-radius:8px; font-size:1rem; font-weight:bold; color:#333;">
+                            <input type="text" value="${studentAns}" 
+                                   oninput="checkAnswerDynamically(${p.id}, this)"
+                                   style="width:100%; padding:8px; border:2px solid #ddd; border-radius:8px; font-size:1rem; font-weight:bold; color:#333;">
                         </div>
                         <div style="width:80px; text-align:right;">
                             <button class="mini-teach-btn" onclick="startHint(${p.id})">教えて</button>
