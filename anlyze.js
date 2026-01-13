@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v78.0: 記憶注入の最適化・箇条書きリスト化) ---
+// --- anlyze.js (完全版 v79.0: 記憶フィルタリング強化・全機能統合) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -637,41 +637,24 @@ async function startLiveChat() {
         
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
         
-        // ★修正: 記憶の注入ロジック (箇条書きリスト化)
-        // 1. 最新の記憶を取得
-        const nellMemory = JSON.parse(localStorage.getItem(`neruMemory_${currentUser.id}`) || '{"personalLikes":{}, "episodes":[]}');
-        
-        let memoryList = [];
-        // 好きなものをリスト化
-        if (nellMemory.personalLikes) {
-            Object.keys(nellMemory.personalLikes).forEach(key => {
-                if (nellMemory.personalLikes[key] > 0) {
-                    // キーを日本語に変換 (簡易マッピング)
-                    const label = {
-                        "sports": "スポーツ", "pokemon": "ポケモン", "game": "ゲーム", 
-                        "cat": "猫", "dog": "犬", "art": "お絵かき", "food": "食べ物"
-                    }[key] || key;
-                    memoryList.push(`・${label}が好き`);
-                }
-            });
-        }
-        // エピソードを追加
-        if (nellMemory.episodes) {
-            nellMemory.episodes.slice(-5).forEach(ep => memoryList.push(`・${ep}`));
-        }
+        // ★修正: 記憶の箇条書き化 (フィルタリング強化)
+        let statusSummary = `${currentUser.name}さんは今、お話しにきたにゃ。カリカリは${currentUser.karikari}個持ってるにゃ。`;
 
-        const memoryString = memoryList.length > 0 ? memoryList.join("\n") : "特になし";
-
-        // 2. 状況サマリー作成
-        const statusSummary = `
-        ${currentUser.name}さんは今、お話しにきたにゃ。
-        カリカリは${currentUser.karikari}個持ってるにゃ。
+        // LocalStorageから生ログを取得
+        const savedMemory = JSON.parse(localStorage.getItem('nell_raw_chat_log') || '[]');
         
-        【重要：${currentUser.name}さんの記憶メモ】
-        ${memoryString}
-        ------------------
-        以上のことを絶対に忘れずに、会話に混ぜてにゃ！
-        `;
+        // 短すぎる発言を除外し、最近の会話（30件）をリスト化
+        const importantMemory = savedMemory.filter(m => m.text.length > 2);
+        const memoryList = importantMemory.slice(-30).map(m => `- ${m.text}`).join('\n');
+        
+        if (memoryList.length > 0) {
+            statusSummary += `
+            【${currentUser.name}さんの大事なメモ】
+            ${memoryList}
+            ------------------
+            このリストにある好きなものや過去の話を、会話の中で自然に思い出して話してにゃ！
+            `;
+        }
 
         const url = `${wsProto}//${location.host}?grade=${currentUser.grade}&name=${encodeURIComponent(currentUser.name)}&status=${encodeURIComponent(statusSummary)}`;
         
@@ -799,6 +782,10 @@ async function startMicrophone() {
                         
                         const speechText = document.getElementById('user-speech-text');
                         if(speechText) speechText.innerText = transcript;
+
+                        if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
+                            liveSocket.send(JSON.stringify({ type: 'log_text', text: transcript }));
+                        }
                     } else {
                         interimTranscript += event.results[i][0].transcript;
                         const speechText = document.getElementById('user-speech-text');
@@ -833,6 +820,7 @@ async function startMicrophone() {
             if (btn) btn.style.boxShadow = volume > 0.01 ? `0 0 ${10 + volume * 500}px #ffeb3b` : "none";
             
             if (volume > 0.05 && !window.userIsSpeakingNow) {
+                saveToLocalDebugLog('user', '（お話し中...）');
                 window.userIsSpeakingNow = true;
                 setTimeout(() => { window.userIsSpeakingNow = false; }, 5000);
             }
