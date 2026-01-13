@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v64.0: 記憶保存条件緩和) ---
+// --- anlyze.js (完全版 v69.0: 終了ボタン文言変更) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -20,7 +20,7 @@ let nextStartTime = 0;
 let connectionTimeout = null;
 
 let recognition = null;
-let isRecognitionActive = false;
+let isRecognitionActive = false; // 音声認識継続フラグ
 
 let gameCanvas, ctx, ball, paddle, bricks, score, gameRunning = false, gameAnimId = null;
 
@@ -106,6 +106,8 @@ window.selectMode = function(m) {
         updateNellMessage("「おはなしする」を押してね！", "gentle");
         const btn = document.getElementById('mic-btn');
         if(btn) { btn.innerText = "🎤 おはなしする"; btn.onclick = startLiveChat; btn.disabled = false; btn.style.background = "#ff85a1"; btn.style.boxShadow = "none"; }
+        const speechText = document.getElementById('user-speech-text');
+        if(speechText) speechText.innerText = "...";
     } else if (m === 'lunch') {
         document.getElementById('lunch-view').classList.remove('hidden'); lunchCount = 0; updateNellMessage("お腹ペコペコだにゃ……", "thinking");
     } else if (m === 'review') { 
@@ -586,8 +588,6 @@ async function startAnalysis(b64) {
         
         setTimeout(() => { 
             document.getElementById('thinking-view').classList.add('hidden'); 
-            // 修正: 戻るボタンは非表示 (UI設計変更)
-            // document.getElementById('main-back-btn').classList.remove('hidden');
             const doneMsg = "読めたにゃ！";
             
             if (currentMode === 'grade') {
@@ -615,7 +615,9 @@ const camIn = document.getElementById('hw-input-camera'); if(camIn) camIn.addEve
 const albIn = document.getElementById('hw-input-album'); if(albIn) albIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
 const oldIn = document.getElementById('hw-input'); if(oldIn) oldIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
 
-// --- Live Chat (Memory Integrated) ---
+// --- Live Chat (Memory Integrated & Real-time Learning) ---
+let liveResponseBuffer = ""; 
+
 async function startLiveChat() {
     const btn = document.getElementById('mic-btn');
     if (liveSocket) { stopLiveChat(); return; }
@@ -631,12 +633,13 @@ async function startLiveChat() {
         
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
         
-        let memoryHint = "";
-        if (window.NellMemory && currentUser) {
-            memoryHint = window.NellMemory.pickMemoryForContext(currentUser.id, "chat");
+        let statusSummary = `${currentUser.name}さんは今、お話しにきたにゃ。カリカリは${currentUser.karikari}個持ってるにゃ。`;
+        if (window.NellMemory) {
+            const memoryHint = window.NellMemory.pickMemoryForContext(currentUser.id, "chat");
+            if (memoryHint) statusSummary += ` ${memoryHint}`;
         }
 
-        const url = `${wsProto}//${location.host}?grade=${currentUser.grade}&name=${encodeURIComponent(currentUser.name)}&memory=${encodeURIComponent(memoryHint || "")}`;
+        const url = `${wsProto}//${location.host}?grade=${currentUser.grade}&name=${encodeURIComponent(currentUser.name)}&status=${encodeURIComponent(statusSummary)}`;
         
         liveSocket = new WebSocket(url);
         liveSocket.binaryType = "blob";
@@ -670,23 +673,29 @@ async function startLiveChat() {
                     clearTimeout(connectionTimeout); 
                     if(btn) { btn.innerText = "📞 つながった！(終了)"; btn.style.background = "#ff5252"; btn.disabled = false; }
                     updateNellMessage("お待たせ！なんでも話してにゃ！", "happy");
+                    
+                    isRecognitionActive = true;
                     await startMicrophone();
                 }
 
                 if (data.serverContent?.modelTurn?.parts) {
                     data.serverContent.modelTurn.parts.forEach(p => {
                         if (p.inlineData) playLivePcmAudio(p.inlineData.data);
+                        if (p.text) liveResponseBuffer += p.text;
                     });
+                }
+
+                if (data.serverContent?.turnComplete) {
+                    if (liveResponseBuffer.trim().length > 0 && window.NellMemory) {
+                        const lines = liveResponseBuffer.split(/[。！？」]/);
+                        window.NellMemory.applySummarizedNotes(currentUser.id, lines);
+                        liveResponseBuffer = ""; 
+                    }
                 }
             } catch (e) { console.error("WS Message Error:", e); }
         };
         
-        // ★修正: 終了ボタン表示
-        liveSocket.onclose = () => { 
-            stopLiveChat(); 
-            if(btn) btn.innerText = "こじんめんだん終了"; 
-        };
-        
+        liveSocket.onclose = () => { stopLiveChat(); if(btn) btn.innerText = "こじんめんだん終了(もう一度話す)"; };
         liveSocket.onerror = (e) => { 
             console.error("WS Error:", e);
             stopLiveChat(); 
@@ -697,13 +706,14 @@ async function startLiveChat() {
 }
 
 function stopLiveChat() {
+    isRecognitionActive = false;
+
     if (connectionTimeout) clearTimeout(connectionTimeout);
     if (recognition) { try { recognition.stop(); } catch(e) {} recognition = null; }
     if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
     if (workletNode) { workletNode.port.postMessage('stop'); workletNode.disconnect(); workletNode = null; }
     
-    // ソケットを閉じる前にフラグをチェックしないと二重実行などでログが消える可能性がある
-    const hasLog = chatTranscript && chatTranscript.length > 2; // ★緩和: 2文字以上あれば保存
+    const hasLog = chatTranscript && chatTranscript.length > 2; 
     
     if (liveSocket) { liveSocket.close(); liveSocket = null; }
     if (audioContext) { audioContext.close(); audioContext = null; }
@@ -712,9 +722,8 @@ function stopLiveChat() {
     const btn = document.getElementById('mic-btn');
     if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; btn.style.boxShadow = "none"; }
 
-    // ★記憶ロジック修正
     if (hasLog && currentUser && window.NellMemory) {
-        console.log("📝 会話ログを保存中:", chatTranscript);
+        console.log("📝 保存処理実行:", chatTranscript);
         fetch('/summarize-notes', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -729,7 +738,6 @@ function stopLiveChat() {
         })
         .catch(e => { console.error("保存エラー:", e); });
         
-        // 送信したらクリアする (二重送信防止)
         chatTranscript = "";
     }
 }
@@ -739,21 +747,38 @@ async function startMicrophone() {
         if ('webkitSpeechRecognition' in window) {
             recognition = new webkitSpeechRecognition();
             recognition.continuous = true;
-            recognition.interimResults = false;
+            recognition.interimResults = true;
             recognition.lang = 'ja-JP';
 
             recognition.onresult = (event) => {
+                let interimTranscript = '';
                 for (let i = event.resultIndex; i < event.results.length; ++i) {
                     if (event.results[i].isFinal) {
                         const transcript = event.results[i][0].transcript;
-                        console.log("🎤 認識:", transcript);
+                        console.log("🎤 確定:", transcript);
                         chatTranscript += transcript + "\n";
+                        
+                        const speechText = document.getElementById('user-speech-text');
+                        if(speechText) speechText.innerText = transcript;
+
                         if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
                             liveSocket.send(JSON.stringify({ type: 'log_text', text: transcript }));
                         }
+                    } else {
+                        interimTranscript += event.results[i][0].transcript;
+                        const speechText = document.getElementById('user-speech-text');
+                        if(speechText) speechText.innerText = interimTranscript;
                     }
                 }
             };
+            
+            recognition.onend = () => {
+                if (isRecognitionActive && liveSocket && liveSocket.readyState === WebSocket.OPEN) {
+                    console.log("🔄 音声認識を再起動します...");
+                    try { recognition.start(); } catch(e){}
+                }
+            };
+
             recognition.start();
         }
 
@@ -851,33 +876,26 @@ function updateGradingMessage() {
     else updateNellMessage(`間違ってても大丈夫！入力し直してみて！`, "gentle");
 }
 
-// --- スキャン結果表示 (教えてモード: UI統一・重複ボタン削除版) ---
+// --- スキャン結果表示 ---
 function renderProblemSelection() { 
     document.getElementById('problem-selection-view').classList.remove('hidden'); 
     const l = document.getElementById('transcribed-problem-list'); 
     l.innerHTML = ""; 
 
     transcribedProblems.forEach(p => { 
-        // 採点モードと統一されたカードデザイン
         const div = document.createElement('div');
         div.className = "grade-item";
         div.style.cssText = `border-bottom:1px solid #eee; padding:15px; margin-bottom:10px; border-radius:10px; background:white; box-shadow: 0 2px 5px rgba(0,0,0,0.05);`;
 
         div.innerHTML = `
             <div style="display:flex; justify-content:space-between; align-items:center;">
-                <!-- 左側: 問題番号 (青色) -->
                 <div style="font-weight:900; color:#4a90e2; font-size:1.5rem; width:50px; text-align:center;">
                     ${p.label || '問'}
                 </div>
-
-                <!-- 右側: コンテンツ -->
                 <div style="flex:1; margin-left:10px;">
-                    <!-- 問題文 -->
                     <div style="font-weight:bold; font-size:1.1rem; margin-bottom:8px; color:#333;">
                         ${p.question.substring(0, 40)}${p.question.length>40?'...':''}
                     </div>
-
-                    <!-- アクションエリア -->
                     <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px;">
                         <div style="flex:1;">
                             <input type="text" placeholder="ここにメモできるよ"
@@ -907,7 +925,7 @@ function renderMistakeSelection() {
     updateNellMessage("復習するにゃ？", "excited"); 
 }
 
-// --- 採点画面表示 (編集可能版・音声被り修正) ---
+// --- 採点画面表示 ---
 function showGradingView() {
     document.getElementById('problem-selection-view').classList.add('hidden');
     document.getElementById('final-view').classList.remove('hidden');

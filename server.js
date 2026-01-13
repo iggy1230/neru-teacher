@@ -1,4 +1,4 @@
-// --- server.js (完全版 v63.0: 記憶力強化・好き嫌い重視) ---
+// --- server.js (完全版 v68.0: 記憶強化・給食反応調整) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -218,11 +218,10 @@ app.post('/lunch-reaction', async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Lunch Error" }); }
 });
 
-// --- 5. 記憶要約API (★重要修正: 好き嫌い重視) ---
+// --- 5. 記憶要約API ---
 app.post('/summarize-notes', async (req, res) => {
     try {
         const { text } = req.body;
-        // 文字数制限を緩和（一言でも処理する）
         if (!text || text.length < 2) return res.json({ notes: [] });
 
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
@@ -330,7 +329,7 @@ wss.on('connection', async (clientWs, req) => {
     const params = parse(req.url, true).query;
     const grade = params.grade || "1";
     const name = decodeURIComponent(params.name || "生徒");
-    const memoryContext = decodeURIComponent(params.memory || "");
+    const statusContext = decodeURIComponent(params.status || "特になし");
 
     let geminiWs = null;
     const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${process.env.GEMINI_API_KEY}`;
@@ -352,7 +351,12 @@ wss.on('connection', async (clientWs, req) => {
                             あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。相手は小学${grade}年生の${name}さん。
                             語尾は「にゃ」。親しみやすく。
                             【NG】ロボットみたいな区切り、早口。
-                            【メモ】${memoryContext ? "・" + memoryContext : "・特になし"}
+                            
+                            【重要：今の状況と記憶（これを踏まえて話して！）】
+                            ${statusContext}
+                            【追加ルール】
+                            ・相手が好きなものや、新しく教えてくれたことは「〇〇が好きなんだにゃ！覚えたにゃ！」と復唱してにゃ。
+                            ・ロボットみたいな区切り、早口はNGだにゃ。
                             `
                         }]
                     }
