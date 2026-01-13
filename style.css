@@ -512,7 +512,7 @@ button { font-family: inherit; }
 .problem-selection-card {
     display: flex;
     flex-direction: column;
-    height: 65vh; /* 画面高さの65%に統一 */
+    height: auto; /* ★修正: 高さ制限をなくし全体スクロールにする */
     min-height: 400px;
 }
 
