@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v74.0: クロップ枠形状の安定化) ---
+// --- anlyze.js (完全版 v75.0: 記憶伝達の修正・全機能統合) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -72,7 +72,7 @@ function saveToNellMemory(role, text) {
     console.log(`[記憶] ${role}: ${text}`);
 }
 
-const saveToLocalDebugLog = saveToNellMemory; // エイリアス
+const saveToLocalDebugLog = saveToNellMemory;
 
 // --- メッセージ更新 ---
 async function updateNellMessage(t, mood = "normal") {
@@ -295,72 +295,6 @@ window.pressAllSolved = function() {
     }
 };
 
-// --- ゲーム内部関数 ---
-function fetchGameComment(type, score=0) {
-    fetch('/game-reaction', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type, name: currentUser.name, score }) }).then(r=>r.json()).then(d=>{ updateNellMessage(d.reply, d.mood || "excited"); }).catch(e=>{});
-}
-function initGame() { 
-    gameCanvas = document.getElementById('game-canvas'); 
-    if(!gameCanvas) return; 
-    ctx = gameCanvas.getContext('2d'); 
-    paddle = { w: 80, h: 10, x: 120, speed: 7 }; 
-    ball = { x: 160, y: 350, dx: 3, dy: -3, r: 8 }; 
-    score = 0; 
-    document.getElementById('game-score').innerText = score; 
-    bricks = []; 
-    for(let c=0; c<5; c++) for(let r=0; r<4; r++) bricks.push({ x: c*64+10, y: r*35+40, status: 1 }); 
-    
-    gameCanvas.removeEventListener("mousemove", movePaddle); 
-    gameCanvas.removeEventListener("touchmove", touchPaddle); 
-    gameCanvas.addEventListener("mousemove", movePaddle, false); 
-    gameCanvas.addEventListener("touchmove", touchPaddle, { passive: false }); 
-}
-
-function movePaddle(e) { 
-    const rect = gameCanvas.getBoundingClientRect(); 
-    const scaleX = gameCanvas.width / rect.width; 
-    const rx = (e.clientX - rect.left) * scaleX; 
-    if(rx > 0 && rx < gameCanvas.width) paddle.x = rx - paddle.w/2; 
-}
-
-function touchPaddle(e) { 
-    e.preventDefault(); 
-    const rect = gameCanvas.getBoundingClientRect(); 
-    const scaleX = gameCanvas.width / rect.width; 
-    const rx = (e.touches[0].clientX - rect.left) * scaleX; 
-    if(rx > 0 && rx < gameCanvas.width) paddle.x = rx - paddle.w/2; 
-}
-
-function drawGame() {
-    if (!gameRunning) return;
-    ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height); ctx.font = "20px serif"; bricks.forEach(b => { if(b.status === 1) ctx.fillText("🍖", b.x + 10, b.y + 20); });
-    ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2); ctx.fillStyle = "#ff85a1"; ctx.fill(); ctx.closePath(); ctx.fillStyle = "#4a90e2"; ctx.fillRect(paddle.x, gameCanvas.height - paddle.h - 10, paddle.w, paddle.h);
-    bricks.forEach(b => {
-        if(b.status === 1 && ball.x>b.x && ball.x<b.x+40 && ball.y>b.y && ball.y<b.y+30){
-            ball.dy*=-1; b.status=0; score++; document.getElementById('game-score').innerText=score;
-            try { sfxHit.currentTime=0; sfxHit.play(); } catch(e){}
-            if (Math.random() > 0.7 && !window.isNellSpeaking) { updateNellMessage(gameHitComments[Math.floor(Math.random() * gameHitComments.length)], "excited"); }
-            if(score===bricks.length) { endGame(true); return; }
-        }
-    });
-    if(ball.x+ball.dx > gameCanvas.width-ball.r || ball.x+ball.dx < ball.r) ball.dx *= -1;
-    if(ball.y+ball.dy < ball.r) ball.dy *= -1;
-    else if(ball.y+ball.dy > gameCanvas.height - ball.r - 20) {
-        if(ball.x > paddle.x && ball.x < paddle.x + paddle.w) { 
-            ball.dy *= -1; 
-            ball.dx = (ball.x - (paddle.x+paddle.w/2)) * 0.15;
-            try { sfxPaddle.currentTime = 0; sfxPaddle.play(); } catch(e){}
-        } 
-        else if(ball.y+ball.dy > gameCanvas.height-ball.r) { try { sfxOver.currentTime=0; sfxOver.play(); } catch(e){} endGame(false); return; }
-    }
-    ball.x += ball.dx; ball.y += ball.dy; gameAnimId = requestAnimationFrame(drawGame);
-}
-function endGame(c) {
-    gameRunning = false; if(gameAnimId)cancelAnimationFrame(gameAnimId); fetchGameComment("end", score); 
-    const s=document.getElementById('start-game-btn'); if(s){s.disabled=false;s.innerText="もう一回！";}
-    setTimeout(()=>{ alert(c?`すごい！全クリだにゃ！\nカリカリ ${score} 個ゲット！`:`おしい！\nカリカリ ${score} 個ゲット！`); if(currentUser&&score>0){currentUser.karikari+=score;if(typeof saveAndSync==='function')saveAndSync();updateMiniKarikari();showKarikariEffect(score);} }, 500);
-}
-
 // --- クロップ & 分析 ---
 const handleFileUpload = async (file) => {
     if (isAnalyzing || !file) return;
@@ -394,7 +328,6 @@ const handleFileUpload = async (file) => {
             const w = cropImg.width;
             const h = cropImg.height;
 
-            // ★修正: 確実な初期位置 (10%パディング長方形)
             const getDefaultRect = (w, h) => [
                 { x: w * 0.1, y: h * 0.1 }, { x: w * 0.9, y: h * 0.1 },
                 { x: w * 0.9, y: h * 0.9 }, { x: w * 0.1, y: h * 0.9 }
@@ -410,7 +343,6 @@ const handleFileUpload = async (file) => {
                 });
                 const data = await res.json();
                 
-                // ★修正: 検出結果の検証とフォールバック強化
                 if (data.points && data.points.length === 4) {
                     const detectedPoints = data.points.map(p => ({
                         x: Math.max(0, Math.min(w, (p.x / 100) * w)),
@@ -421,7 +353,6 @@ const handleFileUpload = async (file) => {
                     const minY = Math.min(...detectedPoints.map(p => p.y));
                     const maxY = Math.max(...detectedPoints.map(p => p.y));
                     
-                    // 台形や小さすぎる場合はデフォルトを使う
                     if ((maxX - minX) > w * 0.2 && (maxY - minY) > h * 0.2) {
                         cropPoints = detectedPoints;
                     } else {
@@ -429,7 +360,7 @@ const handleFileUpload = async (file) => {
                     }
                 }
             } catch(err) { 
-                console.error("Crop detect failed:", err);
+                console.error("Detect failed", err);
                 cropPoints = getDefaultRect(w, h); 
             }
 
@@ -622,7 +553,7 @@ const camIn = document.getElementById('hw-input-camera'); if(camIn) camIn.addEve
 const albIn = document.getElementById('hw-input-album'); if(albIn) albIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
 const oldIn = document.getElementById('hw-input'); if(oldIn) oldIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
 
-// --- Live Chat (Memory Integrated) ---
+// --- Live Chat (Memory Integrated & Real-time Learning) ---
 let liveResponseBuffer = ""; 
 
 async function startLiveChat() {
@@ -641,14 +572,18 @@ async function startLiveChat() {
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
         
         let statusSummary = `${currentUser.name}さんは今、お話しにきたにゃ。カリカリは${currentUser.karikari}個持ってるにゃ。`;
+        // ロビーで保存したログを読み込む
         const savedMemory = JSON.parse(localStorage.getItem('nell_raw_chat_log') || '[]');
         if (savedMemory.length > 0) {
-            const recent = savedMemory.slice(-4).map(m => `${m.role === 'nell' ? 'ネル' : '生徒'}: ${m.text}`).join("\n");
+            // ★修正: 最新の5件を確実に送る
+            const recent = savedMemory.slice(-5).map(m => `${m.role === 'nell' ? 'ネル' : '生徒'}: ${m.text}`).join("\n");
             statusSummary += `\n【直前の会話ログ】\n${recent}`;
         }
+        
+        // memory.jsの構造化データも送る
         if (window.NellMemory) {
             const memoryHint = window.NellMemory.pickMemoryForContext(currentUser.id, "chat");
-            if (memoryHint) statusSummary += `\n【長期記憶】${memoryHint}`;
+            if (memoryHint) statusSummary += `\n【重要メモ】${memoryHint}`;
         }
 
         const url = `${wsProto}//${location.host}?grade=${currentUser.grade}&name=${encodeURIComponent(currentUser.name)}&status=${encodeURIComponent(statusSummary)}`;
@@ -693,7 +628,10 @@ async function startLiveChat() {
                 if (data.serverContent?.modelTurn?.parts) {
                     data.serverContent.modelTurn.parts.forEach(p => {
                         if (p.inlineData) playLivePcmAudio(p.inlineData.data);
-                        if (p.text) liveResponseBuffer += p.text;
+                        // ★修正: サーバーからテキストが来ない場合もあるが、来たら保存
+                        if (p.text) {
+                            liveResponseBuffer += p.text;
+                        }
                     });
                 }
 
@@ -728,6 +666,7 @@ function stopLiveChat() {
     if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
     if (workletNode) { workletNode.port.postMessage('stop'); workletNode.disconnect(); workletNode = null; }
     
+    // ★緩和: 2文字以上
     const hasLog = chatTranscript && chatTranscript.length > 2; 
     
     if (liveSocket) { liveSocket.close(); liveSocket = null; }
@@ -737,8 +676,10 @@ function stopLiveChat() {
     const btn = document.getElementById('mic-btn');
     if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; btn.style.boxShadow = "none"; }
 
+    // 終了時にユーザー発言をまとめて要約に送る
     if (hasLog && currentUser && window.NellMemory) {
         console.log("📝 保存処理実行:", chatTranscript);
+        // 生ログ保存済みなので、ここでは要約APIへの送信のみ行う
         fetch('/summarize-notes', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -773,6 +714,7 @@ async function startMicrophone() {
                         console.log("🎤 確定:", transcript);
                         chatTranscript += transcript + "\n";
                         
+                        // ★修正: 即時保存
                         saveToNellMemory('user', transcript);
                         
                         const speechText = document.getElementById('user-speech-text');
@@ -811,7 +753,7 @@ async function startMicrophone() {
             if (btn) btn.style.boxShadow = volume > 0.01 ? `0 0 ${10 + volume * 500}px #ffeb3b` : "none";
             
             if (volume > 0.05 && !window.userIsSpeakingNow) {
-                saveToNellMemory('user', '（お話し中...）');
+                // saveToNellMemory('user', '（お話し中...）'); // ログが汚れるので削除
                 window.userIsSpeakingNow = true;
                 setTimeout(() => { window.userIsSpeakingNow = false; }, 5000);
             }
@@ -902,9 +844,13 @@ function renderProblemSelection() {
 
         div.innerHTML = `
             <div style="display:flex; justify-content:space-between; align-items:center;">
-                <div style="font-weight:900; color:#4a90e2; font-size:1.5rem; width:50px; text-align:center;">${p.label || '問'}</div>
+                <div style="font-weight:900; color:#4a90e2; font-size:1.5rem; width:50px; text-align:center;">
+                    ${p.label || '問'}
+                </div>
                 <div style="flex:1; margin-left:10px;">
-                    <div style="font-weight:bold; font-size:1.1rem; margin-bottom:8px; color:#333;">${p.question.substring(0, 40)}${p.question.length>40?'...':''}</div>
+                    <div style="font-weight:bold; font-size:1.1rem; margin-bottom:8px; color:#333;">
+                        ${p.question.substring(0, 40)}${p.question.length>40?'...':''}
+                    </div>
                     <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px;">
                         <div style="flex:1;">
                             <input type="text" placeholder="ここにメモできるよ"
