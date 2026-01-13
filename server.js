@@ -1,4 +1,4 @@
-// --- server.js (完全版 v78.0: 書き起こし精度統一・空欄処理修正・漢字ヒント平仮名化) ---
+// --- server.js (完全版 v79.0: モード間エラー修正・安定化) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -264,7 +264,7 @@ app.post('/summarize-notes', async (req, res) => {
     } catch (e) { res.json({ notes: [] }); }
 });
 
-// --- 6. 問題分析・採点 (Analyze: 精度向上・ルール統一) ---
+// --- 6. 問題分析・採点 (Analyze: 修正版) ---
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, analysisType } = req.body;
@@ -276,7 +276,7 @@ app.post('/analyze', async (req, res) => {
             generationConfig: { responseMimeType: "application/json" }
         });
 
-        // 教科別詳細ルール (★統一・強化)
+        // 教科別詳細ルール
         const rules = {
             'さんすう': {
                 points: `・筆算の横線とマイナス記号を混同しないこと。\n・累乗（2^2など）や分数を正確に書き起こすこと。`,
@@ -300,7 +300,7 @@ app.post('/analyze', async (req, res) => {
                   ・もし答えの漢字に言及する必要がある場合は、**必ず平仮名表記**にしてください。（例：「『はこ』という字は…」）
                   ・ヒント1: 「漢字のなりたち」を教える
                   ・ヒント2: 「辺やつくりや画数」を教える
-                  ・ヒント3: 「似た漢字」を教える
+                  ・ヒント3: 「似た漢字」や「熟語」を教える
                   ・読解問題の場合 ヒント1（場所）: 「答えがどこにあるか」を教える
                   ・読解問題の場合 ヒント2（キーワード）: 「注目すべき言葉」を教える
                   ・読解問題の場合 ヒント3（答え方）: 「語尾の指定」など`,
@@ -337,27 +337,25 @@ app.post('/analyze', async (req, res) => {
         };
         const r = rules[subject] || rules['さんすう'];
         
-        let studentAnswerInstruction = "";
-        let gradingInstruction = "";
+        let instructions = "";
         
         if (mode === 'explain') {
-            studentAnswerInstruction = `
-            ・「教えて」モードです。画像内の手書き文字（生徒の答え）は【完全に無視】してください。
-            ・"student_answer" は必ず空文字 "" にしてください。
+            // ★修正: 教えてモードでもしっかり問題文を抽出するように指示
+            instructions = `
+            【モード: 教えてネル先生】
+            1. 画像内の手書き文字（生徒の答え）は**完全に無視**してください。
+            2. "student_answer" は必ず空文字 "" にしてください。
+            3. 問題文、図表の数値、選択肢などは正確に書き起こしてください。
             `;
         } else {
-            studentAnswerInstruction = `
-            ・「採点」モードです。「手書き文字」への意識を強化してください。
-            ・子供特有の筆跡を考慮して、前後の文脈から数字や文字を推測してください。
-            ・読み取った生徒の答えを "student_answer" に入れてください。
-            ・【重要】生徒がまだ答えを書いていない（空欄の）場合は、勝手に正解を入れず、必ず空文字 "" にしてください。
-            `;
-            gradingInstruction = `
-            【採点基準】
-            ${r.grading}
-            ・ユーザーが答えを修正入力して、それが正解だった場合は「✕」から「○」に変更できるように判定ロジックを考慮してください。
-            ・どの問題も正確に正答を導き出してください。
-            ・１つの問いの中に複数の回答が必要なときは、必要な数だけ回答欄（JSONデータの要素）を分けてください。
+            // ★修正: 採点モードでの空欄処理を厳格化
+            instructions = `
+            【モード: 採点ネル先生】
+            1. 画像内の「手書き文字」を読み取ってください。
+            2. 子供の筆跡を考慮して、前後の文脈から数字や文字を推測してください。
+            3. **生徒が答えを書いていない（空欄の）場合は、勝手に正解を入れず、必ず空文字 "" にしてください。**
+            4. 採点基準: ${r.grading}
+            5. １つの問いの中に複数の回答が必要なときは、必要な数だけ回答欄（JSONデータの要素）を分けてください。
             `;
         }
 
@@ -372,15 +370,14 @@ app.post('/analyze', async (req, res) => {
             2. 大問、小問の数字や項目名は可能な限り書き起こしてください。
             3. 解答欄の有無に関わらず、設問文があれば抽出対象です。
             4. 教科別注目ポイント: ${r.points}
-            5. ${studentAnswerInstruction}
+            
+            ${instructions}
 
             【ヒント生成ルール（絶対遵守）】
             1. **絶対に答えそのもの（正解の漢字や用語、数値）は書かないこと。**
             2. **漢字の書き取り問題でヒントにその文字を含める場合は、必ず「平仮名」で表記すること。**
             3. 十分に検証して必ず正答を導き出した上で、以下の3段階のヒントを作成してください。
             ${r.hints}
-
-            ${gradingInstruction}
 
             【出力JSON形式】
             [
