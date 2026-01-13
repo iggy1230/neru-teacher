@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v80.0: 個別フォルダ記憶方式・全機能統合) ---
+// --- anlyze.js (完全版 v81.0: クロップ固定化・ID別記憶管理) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -63,21 +63,20 @@ function startMouthAnimation() {
 }
 startMouthAnimation();
 
-// --- ★修正: 記憶保存機能 (ユーザー別フォルダ方式) ---
+// --- 記憶保存機能 (★修正: IDベースに変更) ---
 function saveToNellMemory(role, text) {
-    if (!currentUser || !currentUser.name) return; // ユーザーがいない時は保存しない
+    if (!currentUser || !currentUser.id) return; // IDがない場合は保存しない
 
-    // ユーザー名ごとにキーを分ける
-    const memoryKey = `nell_raw_chat_log_${currentUser.name}`;
+    // ★修正: キーを「ユーザーID」に変更して重複防止
+    const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
     let history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
     
     history.push({ role: role, text: text, time: new Date().toISOString() });
     
-    // 最新50件まで保持
     if (history.length > 50) history.shift(); 
     
     localStorage.setItem(memoryKey, JSON.stringify(history));
-    console.log(`[${currentUser.name}の記憶] ${role}: ${text}`);
+    console.log(`[ID:${currentUser.id}の記憶] ${role}: ${text}`);
 }
 
 const saveToLocalDebugLog = saveToNellMemory;
@@ -369,7 +368,7 @@ function endGame(c) {
     setTimeout(()=>{ alert(c?`すごい！全クリだにゃ！\nカリカリ ${score} 個ゲット！`:`おしい！\nカリカリ ${score} 個ゲット！`); if(currentUser&&score>0){currentUser.karikari+=score;if(typeof saveAndSync==='function')saveAndSync();updateMiniKarikari();showKarikariEffect(score);} }, 500);
 }
 
-// --- クロップ & 分析 ---
+// --- クロップ & 分析 (★修正: AI認識削除・全画面固定) ---
 const handleFileUpload = async (file) => {
     if (isAnalyzing || !file) return;
     document.getElementById('upload-controls').classList.add('hidden');
@@ -402,40 +401,13 @@ const handleFileUpload = async (file) => {
             const w = cropImg.width;
             const h = cropImg.height;
 
-            const getDefaultRect = (w, h) => [
-                { x: w * 0.1, y: h * 0.1 }, { x: w * 0.9, y: h * 0.1 },
-                { x: w * 0.9, y: h * 0.9 }, { x: w * 0.1, y: h * 0.9 }
+            // ★修正: AI認識は行わず、常にデフォルトの長方形(10% padding)を使用
+            cropPoints = [
+                { x: w * 0.1, y: h * 0.1 }, 
+                { x: w * 0.9, y: h * 0.1 },
+                { x: w * 0.9, y: h * 0.9 }, 
+                { x: w * 0.1, y: h * 0.9 }
             ];
-            cropPoints = getDefaultRect(w, h);
-
-            const lowResBase64 = resizeImageForDetect(cropImg, 1000);
-            try {
-                const res = await fetch('/detect-document', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ image: lowResBase64.split(',')[1] })
-                });
-                const data = await res.json();
-                
-                if (data.points && data.points.length === 4) {
-                    const detectedPoints = data.points.map(p => ({
-                        x: Math.max(0, Math.min(w, (p.x / 100) * w)),
-                        y: Math.max(0, Math.min(h, (p.y / 100) * h))
-                    }));
-                    const minX = Math.min(...detectedPoints.map(p => p.x));
-                    const maxX = Math.max(...detectedPoints.map(p => p.x));
-                    const minY = Math.min(...detectedPoints.map(p => p.y));
-                    const maxY = Math.max(...detectedPoints.map(p => p.y));
-                    
-                    if ((maxX - minX) > w * 0.2 && (maxY - minY) > h * 0.2) {
-                        cropPoints = detectedPoints;
-                    } else {
-                        cropPoints = getDefaultRect(w, h);
-                    }
-                }
-            } catch(err) { 
-                cropPoints = getDefaultRect(w, h); 
-            }
 
             loader.style.display = 'none';
             canvas.style.opacity = '1';
@@ -446,18 +418,6 @@ const handleFileUpload = async (file) => {
     };
     reader.readAsDataURL(file);
 };
-
-function resizeImageForDetect(img, maxLen) {
-    const canvas = document.createElement('canvas');
-    let w = img.width, h = img.height;
-    if (w > h) { if (w > maxLen) { h *= maxLen/w; w = maxLen; } } 
-    else { if (h > maxLen) { w *= maxLen/h; h = maxLen; } }
-    canvas.width = w; canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    ctx.filter = 'contrast(1.2) brightness(1.1) grayscale(1)'; 
-    ctx.drawImage(img, 0, 0, w, h);
-    return canvas.toDataURL('image/jpeg', 0.6);
-}
 
 function initCustomCropper() {
     const modal = document.getElementById('cropper-modal');
@@ -644,28 +604,21 @@ async function startLiveChat() {
         
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
         
-        // ★修正: 記憶の注入ロジック (ユーザー名ごとのフォルダ)
-        const memoryKey = `nell_raw_chat_log_${currentUser.name}`;
+        // ★修正: IDベースのキーを使用
+        let statusSummary = `${currentUser.name}さんは今、お話しにきたにゃ。カリカリは${currentUser.karikari}個持ってるにゃ。`;
+        const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
         const savedMemory = JSON.parse(localStorage.getItem(memoryKey) || '[]');
         
-        // 3文字以上の大事な言葉だけを選んで、最新50件を取り出す
-        const importantMemory = savedMemory.filter(m => m.text.length > 2);
-        const memoryList = importantMemory.slice(-50).map(m => `- ${m.text}`).join('\n');
+        if (savedMemory.length > 0) {
+            // 大事なメモ（3文字以上）だけ抽出してリスト化
+            const importantMemory = savedMemory.filter(m => m.text.length > 2);
+            const memoryList = importantMemory.slice(-50).map(m => `- ${m.text}`).join('\n');
+            if (memoryList) {
+                statusSummary += `\n【${currentUser.name}さんの大事なメモ】\n${memoryList}`;
+            }
+        }
 
-        const lastSubjectInfo = currentSubject ? `直前まで${currentSubject}のお勉強をしてたにゃ。` : "";
-
-        // URLパラメータとして送信するカンペ
-        const statusContext = encodeURIComponent(`
-        【${currentUser.name}さんの専用メモ】
-        ${memoryList}
-        ------------------
-        ${lastSubjectInfo}
-        このリストにある内容を、${currentUser.name}さんの特徴としてしっかり覚えて話してにゃ！
-        `);
-
-        console.log("🚀 ネル先生に記憶を持って会いに行くにゃ！");
-
-        const url = `${wsProto}//${location.host}?grade=${currentUser.grade}&name=${encodeURIComponent(currentUser.name)}&status=${statusContext}`;
+        const url = `${wsProto}//${location.host}?grade=${currentUser.grade}&name=${encodeURIComponent(currentUser.name)}&status=${encodeURIComponent(statusSummary)}`;
         
         liveSocket = new WebSocket(url);
         liveSocket.binaryType = "blob";
@@ -714,10 +667,6 @@ async function startLiveChat() {
                 if (data.serverContent?.turnComplete) {
                     if (liveResponseBuffer.trim().length > 0) {
                         saveToNellMemory('nell', liveResponseBuffer); 
-                        if (window.NellMemory) {
-                            const lines = liveResponseBuffer.split(/[。！？」]/);
-                            window.NellMemory.applySummarizedNotes(currentUser.id, lines);
-                        }
                         liveResponseBuffer = ""; 
                     }
                 }
@@ -751,22 +700,9 @@ function stopLiveChat() {
     const btn = document.getElementById('mic-btn');
     if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; btn.style.boxShadow = "none"; }
 
-    if (hasLog && currentUser && window.NellMemory) {
-        console.log("📝 保存処理実行:", chatTranscript);
-        fetch('/summarize-notes', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: chatTranscript })
-        })
-        .then(r => r.json())
-        .then(data => {
-            if (data.notes && data.notes.length > 0) {
-                console.log("✅ 記憶しました:", data.notes);
-                window.NellMemory.applySummarizedNotes(currentUser.id, data.notes);
-            }
-        })
-        .catch(e => { console.error("保存エラー:", e); });
-        
+    if (hasLog && currentUser) {
+        // ★修正: 終了時に改めてユーザー発言を保存
+        saveToNellMemory('user', chatTranscript);
         chatTranscript = "";
     }
 }
@@ -791,6 +727,10 @@ async function startMicrophone() {
                         
                         const speechText = document.getElementById('user-speech-text');
                         if(speechText) speechText.innerText = transcript;
+
+                        if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
+                            liveSocket.send(JSON.stringify({ type: 'log_text', text: transcript }));
+                        }
                     } else {
                         interimTranscript += event.results[i][0].transcript;
                         const speechText = document.getElementById('user-speech-text');
