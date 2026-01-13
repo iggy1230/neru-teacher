@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v79.0: 記憶フィルタリング強化・全機能統合) ---
+// --- anlyze.js (完全版 v80.0: 個別フォルダ記憶方式・全機能統合) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -63,13 +63,21 @@ function startMouthAnimation() {
 }
 startMouthAnimation();
 
-// --- 記憶保存機能 ---
+// --- ★修正: 記憶保存機能 (ユーザー別フォルダ方式) ---
 function saveToNellMemory(role, text) {
-    let history = JSON.parse(localStorage.getItem('nell_raw_chat_log') || '[]');
+    if (!currentUser || !currentUser.name) return; // ユーザーがいない時は保存しない
+
+    // ユーザー名ごとにキーを分ける
+    const memoryKey = `nell_raw_chat_log_${currentUser.name}`;
+    let history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
+    
     history.push({ role: role, text: text, time: new Date().toISOString() });
+    
+    // 最新50件まで保持
     if (history.length > 50) history.shift(); 
-    localStorage.setItem('nell_raw_chat_log', JSON.stringify(history));
-    console.log(`[記憶] ${role}: ${text}`);
+    
+    localStorage.setItem(memoryKey, JSON.stringify(history));
+    console.log(`[${currentUser.name}の記憶] ${role}: ${text}`);
 }
 
 const saveToLocalDebugLog = saveToNellMemory;
@@ -426,7 +434,6 @@ const handleFileUpload = async (file) => {
                     }
                 }
             } catch(err) { 
-                console.error("Detect failed", err);
                 cropPoints = getDefaultRect(w, h); 
             }
 
@@ -637,26 +644,28 @@ async function startLiveChat() {
         
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
         
-        // ★修正: 記憶の箇条書き化 (フィルタリング強化)
-        let statusSummary = `${currentUser.name}さんは今、お話しにきたにゃ。カリカリは${currentUser.karikari}個持ってるにゃ。`;
-
-        // LocalStorageから生ログを取得
-        const savedMemory = JSON.parse(localStorage.getItem('nell_raw_chat_log') || '[]');
+        // ★修正: 記憶の注入ロジック (ユーザー名ごとのフォルダ)
+        const memoryKey = `nell_raw_chat_log_${currentUser.name}`;
+        const savedMemory = JSON.parse(localStorage.getItem(memoryKey) || '[]');
         
-        // 短すぎる発言を除外し、最近の会話（30件）をリスト化
+        // 3文字以上の大事な言葉だけを選んで、最新50件を取り出す
         const importantMemory = savedMemory.filter(m => m.text.length > 2);
-        const memoryList = importantMemory.slice(-30).map(m => `- ${m.text}`).join('\n');
-        
-        if (memoryList.length > 0) {
-            statusSummary += `
-            【${currentUser.name}さんの大事なメモ】
-            ${memoryList}
-            ------------------
-            このリストにある好きなものや過去の話を、会話の中で自然に思い出して話してにゃ！
-            `;
-        }
+        const memoryList = importantMemory.slice(-50).map(m => `- ${m.text}`).join('\n');
 
-        const url = `${wsProto}//${location.host}?grade=${currentUser.grade}&name=${encodeURIComponent(currentUser.name)}&status=${encodeURIComponent(statusSummary)}`;
+        const lastSubjectInfo = currentSubject ? `直前まで${currentSubject}のお勉強をしてたにゃ。` : "";
+
+        // URLパラメータとして送信するカンペ
+        const statusContext = encodeURIComponent(`
+        【${currentUser.name}さんの専用メモ】
+        ${memoryList}
+        ------------------
+        ${lastSubjectInfo}
+        このリストにある内容を、${currentUser.name}さんの特徴としてしっかり覚えて話してにゃ！
+        `);
+
+        console.log("🚀 ネル先生に記憶を持って会いに行くにゃ！");
+
+        const url = `${wsProto}//${location.host}?grade=${currentUser.grade}&name=${encodeURIComponent(currentUser.name)}&status=${statusContext}`;
         
         liveSocket = new WebSocket(url);
         liveSocket.binaryType = "blob";
@@ -782,10 +791,6 @@ async function startMicrophone() {
                         
                         const speechText = document.getElementById('user-speech-text');
                         if(speechText) speechText.innerText = transcript;
-
-                        if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
-                            liveSocket.send(JSON.stringify({ type: 'log_text', text: transcript }));
-                        }
                     } else {
                         interimTranscript += event.results[i][0].transcript;
                         const speechText = document.getElementById('user-speech-text');
@@ -820,7 +825,6 @@ async function startMicrophone() {
             if (btn) btn.style.boxShadow = volume > 0.01 ? `0 0 ${10 + volume * 500}px #ffeb3b` : "none";
             
             if (volume > 0.05 && !window.userIsSpeakingNow) {
-                saveToLocalDebugLog('user', '（お話し中...）');
                 window.userIsSpeakingNow = true;
                 setTimeout(() => { window.userIsSpeakingNow = false; }, 5000);
             }
