@@ -1,14 +1,12 @@
-// --- user.js (完全版 v60.0: ドア音追加) ---
+// --- user.js (完全版 v87.0: 制限解除・位置修正) ---
 
 let users = JSON.parse(localStorage.getItem('nekoneko_users')) || [];
 let currentUser = null;
 let modelsLoaded = false;
 let enrollFile = null;
 
-// 音源
 const sfxDoor = new Audio('class_door1.mp3');
 
-// 画像リソース
 const idBase = new Image();
 idBase.crossOrigin = "Anonymous"; 
 idBase.src = 'student-id-base.png?' + new Date().getTime();
@@ -45,7 +43,6 @@ function updateIDPreviewText() {
     if (gradeEl) gradeEl.innerText = gradeVal ? (gradeVal + "年生") : "";
 }
 
-// AIモデル読み込み
 async function loadFaceModels() {
     if (modelsLoaded) return;
     const status = document.getElementById('loading-models');
@@ -72,7 +69,6 @@ async function loadFaceModels() {
     }
 }
 
-// AI用リサイズ
 async function resizeForAI(img, maxSize = 800) {
     return new Promise(resolve => {
         const canvas = document.createElement('canvas');
@@ -90,7 +86,6 @@ async function resizeForAI(img, maxSize = 800) {
     });
 }
 
-// プレビュー更新
 async function updatePhotoPreview(file) {
     enrollFile = file;
     const slot = document.getElementById('id-photo-slot');
@@ -217,7 +212,6 @@ function closeEnrollCamera() {
     if (modal) modal.classList.add('hidden');
 }
 
-// 保存処理
 async function renderForSave() {
     const img = new Image();
     img.crossOrigin = "Anonymous";
@@ -317,9 +311,10 @@ async function renderForSave() {
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
 
+    // ★修正: テキスト位置微調整
     const textX = 346 * rx;
-    if (gradeVal) ctx.fillText(gradeVal + "年生", textX, 168 * ry); 
-    if (nameVal) ctx.fillText(nameVal, textX, 231 * ry);
+    if (gradeVal) ctx.fillText(gradeVal + "年生", textX, 168 * ry + 1); // +1px
+    if (nameVal) ctx.fillText(nameVal, textX, 231 * ry + 2); // +2px
 
     try {
         return canvas.toDataURL('image/png');
@@ -341,12 +336,7 @@ async function processAndCompleteEnrollment() {
     await new Promise(r => setTimeout(r, 100));
 
     const photoData = await renderForSave();
-
-    let finalPhoto = photoData;
-    if (!finalPhoto) {
-        alert("画像の保存に失敗しちゃったけど、入学手続きは進めるにゃ！");
-        finalPhoto = "student-id-base.png"; 
-    }
+    let finalPhoto = photoData || "student-id-base.png"; 
 
     try {
         const newUser = { 
@@ -357,11 +347,11 @@ async function processAndCompleteEnrollment() {
             memory: "" 
         };
         
+        // ★修正: 制限解除 (ただしブラウザ容量制限は避けられない)
         users.push(newUser);
         localStorage.setItem('nekoneko_users', JSON.stringify(users)); 
         
         window.justEnrolledId = newUser.id;
-
         renderUserList(); 
         
         document.getElementById('new-student-name').value = "";
@@ -375,11 +365,7 @@ async function processAndCompleteEnrollment() {
         switchScreen('screen-gate');
 
     } catch (err) {
-        if (err.name === 'QuotaExceededError') {
-            alert("データがいっぱいです。古い学生証を削除してください。");
-        } else {
-            alert("エラーが発生したにゃ……\n" + err.message);
-        }
+        alert("エラーが発生したにゃ……\n" + err.message);
     } finally {
         btn.disabled = false;
         btn.innerText = "入学する！";
@@ -394,7 +380,6 @@ function renderUserList() {
     users.forEach(user => { 
         const div = document.createElement('div'); 
         div.className = "user-card"; 
-        // student-id-base.png が背景の場合は、user.photo をそのまま使う
         div.innerHTML = `<img src="${user.photo}"><div class="card-karikari-badge">🍖${user.karikari || 0}</div><button class="delete-student-btn" onclick="deleteUser(event, ${user.id})">×</button>`; 
         div.onclick = () => login(user); 
         list.appendChild(div); 
@@ -402,12 +387,10 @@ function renderUserList() {
 }
 
 function login(user) { 
-    // ★追加: ドア音再生
     try { sfxDoor.currentTime = 0; sfxDoor.play(); } catch(e){}
 
     currentUser = user; 
     if (!currentUser.attendance) currentUser.attendance = {}; 
-    if (!currentUser.memory) currentUser.memory = ""; 
     const avatar = document.getElementById('current-student-avatar'); 
     if (avatar) avatar.src = user.photo; 
     const karikari = document.getElementById('karikari-count'); 
@@ -417,17 +400,6 @@ function login(user) {
     let isBonus = false; 
     if (!currentUser.attendance[today]) { 
         currentUser.attendance[today] = true; 
-        let streak = 1; 
-        let d = new Date(); 
-        while (true) { 
-            d.setDate(d.getDate() - 1); 
-            const key = d.toISOString().split('T')[0]; 
-            if (currentUser.attendance[key]) streak++; else break; 
-        } 
-        if (streak >= 3) { 
-            currentUser.karikari += 100; 
-            isBonus = true; 
-        } 
         saveAndSync(); 
     } 
     
@@ -436,9 +408,6 @@ function login(user) {
     if (window.justEnrolledId === user.id) {
         updateNellMessage(`${user.name}さん、入学おめでとうだにゃ！`, "excited");
         window.justEnrolledId = null; 
-    } else if (isBonus) { 
-        updateNellMessage("連続出席ボーナス！カリカリ100個プレゼントだにゃ！", "excited"); 
-        showKarikariEffect(100); updateMiniKarikari(); 
     } else { 
         updateNellMessage(`おかえり、${user.name}さん！`, "happy"); 
     } 

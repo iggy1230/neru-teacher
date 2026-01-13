@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v62.0: リスト縦長化・全機能対応) --- */
+/* --- style.css (完全版 v87.0: 出席簿スクロール対応) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -508,11 +508,10 @@ button { font-family: inherit; }
 .game-ui { text-align: center; margin-top: 10px; }
 .game-ui p { font-size: 1.2rem; font-weight: bold; color: #d84315; }
 
-/* ★修正: 問題リストカード (縦長レイアウト統一) */
 .problem-selection-card {
     display: flex;
     flex-direction: column;
-    height: auto; /* ★修正: 高さ制限をなくし全体スクロールにする */
+    height: auto; 
     min-height: 400px;
 }
 
@@ -569,22 +568,28 @@ button { font-family: inherit; }
     width: 100%;
 }
 
+/* ★修正: 出席簿グリッド (カレンダー用) */
 .attendance-grid {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
     gap: 5px;
+    /* スクロール可能にする */
+    max-height: 400px;
+    overflow-y: auto;
+    padding: 5px;
 }
 
 .day-box {
     background: white;
     border-radius: 5px;
-    padding: 5px;
+    padding: 2px;
     text-align: center;
-    font-size: 0.8rem;
+    font-size: 0.7rem; /* 文字サイズ調整 */
     aspect-ratio: 1;
     display: flex;
     flex-direction: column;
     justify-content: center;
+    border: 1px solid #eee;
 }
 
 .loader-inspect-img {
@@ -611,7 +616,6 @@ button { font-family: inherit; }
     overflow: hidden;
 }
 
-/* カメラ・クロッパーモーダル */
 .camera-modal {
     position: fixed;
     top: 0;
@@ -670,7 +674,6 @@ button { font-family: inherit; }
     padding-bottom: 20px;
 }
 
-/* 学生証カメラ用ボタン配置 */
 #camera-modal .camera-controls {
     justify-content: center;
     position: relative;

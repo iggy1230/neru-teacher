@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v86.0: ボタン連打防止・v82ベース) ---
+// --- anlyze.js (完全版 v87.0: ボタンリセット・クロップ枠・音声調整) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -268,7 +268,7 @@ window.backToProblemSelection = function() {
     }
     
     const backBtn = document.getElementById('main-back-btn');
-    if (backBtn) {
+    if(backBtn) {
         backBtn.classList.remove('hidden');
         backBtn.onclick = backToLobby;
     }
@@ -279,7 +279,6 @@ window.pressThanks = function() {
 };
 
 window.finishGrading = async function(btnElement) { 
-    // ★修正: ボタン連打防止 (引数で要素を受け取るか、DOMから取得)
     const btn = btnElement || document.querySelector('#final-view button.orange-btn');
     if(btn) {
         btn.disabled = true;
@@ -298,7 +297,6 @@ window.finishGrading = async function(btnElement) {
 };
 
 window.pressAllSolved = function(btnElement) { 
-    // ★修正: ボタン連打防止
     const btn = btnElement || document.querySelector('#problem-selection-view button.orange-btn');
     if(btn) {
         btn.disabled = true;
@@ -415,40 +413,12 @@ const handleFileUpload = async (file) => {
             const w = cropImg.width;
             const h = cropImg.height;
 
+            // ★修正: 30%パディング (0.3, 0.7)
             const getDefaultRect = (w, h) => [
-                { x: w * 0.1, y: h * 0.1 }, { x: w * 0.9, y: h * 0.1 },
-                { x: w * 0.9, y: h * 0.9 }, { x: w * 0.1, y: h * 0.9 }
+                { x: w * 0.3, y: h * 0.3 }, { x: w * 0.7, y: h * 0.3 },
+                { x: w * 0.7, y: h * 0.7 }, { x: w * 0.3, y: h * 0.7 }
             ];
             cropPoints = getDefaultRect(w, h);
-
-            const lowResBase64 = resizeImageForDetect(cropImg, 1000);
-            try {
-                const res = await fetch('/detect-document', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ image: lowResBase64.split(',')[1] })
-                });
-                const data = await res.json();
-                
-                if (data.points && data.points.length === 4) {
-                    const detectedPoints = data.points.map(p => ({
-                        x: Math.max(0, Math.min(w, (p.x / 100) * w)),
-                        y: Math.max(0, Math.min(h, (p.y / 100) * h))
-                    }));
-                    const minX = Math.min(...detectedPoints.map(p => p.x));
-                    const maxX = Math.max(...detectedPoints.map(p => p.x));
-                    const minY = Math.min(...detectedPoints.map(p => p.y));
-                    const maxY = Math.max(...detectedPoints.map(p => p.y));
-                    
-                    if ((maxX - minX) > w * 0.2 && (maxY - minY) > h * 0.2) {
-                        cropPoints = detectedPoints;
-                    } else {
-                        cropPoints = getDefaultRect(w, h);
-                    }
-                }
-            } catch(err) { 
-                cropPoints = getDefaultRect(w, h); 
-            }
 
             loader.style.display = 'none';
             canvas.style.opacity = '1';
@@ -755,8 +725,22 @@ function stopLiveChat() {
     const btn = document.getElementById('mic-btn');
     if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; btn.style.boxShadow = "none"; }
 
-    if (hasLog && currentUser) {
-        saveToNellMemory('user', chatTranscript);
+    if (hasLog && currentUser && window.NellMemory) {
+        console.log("📝 保存処理実行:", chatTranscript);
+        fetch('/summarize-notes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: chatTranscript })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.notes && data.notes.length > 0) {
+                console.log("✅ 記憶しました:", data.notes);
+                window.NellMemory.applySummarizedNotes(currentUser.id, data.notes);
+            }
+        })
+        .catch(e => { console.error("保存エラー:", e); });
+        
         chatTranscript = "";
     }
 }
@@ -857,10 +841,9 @@ window.checkAnswerDynamically = function(id, inputElem) {
     const problem = transcribedProblems.find(p => p.id === id);
     if (!problem) return;
 
-    // 数値でも文字列に変換して比較
-    problem.student_answer = String(newVal);
-    const normalizedStudent = String(newVal).trim();
-    const normalizedCorrect = String(problem.correct_answer || "").trim();
+    problem.student_answer = newVal;
+    const normalizedStudent = newVal.trim();
+    const normalizedCorrect = (problem.correct_answer || "").trim();
     const isCorrect = (normalizedStudent !== "") && (normalizedStudent === normalizedCorrect);
 
     const container = document.getElementById(`grade-item-${id}`);
@@ -883,8 +866,8 @@ window.checkAnswerDynamically = function(id, inputElem) {
 function updateGradingMessage() {
     let correctCount = 0;
     transcribedProblems.forEach(p => {
-        const s = String(p.student_answer || "").trim();
-        const c = String(p.correct_answer || "").trim();
+        const s = (p.student_answer || "").trim();
+        const c = (p.correct_answer || "").trim();
         if (s !== "" && s === c) correctCount++;
     });
 
@@ -894,7 +877,7 @@ function updateGradingMessage() {
     else updateNellMessage(`間違ってても大丈夫！入力し直してみて！`, "gentle");
 }
 
-// --- スキャン結果表示 ---
+// --- スキャン結果表示 (教えてモード: ボタンリセット追加) ---
 function renderProblemSelection() { 
     document.getElementById('problem-selection-view').classList.remove('hidden'); 
     const l = document.getElementById('transcribed-problem-list'); 
@@ -929,6 +912,13 @@ function renderProblemSelection() {
         `;
         l.appendChild(div);
     }); 
+    
+    // ★修正: ボタンの状態をリセット
+    const btn = document.querySelector('#problem-selection-view button.orange-btn');
+    if (btn) {
+        btn.disabled = false;
+        btn.innerText = "✨ ぜんぶわかったにゃ！";
+    }
 }
 
 // --- 復習モード ---
@@ -954,7 +944,6 @@ function showGradingView() {
     container.innerHTML = "";
 
     transcribedProblems.forEach(p => {
-        // 安全に文字列化して比較
         const studentAns = String(p.student_answer || "").trim();
         const correctAns = String(p.correct_answer || "").trim();
         let isCorrect = (studentAns !== "") && (studentAns === correctAns);
