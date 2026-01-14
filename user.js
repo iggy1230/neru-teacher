@@ -1,4 +1,4 @@
-// --- user.js (完全版 v89.0: 画像圧縮強化・容量エラー対策) ---
+// --- user.js (完全版 v90.2: 背景透明化修正・テキスト位置調整) ---
 
 let users = JSON.parse(localStorage.getItem('nekoneko_users')) || [];
 let currentUser = null;
@@ -318,11 +318,13 @@ async function renderForSave() {
 
     const textX = 346 * rx;
     if (gradeVal) ctx.fillText(gradeVal + "年生", textX, 168 * ry + 1); 
-    if (nameVal) ctx.fillText(nameVal, textX, 231 * ry + 2);
+    
+    // ★修正: 氏名を1px下げる (+2 -> +3)
+    if (nameVal) ctx.fillText(nameVal, textX, 231 * ry + 3);
 
     try {
-        // ★修正: JPEG形式で品質を落として圧縮 (0.6)
-        return canvas.toDataURL('image/jpeg', 0.6);
+        // ★修正: 黒い背景を防ぐため PNG 形式に変更 (透明度維持)
+        return canvas.toDataURL('image/png');
     } catch (e) {
         console.error("Canvas export failed:", e);
         return null;
