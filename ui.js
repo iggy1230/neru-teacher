@@ -1,4 +1,4 @@
-// --- ui.js (完全版 v88.0: カレンダー機能実装・月切り替え対応) ---
+// --- ui.js (完全版 v89.0: 出席簿ボタン配置修正・全機能統合) ---
 
 const sfxChime = new Audio('Jpn_sch_chime.mp3');
 const sfxBtn = new Audio('botan1.mp3');
@@ -75,38 +75,34 @@ function showEnrollment() {
 
 function showAttendance() {
     switchScreen('screen-attendance');
-    // 開くたびに今月にリセットする場合はここを有効化
-    // currentCalendarDate = new Date(); 
     if (typeof renderAttendance === 'function') renderAttendance();
 }
 
-// ★修正: カレンダー描画ロジック (1ヶ月表示・月切り替え)
-// グローバルスコープに関数として登録 (HTMLのonclickから呼べるようにwindowに紐づけ)
+// ★修正: カレンダー描画ロジック (ボタン配置修正済み)
 window.renderAttendance = function() {
     const grid = document.getElementById('attendance-grid');
     if (!grid || !currentUser) return;
 
-    // --- ① カレンダーの準備 ---
     const year = currentCalendarDate.getFullYear();
     const month = currentCalendarDate.getMonth(); // 0-11
     
-    // 月の初めの日と、月の日数を計算
     const firstDay = new Date(year, month, 1).getDay(); // 0(日)〜6(土)
     const daysInMonth = new Date(year, month + 1, 0).getDate();
 
-    grid.innerHTML = ""; // 一旦空にする
+    grid.innerHTML = ""; 
     
-    // --- ② ヘッダー（○月 ＋ ボタン）を作る ---
+    // ヘッダー（○月 ＋ ボタン）
     const header = document.createElement('div');
-    header.style = "grid-column: span 7; display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-weight: bold; font-size: 1.2rem; padding: 5px;";
+    // ★修正: justify-content: space-between で左右に配置
+    header.style = "grid-column: span 7; display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; font-weight: bold; font-size: 1.2rem; padding: 0 10px;";
     header.innerHTML = `
-        <button onclick="changeCalendarMonth(-1)" class="mini-teach-btn" style="width:40px; font-size:1.2rem;">◀</button>
-        <span>${year}年 ${month + 1}月</span>
-        <button onclick="changeCalendarMonth(1)" class="mini-teach-btn" style="width:40px; font-size:1.2rem;">▶</button>
+        <button onclick="changeCalendarMonth(-1)" class="mini-teach-btn" style="width:40px; height:40px; font-size:1.2rem; margin:0; display:flex; align-items:center; justify-content:center;">◀</button>
+        <span style="flex: 1; text-align: center;">${year}年 ${month + 1}月</span>
+        <button onclick="changeCalendarMonth(1)" class="mini-teach-btn" style="width:40px; height:40px; font-size:1.2rem; margin:0; display:flex; align-items:center; justify-content:center;">▶</button>
     `;
     grid.appendChild(header);
 
-    // --- ③ 曜日（日〜土）を表示 ---
+    // 曜日
     const weekDays = ['日', '月', '火', '水', '木', '金', '土'];
     weekDays.forEach(day => {
         const dayEl = document.createElement('div');
@@ -115,12 +111,12 @@ window.renderAttendance = function() {
         grid.appendChild(dayEl);
     });
 
-    // --- ④ 空白（1日より前のマス）を作る ---
+    // 空白
     for (let i = 0; i < firstDay; i++) {
         grid.appendChild(document.createElement('div'));
     }
 
-    // --- ⑤ 日付のマスを作る ---
+    // 日付
     const todayStr = new Date().toISOString().split('T')[0];
 
     for (let day = 1; day <= daysInMonth; day++) {
@@ -130,11 +126,9 @@ window.renderAttendance = function() {
         const div = document.createElement('div');
         div.className = "day-box";
         
-        // CSSはstyle.cssでも調整するが、動的なスタイルはここで適用
         let borderStyle = "1px solid #f0f0f0";
         let bgStyle = "#fff";
         
-        // 今日なら枠をピンクにする
         if (dateKey === todayStr) {
             borderStyle = "2px solid #ff85a1";
             bgStyle = "#fff0f3";
@@ -163,7 +157,6 @@ window.renderAttendance = function() {
     }
 };
 
-// ★追加: 月切り替え関数
 window.changeCalendarMonth = function(diff) {
     currentCalendarDate.setMonth(currentCalendarDate.getMonth() + diff);
     renderAttendance();
