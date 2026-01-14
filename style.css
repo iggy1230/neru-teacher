@@ -380,7 +380,13 @@ button { font-family: inherit; }
 }
 
 .lobby-top { text-align: center; margin: 20px 0; }
-.mini-id { transform: scale(0.8); margin-bottom: 0; transform-origin: top center; }
+.mini-id { 
+    transform: scale(0.8); 
+    margin-bottom: 0; 
+    transform-origin: top center;
+    box-shadow: none !important; /* 枠（影）を削除 */
+    background: transparent !important; /* 背景透明 */
+}
 
 .karikari-counter {
     text-align: center;
@@ -390,8 +396,9 @@ button { font-family: inherit; }
     background: #fff3e0;
     padding: 5px 15px;
     border-radius: 20px;
-    display: inline-block;
-    margin-bottom: 15px;
+    display: block; /* ブロックに変更して中央配置 */
+    width: fit-content; /* 幅をコンテンツに合わせる */
+    margin: -20px auto 15px auto; /* マイナスマージンで上に寄せる */
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 

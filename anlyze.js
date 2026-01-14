@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v90.0: ベース維持＋宿題カメラ修正) ---
+// --- anlyze.js (完全版 v90.1: 採点発話タイミング修正版) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -643,11 +643,14 @@ async function startAnalysis(b64) {
             const doneMsg = "読めたにゃ！";
             
             if (currentMode === 'grade') {
-                showGradingView(); 
+                // 発話を抑制して画面だけ更新
+                showGradingView(true); 
+                // 「読めたにゃ！」を発話
                 updateNellMessage(doneMsg, "happy").then(() => {
+                    // 間を空けてから採点結果メッセージを再生
                     setTimeout(() => {
-                        updateNellMessage("間違ってても大丈夫！入力しなおしてみてにゃ！", "gentle");
-                    }, 1200);
+                        updateGradingMessage(); 
+                    }, 1500);
                 });
             } else { 
                 renderProblemSelection(); 
@@ -993,7 +996,7 @@ function renderMistakeSelection() {
 }
 
 // --- 採点画面表示 ---
-function showGradingView() {
+function showGradingView(silent = false) {
     document.getElementById('problem-selection-view').classList.add('hidden');
     document.getElementById('final-view').classList.remove('hidden');
     document.getElementById('grade-sheet-container').classList.remove('hidden');
@@ -1047,5 +1050,8 @@ function showGradingView() {
     btnDiv.innerHTML = `<button onclick="finishGrading(this)" class="main-btn orange-btn">💯 採点おわり！</button>`;
     container.appendChild(btnDiv);
 
-    updateGradingMessage();
+    // silentがfalseのときのみ発話する
+    if (!silent) {
+        updateGradingMessage();
+    }
 }
