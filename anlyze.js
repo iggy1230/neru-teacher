@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v87.0: ボタンリセット・クロップ枠・音声調整) ---
+// --- anlyze.js (完全版 v88.0: 最強の記憶回路実装・IDベース管理) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -63,15 +63,21 @@ function startMouthAnimation() {
 }
 startMouthAnimation();
 
-// --- 記憶保存機能 ---
+// --- ★修正: 最強の記憶保存 (IDベース・100件保存) ---
 function saveToNellMemory(role, text) {
     if (!currentUser || !currentUser.id) return;
-    const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
-    let history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
-    history.push({ role: role, text: text, time: new Date().toISOString() });
-    if (history.length > 50) history.shift(); 
-    localStorage.setItem(memoryKey, JSON.stringify(history));
-    console.log(`[ID:${currentUser.id}の記憶] ${role}: ${text}`);
+    
+    // ユーザーIDごとの専用キー
+    const memoryKey = `nell_memory_${currentUser.id}`;
+    let memory = JSON.parse(localStorage.getItem(memoryKey) || '[]');
+    
+    memory.push({ role, text, time: new Date().toISOString() });
+    
+    // 100件まで保持
+    if (memory.length > 100) memory.shift(); 
+    
+    localStorage.setItem(memoryKey, JSON.stringify(memory));
+    console.log(`[ID:${currentUser.id} の記憶を保存] ${text}`);
 }
 
 const saveToLocalDebugLog = saveToNellMemory;
@@ -380,7 +386,7 @@ function endGame(c) {
     setTimeout(()=>{ alert(c?`すごい！全クリだにゃ！\nカリカリ ${score} 個ゲット！`:`おしい！\nカリカリ ${score} 個ゲット！`); if(currentUser&&score>0){currentUser.karikari+=score;if(typeof saveAndSync==='function')saveAndSync();updateMiniKarikari();showKarikariEffect(score);} }, 500);
 }
 
-// --- クロップ & 分析 ---
+// --- クロップ & 分析 (★固定枠) ---
 const handleFileUpload = async (file) => {
     if (isAnalyzing || !file) return;
     document.getElementById('upload-controls').classList.add('hidden');
@@ -413,7 +419,7 @@ const handleFileUpload = async (file) => {
             const w = cropImg.width;
             const h = cropImg.height;
 
-            // ★修正: 30%パディング (0.3, 0.7)
+            // ★修正: 30%パディング
             const getDefaultRect = (w, h) => [
                 { x: w * 0.3, y: h * 0.3 }, { x: w * 0.7, y: h * 0.3 },
                 { x: w * 0.7, y: h * 0.7 }, { x: w * 0.3, y: h * 0.7 }
@@ -609,7 +615,7 @@ const camIn = document.getElementById('hw-input-camera'); if(camIn) camIn.addEve
 const albIn = document.getElementById('hw-input-album'); if(albIn) albIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
 const oldIn = document.getElementById('hw-input'); if(oldIn) oldIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
 
-// --- Live Chat (Memory Integrated) ---
+// --- Live Chat (Memory Integrated & Real-time Learning) ---
 let liveResponseBuffer = ""; 
 
 async function startLiveChat() {
@@ -627,16 +633,22 @@ async function startLiveChat() {
         
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
         
+        // ★修正: 記憶の注入ロジック (箇条書きリスト化)
         let statusSummary = `${currentUser.name}さんは今、お話しにきたにゃ。カリカリは${currentUser.karikari}個持ってるにゃ。`;
-        const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
+        const memoryKey = `nell_memory_${currentUser.id}`;
         const savedMemory = JSON.parse(localStorage.getItem(memoryKey) || '[]');
         
-        if (savedMemory.length > 0) {
-            const importantMemory = savedMemory.filter(m => m.text.length > 2);
-            const memoryList = importantMemory.slice(-50).map(m => `- ${m.text}`).join('\n');
-            if (memoryList) {
-                statusSummary += `\n【${currentUser.name}さんの大事なメモ】\n${memoryList}`;
-            }
+        const importantMemory = savedMemory.filter(m => m.text.length > 2);
+        const memoryList = importantMemory.slice(-100).map(m => `- ${m.text.substring(0, 30)}`).join('\n');
+
+        if (memoryList.length > 0) {
+            statusSummary += `
+            【${currentUser.name}さんの長期記憶】
+            ${memoryList}
+            ------------------
+            このリストは、この子が過去に話した大事なことだにゃ。
+            これを全部踏まえて、親友みたいに接してあげてにゃ！
+            `;
         }
 
         const url = `${wsProto}//${location.host}?grade=${currentUser.grade}&name=${encodeURIComponent(currentUser.name)}&status=${encodeURIComponent(statusSummary)}`;
@@ -688,10 +700,6 @@ async function startLiveChat() {
                 if (data.serverContent?.turnComplete) {
                     if (liveResponseBuffer.trim().length > 0) {
                         saveToNellMemory('nell', liveResponseBuffer); 
-                        if (window.NellMemory) {
-                            const lines = liveResponseBuffer.split(/[。！？」]/);
-                            window.NellMemory.applySummarizedNotes(currentUser.id, lines);
-                        }
                         liveResponseBuffer = ""; 
                     }
                 }
@@ -716,33 +724,14 @@ function stopLiveChat() {
     if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
     if (workletNode) { workletNode.port.postMessage('stop'); workletNode.disconnect(); workletNode = null; }
     
-    const hasLog = chatTranscript && chatTranscript.length > 2; 
-    
     if (liveSocket) { liveSocket.close(); liveSocket = null; }
     if (audioContext) { audioContext.close(); audioContext = null; }
     window.isNellSpeaking = false;
     
     const btn = document.getElementById('mic-btn');
     if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; btn.style.boxShadow = "none"; }
-
-    if (hasLog && currentUser && window.NellMemory) {
-        console.log("📝 保存処理実行:", chatTranscript);
-        fetch('/summarize-notes', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: chatTranscript })
-        })
-        .then(r => r.json())
-        .then(data => {
-            if (data.notes && data.notes.length > 0) {
-                console.log("✅ 記憶しました:", data.notes);
-                window.NellMemory.applySummarizedNotes(currentUser.id, data.notes);
-            }
-        })
-        .catch(e => { console.error("保存エラー:", e); });
-        
-        chatTranscript = "";
-    }
+    
+    // ★ユーザー発言保存はリアルタイムで行うためここでは不要
 }
 
 async function startMicrophone() {
@@ -759,8 +748,8 @@ async function startMicrophone() {
                     if (event.results[i].isFinal) {
                         const transcript = event.results[i][0].transcript;
                         console.log("🎤 確定:", transcript);
-                        chatTranscript += transcript + "\n";
                         
+                        // ★自分の発言を即時保存
                         saveToNellMemory('user', transcript);
                         
                         const speechText = document.getElementById('user-speech-text');
@@ -841,9 +830,9 @@ window.checkAnswerDynamically = function(id, inputElem) {
     const problem = transcribedProblems.find(p => p.id === id);
     if (!problem) return;
 
-    problem.student_answer = newVal;
-    const normalizedStudent = newVal.trim();
-    const normalizedCorrect = (problem.correct_answer || "").trim();
+    problem.student_answer = String(newVal);
+    const normalizedStudent = String(newVal).trim();
+    const normalizedCorrect = String(problem.correct_answer || "").trim();
     const isCorrect = (normalizedStudent !== "") && (normalizedStudent === normalizedCorrect);
 
     const container = document.getElementById(`grade-item-${id}`);
@@ -866,8 +855,8 @@ window.checkAnswerDynamically = function(id, inputElem) {
 function updateGradingMessage() {
     let correctCount = 0;
     transcribedProblems.forEach(p => {
-        const s = (p.student_answer || "").trim();
-        const c = (p.correct_answer || "").trim();
+        const s = String(p.student_answer || "").trim();
+        const c = String(p.correct_answer || "").trim();
         if (s !== "" && s === c) correctCount++;
     });
 
@@ -933,7 +922,7 @@ function renderMistakeSelection() {
     updateNellMessage("復習するにゃ？", "excited"); 
 }
 
-// --- 採点画面表示 ---
+// --- 採点画面表示 (編集可能版) ---
 function showGradingView() {
     document.getElementById('problem-selection-view').classList.add('hidden');
     document.getElementById('final-view').classList.remove('hidden');
