@@ -1,28 +1,20 @@
-// --- user.js (完全版 v92.0: CloudSync対応) ---
+// --- user.js (完全版 v92.1: 設定ファイル分離対応) ---
 
-// ============================================
-// ★Firebase設定 (ここにコンソールの設定値を貼る)
-// ============================================
-const firebaseConfig = {
-  apiKey: "AIzaSyCQ-RMDyxHy7j9PcIRoSPAkOCET6Vws-uk",
-  authDomain: "nerusensei-19b48.firebaseapp.com",
-  projectId: "nerusensei-19b48",
-  storageBucket: "nerusensei-19b48.firebasestorage.app",
-  messagingSenderId: "236770762272",
-  appId: "1:236770762272:web:6ad03298d7d0faae7e6645",
-  measurementId: "G-WV5REMN31P"
-};
-
-// Firebase初期化
+// Firebase初期化 (firebaseConfigは firebase-config.js から読み込まれる前提)
 let app, auth, db;
-if (typeof firebase !== 'undefined' && !firebase.apps.length) {
-    app = firebase.initializeApp(firebaseConfig);
-    auth = firebase.auth();
-    db = firebase.firestore();
-} else if (typeof firebase !== 'undefined') {
-    app = firebase.app();
-    auth = firebase.auth();
-    db = firebase.firestore();
+
+if (typeof firebaseConfig === 'undefined') {
+    console.warn("firebase-config.js が読み込まれていないか、設定されていません。クラウド機能は使用できません。");
+} else {
+    if (typeof firebase !== 'undefined' && !firebase.apps.length) {
+        app = firebase.initializeApp(firebaseConfig);
+        auth = firebase.auth();
+        db = firebase.firestore();
+    } else if (typeof firebase !== 'undefined') {
+        app = firebase.app();
+        auth = firebase.auth();
+        db = firebase.firestore();
+    }
 }
 
 let users = JSON.parse(localStorage.getItem('nekoneko_users')) || [];
@@ -61,7 +53,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 const doc = await db.collection("users").doc(user.uid).get();
                 if (doc.exists) {
                     currentUser = doc.data();
-                    // ★追加: データ読み込み時にGoogleユーザーフラグを確実にする
                     if (currentUser.isGoogleUser === undefined) currentUser.isGoogleUser = true;
                     login(currentUser, true); 
                 }
@@ -72,7 +63,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Googleログイン処理
 window.startGoogleLogin = function() {
-    if (!auth) return alert("Firebaseの設定がされてないにゃ！");
+    if (!auth) return alert("Firebaseの設定ファイル(firebase-config.js)が見つからないにゃ！");
     
     const provider = new firebase.auth.GoogleAuthProvider();
     auth.signInWithPopup(provider)
@@ -82,13 +73,12 @@ window.startGoogleLogin = function() {
             
             if (doc.exists) {
                 currentUser = doc.data();
-                currentUser.isGoogleUser = true; // フラグ確保
+                currentUser.isGoogleUser = true; 
                 login(currentUser, true);
             } else {
-                // 新規Googleユーザー
                 currentUser = { 
                     id: user.uid, 
-                    isGoogleUser: true // ★追加: Googleユーザーフラグ
+                    isGoogleUser: true 
                 };
                 window.isGoogleEnrollment = true;
                 alert("はじめましてだにゃ！\nGoogleアカウントで入学手続きをするにゃ！");
@@ -209,7 +199,6 @@ window.deleteCurrentUser = async function() {
         if (currentUser.isGoogleUser && db) {
             try {
                 await db.collection("users").doc(currentUser.id).delete();
-                // 記憶も削除
                 await db.collection("memories").doc(currentUser.id).delete();
                 auth.signOut();
             } catch(e) { console.error("Firestore Delete Error:", e); alert("削除に失敗したにゃ..."); return; }
@@ -438,7 +427,7 @@ async function processAndCompleteEnrollment() {
             updatedUser = { 
                 id: uid,
                 name, grade, photo: finalPhoto,
-                isGoogleUser: true, // ★追加
+                isGoogleUser: true,
                 karikari: (currentUser && currentUser.karikari) || 100,
                 history: (currentUser && currentUser.history) || {},
                 mistakes: (currentUser && currentUser.mistakes) || [],
@@ -468,7 +457,7 @@ async function processAndCompleteEnrollment() {
             } else {
                 const newUser = { 
                     id: Date.now(), name, grade, photo: finalPhoto, karikari: 100, 
-                    isGoogleUser: false, // ★追加
+                    isGoogleUser: false, 
                     history: {}, mistakes: [], attendance: {}, memory: "" 
                 };
                 users.push(newUser);
@@ -540,7 +529,6 @@ async function saveAndSync() {
     const kCounter = document.getElementById('karikari-count'); 
     if (kCounter) kCounter.innerText = currentUser.karikari;
 
-    // ★修正: Googleユーザーかどうかで分岐
     if (currentUser.isGoogleUser && db) {
         try {
             await db.collection("users").doc(currentUser.id).set(currentUser, { merge: true });

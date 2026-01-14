@@ -33,7 +33,7 @@
             <div class="title-btn-container">
                 <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
             </div>
-            <div class="version-tag">Build: v91.1-BtnPositionFix</div>
+            <div class="version-tag">Build: v92.1-SecurityFix</div>
         </section>
 
         <!-- 1. 校門 (ユーザー選択) -->
@@ -44,7 +44,7 @@
             
             <button onclick="showEnrollment()" class="main-btn pink-btn">🐾 新しく入学するにゃ(ゲスト)</button>
             
-            <!-- ★移動: Googleログインボタン (位置を変更し、幅を他のボタンに合わせました) -->
+            <!-- Googleログインボタン -->
             <div style="width:100%; margin: 0 0 12px 0;">
                 <button onclick="startGoogleLogin()" class="main-btn" style="background:#fff; color:#555; display:flex; align-items:center; justify-content:center; gap:10px; box-shadow:0 2px 5px rgba(0,0,0,0.2);">
                     <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" width="24">
@@ -243,6 +243,9 @@
         </div>
     </div>
 
+    <!-- ★追加: 設定ファイルを読み込む -->
+    <script src="firebase-config.js"></script>
+    
     <script src="audio.js"></script>
     <script src="ui.js"></script>
     <script src="memory.js"></script>
