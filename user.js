@@ -1,4 +1,4 @@
-// --- user.js (完全版 v87.0: 制限解除・位置修正) ---
+// --- user.js (完全版 v89.0: 画像圧縮強化・容量エラー対策) ---
 
 let users = JSON.parse(localStorage.getItem('nekoneko_users')) || [];
 let currentUser = null;
@@ -212,6 +212,7 @@ function closeEnrollCamera() {
     if (modal) modal.classList.add('hidden');
 }
 
+// ★修正: 保存時の画像圧縮を強化
 async function renderForSave() {
     const img = new Image();
     img.crossOrigin = "Anonymous";
@@ -225,17 +226,21 @@ async function renderForSave() {
     } catch (e) { return null; }
 
     const canvas = document.createElement('canvas');
-    canvas.width = img.width;
-    canvas.height = img.height;
+    // サイズを小さくする (例: 480px幅)
+    const BASE_W = 480;
+    const scaleFactor = BASE_W / img.width;
+    
+    canvas.width = BASE_W;
+    canvas.height = img.height * scaleFactor;
+    
     const ctx = canvas.getContext('2d');
 
-    const BASE_W = 640;
-    const BASE_H = 400;
-    const rx = canvas.width / BASE_W;
-    const ry = canvas.height / BASE_H;
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // 背景描画
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+    // 比率計算用 (元画像の640x400に対する比率)
+    const rx = canvas.width / 640; 
+    const ry = canvas.height / 400;
 
     if (enrollFile) {
         try {
@@ -311,13 +316,13 @@ async function renderForSave() {
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
 
-    // ★修正: テキスト位置微調整
     const textX = 346 * rx;
-    if (gradeVal) ctx.fillText(gradeVal + "年生", textX, 168 * ry + 1); // +1px
-    if (nameVal) ctx.fillText(nameVal, textX, 231 * ry + 2); // +2px
+    if (gradeVal) ctx.fillText(gradeVal + "年生", textX, 168 * ry + 1); 
+    if (nameVal) ctx.fillText(nameVal, textX, 231 * ry + 2);
 
     try {
-        return canvas.toDataURL('image/png');
+        // ★修正: JPEG形式で品質を落として圧縮 (0.6)
+        return canvas.toDataURL('image/jpeg', 0.6);
     } catch (e) {
         console.error("Canvas export failed:", e);
         return null;
@@ -336,6 +341,8 @@ async function processAndCompleteEnrollment() {
     await new Promise(r => setTimeout(r, 100));
 
     const photoData = await renderForSave();
+
+    // 画像生成失敗時はダミー画像を使う
     let finalPhoto = photoData || "student-id-base.png"; 
 
     try {
@@ -347,7 +354,6 @@ async function processAndCompleteEnrollment() {
             memory: "" 
         };
         
-        // ★修正: 制限解除 (ただしブラウザ容量制限は避けられない)
         users.push(newUser);
         localStorage.setItem('nekoneko_users', JSON.stringify(users)); 
         
@@ -365,7 +371,13 @@ async function processAndCompleteEnrollment() {
         switchScreen('screen-gate');
 
     } catch (err) {
-        alert("エラーが発生したにゃ……\n" + err.message);
+        if (err.name === 'QuotaExceededError') {
+            alert("データがいっぱいで保存できないにゃ…。\n古い学生証を削除して容量を空けてほしいにゃ。");
+            // 失敗したので配列から戻す
+            users.pop();
+        } else {
+            alert("エラーが発生したにゃ……\n" + err.message);
+        }
     } finally {
         btn.disabled = false;
         btn.innerText = "入学する！";
