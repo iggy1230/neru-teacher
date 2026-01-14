@@ -419,12 +419,18 @@ const handleFileUpload = async (file) => {
             const w = cropImg.width;
             const h = cropImg.height;
 
-            // ★修正: 30%パディング
-            const getDefaultRect = (w, h) => [
-                { x: w * 0.3, y: h * 0.3 }, { x: w * 0.7, y: h * 0.3 },
-                { x: w * 0.7, y: h * 0.7 }, { x: w * 0.3, y: h * 0.7 }
-            ];
-            cropPoints = getDefaultRect(w, h);
+            // ★修正: A4縦サイズを意識した初期枠 (横60% × 縦80% を中央に配置)
+const getDefaultRect = (w, h) => {
+    const marginW = w * 0.2; // 左右に20%ずつの余白
+    const marginH = h * 0.1; // 上下に10%ずつの余白
+    return [
+        { x: marginW,     y: marginH },     // 左上
+        { x: w - marginW, y: marginH },     // 右上
+        { x: w - marginW, y: h - marginH }, // 右下
+        { x: marginW,     y: h - marginH }  // 左下
+    ];
+};
+cropPoints = getDefaultRect(w, h);
 
             loader.style.display = 'none';
             canvas.style.opacity = '1';
