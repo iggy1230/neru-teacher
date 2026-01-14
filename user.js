@@ -1,9 +1,14 @@
-// --- user.js (完全版 v90.2: 背景透明化修正・テキスト位置調整) ---
+// --- user.js (完全版 v90.8: 編集時写真維持対応) ---
 
 let users = JSON.parse(localStorage.getItem('nekoneko_users')) || [];
 let currentUser = null;
 let modelsLoaded = false;
 let enrollFile = null;
+
+// 編集モードフラグ
+window.isEditMode = false;
+// 編集プレビュー初期化済みフラグ
+window.isEditingInitialized = false;
 
 const sfxDoor = new Audio('class_door1.mp3');
 
@@ -30,8 +35,64 @@ document.addEventListener('DOMContentLoaded', () => {
 function setupTextInputEvents() {
     const nameInput = document.getElementById('new-student-name');
     const gradeInput = document.getElementById('new-student-grade');
-    if (nameInput) nameInput.oninput = updateIDPreviewText;
-    if (gradeInput) gradeInput.onchange = updateIDPreviewText;
+    if (nameInput) nameInput.oninput = () => {
+        resetPreviewForEditing();
+        updateIDPreviewText();
+    };
+    if (gradeInput) gradeInput.onchange = () => {
+        resetPreviewForEditing();
+        updateIDPreviewText();
+    };
+}
+
+// 編集操作開始時にプレビューを「合成モード」に切り替える関数
+function resetPreviewForEditing() {
+    if (!window.isEditMode || window.isEditingInitialized) return;
+    
+    window.isEditingInitialized = true;
+    
+    // ベース画像をデフォルト(空の台紙)に戻す
+    const baseImg = document.getElementById('id-base-preview');
+    if (baseImg) baseImg.src = 'student-id-base.png';
+    
+    // オーバーレイテキストを表示
+    const nameEl = document.querySelector('.id-name-text');
+    const gradeEl = document.querySelector('.id-grade-text');
+    if (nameEl) nameEl.style.display = 'block';
+    if (gradeEl) gradeEl.style.display = 'block';
+    
+    // 写真スロットの制御
+    const slot = document.getElementById('id-photo-slot');
+    if (slot) {
+        slot.style.display = 'block';
+        
+        // 新しい写真(enrollFile)がない場合、現在の学生証画像から写真部分を表示する
+        // (enrollFileがある場合はupdatePhotoPreviewで上書きされるので何もしない)
+        if (!enrollFile && currentUser && currentUser.photo) {
+            slot.innerHTML = "";
+            const img = document.createElement('img');
+            img.src = currentUser.photo;
+            // CSSで全体画像の位置をずらして、写真部分だけがスロット枠内に見えるようにする
+            // スロット: top:35.75%, left:5.5%, w:30.5%, h:45%
+            // 計算:
+            // width = 100 / 0.305 = 327.87%
+            // height = 100 / 0.45 = 222.22%
+            // left = -(5.5 / 30.5) * 100 = -18.03%
+            // top = -(35.75 / 0.45) * 100 = -79.44%
+            img.style.position = "absolute";
+            img.style.width = "327.87%"; 
+            img.style.height = "222.22%"; 
+            img.style.left = "-18.03%";   
+            img.style.top = "-79.44%";    
+            img.style.maxWidth = "none";  // 親要素の影響を受けないように
+            img.style.maxHeight = "none"; 
+            img.style.objectFit = "fill"; 
+            slot.appendChild(img);
+        } else if (!enrollFile) {
+            // 新規かつ写真なしなら空にする
+            slot.innerHTML = "";
+        }
+    }
 }
 
 function updateIDPreviewText() {
@@ -42,6 +103,102 @@ function updateIDPreviewText() {
     if (nameEl) nameEl.innerText = nameVal ? nameVal : "";
     if (gradeEl) gradeEl.innerText = gradeVal ? (gradeVal + "年生") : "";
 }
+
+// 既存のshowEnrollmentを新規作成用に調整
+window.showEnrollment = function() {
+    window.isEditMode = false;
+    window.isEditingInitialized = true; 
+    switchScreen('screen-enrollment');
+    if (typeof loadFaceModels === 'function') loadFaceModels();
+    
+    const title = document.getElementById('enroll-title');
+    const btn = document.getElementById('complete-btn');
+    const delBtn = document.getElementById('delete-user-btn'); 
+    const nameInput = document.getElementById('new-student-name');
+    const gradeInput = document.getElementById('new-student-grade');
+    const slot = document.getElementById('id-photo-slot');
+    const baseImg = document.getElementById('id-base-preview');
+    
+    if (title) title.innerText = "🎒 入学手続き";
+    if (btn) btn.innerText = "入学する！";
+    if (delBtn) delBtn.classList.add('hidden'); 
+    if (nameInput) nameInput.value = "";
+    if (gradeInput) gradeInput.value = "";
+    
+    if (slot) {
+        slot.innerHTML = "";
+        slot.style.display = 'block';
+    }
+    if (baseImg) baseImg.src = "student-id-base.png";
+
+    const nameEl = document.querySelector('.id-name-text');
+    const gradeEl = document.querySelector('.id-grade-text');
+    if (nameEl) nameEl.style.display = 'block';
+    if (gradeEl) gradeEl.style.display = 'block';
+    
+    enrollFile = null;
+    updateIDPreviewText();
+};
+
+// 編集モード開始関数
+window.startEditProfile = function() {
+    if (!currentUser) return;
+    window.isEditMode = true;
+    window.isEditingInitialized = false; 
+    switchScreen('screen-enrollment');
+    if (typeof loadFaceModels === 'function') loadFaceModels();
+    
+    const title = document.getElementById('enroll-title');
+    const btn = document.getElementById('complete-btn');
+    const delBtn = document.getElementById('delete-user-btn');
+    const nameInput = document.getElementById('new-student-name');
+    const gradeInput = document.getElementById('new-student-grade');
+    const slot = document.getElementById('id-photo-slot');
+    const baseImg = document.getElementById('id-base-preview');
+    
+    if (title) title.innerText = "✏️ 学生証の編集";
+    if (btn) btn.innerText = "更新する！";
+    if (delBtn) delBtn.classList.remove('hidden'); 
+    if (nameInput) nameInput.value = currentUser.name;
+    if (gradeInput) gradeInput.value = currentUser.grade;
+    
+    // 現在の学生証をベース画像として表示
+    if (baseImg) {
+        baseImg.src = currentUser.photo;
+    }
+    
+    // 初期状態では写真枠を隠す（ベース画像に写真が含まれているため）
+    if (slot) {
+        slot.style.display = 'none';
+        slot.innerHTML = "";
+    }
+    
+    // オーバーレイテキストを隠す
+    const nameEl = document.querySelector('.id-name-text');
+    const gradeEl = document.querySelector('.id-grade-text');
+    if (nameEl) nameEl.style.display = 'none';
+    if (gradeEl) gradeEl.style.display = 'none';
+    
+    enrollFile = null;
+    updateIDPreviewText();
+};
+
+// ユーザー削除機能
+window.deleteCurrentUser = function() {
+    if (!currentUser) return;
+    if (confirm(`本当に${currentUser.name}さんの学生証を削除するにゃ？\n（復元できないにゃ）`)) {
+        users = users.filter(u => u.id !== currentUser.id);
+        try { 
+            localStorage.setItem('nekoneko_users', JSON.stringify(users)); 
+            renderUserList();
+        } catch(err) {
+            console.error(err);
+        }
+        currentUser = null;
+        alert("削除したにゃ...");
+        switchScreen('screen-gate');
+    }
+};
 
 async function loadFaceModels() {
     if (modelsLoaded) return;
@@ -87,6 +244,11 @@ async function resizeForAI(img, maxSize = 800) {
 }
 
 async function updatePhotoPreview(file) {
+    // 写真が選択されたらプレビューモードをリセットする
+    window.isEditingInitialized = false; 
+    window.isEditMode = true; 
+    resetPreviewForEditing();
+    
     enrollFile = file;
     const slot = document.getElementById('id-photo-slot');
     if (!slot) return;
@@ -212,7 +374,6 @@ function closeEnrollCamera() {
     if (modal) modal.classList.add('hidden');
 }
 
-// ★修正: 保存時の画像圧縮を強化
 async function renderForSave() {
     const img = new Image();
     img.crossOrigin = "Anonymous";
@@ -226,7 +387,6 @@ async function renderForSave() {
     } catch (e) { return null; }
 
     const canvas = document.createElement('canvas');
-    // サイズを小さくする (例: 480px幅)
     const BASE_W = 480;
     const scaleFactor = BASE_W / img.width;
     
@@ -234,11 +394,8 @@ async function renderForSave() {
     canvas.height = img.height * scaleFactor;
     
     const ctx = canvas.getContext('2d');
-
-    // 背景描画
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-    // 比率計算用 (元画像の640x400に対する比率)
     const rx = canvas.width / 640; 
     const ry = canvas.height / 400;
 
@@ -305,6 +462,32 @@ async function renderForSave() {
                 }
             }
         } catch(e) { console.error(e); }
+    } else if (window.isEditMode && currentUser) {
+        // ★修正: enrollFileがない（写真変更なし）場合、
+        // 既存のcurrentUser.photoから写真部分を切り抜いて合成する
+        try {
+            const currentImg = new Image();
+            currentImg.src = currentUser.photo;
+            await new Promise(r => currentImg.onload = r);
+            
+            // 写真スロットの位置 (CSS % から 画像座標へ変換)
+            // CSS: top: 35.75%, left: 5.5%, w: 30.5%, h: 45%
+            const sX = currentImg.width * 0.055;
+            const sY = currentImg.height * 0.3575;
+            const sW = currentImg.width * 0.305;
+            const sH = currentImg.height * 0.45;
+            
+            // 描画先(dX, dY, dW, dH) - student-id-baseの比率に基づく
+            const dX = 35 * rx; // canvas内座標
+            const dY = 143 * ry;
+            const dW = 195 * rx;
+            const dH = 180 * ry;
+            
+            ctx.drawImage(currentImg, sX, sY, sW, sH, dX, dY, dW, dH);
+            
+        } catch(e) {
+            console.error("Old photo restore error:", e);
+        }
     }
 
     const nameVal = document.getElementById('new-student-name').value;
@@ -318,12 +501,9 @@ async function renderForSave() {
 
     const textX = 346 * rx;
     if (gradeVal) ctx.fillText(gradeVal + "年生", textX, 168 * ry + 1); 
-    
-    // ★修正: 氏名を1px下げる (+2 -> +3)
     if (nameVal) ctx.fillText(nameVal, textX, 231 * ry + 3);
 
     try {
-        // ★修正: 黒い背景を防ぐため PNG 形式に変更 (透明度維持)
         return canvas.toDataURL('image/png');
     } catch (e) {
         console.error("Canvas export failed:", e);
@@ -337,52 +517,83 @@ async function processAndCompleteEnrollment() {
     const btn = document.getElementById('complete-btn');
 
     if(!name || !grade) return alert("お名前と学年を入れてにゃ！");
-    
+
     btn.disabled = true;
-    btn.innerText = "作成中にゃ...";
+    btn.innerText = window.isEditMode ? "更新中にゃ..." : "作成中にゃ...";
     await new Promise(r => setTimeout(r, 100));
 
+    // 画像生成（enrollFileがない場合はnullが返るが、既存画像を使う処理を入れる）
+    // renderForSave内で「写真なし＆編集モード」なら既存写真の切り抜き合成を行うように修正済み
+    let finalPhoto = null;
+    
     const photoData = await renderForSave();
+    finalPhoto = photoData;
 
-    // 画像生成失敗時はダミー画像を使う
-    let finalPhoto = photoData || "student-id-base.png"; 
+    // もし生成失敗したら既存を使うかダミー
+    if (!finalPhoto) {
+        finalPhoto = (window.isEditMode && currentUser) ? currentUser.photo : "student-id-base.png";
+    }
 
     try {
-        const newUser = { 
-            id: Date.now(), name, grade, 
-            photo: finalPhoto, 
-            karikari: 100, 
-            history: {}, mistakes: [], attendance: {},
-            memory: "" 
-        };
-        
-        users.push(newUser);
-        localStorage.setItem('nekoneko_users', JSON.stringify(users)); 
-        
-        window.justEnrolledId = newUser.id;
-        renderUserList(); 
-        
+        if (window.isEditMode && currentUser) {
+            // 編集モード：既存ユーザーを更新
+            const idx = users.findIndex(u => u.id === currentUser.id);
+            if (idx !== -1) {
+                users[idx].name = name;
+                users[idx].grade = grade;
+                users[idx].photo = finalPhoto;
+                
+                // currentUserも更新
+                currentUser = users[idx];
+                
+                localStorage.setItem('nekoneko_users', JSON.stringify(users));
+                
+                // ロビー画面の更新
+                const avatar = document.getElementById('current-student-avatar'); 
+                if (avatar) avatar.src = currentUser.photo;
+                
+                updateNellMessage(`${currentUser.name}さんの情報を更新したにゃ！`, "happy");
+                switchScreen('screen-lobby');
+            }
+        } else {
+            // 新規作成モード
+            const newUser = { 
+                id: Date.now(), name, grade, 
+                photo: finalPhoto, 
+                karikari: 100, 
+                history: {}, mistakes: [], attendance: {},
+                memory: "" 
+            };
+            
+            users.push(newUser);
+            localStorage.setItem('nekoneko_users', JSON.stringify(users)); 
+            
+            window.justEnrolledId = newUser.id;
+            renderUserList(); 
+            
+            alert("入学おめでとうにゃ！🌸");
+            switchScreen('screen-gate');
+        }
+
+        // フォームクリア
         document.getElementById('new-student-name').value = "";
         document.getElementById('new-student-grade').value = "";
         enrollFile = null;
         updateIDPreviewText();
         const slot = document.getElementById('id-photo-slot');
         if(slot) slot.innerHTML = '';
-        
-        alert("入学おめでとうにゃ！🌸");
-        switchScreen('screen-gate');
 
     } catch (err) {
         if (err.name === 'QuotaExceededError') {
             alert("データがいっぱいで保存できないにゃ…。\n古い学生証を削除して容量を空けてほしいにゃ。");
-            // 失敗したので配列から戻す
-            users.pop();
+            // 新規作成時のみ配列から戻す
+            if (!window.isEditMode) users.pop();
         } else {
             alert("エラーが発生したにゃ……\n" + err.message);
         }
     } finally {
         btn.disabled = false;
-        btn.innerText = "入学する！";
+        btn.innerText = window.isEditMode ? "更新する！" : "入学する！";
     }
 }
 
@@ -394,7 +605,8 @@ function renderUserList() {
     users.forEach(user => { 
         const div = document.createElement('div'); 
         div.className = "user-card"; 
-        div.innerHTML = `<img src="${user.photo}"><div class="card-karikari-badge">🍖${user.karikari || 0}</div><button class="delete-student-btn" onclick="deleteUser(event, ${user.id})">×</button>`; 
+        // 削除ボタンを廃止
+        div.innerHTML = `<img src="${user.photo}"><div class="card-karikari-badge">🍖${user.karikari || 0}</div>`; 
         div.onclick = () => login(user); 
         list.appendChild(div); 
     }); 
@@ -427,5 +639,6 @@ function login(user) {
     } 
 }
 
+// 古い削除ボタン用（念のため残すが使わない）
 function deleteUser(e, id) { e.stopPropagation(); if(confirm("この生徒手帳を削除するにゃ？")) { users = users.filter(u => u.id !== id); try { localStorage.setItem('nekoneko_users', JSON.stringify(users)); renderUserList(); } catch(err) {} } }
 function saveAndSync() { if (!currentUser) return; const idx = users.findIndex(u => u.id === currentUser.id); if (idx !== -1) users[idx] = currentUser; try { localStorage.setItem('nekoneko_users', JSON.stringify(users)); } catch(err) {} const kCounter = document.getElementById('karikari-count'); if (kCounter) kCounter.innerText = currentUser.karikari; }

@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v63.0: カレンダー用グリッド調整・全機能対応) --- */
+/* --- style.css (完全版 v71.0: 鉛筆アイコン拡大・位置調整・タイトルボタン幅修正) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -119,7 +119,8 @@ button { font-family: inherit; }
     border-radius: 50px;
     border: 4px solid #fff;
     box-shadow: 0 6px 0 #d32f2f, 0 10px 10px rgba(0, 0, 0, 0.3);
-    width: fit-content;
+    /* ★修正: 親クラス(.main-btn)のwidth:100%を打ち消して文字幅に合わせる */
+    width: fit-content !important; 
     min-width: auto;
     animation: pulse 2s infinite;
 }
@@ -281,25 +282,6 @@ button { font-family: inherit; }
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
-.delete-student-btn {
-    position: absolute;
-    top: -5px;
-    right: 0;
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    background: #ff5252;
-    color: white;
-    border: 2px solid white;
-    font-size: 16px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-    z-index: 10;
-}
-
 .id-card-wrap {
     position: relative;
     width: 100%;
@@ -313,7 +295,7 @@ button { font-family: inherit; }
 }
 
 .id-base-img {
-    display: block !important;
+    display: block; 
     width: 100%;
     height: auto !important;
     position: relative !important;
@@ -321,7 +303,7 @@ button { font-family: inherit; }
 }
 
 #id-photo-slot {
-    display: block !important;
+    display: block; 
     position: absolute;
     z-index: 2;
     top: 35.75%;
@@ -343,7 +325,7 @@ button { font-family: inherit; }
 #id-photo-preview-canvas { display: none; }
 
 .id-text-overlay {
-    display: block !important;
+    display: block; 
     position: absolute;
     color: #333;
     font-weight: bold;
@@ -386,6 +368,38 @@ button { font-family: inherit; }
     transform-origin: top center;
     box-shadow: none !important; /* 枠（影）を削除 */
     background: transparent !important; /* 背景透明 */
+}
+
+/* 編集ボタンのスタイル（修正: 位置・画像サイズ） */
+.edit-profile-btn {
+    position: absolute;
+    top: 85px; /* ★修正: 100px -> 85px (少し上へ) */
+    right: 20px;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: var(--primary-pink); /* ピンク */
+    color: white;
+    border: 3px solid white;
+    font-size: 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+    z-index: 100;
+}
+
+.edit-profile-btn:active {
+    transform: scale(0.9);
+}
+
+/* 編集ボタン内の画像スタイル（修正: 1.5倍拡大） */
+.edit-profile-btn img {
+    width: 54px; /* ★修正: 36px * 1.5 */
+    height: 54px; /* ★修正: 36px * 1.5 */
+    object-fit: contain;
+    pointer-events: none;
 }
 
 .karikari-counter {
