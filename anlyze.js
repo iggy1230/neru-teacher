@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v88.0: 最強の記憶回路実装・IDベース管理) ---
+// --- anlyze.js (完全版 v90.0: ベース維持＋宿題カメラ修正) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -63,21 +63,15 @@ function startMouthAnimation() {
 }
 startMouthAnimation();
 
-// --- ★修正: 最強の記憶保存 (IDベース・100件保存) ---
+// --- 記憶保存機能 ---
 function saveToNellMemory(role, text) {
     if (!currentUser || !currentUser.id) return;
-    
-    // ユーザーIDごとの専用キー
-    const memoryKey = `nell_memory_${currentUser.id}`;
-    let memory = JSON.parse(localStorage.getItem(memoryKey) || '[]');
-    
-    memory.push({ role, text, time: new Date().toISOString() });
-    
-    // 100件まで保持
-    if (memory.length > 100) memory.shift(); 
-    
-    localStorage.setItem(memoryKey, JSON.stringify(memory));
-    console.log(`[ID:${currentUser.id} の記憶を保存] ${text}`);
+    const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
+    let history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
+    history.push({ role: role, text: text, time: new Date().toISOString() });
+    if (history.length > 50) history.shift(); 
+    localStorage.setItem(memoryKey, JSON.stringify(history));
+    console.log(`[ID:${currentUser.id}の記憶] ${role}: ${text}`);
 }
 
 const saveToLocalDebugLog = saveToNellMemory;
@@ -386,7 +380,66 @@ function endGame(c) {
     setTimeout(()=>{ alert(c?`すごい！全クリだにゃ！\nカリカリ ${score} 個ゲット！`:`おしい！\nカリカリ ${score} 個ゲット！`); if(currentUser&&score>0){currentUser.karikari+=score;if(typeof saveAndSync==='function')saveAndSync();updateMiniKarikari();showKarikariEffect(score);} }, 500);
 }
 
-// --- クロップ & 分析 (★固定枠) ---
+// --- ★修正: 宿題カメラの起動ロジック追加 ---
+let analyzeStream = null;
+
+function startAnalyzeCamera(callback) {
+    const modal = document.getElementById('camera-modal');
+    const video = document.getElementById('camera-video');
+    const shutter = document.getElementById('camera-shutter-btn');
+    const cancel = document.getElementById('camera-cancel-btn');
+    
+    if (!modal || !video) return;
+    
+    // 背面カメラを優先
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+        .then(stream => {
+            analyzeStream = stream;
+            video.srcObject = stream;
+            video.setAttribute('playsinline', true);
+            video.play();
+            modal.classList.remove('hidden');
+            
+            shutter.onclick = () => {
+                const canvas = document.getElementById('camera-canvas');
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                canvas.getContext('2d').drawImage(video, 0, 0);
+                canvas.toBlob(blob => {
+                    if (blob) {
+                        const file = new File([blob], "homework.jpg", { type: "image/jpeg" });
+                        closeAnalyzeCamera();
+                        callback(file);
+                    }
+                }, 'image/jpeg', 0.9);
+            };
+            
+            cancel.onclick = closeAnalyzeCamera;
+        })
+        .catch(e => {
+            alert("カメラエラー: " + e.message);
+            closeAnalyzeCamera();
+        });
+}
+
+function closeAnalyzeCamera() {
+    const modal = document.getElementById('camera-modal');
+    const video = document.getElementById('camera-video');
+    if (analyzeStream) {
+        analyzeStream.getTracks().forEach(t => t.stop());
+        analyzeStream = null;
+    }
+    if (video) video.srcObject = null;
+    if (modal) modal.classList.add('hidden');
+}
+
+// イベントリスナーの登録
+const webcamBtn = document.getElementById('start-webcam-btn');
+if (webcamBtn) {
+    webcamBtn.onclick = () => startAnalyzeCamera(handleFileUpload);
+}
+
+// --- クロップ & 分析 ---
 const handleFileUpload = async (file) => {
     if (isAnalyzing || !file) return;
     document.getElementById('upload-controls').classList.add('hidden');
@@ -419,18 +472,11 @@ const handleFileUpload = async (file) => {
             const w = cropImg.width;
             const h = cropImg.height;
 
-            // ★修正: A4縦サイズを意識した初期枠 (横60% × 縦80% を中央に配置)
-const getDefaultRect = (w, h) => {
-    const marginW = w * 0.2; // 左右に20%ずつの余白
-    const marginH = h * 0.1; // 上下に10%ずつの余白
-    return [
-        { x: marginW,     y: marginH },     // 左上
-        { x: w - marginW, y: marginH },     // 右上
-        { x: w - marginW, y: h - marginH }, // 右下
-        { x: marginW,     y: h - marginH }  // 左下
-    ];
-};
-cropPoints = getDefaultRect(w, h);
+            const getDefaultRect = (w, h) => [
+                { x: w * 0.1, y: h * 0.1 }, { x: w * 0.9, y: h * 0.1 },
+                { x: w * 0.9, y: h * 0.9 }, { x: w * 0.1, y: h * 0.9 }
+            ];
+            cropPoints = getDefaultRect(w, h);
 
             loader.style.display = 'none';
             canvas.style.opacity = '1';
@@ -621,7 +667,7 @@ const camIn = document.getElementById('hw-input-camera'); if(camIn) camIn.addEve
 const albIn = document.getElementById('hw-input-album'); if(albIn) albIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
 const oldIn = document.getElementById('hw-input'); if(oldIn) oldIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
 
-// --- Live Chat (Memory Integrated & Real-time Learning) ---
+// --- Live Chat (Memory Integrated) ---
 let liveResponseBuffer = ""; 
 
 async function startLiveChat() {
@@ -639,22 +685,16 @@ async function startLiveChat() {
         
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
         
-        // ★修正: 記憶の注入ロジック (箇条書きリスト化)
         let statusSummary = `${currentUser.name}さんは今、お話しにきたにゃ。カリカリは${currentUser.karikari}個持ってるにゃ。`;
-        const memoryKey = `nell_memory_${currentUser.id}`;
+        const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
         const savedMemory = JSON.parse(localStorage.getItem(memoryKey) || '[]');
         
-        const importantMemory = savedMemory.filter(m => m.text.length > 2);
-        const memoryList = importantMemory.slice(-100).map(m => `- ${m.text.substring(0, 30)}`).join('\n');
-
-        if (memoryList.length > 0) {
-            statusSummary += `
-            【${currentUser.name}さんの長期記憶】
-            ${memoryList}
-            ------------------
-            このリストは、この子が過去に話した大事なことだにゃ。
-            これを全部踏まえて、親友みたいに接してあげてにゃ！
-            `;
+        if (savedMemory.length > 0) {
+            const importantMemory = savedMemory.filter(m => m.text.length > 2);
+            const memoryList = importantMemory.slice(-50).map(m => `- ${m.text}`).join('\n');
+            if (memoryList) {
+                statusSummary += `\n【${currentUser.name}さんの大事なメモ】\n${memoryList}`;
+            }
         }
 
         const url = `${wsProto}//${location.host}?grade=${currentUser.grade}&name=${encodeURIComponent(currentUser.name)}&status=${encodeURIComponent(statusSummary)}`;
@@ -706,6 +746,10 @@ async function startLiveChat() {
                 if (data.serverContent?.turnComplete) {
                     if (liveResponseBuffer.trim().length > 0) {
                         saveToNellMemory('nell', liveResponseBuffer); 
+                        if (window.NellMemory) {
+                            const lines = liveResponseBuffer.split(/[。！？」]/);
+                            window.NellMemory.applySummarizedNotes(currentUser.id, lines);
+                        }
                         liveResponseBuffer = ""; 
                     }
                 }
@@ -730,14 +774,33 @@ function stopLiveChat() {
     if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
     if (workletNode) { workletNode.port.postMessage('stop'); workletNode.disconnect(); workletNode = null; }
     
+    const hasLog = chatTranscript && chatTranscript.length > 2; 
+    
     if (liveSocket) { liveSocket.close(); liveSocket = null; }
     if (audioContext) { audioContext.close(); audioContext = null; }
     window.isNellSpeaking = false;
     
     const btn = document.getElementById('mic-btn');
     if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; btn.style.boxShadow = "none"; }
-    
-    // ★ユーザー発言保存はリアルタイムで行うためここでは不要
+
+    if (hasLog && currentUser && window.NellMemory) {
+        console.log("📝 保存処理実行:", chatTranscript);
+        fetch('/summarize-notes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: chatTranscript })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.notes && data.notes.length > 0) {
+                console.log("✅ 記憶しました:", data.notes);
+                window.NellMemory.applySummarizedNotes(currentUser.id, data.notes);
+            }
+        })
+        .catch(e => { console.error("保存エラー:", e); });
+        
+        chatTranscript = "";
+    }
 }
 
 async function startMicrophone() {
@@ -754,8 +817,8 @@ async function startMicrophone() {
                     if (event.results[i].isFinal) {
                         const transcript = event.results[i][0].transcript;
                         console.log("🎤 確定:", transcript);
+                        chatTranscript += transcript + "\n";
                         
-                        // ★自分の発言を即時保存
                         saveToNellMemory('user', transcript);
                         
                         const speechText = document.getElementById('user-speech-text');
@@ -836,6 +899,7 @@ window.checkAnswerDynamically = function(id, inputElem) {
     const problem = transcribedProblems.find(p => p.id === id);
     if (!problem) return;
 
+    // 数値でも文字列に変換して比較
     problem.student_answer = String(newVal);
     const normalizedStudent = String(newVal).trim();
     const normalizedCorrect = String(problem.correct_answer || "").trim();
@@ -872,7 +936,7 @@ function updateGradingMessage() {
     else updateNellMessage(`間違ってても大丈夫！入力し直してみて！`, "gentle");
 }
 
-// --- スキャン結果表示 (教えてモード: ボタンリセット追加) ---
+// --- スキャン結果表示 ---
 function renderProblemSelection() { 
     document.getElementById('problem-selection-view').classList.remove('hidden'); 
     const l = document.getElementById('transcribed-problem-list'); 
@@ -908,7 +972,7 @@ function renderProblemSelection() {
         l.appendChild(div);
     }); 
     
-    // ★修正: ボタンの状態をリセット
+    // ★修正: ボタンの状態をリセット (v86.0対応)
     const btn = document.querySelector('#problem-selection-view button.orange-btn');
     if (btn) {
         btn.disabled = false;
@@ -928,7 +992,7 @@ function renderMistakeSelection() {
     updateNellMessage("復習するにゃ？", "excited"); 
 }
 
-// --- 採点画面表示 (編集可能版) ---
+// --- 採点画面表示 ---
 function showGradingView() {
     document.getElementById('problem-selection-view').classList.add('hidden');
     document.getElementById('final-view').classList.remove('hidden');
@@ -939,6 +1003,7 @@ function showGradingView() {
     container.innerHTML = "";
 
     transcribedProblems.forEach(p => {
+        // 安全に文字列化して比較
         const studentAns = String(p.student_answer || "").trim();
         const correctAns = String(p.correct_answer || "").trim();
         let isCorrect = (studentAns !== "") && (studentAns === correctAns);
