@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v92.0: CloudSync対応) ---
+// --- anlyze.js (完全版 v90.1: 採点発話タイミング修正版) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -43,6 +43,7 @@ const subjectImages = {
 const defaultIcon = 'nell-normal.png'; 
 const talkIcon = 'nell-talk.png';
 
+// --- アニメーション ---
 function startMouthAnimation() {
     let toggle = false;
     setInterval(() => {
@@ -62,43 +63,20 @@ function startMouthAnimation() {
 }
 startMouthAnimation();
 
-// --- ★記憶保存機能 (Cloud対応) ---
-async function saveToNellMemory(role, text) {
+// --- 記憶保存機能 ---
+function saveToNellMemory(role, text) {
     if (!currentUser || !currentUser.id) return;
-    const newItem = { role: role, text: text, time: new Date().toISOString() };
-
-    // --- A. Googleユーザー (Firestore) ---
-    if (currentUser.isGoogleUser && typeof db !== 'undefined') {
-        const docRef = db.collection("memories").doc(currentUser.id);
-        try {
-            // 現状のデータを取得して追記・トリミング
-            const docSnap = await docRef.get();
-            let history = [];
-            if (docSnap.exists) {
-                history = docSnap.data().history || [];
-            }
-            history.push(newItem);
-            if (history.length > 50) history.shift(); // 50件保持
-            
-            await docRef.set({ history: history }, { merge: true });
-            console.log(`[Cloud] Saved: ${role}: ${text}`);
-        } catch(e) {
-            console.error("Firestore Save Error:", e);
-        }
-    } 
-    // --- B. ゲストユーザー (LocalStorage) ---
-    else {
-        const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
-        let history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
-        history.push(newItem);
-        if (history.length > 50) history.shift(); 
-        localStorage.setItem(memoryKey, JSON.stringify(history));
-        console.log(`[Local] Saved: ${role}: ${text}`);
-    }
+    const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
+    let history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
+    history.push({ role: role, text: text, time: new Date().toISOString() });
+    if (history.length > 50) history.shift(); 
+    localStorage.setItem(memoryKey, JSON.stringify(history));
+    console.log(`[ID:${currentUser.id}の記憶] ${role}: ${text}`);
 }
 
 const saveToLocalDebugLog = saveToNellMemory;
 
+// --- メッセージ更新 ---
 async function updateNellMessage(t, mood = "normal") {
     let targetId = document.getElementById('screen-game').classList.contains('hidden') ? 'nell-text' : 'nell-text-game';
     const el = document.getElementById(targetId);
@@ -107,7 +85,6 @@ async function updateNellMessage(t, mood = "normal") {
     if (t && t.includes("もぐもぐ")) { try { sfxBori.currentTime = 0; sfxBori.play(); } catch(e){} }
     if (!t || t.includes("ちょっと待ってて") || t.includes("もぐもぐ")) return;
 
-    // await をつけて保存完了を待つほうが丁寧ですが、UX阻害しないよう非同期呼び出しのままでも可
     saveToNellMemory('nell', t);
 
     if (typeof speakNell === 'function') {
@@ -116,6 +93,7 @@ async function updateNellMessage(t, mood = "normal") {
     }
 }
 
+// --- グローバルボタン関数 ---
 window.selectMode = function(m) {
     currentMode = m; 
     switchScreen('screen-main'); 
@@ -202,23 +180,30 @@ window.showGame = function() {
     startBtn.onclick = () => { if (!gameRunning) { initGame(); gameRunning = true; startBtn.disabled = true; drawGame(); } };
 };
 
-// ... (ヒント機能等は変更なしのため省略。元のanlyze.jsのコードをそのまま使用) ...
+// --- ヒント機能 ---
 window.startHint = function(id) {
     if (window.initAudioContext) window.initAudioContext().catch(e=>{});
     selectedProblem = transcribedProblems.find(p => p.id == id); 
     if (!selectedProblem) { return updateNellMessage("データエラーだにゃ", "thinking"); }
+    
     const uiIds = ['subject-selection-view', 'upload-controls', 'problem-selection-view', 'grade-sheet-container', 'final-view', 'hint-detail-container', 'chalkboard', 'answer-display-area'];
     uiIds.forEach(i => { const el = document.getElementById(i); if(el) el.classList.add('hidden'); });
+    
     document.getElementById('final-view').classList.remove('hidden'); 
     document.getElementById('hint-detail-container').classList.remove('hidden');
+    
     const board = document.getElementById('chalkboard'); 
     if(board) { board.innerText = selectedProblem.question; board.classList.remove('hidden'); }
+    
     const ansArea = document.getElementById('answer-display-area'); 
     if(ansArea) ansArea.classList.add('hidden');
+    
     const backBtn = document.getElementById('main-back-btn');
     if (backBtn) backBtn.classList.add('hidden'); 
+    
     hintIndex = 0; 
     updateNellMessage("カリカリをくれたらヒントを出してやってもいいにゃ🐾", "thinking"); 
+    
     const nextBtn = document.getElementById('next-hint-btn'); 
     const revealBtn = document.getElementById('reveal-answer-btn');
     if(nextBtn) { 
@@ -254,11 +239,13 @@ window.revealAnswer = function() {
     const ansArea = document.getElementById('answer-display-area');
     const finalTxt = document.getElementById('final-answer-text');
     const revealBtn = document.getElementById('reveal-answer-btn');
+    
     if (ansArea && finalTxt) { 
         finalTxt.innerText = selectedProblem.correct_answer; 
         ansArea.classList.remove('hidden'); 
         ansArea.style.display = "block"; 
     }
+    
     if (revealBtn) { revealBtn.classList.add('hidden'); }
     updateNellMessage(`答えは「${selectedProblem.correct_answer}」だにゃ！`, "gentle"); 
 };
@@ -267,16 +254,19 @@ window.backToProblemSelection = function() {
     document.getElementById('final-view').classList.add('hidden'); 
     document.getElementById('hint-detail-container').classList.add('hidden'); 
     document.getElementById('chalkboard').classList.add('hidden');
+    
     const ansArea = document.getElementById('answer-display-area');
     if(ansArea) ansArea.classList.add('hidden');
     const revealBtn = document.getElementById('reveal-answer-btn');
     if(revealBtn) revealBtn.classList.add('hidden');
+    
     if (currentMode === 'grade') {
         showGradingView();
     } else {
         renderProblemSelection();
         updateNellMessage("他も見るにゃ？", "normal");
     }
+    
     const backBtn = document.getElementById('main-back-btn');
     if(backBtn) {
         backBtn.classList.remove('hidden');
@@ -290,22 +280,41 @@ window.pressThanks = function() {
 
 window.finishGrading = async function(btnElement) { 
     const btn = btnElement || document.querySelector('#final-view button.orange-btn');
-    if(btn) { btn.disabled = true; btn.innerText = "採点完了！"; }
-    if (currentUser) { currentUser.karikari += 100; saveAndSync(); updateMiniKarikari(); showKarikariEffect(100); } 
+    if(btn) {
+        btn.disabled = true;
+        btn.innerText = "採点完了！";
+    }
+
+    if (currentUser) { 
+        currentUser.karikari += 100; 
+        saveAndSync(); 
+        updateMiniKarikari(); 
+        showKarikariEffect(100); 
+    } 
+    
     await updateNellMessage("よくがんばったにゃ！カリカリ100個あげる！", "excited"); 
     setTimeout(() => { if(typeof backToLobby === 'function') backToLobby(true); }, 3000); 
 };
 
 window.pressAllSolved = function(btnElement) { 
     const btn = btnElement || document.querySelector('#problem-selection-view button.orange-btn');
-    if(btn) { btn.disabled = true; btn.innerText = "すごい！"; }
+    if(btn) {
+        btn.disabled = true;
+        btn.innerText = "すごい！";
+    }
+
     if (currentUser) {
-        currentUser.karikari += 100; saveAndSync(); showKarikariEffect(100); updateMiniKarikari(); 
+        currentUser.karikari += 100; 
+        saveAndSync(); 
+        showKarikariEffect(100);
+        updateMiniKarikari(); 
+        
         updateNellMessage("よくがんばったにゃ！カリカリ100個あげるにゃ！", "excited")
         .then(() => { setTimeout(() => { if(typeof backToLobby === 'function') backToLobby(true); }, 3000); });
     }
 };
 
+// --- ゲーム内部関数 ---
 function fetchGameComment(type, score=0) {
     fetch('/game-reaction', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type, name: currentUser.name, score }) }).then(r=>r.json()).then(d=>{ updateNellMessage(d.reply, d.mood || "excited"); }).catch(e=>{});
 }
@@ -319,17 +328,20 @@ function initGame() {
     document.getElementById('game-score').innerText = score; 
     bricks = []; 
     for(let c=0; c<5; c++) for(let r=0; r<4; r++) bricks.push({ x: c*64+10, y: r*35+40, status: 1 }); 
+    
     gameCanvas.removeEventListener("mousemove", movePaddle); 
     gameCanvas.removeEventListener("touchmove", touchPaddle); 
     gameCanvas.addEventListener("mousemove", movePaddle, false); 
     gameCanvas.addEventListener("touchmove", touchPaddle, { passive: false }); 
 }
+
 function movePaddle(e) { 
     const rect = gameCanvas.getBoundingClientRect(); 
     const scaleX = gameCanvas.width / rect.width; 
     const rx = (e.clientX - rect.left) * scaleX; 
     if(rx > 0 && rx < gameCanvas.width) paddle.x = rx - paddle.w/2; 
 }
+
 function touchPaddle(e) { 
     e.preventDefault(); 
     const rect = gameCanvas.getBoundingClientRect(); 
@@ -337,6 +349,7 @@ function touchPaddle(e) {
     const rx = (e.touches[0].clientX - rect.left) * scaleX; 
     if(rx > 0 && rx < gameCanvas.width) paddle.x = rx - paddle.w/2; 
 }
+
 function drawGame() {
     if (!gameRunning) return;
     ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height); ctx.font = "20px serif"; bricks.forEach(b => { if(b.status === 1) ctx.fillText("🍖", b.x + 10, b.y + 20); });
@@ -367,110 +380,297 @@ function endGame(c) {
     setTimeout(()=>{ alert(c?`すごい！全クリだにゃ！\nカリカリ ${score} 個ゲット！`:`おしい！\nカリカリ ${score} 個ゲット！`); if(currentUser&&score>0){currentUser.karikari+=score;if(typeof saveAndSync==='function')saveAndSync();updateMiniKarikari();showKarikariEffect(score);} }, 500);
 }
 
-// ... (カメラ、クロップ、Analyze、各種UI関数は省略せず記載) ...
-// (紙面の都合上、変更のない部分は維持されている前提で、startLiveChatの修正部分に集中します)
+// --- ★修正: 宿題カメラの起動ロジック追加 ---
+let analyzeStream = null;
 
-// (Analyze関連の関数群... handleFileUpload, initCustomCropperなど...変更なし)
 function startAnalyzeCamera(callback) {
     const modal = document.getElementById('camera-modal');
     const video = document.getElementById('camera-video');
     const shutter = document.getElementById('camera-shutter-btn');
     const cancel = document.getElementById('camera-cancel-btn');
+    
     if (!modal || !video) return;
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }).then(stream => {
-        analyzeStream = stream; video.srcObject = stream; video.setAttribute('playsinline', true); video.play(); modal.classList.remove('hidden');
-        shutter.onclick = () => {
-            const canvas = document.getElementById('camera-canvas'); canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-            canvas.getContext('2d').drawImage(video, 0, 0);
-            canvas.toBlob(blob => { if (blob) { const file = new File([blob], "homework.jpg", { type: "image/jpeg" }); closeAnalyzeCamera(); callback(file); } }, 'image/jpeg', 0.9);
-        };
-        cancel.onclick = closeAnalyzeCamera;
-    }).catch(e => { alert("カメラエラー: " + e.message); closeAnalyzeCamera(); });
+    
+    // 背面カメラを優先
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+        .then(stream => {
+            analyzeStream = stream;
+            video.srcObject = stream;
+            video.setAttribute('playsinline', true);
+            video.play();
+            modal.classList.remove('hidden');
+            
+            shutter.onclick = () => {
+                const canvas = document.getElementById('camera-canvas');
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                canvas.getContext('2d').drawImage(video, 0, 0);
+                canvas.toBlob(blob => {
+                    if (blob) {
+                        const file = new File([blob], "homework.jpg", { type: "image/jpeg" });
+                        closeAnalyzeCamera();
+                        callback(file);
+                    }
+                }, 'image/jpeg', 0.9);
+            };
+            
+            cancel.onclick = closeAnalyzeCamera;
+        })
+        .catch(e => {
+            alert("カメラエラー: " + e.message);
+            closeAnalyzeCamera();
+        });
 }
+
 function closeAnalyzeCamera() {
-    const modal = document.getElementById('camera-modal'); const video = document.getElementById('camera-video');
-    if (analyzeStream) { analyzeStream.getTracks().forEach(t => t.stop()); analyzeStream = null; }
+    const modal = document.getElementById('camera-modal');
+    const video = document.getElementById('camera-video');
+    if (analyzeStream) {
+        analyzeStream.getTracks().forEach(t => t.stop());
+        analyzeStream = null;
+    }
     if (video) video.srcObject = null;
     if (modal) modal.classList.add('hidden');
 }
+
+// イベントリスナーの登録
+const webcamBtn = document.getElementById('start-webcam-btn');
+if (webcamBtn) {
+    webcamBtn.onclick = () => startAnalyzeCamera(handleFileUpload);
+}
+
+// --- クロップ & 分析 ---
 const handleFileUpload = async (file) => {
     if (isAnalyzing || !file) return;
     document.getElementById('upload-controls').classList.add('hidden');
-    const modal = document.getElementById('cropper-modal'); modal.classList.remove('hidden');
-    const canvas = document.getElementById('crop-canvas'); canvas.style.opacity = '0';
+    const modal = document.getElementById('cropper-modal');
+    modal.classList.remove('hidden');
+    
+    const canvas = document.getElementById('crop-canvas');
+    canvas.style.opacity = '0';
+    
     let loader = document.getElementById('crop-loader');
-    if (!loader) { loader = document.createElement('div'); loader.id = 'crop-loader'; loader.style.position = 'absolute'; loader.style.top = '50%'; loader.style.left = '50%'; loader.style.transform = 'translate(-50%, -50%)'; loader.style.color = 'white'; loader.style.fontWeight = 'bold'; loader.innerText = '📷 画像を読み込んでるにゃ...'; document.querySelector('.cropper-wrapper').appendChild(loader); }
+    if (!loader) {
+        loader = document.createElement('div');
+        loader.id = 'crop-loader';
+        loader.style.position = 'absolute';
+        loader.style.top = '50%';
+        loader.style.left = '50%';
+        loader.style.transform = 'translate(-50%, -50%)';
+        loader.style.color = 'white';
+        loader.style.fontWeight = 'bold';
+        loader.innerText = '📷 画像を読み込んでるにゃ...';
+        document.querySelector('.cropper-wrapper').appendChild(loader);
+    }
     loader.style.display = 'block';
+
     const reader = new FileReader();
     reader.onload = async (e) => {
-        const rawBase64 = e.target.result; cropImg = new Image();
+        const rawBase64 = e.target.result;
+        cropImg = new Image();
         cropImg.onload = async () => {
-            const w = cropImg.width; const h = cropImg.height;
-            const getDefaultRect = (w, h) => [ { x: w * 0.1, y: h * 0.1 }, { x: w * 0.9, y: h * 0.1 }, { x: w * 0.9, y: h * 0.9 }, { x: w * 0.1, y: h * 0.9 } ];
-            cropPoints = getDefaultRect(w, h); loader.style.display = 'none'; canvas.style.opacity = '1'; updateNellMessage("ここを読み取るにゃ？", "normal"); initCustomCropper();
-        }; cropImg.src = rawBase64;
-    }; reader.readAsDataURL(file);
+            const w = cropImg.width;
+            const h = cropImg.height;
+
+            const getDefaultRect = (w, h) => [
+                { x: w * 0.1, y: h * 0.1 }, { x: w * 0.9, y: h * 0.1 },
+                { x: w * 0.9, y: h * 0.9 }, { x: w * 0.1, y: h * 0.9 }
+            ];
+            cropPoints = getDefaultRect(w, h);
+
+            loader.style.display = 'none';
+            canvas.style.opacity = '1';
+            updateNellMessage("ここを読み取るにゃ？", "normal");
+            initCustomCropper();
+        };
+        cropImg.src = rawBase64;
+    };
+    reader.readAsDataURL(file);
 };
+
 function resizeImageForDetect(img, maxLen) {
-    const canvas = document.createElement('canvas'); let w = img.width, h = img.height;
-    if (w > h) { if (w > maxLen) { h *= maxLen/w; w = maxLen; } } else { if (h > maxLen) { w *= maxLen/h; h = maxLen; } }
-    canvas.width = w; canvas.height = h; const ctx = canvas.getContext('2d'); ctx.filter = 'contrast(1.2) brightness(1.1) grayscale(1)'; ctx.drawImage(img, 0, 0, w, h);
+    const canvas = document.createElement('canvas');
+    let w = img.width, h = img.height;
+    if (w > h) { if (w > maxLen) { h *= maxLen/w; w = maxLen; } } 
+    else { if (h > maxLen) { w *= maxLen/h; h = maxLen; } }
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.filter = 'contrast(1.2) brightness(1.1) grayscale(1)'; 
+    ctx.drawImage(img, 0, 0, w, h);
     return canvas.toDataURL('image/jpeg', 0.6);
 }
+
 function initCustomCropper() {
-    const modal = document.getElementById('cropper-modal'); modal.classList.remove('hidden');
-    const canvas = document.getElementById('crop-canvas'); const MAX_CANVAS_SIZE = 2500; let w = cropImg.width; let h = cropImg.height;
-    if (w > MAX_CANVAS_SIZE || h > MAX_CANVAS_SIZE) { const scale = Math.min(MAX_CANVAS_SIZE / w, MAX_CANVAS_SIZE / h); w *= scale; h *= scale; cropPoints = cropPoints.map(p => ({ x: p.x * scale, y: p.y * scale })); }
-    canvas.width = w; canvas.height = h; canvas.style.width = '100%'; canvas.style.height = '100%'; canvas.style.objectFit = 'contain';
-    const ctx = canvas.getContext('2d'); ctx.drawImage(cropImg, 0, 0, w, h); updateCropUI(canvas);
+    const modal = document.getElementById('cropper-modal');
+    modal.classList.remove('hidden');
+    const canvas = document.getElementById('crop-canvas');
+    const MAX_CANVAS_SIZE = 2500;
+    let w = cropImg.width;
+    let h = cropImg.height;
+    if (w > MAX_CANVAS_SIZE || h > MAX_CANVAS_SIZE) {
+        const scale = Math.min(MAX_CANVAS_SIZE / w, MAX_CANVAS_SIZE / h);
+        w *= scale; h *= scale;
+        cropPoints = cropPoints.map(p => ({ x: p.x * scale, y: p.y * scale }));
+    }
+    canvas.width = w; canvas.height = h;
+    canvas.style.width = '100%'; canvas.style.height = '100%'; canvas.style.objectFit = 'contain';
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(cropImg, 0, 0, w, h);
+    updateCropUI(canvas);
     const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl'];
-    handles.forEach((id, idx) => { const el = document.getElementById(id); const startDrag = (e) => { e.preventDefault(); activeHandle = idx; }; el.onmousedown = startDrag; el.ontouchstart = startDrag; });
+    handles.forEach((id, idx) => {
+        const el = document.getElementById(id);
+        const startDrag = (e) => { e.preventDefault(); activeHandle = idx; };
+        el.onmousedown = startDrag; el.ontouchstart = startDrag;
+    });
     const move = (e) => {
-        if (activeHandle === -1) return; e.preventDefault();
-        const rect = canvas.getBoundingClientRect(); const imgRatio = canvas.width / canvas.height; const rectRatio = rect.width / rect.height;
-        let drawX, drawY, drawW, drawH; if (imgRatio > rectRatio) { drawW = rect.width; drawH = rect.width / imgRatio; drawX = 0; drawY = (rect.height - drawH) / 2; } else { drawH = rect.height; drawW = rect.height * imgRatio; drawY = 0; drawX = (rect.width - drawW) / 2; }
-        const clientX = e.touches ? e.touches[0].clientX : e.clientX; const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-        let relX = (clientX - rect.left - drawX) / drawW; let relY = (clientY - rect.top - drawY) / drawH;
-        relX = Math.max(0, Math.min(1, relX)); relY = Math.max(0, Math.min(1, relY));
-        cropPoints[activeHandle] = { x: relX * canvas.width, y: relY * canvas.height }; updateCropUI(canvas);
+        if (activeHandle === -1) return;
+        e.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        const imgRatio = canvas.width / canvas.height;
+        const rectRatio = rect.width / rect.height;
+        let drawX, drawY, drawW, drawH;
+        if (imgRatio > rectRatio) {
+            drawW = rect.width; drawH = rect.width / imgRatio; drawX = 0; drawY = (rect.height - drawH) / 2;
+        } else {
+            drawH = rect.height; drawW = rect.height * imgRatio; drawY = 0; drawX = (rect.width - drawW) / 2;
+        }
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        let relX = (clientX - rect.left - drawX) / drawW;
+        let relY = (clientY - rect.top - drawY) / drawH;
+        relX = Math.max(0, Math.min(1, relX));
+        relY = Math.max(0, Math.min(1, relY));
+        cropPoints[activeHandle] = { x: relX * canvas.width, y: relY * canvas.height };
+        updateCropUI(canvas);
     };
     const end = () => { activeHandle = -1; };
-    window.onmousemove = move; window.ontouchmove = move; window.onmouseup = end; window.ontouchend = end;
-    document.getElementById('cropper-cancel-btn').onclick = () => { modal.classList.add('hidden'); window.onmousemove = null; window.ontouchmove = null; document.getElementById('upload-controls').classList.remove('hidden'); };
-    document.getElementById('cropper-ok-btn').onclick = () => { modal.classList.add('hidden'); window.onmousemove = null; window.ontouchmove = null; const croppedBase64 = performPerspectiveCrop(canvas, cropPoints); startAnalysis(croppedBase64); };
+    window.onmousemove = move; window.ontouchmove = move;
+    window.onmouseup = end; window.ontouchend = end;
+    document.getElementById('cropper-cancel-btn').onclick = () => {
+        modal.classList.add('hidden');
+        window.onmousemove = null; window.ontouchmove = null;
+        document.getElementById('upload-controls').classList.remove('hidden');
+    };
+    document.getElementById('cropper-ok-btn').onclick = () => {
+        modal.classList.add('hidden');
+        window.onmousemove = null; window.ontouchmove = null;
+        const croppedBase64 = performPerspectiveCrop(canvas, cropPoints);
+        startAnalysis(croppedBase64);
+    };
 }
+
 function updateCropUI(canvas) {
-    const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl']; const rect = canvas.getBoundingClientRect(); const imgRatio = canvas.width / canvas.height; const rectRatio = rect.width / rect.height;
-    let drawX, drawY, drawW, drawH; if (imgRatio > rectRatio) { drawW = rect.width; drawH = rect.width / imgRatio; drawX = 0; drawY = (rect.height - drawH) / 2; } else { drawH = rect.height; drawW = rect.height * imgRatio; drawY = 0; drawX = (rect.width - drawW) / 2; }
-    const toScreen = (p) => ({ x: (p.x / canvas.width) * drawW + drawX + canvas.offsetLeft, y: (p.y / canvas.height) * drawH + drawY + canvas.offsetTop });
-    const screenPoints = cropPoints.map(toScreen); handles.forEach((id, i) => { const el = document.getElementById(id); el.style.left = screenPoints[i].x + 'px'; el.style.top = screenPoints[i].y + 'px'; });
-    const svg = document.getElementById('crop-lines'); svg.style.left = canvas.offsetLeft + 'px'; svg.style.top = canvas.offsetTop + 'px'; svg.style.width = canvas.offsetWidth + 'px'; svg.style.height = canvas.offsetHeight + 'px';
-    const toSvg = (p) => ({ x: (p.x / canvas.width) * drawW + drawX, y: (p.y / canvas.height) * drawH + drawY }); const svgPts = cropPoints.map(toSvg); const ptsStr = svgPts.map(p => `${p.x},${p.y}`).join(' ');
+    const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl'];
+    const rect = canvas.getBoundingClientRect();
+    const imgRatio = canvas.width / canvas.height;
+    const rectRatio = rect.width / rect.height;
+    let drawX, drawY, drawW, drawH;
+    if (imgRatio > rectRatio) {
+        drawW = rect.width; drawH = rect.width / imgRatio; drawX = 0; drawY = (rect.height - drawH) / 2;
+    } else {
+        drawH = rect.height; drawW = rect.height * imgRatio; drawY = 0; drawX = (rect.width - drawW) / 2;
+    }
+    const toScreen = (p) => ({
+        x: (p.x / canvas.width) * drawW + drawX + canvas.offsetLeft,
+        y: (p.y / canvas.height) * drawH + drawY + canvas.offsetTop
+    });
+    const screenPoints = cropPoints.map(toScreen);
+    handles.forEach((id, i) => { const el = document.getElementById(id); el.style.left = screenPoints[i].x + 'px'; el.style.top = screenPoints[i].y + 'px'; });
+    const svg = document.getElementById('crop-lines');
+    svg.style.left = canvas.offsetLeft + 'px'; svg.style.top = canvas.offsetTop + 'px';
+    svg.style.width = canvas.offsetWidth + 'px'; svg.style.height = canvas.offsetHeight + 'px';
+    const toSvg = (p) => ({ x: (p.x / canvas.width) * drawW + drawX, y: (p.y / canvas.height) * drawH + drawY });
+    const svgPts = cropPoints.map(toSvg);
+    const ptsStr = svgPts.map(p => `${p.x},${p.y}`).join(' ');
     svg.innerHTML = `<polyline points="${ptsStr} ${svgPts[0].x},${svgPts[0].y}" style="fill:rgba(255,255,255,0.2);stroke:#ff4081;stroke-width:2;stroke-dasharray:5" />`;
 }
+
 function performPerspectiveCrop(sourceCanvas, points) {
-    const minX = Math.min(...points.map(p => p.x)), maxX = Math.max(...points.map(p => p.x)); const minY = Math.min(...points.map(p => p.y)), maxY = Math.max(...points.map(p => p.y)); let w = maxX - minX, h = maxY - minY; if (w < 1) w = 1; if (h < 1) h = 1;
-    const tempCv = document.createElement('canvas'); const MAX_OUT = 1536; let outW = w, outH = h; if (outW > MAX_OUT || outH > MAX_OUT) { const s = Math.min(MAX_OUT/outW, MAX_OUT/outH); outW *= s; outH *= s; }
-    tempCv.width = outW; tempCv.height = outH; const ctx = tempCv.getContext('2d'); ctx.drawImage(sourceCanvas, minX, minY, w, h, 0, 0, outW, outH);
+    const minX = Math.min(...points.map(p => p.x)), maxX = Math.max(...points.map(p => p.x));
+    const minY = Math.min(...points.map(p => p.y)), maxY = Math.max(...points.map(p => p.y));
+    let w = maxX - minX, h = maxY - minY;
+    if (w < 1) w = 1; if (h < 1) h = 1;
+    const tempCv = document.createElement('canvas');
+    const MAX_OUT = 1536;
+    let outW = w, outH = h;
+    if (outW > MAX_OUT || outH > MAX_OUT) { const s = Math.min(MAX_OUT/outW, MAX_OUT/outH); outW *= s; outH *= s; }
+    tempCv.width = outW; tempCv.height = outH;
+    const ctx = tempCv.getContext('2d');
+    ctx.drawImage(sourceCanvas, minX, minY, w, h, 0, 0, outW, outH);
     return tempCv.toDataURL('image/jpeg', 0.85).split(',')[1];
 }
+
 async function startAnalysis(b64) {
-    isAnalyzing = true; document.getElementById('cropper-modal').classList.add('hidden'); document.getElementById('thinking-view').classList.remove('hidden'); document.getElementById('upload-controls').classList.add('hidden'); document.getElementById('main-back-btn').classList.add('hidden');
-    let msg = `ふむふむ…\n${currentUser.grade}年生の${currentSubject}の問題だにゃ…`; updateNellMessage(msg, "thinking"); updateProgress(0); let p = 0; const timer = setInterval(() => { if (p < 90) { p += 3; updateProgress(p); } }, 500);
+    isAnalyzing = true;
+    document.getElementById('cropper-modal').classList.add('hidden');
+    document.getElementById('thinking-view').classList.remove('hidden');
+    document.getElementById('upload-controls').classList.add('hidden');
+    document.getElementById('main-back-btn').classList.add('hidden');
+    let msg = `ふむふむ…\n${currentUser.grade}年生の${currentSubject}の問題だにゃ…`;
+    updateNellMessage(msg, "thinking"); 
+    updateProgress(0); 
+    let p = 0; const timer = setInterval(() => { if (p < 90) { p += 3; updateProgress(p); } }, 500);
     try {
-        const res = await fetch('/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: b64, mode: currentMode, grade: currentUser.grade, subject: currentSubject, analysisType: analysisType }) });
-        if (!res.ok) throw new Error("Server Error"); const data = await res.json();
-        if (!data || data.length === 0) { updateNellMessage("問題が見つからなかったにゃ…\nもう一度写真を撮ってみて！", "thinking"); setTimeout(() => { document.getElementById('thinking-view').classList.add('hidden'); document.getElementById('upload-controls').classList.remove('hidden'); if(document.getElementById('main-back-btn')) document.getElementById('main-back-btn').classList.remove('hidden'); }, 3000); clearInterval(timer); isAnalyzing = false; return; }
+        const res = await fetch('/analyze', { 
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({ 
+                image: b64, mode: currentMode, grade: currentUser.grade, 
+                subject: currentSubject, analysisType: analysisType 
+            }) 
+        });
+        if (!res.ok) throw new Error("Server Error");
+        const data = await res.json();
+        
+        if (!data || data.length === 0) {
+             updateNellMessage("問題が見つからなかったにゃ…\nもう一度写真を撮ってみて！", "thinking");
+             setTimeout(() => {
+                document.getElementById('thinking-view').classList.add('hidden'); 
+                document.getElementById('upload-controls').classList.remove('hidden');
+                if(document.getElementById('main-back-btn')) document.getElementById('main-back-btn').classList.remove('hidden');
+             }, 3000);
+             clearInterval(timer); isAnalyzing = false;
+             return;
+        }
+
         transcribedProblems = data.map((prob, index) => ({ ...prob, id: index + 1, student_answer: prob.student_answer || "", status: "unanswered" }));
+        
         clearInterval(timer); updateProgress(100);
-        setTimeout(() => { document.getElementById('thinking-view').classList.add('hidden'); const doneMsg = "読めたにゃ！"; if (currentMode === 'grade') { showGradingView(true); updateNellMessage(doneMsg, "happy").then(() => { setTimeout(() => { updateGradingMessage(); }, 1500); }); } else { renderProblemSelection(); updateNellMessage(doneMsg, "happy"); } }, 800);
-    } catch (err) { clearInterval(timer); document.getElementById('thinking-view').classList.add('hidden'); document.getElementById('upload-controls').classList.remove('hidden'); if(document.getElementById('main-back-btn')) document.getElementById('main-back-btn').classList.remove('hidden'); updateNellMessage("エラーだにゃ…", "thinking"); } finally { isAnalyzing = false; }
+        
+        setTimeout(() => { 
+            document.getElementById('thinking-view').classList.add('hidden'); 
+            const doneMsg = "読めたにゃ！";
+            
+            if (currentMode === 'grade') {
+                // 発話を抑制して画面だけ更新
+                showGradingView(true); 
+                // 「読めたにゃ！」を発話
+                updateNellMessage(doneMsg, "happy").then(() => {
+                    // 間を空けてから採点結果メッセージを再生
+                    setTimeout(() => {
+                        updateGradingMessage(); 
+                    }, 1500);
+                });
+            } else { 
+                renderProblemSelection(); 
+                updateNellMessage(doneMsg, "happy"); 
+            }
+        }, 800);
+    } catch (err) { 
+        clearInterval(timer); 
+        document.getElementById('thinking-view').classList.add('hidden'); 
+        document.getElementById('upload-controls').classList.remove('hidden'); 
+        if(document.getElementById('main-back-btn')) document.getElementById('main-back-btn').classList.remove('hidden');
+        updateNellMessage("エラーだにゃ…", "thinking"); 
+    } finally { isAnalyzing = false; }
 }
+
 const camIn = document.getElementById('hw-input-camera'); if(camIn) camIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
 const albIn = document.getElementById('hw-input-album'); if(albIn) albIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
 const oldIn = document.getElementById('hw-input'); if(oldIn) oldIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
 
-// --- ★Live Chat (Memory Integrated - Cloud対応) ---
+// --- Live Chat (Memory Integrated) ---
 let liveResponseBuffer = ""; 
 
 async function startLiveChat() {
@@ -489,20 +689,8 @@ async function startLiveChat() {
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
         
         let statusSummary = `${currentUser.name}さんは今、お話しにきたにゃ。カリカリは${currentUser.karikari}個持ってるにゃ。`;
-        
-        // --- ★記憶読み出し (Cloud/Local) ---
-        let savedMemory = [];
-        if (currentUser.isGoogleUser && typeof db !== 'undefined') {
-            try {
-                const doc = await db.collection("memories").doc(currentUser.id).get();
-                if (doc.exists) {
-                    savedMemory = doc.data().history || [];
-                }
-            } catch(e) { console.error("Firestore Read Error:", e); }
-        } else {
-            const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
-            savedMemory = JSON.parse(localStorage.getItem(memoryKey) || '[]');
-        }
+        const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
+        const savedMemory = JSON.parse(localStorage.getItem(memoryKey) || '[]');
         
         if (savedMemory.length > 0) {
             const importantMemory = savedMemory.filter(m => m.text.length > 2);
@@ -583,21 +771,37 @@ async function startLiveChat() {
 
 function stopLiveChat() {
     isRecognitionActive = false;
+
     if (connectionTimeout) clearTimeout(connectionTimeout);
     if (recognition) { try { recognition.stop(); } catch(e) {} recognition = null; }
     if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
     if (workletNode) { workletNode.port.postMessage('stop'); workletNode.disconnect(); workletNode = null; }
+    
     const hasLog = chatTranscript && chatTranscript.length > 2; 
+    
     if (liveSocket) { liveSocket.close(); liveSocket = null; }
     if (audioContext) { audioContext.close(); audioContext = null; }
     window.isNellSpeaking = false;
+    
     const btn = document.getElementById('mic-btn');
     if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; btn.style.boxShadow = "none"; }
+
     if (hasLog && currentUser && window.NellMemory) {
         console.log("📝 保存処理実行:", chatTranscript);
-        fetch('/summarize-notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: chatTranscript }) })
-        .then(r => r.json()).then(data => { if (data.notes && data.notes.length > 0) { console.log("✅ 記憶しました:", data.notes); window.NellMemory.applySummarizedNotes(currentUser.id, data.notes); } })
+        fetch('/summarize-notes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: chatTranscript })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.notes && data.notes.length > 0) {
+                console.log("✅ 記憶しました:", data.notes);
+                window.NellMemory.applySummarizedNotes(currentUser.id, data.notes);
+            }
+        })
         .catch(e => { console.error("保存エラー:", e); });
+        
         chatTranscript = "";
     }
 }
@@ -609,6 +813,7 @@ async function startMicrophone() {
             recognition.continuous = true;
             recognition.interimResults = true;
             recognition.lang = 'ja-JP';
+
             recognition.onresult = (event) => {
                 let interimTranscript = '';
                 for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -616,7 +821,9 @@ async function startMicrophone() {
                         const transcript = event.results[i][0].transcript;
                         console.log("🎤 確定:", transcript);
                         chatTranscript += transcript + "\n";
+                        
                         saveToNellMemory('user', transcript);
+                        
                         const speechText = document.getElementById('user-speech-text');
                         if(speechText) speechText.innerText = transcript;
                     } else {
@@ -626,9 +833,17 @@ async function startMicrophone() {
                     }
                 }
             };
-            recognition.onend = () => { if (isRecognitionActive && liveSocket && liveSocket.readyState === WebSocket.OPEN) { try { recognition.start(); } catch(e){} } };
+            
+            recognition.onend = () => {
+                if (isRecognitionActive && liveSocket && liveSocket.readyState === WebSocket.OPEN) {
+                    console.log("🔄 音声認識を再起動します...");
+                    try { recognition.start(); } catch(e){}
+                }
+            };
+
             recognition.start();
         }
+
         mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1 } });
         const processorCode = `class PcmProcessor extends AudioWorkletProcessor { constructor() { super(); this.bufferSize = 2048; this.buffer = new Float32Array(this.bufferSize); this.index = 0; } process(inputs, outputs, parameters) { const input = inputs[0]; if (input.length > 0) { const channel = input[0]; for (let i = 0; i < channel.length; i++) { this.buffer[this.index++] = channel[i]; if (this.index >= this.bufferSize) { this.port.postMessage(this.buffer); this.index = 0; } } } return true; } } registerProcessor('pcm-processor', PcmProcessor);`;
         const blob = new Blob([processorCode], { type: 'application/javascript' });
@@ -636,11 +851,20 @@ async function startMicrophone() {
         const source = audioContext.createMediaStreamSource(mediaStream);
         workletNode = new AudioWorkletNode(audioContext, 'pcm-processor');
         source.connect(workletNode);
+        
         workletNode.port.onmessage = (event) => {
-            const inputData = event.data; let sum = 0; for(let i=0; i<inputData.length; i++) sum += inputData[i] * inputData[i];
+            const inputData = event.data;
+            let sum = 0; for(let i=0; i<inputData.length; i++) sum += inputData[i] * inputData[i];
             const volume = Math.sqrt(sum / inputData.length);
-            const btn = document.getElementById('mic-btn'); if (btn) btn.style.boxShadow = volume > 0.01 ? `0 0 ${10 + volume * 500}px #ffeb3b` : "none";
-            if (volume > 0.05 && !window.userIsSpeakingNow) { saveToNellMemory('user', '（お話し中...）'); window.userIsSpeakingNow = true; setTimeout(() => { window.userIsSpeakingNow = false; }, 5000); }
+            const btn = document.getElementById('mic-btn');
+            if (btn) btn.style.boxShadow = volume > 0.01 ? `0 0 ${10 + volume * 500}px #ffeb3b` : "none";
+            
+            if (volume > 0.05 && !window.userIsSpeakingNow) {
+                saveToNellMemory('user', '（お話し中...）');
+                window.userIsSpeakingNow = true;
+                setTimeout(() => { window.userIsSpeakingNow = false; }, 5000);
+            }
+
             setTimeout(() => {
                 if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return;
                 const downsampled = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
@@ -654,8 +878,12 @@ async function startMicrophone() {
 
 function playLivePcmAudio(base64) { 
     if (!audioContext) return; 
-    const binary = window.atob(base64); const bytes = new Uint8Array(binary.length); for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i); 
-    const float32 = new Float32Array(bytes.length / 2); const view = new DataView(bytes.buffer); for (let i = 0; i < float32.length; i++) float32[i] = view.getInt16(i * 2, true) / 32768.0; 
+    const binary = window.atob(base64); 
+    const bytes = new Uint8Array(binary.length); 
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i); 
+    const float32 = new Float32Array(bytes.length / 2); 
+    const view = new DataView(bytes.buffer); 
+    for (let i = 0; i < float32.length; i++) float32[i] = view.getInt16(i * 2, true) / 32768.0; 
     const buffer = audioContext.createBuffer(1, float32.length, 24000); buffer.copyToChannel(float32, 0); const source = audioContext.createBufferSource(); source.buffer = buffer; source.connect(audioContext.destination); const now = audioContext.currentTime; 
     if (nextStartTime < now) nextStartTime = now + 1.0; 
     source.start(nextStartTime); nextStartTime += buffer.duration; 
@@ -667,8 +895,163 @@ function downsampleBuffer(buffer, sampleRate, outSampleRate) { if (outSampleRate
 function arrayBufferToBase64(buffer) { let binary = ''; const bytes = new Uint8Array(buffer); for (let i = 0; i < bytes.byteLength; i++) { binary += String.fromCharCode(bytes[i]); } return window.btoa(binary); }
 function updateMiniKarikari() { if(currentUser) { document.getElementById('mini-karikari-count').innerText = currentUser.karikari; document.getElementById('karikari-count').innerText = currentUser.karikari; } }
 function showKarikariEffect(amount) { const container = document.querySelector('.nell-avatar-wrap'); if(container) { const floatText = document.createElement('div'); floatText.className = 'floating-text'; floatText.innerText = amount > 0 ? `+${amount}` : `${amount}`; floatText.style.color = amount > 0 ? '#ff9100' : '#ff5252'; floatText.style.right = '0px'; floatText.style.top = '0px'; container.appendChild(floatText); setTimeout(() => floatText.remove(), 1500); } const heartCont = document.getElementById('heart-container'); if(heartCont) { for(let i=0; i<8; i++) { const heart = document.createElement('div'); heart.innerText = amount > 0 ? '✨' : '💗'; heart.style.position = 'absolute'; heart.style.fontSize = (Math.random() * 1.5 + 1) + 'rem'; heart.style.left = (Math.random() * 100) + '%'; heart.style.top = (Math.random() * 100) + '%'; heart.style.pointerEvents = 'none'; heartCont.appendChild(heart); heart.animate([{ transform: 'scale(0) translateY(0)', opacity: 0 }, { transform: 'scale(1) translateY(-20px)', opacity: 1, offset: 0.2 }, { transform: 'scale(1.2) translateY(-100px)', opacity: 0 }], { duration: 1000 + Math.random() * 1000, easing: 'ease-out', fill: 'forwards' }).onfinish = () => heart.remove(); } } }
-window.checkAnswerDynamically = function(id, inputElem) { const newVal = inputElem.value; const problem = transcribedProblems.find(p => p.id === id); if (!problem) return; problem.student_answer = String(newVal); const normalizedStudent = String(newVal).trim(); const normalizedCorrect = String(problem.correct_answer || "").trim(); const isCorrect = (normalizedStudent !== "") && (normalizedStudent === normalizedCorrect); const container = document.getElementById(`grade-item-${id}`); const markElem = document.getElementById(`mark-${id}`); if (container && markElem) { if (isCorrect) { markElem.innerText = "⭕"; markElem.style.color = "#ff5252"; container.style.backgroundColor = "#fff5f5"; } else { markElem.innerText = "❌"; markElem.style.color = "#4a90e2"; container.style.backgroundColor = "#f0f8ff"; } } updateGradingMessage(); };
-function updateGradingMessage() { let correctCount = 0; transcribedProblems.forEach(p => { const s = String(p.student_answer || "").trim(); const c = String(p.correct_answer || "").trim(); if (s !== "" && s === c) correctCount++; }); const scoreRate = correctCount / (transcribedProblems.length || 1); if (scoreRate === 1.0) updateNellMessage(`全問正解だにゃ！天才だにゃ〜！！`, "excited"); else if (scoreRate >= 0.5) updateNellMessage(`あと${transcribedProblems.length - correctCount}問！直してみるにゃ！`, "happy"); else updateNellMessage(`間違ってても大丈夫！入力し直してみて！`, "gentle"); }
-function renderProblemSelection() { document.getElementById('problem-selection-view').classList.remove('hidden'); const l = document.getElementById('transcribed-problem-list'); l.innerHTML = ""; transcribedProblems.forEach(p => { const div = document.createElement('div'); div.className = "grade-item"; div.style.cssText = `border-bottom:1px solid #eee; padding:15px; margin-bottom:10px; border-radius:10px; background:white; box-shadow: 0 2px 5px rgba(0,0,0,0.05);`; div.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center;"><div style="font-weight:900; color:#4a90e2; font-size:1.5rem; width:50px; text-align:center;">${p.label || '問'}</div><div style="flex:1; margin-left:10px;"><div style="font-weight:bold; font-size:1.1rem; margin-bottom:8px; color:#333;">${p.question.substring(0, 40)}${p.question.length>40?'...':''}</div><div style="display:flex; justify-content:flex-end; align-items:center; gap:10px;"><div style="flex:1;"><input type="text" placeholder="ここにメモできるよ" value="${p.student_answer || ''}" style="width:100%; padding:8px; border:2px solid #f0f0f0; border-radius:8px; font-size:0.9rem; color:#555;"></div><div style="width:80px; text-align:right;"><button class="mini-teach-btn" onclick="startHint(${p.id})">教えて</button></div></div></div></div>`; l.appendChild(div); }); const btn = document.querySelector('#problem-selection-view button.orange-btn'); if (btn) { btn.disabled = false; btn.innerText = "✨ ぜんぶわかったにゃ！"; } }
-function renderMistakeSelection() { if (!currentUser.mistakes || currentUser.mistakes.length === 0) { updateNellMessage("ノートは空っぽにゃ！", "happy"); setTimeout(backToLobby, 2000); return; } transcribedProblems = currentUser.mistakes; renderProblemSelection(); updateNellMessage("復習するにゃ？", "excited"); }
-function showGradingView(silent = false) { document.getElementById('problem-selection-view').classList.add('hidden'); document.getElementById('final-view').classList.remove('hidden'); document.getElementById('grade-sheet-container').classList.remove('hidden'); document.getElementById('hint-detail-container').classList.add('hidden'); const container = document.getElementById('problem-list-grade'); container.innerHTML = ""; transcribedProblems.forEach(p => { const studentAns = String(p.student_answer || "").trim(); const correctAns = String(p.correct_answer || "").trim(); let isCorrect = (studentAns !== "") && (studentAns === correctAns); const mark = isCorrect ? "⭕" : "❌"; const markColor = isCorrect ? "#ff5252" : "#4a90e2"; const bgStyle = isCorrect ? "background:#fff5f5;" : "background:#f0f8ff;"; const div = document.createElement('div'); div.className = "grade-item"; div.id = `grade-item-${p.id}`; div.style.cssText = `border-bottom:1px solid #eee; padding:15px; margin-bottom:10px; border-radius:10px; ${bgStyle}`; div.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center;"><div id="mark-${p.id}" style="font-weight:900; color:${markColor}; font-size:2rem; width:50px; text-align:center;">${mark}</div><div style="flex:1; margin-left:10px;"><div style="font-size:0.8rem; color:#888; margin-bottom:4px;">${p.label || '問'}</div><div style="font-weight:bold; font-size:1.1rem; margin-bottom:8px;">${p.question.substring(0, 20)}${p.question.length>20?'...':''}</div><div style="display:flex; gap:10px; font-size:0.9rem; align-items:center;"><div style="flex:1;"><div style="font-size:0.7rem; color:#666;">キミの答え (直せるよ)</div><input type="text" value="${studentAns}" oninput="checkAnswerDynamically(${p.id}, this)" style="width:100%; padding:8px; border:2px solid #ddd; border-radius:8px; font-size:1rem; font-weight:bold; color:#333;"></div><div style="width:80px; text-align:right;"><button class="mini-teach-btn" onclick="startHint(${p.id})">教えて</button></div></div></div></div>`; container.appendChild(div); }); const btnDiv = document.createElement('div'); btnDiv.style.textAlign = "center"; btnDiv.style.marginTop = "20px"; btnDiv.innerHTML = `<button onclick="finishGrading(this)" class="main-btn orange-btn">💯 採点おわり！</button>`; container.appendChild(btnDiv); if (!silent) { updateGradingMessage(); } }
+
+// --- リアルタイム採点機能 ---
+window.checkAnswerDynamically = function(id, inputElem) {
+    const newVal = inputElem.value;
+    const problem = transcribedProblems.find(p => p.id === id);
+    if (!problem) return;
+
+    // 数値でも文字列に変換して比較
+    problem.student_answer = String(newVal);
+    const normalizedStudent = String(newVal).trim();
+    const normalizedCorrect = String(problem.correct_answer || "").trim();
+    const isCorrect = (normalizedStudent !== "") && (normalizedStudent === normalizedCorrect);
+
+    const container = document.getElementById(`grade-item-${id}`);
+    const markElem = document.getElementById(`mark-${id}`);
+    
+    if (container && markElem) {
+        if (isCorrect) {
+            markElem.innerText = "⭕";
+            markElem.style.color = "#ff5252";
+            container.style.backgroundColor = "#fff5f5";
+        } else {
+            markElem.innerText = "❌";
+            markElem.style.color = "#4a90e2";
+            container.style.backgroundColor = "#f0f8ff";
+        }
+    }
+    updateGradingMessage();
+};
+
+function updateGradingMessage() {
+    let correctCount = 0;
+    transcribedProblems.forEach(p => {
+        const s = String(p.student_answer || "").trim();
+        const c = String(p.correct_answer || "").trim();
+        if (s !== "" && s === c) correctCount++;
+    });
+
+    const scoreRate = correctCount / (transcribedProblems.length || 1);
+    if (scoreRate === 1.0) updateNellMessage(`全問正解だにゃ！天才だにゃ〜！！`, "excited");
+    else if (scoreRate >= 0.5) updateNellMessage(`あと${transcribedProblems.length - correctCount}問！直してみるにゃ！`, "happy");
+    else updateNellMessage(`間違ってても大丈夫！入力し直してみて！`, "gentle");
+}
+
+// --- スキャン結果表示 ---
+function renderProblemSelection() { 
+    document.getElementById('problem-selection-view').classList.remove('hidden'); 
+    const l = document.getElementById('transcribed-problem-list'); 
+    l.innerHTML = ""; 
+
+    transcribedProblems.forEach(p => { 
+        const div = document.createElement('div');
+        div.className = "grade-item";
+        div.style.cssText = `border-bottom:1px solid #eee; padding:15px; margin-bottom:10px; border-radius:10px; background:white; box-shadow: 0 2px 5px rgba(0,0,0,0.05);`;
+
+        div.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div style="font-weight:900; color:#4a90e2; font-size:1.5rem; width:50px; text-align:center;">
+                    ${p.label || '問'}
+                </div>
+                <div style="flex:1; margin-left:10px;">
+                    <div style="font-weight:bold; font-size:1.1rem; margin-bottom:8px; color:#333;">
+                        ${p.question.substring(0, 40)}${p.question.length>40?'...':''}
+                    </div>
+                    <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px;">
+                        <div style="flex:1;">
+                            <input type="text" placeholder="ここにメモできるよ"
+                                   value="${p.student_answer || ''}"
+                                   style="width:100%; padding:8px; border:2px solid #f0f0f0; border-radius:8px; font-size:0.9rem; color:#555;">
+                        </div>
+                        <div style="width:80px; text-align:right;">
+                            <button class="mini-teach-btn" onclick="startHint(${p.id})">教えて</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        l.appendChild(div);
+    }); 
+    
+    // ★修正: ボタンの状態をリセット (v86.0対応)
+    const btn = document.querySelector('#problem-selection-view button.orange-btn');
+    if (btn) {
+        btn.disabled = false;
+        btn.innerText = "✨ ぜんぶわかったにゃ！";
+    }
+}
+
+// --- 復習モード ---
+function renderMistakeSelection() { 
+    if (!currentUser.mistakes || currentUser.mistakes.length === 0) { 
+        updateNellMessage("ノートは空っぽにゃ！", "happy"); 
+        setTimeout(backToLobby, 2000); 
+        return; 
+    } 
+    transcribedProblems = currentUser.mistakes; 
+    renderProblemSelection(); 
+    updateNellMessage("復習するにゃ？", "excited"); 
+}
+
+// --- 採点画面表示 ---
+function showGradingView(silent = false) {
+    document.getElementById('problem-selection-view').classList.add('hidden');
+    document.getElementById('final-view').classList.remove('hidden');
+    document.getElementById('grade-sheet-container').classList.remove('hidden');
+    document.getElementById('hint-detail-container').classList.add('hidden');
+
+    const container = document.getElementById('problem-list-grade');
+    container.innerHTML = "";
+
+    transcribedProblems.forEach(p => {
+        // 安全に文字列化して比較
+        const studentAns = String(p.student_answer || "").trim();
+        const correctAns = String(p.correct_answer || "").trim();
+        let isCorrect = (studentAns !== "") && (studentAns === correctAns);
+
+        const mark = isCorrect ? "⭕" : "❌";
+        const markColor = isCorrect ? "#ff5252" : "#4a90e2";
+        const bgStyle = isCorrect ? "background:#fff5f5;" : "background:#f0f8ff;";
+
+        const div = document.createElement('div');
+        div.className = "grade-item";
+        div.id = `grade-item-${p.id}`; 
+        div.style.cssText = `border-bottom:1px solid #eee; padding:15px; margin-bottom:10px; border-radius:10px; ${bgStyle}`;
+        
+        div.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div id="mark-${p.id}" style="font-weight:900; color:${markColor}; font-size:2rem; width:50px; text-align:center;">${mark}</div>
+                <div style="flex:1; margin-left:10px;">
+                    <div style="font-size:0.8rem; color:#888; margin-bottom:4px;">${p.label || '問'}</div>
+                    <div style="font-weight:bold; font-size:1.1rem; margin-bottom:8px;">${p.question.substring(0, 20)}${p.question.length>20?'...':''}</div>
+                    
+                    <div style="display:flex; gap:10px; font-size:0.9rem; align-items:center;">
+                        <div style="flex:1;">
+                            <div style="font-size:0.7rem; color:#666;">キミの答え (直せるよ)</div>
+                            <input type="text" value="${studentAns}" 
+                                   oninput="checkAnswerDynamically(${p.id}, this)"
+                                   style="width:100%; padding:8px; border:2px solid #ddd; border-radius:8px; font-size:1rem; font-weight:bold; color:#333;">
+                        </div>
+                        <div style="width:80px; text-align:right;">
+                            <button class="mini-teach-btn" onclick="startHint(${p.id})">教えて</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        container.appendChild(div);
+    });
+
+    const btnDiv = document.createElement('div');
+    btnDiv.style.textAlign = "center";
+    btnDiv.style.marginTop = "20px";
+    btnDiv.innerHTML = `<button onclick="finishGrading(this)" class="main-btn orange-btn">💯 採点おわり！</button>`;
+    container.appendChild(btnDiv);
+
+    // silentがfalseのときのみ発話する
+    if (!silent) {
+        updateGradingMessage();
+    }
+}
