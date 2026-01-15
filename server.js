@@ -1,4 +1,4 @@
-// --- server.js (完全版 v103.0: 採点ロジック完全統一 & 厳格化) ---
+// --- server.js (完全版 v104.0: 手書き位置補正 & 給食会話強化) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -84,15 +84,21 @@ app.post('/analyze', async (req, res) => {
         // --- Step 1: Gemini 2.0 Flash で「手書き文字」を含むOCR ---
         const flashModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         
-        // ★修正: 問題文の原文維持を強力に指示
+        // ★修正: 配置（行・列）と手書き認識への意識を強化
         const ocrPrompt = `
         この${subject}のプリント画像を詳細に読み取ってください。
         
-        【タスク】
-        1. 活字の「問題文」を、**一字一句正確に、絶対に改変せずに**書き起こしてください。要約は禁止です。
-        2. 子供が鉛筆で書いた「手書きの答え」があれば、それも読み取ってください。
+        【最重要タスク】
+        1. 活字の「問題文」を、一字一句正確に、改変せずに書き起こしてください。
+        2. **子供が鉛筆で書いた「手書きの答え」**を必ず読み取ってください。
+           - 子供特有の筆跡です。字が崩れていても、前後の計算式や文脈から数字・文字を推測してください。
         
-        出力は構造化せず、見えたままのテキストデータとして出力してください。
+        【構造・配置の厳守】
+        ・**問題と答えの「位置関係（列・行）」を厳密に守ってください。**
+        ・隣り合う問題（右隣や左隣）の答えと混同したり、入れ替わったりしないように、空間的な配置を意識してください。
+        ・例えば、左側の問題の答えを、右側の問題の答えとして認識するのは誤りです。
+        
+        出力は構造化せず、見えたものを上から順に（配置を意識して）テキスト化してください。
         `;
         
         const flashResult = await flashModel.generateContent([
@@ -103,7 +109,7 @@ app.post('/analyze', async (req, res) => {
         console.log("OCR Result:", transcribedText.substring(0, 100) + "...");
 
         // --- Step 2: Gemini 2.5 Pro で採点・推論 ---
-        const reasoningModelName = "gemini-2.5-pro"; // ★絶対固定: 精度優先
+        const reasoningModelName = "gemini-2.5-pro"; // 精度優先
         const reasoningModel = genAI.getGenerativeModel({ 
             model: reasoningModelName,
             generationConfig: { responseMimeType: "application/json" }
@@ -128,17 +134,14 @@ app.post('/analyze', async (req, res) => {
         };
         const specificRule = gradingRules[subject] || gradingRules['さんすう'];
 
-        // ★修正: 「教えて」と「採点」で共通の解決ロジックを使用
-        // 違いは「生徒の答え(student_answer)を抽出するかどうか」のみにする
         let answerExtractionInstruction = "";
         if (mode === 'grade') {
             answerExtractionInstruction = `
             - **student_answer**: OCRテキストの中から、子供が手書きで書いたと思われる「答え」の部分を抽出して入れてください。
+            - **重要**: OCRテキストの並び順に注意し、問題に対応する正しい答えを選んでください（隣の問題の答えを入れないこと）。
             - 読み取れない、または空欄の場合は、勝手に正解を埋めず、必ず空文字 "" にしてください。
-            - 誤字や書き間違いも、修正せずにそのまま抽出してください。
             `;
         } else {
-            // 教えてモード
             answerExtractionInstruction = `
             - **student_answer**: このモードでは生徒の答えは不要です。必ず空文字 "" にしてください。
             `;
@@ -153,11 +156,8 @@ app.post('/analyze', async (req, res) => {
 
         【最重要ルール】
         1. **question**: 上記のOCR結果の「問題文」を**改変せず、そのまま**使ってください。
-           - 「要約」や「補完」は禁止です。
-           - 誤字脱字があってもOCR結果を優先してください（画面と一致させるため）。
         2. **correct_answer**: 問題文から論理的に導き出した「絶対の正解」を入れてください。
-           - 「教えてモード」と同じ精度で、正確に解いてください。
-           - 計算ミスや知識の間違いがないように慎重に解いてください。
+        3. **hints**: 答えそのものは書かず、考え方や着眼点を3段階で教えてください。
 
         【回答抽出ルール】
         ${answerExtractionInstruction}
@@ -206,6 +206,7 @@ app.post('/lunch-reaction', async (req, res) => {
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
         
         const isSpecial = (count % 10 === 0);
+        // ★修正: Flashモデルを使って毎回バリエーションを出す
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         
         let prompt = "";
@@ -214,22 +215,29 @@ app.post('/lunch-reaction', async (req, res) => {
             あなたは猫の「ネル先生」です。生徒「${name}」から、記念すべき${count}個目の給食（カリカリ）をもらいました！
             
             【指示】
-            ・カリカリへの愛を熱く、情熱的に語ってください。
-            ・${name}さんへの感謝を、少し大げさなくらい感激して伝えてください。
-            ・文字数は50文字程度。
-            ・語尾は「にゃ」「だにゃ」。
+            1. 必ず「${name}さん」と、さん付けで呼んでください。
+            2. カリカリへの愛を熱く、情熱的に語ってください。
+            3. 感謝を少し大げさなくらい感激して伝えてください。
+            4. 文字数は50文字程度。語尾は「にゃ」「だにゃ」。
             `;
         } else {
+            // ★通常時も毎回生成＆さん付け必須
             prompt = `
             あなたは猫の「ネル先生」です。生徒「${name}」から${count}回目の給食（カリカリ）をもらいました。
-            ・「おいしいにゃ！」「最高だにゃ！」など、短く喜びを伝えて。
-            ・20文字以内。
+            
+            【指示】
+            1. 必ず「${name}さん」と、さん付けで呼んでください。
+            2. 「おいしいにゃ！」「カリカリ最高だにゃ！」など、短く喜びを伝えてください。
+            3. 毎回少し違う言い回しをしてください（味の感想、音の感想、喜び方など）。
+            4. 20文字以内。
             `;
         }
 
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text().trim(), isSpecial });
-    } catch { res.json({ reply: "おいしいにゃ！", isSpecial: false }); }
+    } catch { 
+        res.json({ reply: "おいしいにゃ！", isSpecial: false }); 
+    }
 });
 
 app.post('/game-reaction', async (req, res) => { res.json({ reply: "がんばれにゃ！", mood: "excited" }); });
