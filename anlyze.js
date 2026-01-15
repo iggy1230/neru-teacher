@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v116.0: 順次再生演出 & 記憶システム完全版) ---
+// --- anlyze.js (完全版 v117.0: 分析セリフ修正 & 記憶断捨離) ---
 
 // グローバル変数の初期化
 window.transcribedProblems = []; 
@@ -69,22 +69,35 @@ function startMouthAnimation() {
 }
 startMouthAnimation();
 
-// --- ★記憶システム (二重保存・堅牢化版) ---
+// --- ★記憶システム (断捨離フィルター実装版) ---
 async function saveToNellMemory(role, text) {
-    if (!currentUser || !currentUser.id) {
-        // ユーザー未定時はログだけ出してスキップ
+    if (!currentUser || !currentUser.id) return;
+
+    // --- フィルター (お耳の関所) ---
+    // 1. 2文字以下は覚えない
+    if (text.length <= 2) return;
+
+    // 2. 意味のない相槌や呼びかけを無視
+    const ignoreWords = ["あー", "えーと", "うーん", "あのー", "はい", "ねえ", "ネル先生", "にゃー"];
+    if (ignoreWords.includes(text.trim())) {
+        console.log("🤫 不要な相槌なので覚えなかったにゃ:", text);
         return;
     }
-    
+    // --- フィルターここまで ---
+
     const newItem = { role: role, text: text, time: new Date().toISOString() };
     console.log(`📝 記憶保存: [${role}] ${text.substring(0, 15)}...`);
 
-    // 1. LocalStorage (バックアップとして必ず保存)
+    // 1. LocalStorage (バックアップ)
     try {
         const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
         let history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
+        
+        // 重複チェック（直前と同じなら保存しない）
+        if (history.length > 0 && history[history.length - 1].text === text) return;
+
         history.push(newItem);
-        if (history.length > 50) history.shift(); 
+        if (history.length > 50) history.shift(); // 50件制限
         localStorage.setItem(memoryKey, JSON.stringify(history));
     } catch(e) { console.error("Local Save Error:", e); }
 
@@ -92,10 +105,12 @@ async function saveToNellMemory(role, text) {
     if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) {
         try {
             const docRef = db.collection("memories").doc(currentUser.id);
-            // 最新の状態を取得してから追記
             const docSnap = await docRef.get();
             let cloudHistory = docSnap.exists ? (docSnap.data().history || []) : [];
             
+            // クラウド側でも重複チェック
+            if (cloudHistory.length > 0 && cloudHistory[cloudHistory.length - 1].text === text) return;
+
             cloudHistory.push(newItem);
             if (cloudHistory.length > 50) cloudHistory.shift();
 
@@ -107,7 +122,7 @@ async function saveToNellMemory(role, text) {
     }
 }
 
-// --- メッセージ更新 (TTS待機対応) ---
+// --- メッセージ更新 (TTS待機 & フィルター修正) ---
 window.updateNellMessage = async function(t, mood = "normal") {
     const gameScreen = document.getElementById('screen-game');
     const isGameHidden = gameScreen ? gameScreen.classList.contains('hidden') : true;
@@ -117,7 +132,9 @@ window.updateNellMessage = async function(t, mood = "normal") {
     if (el) el.innerText = t;
 
     if (t && t.includes("もぐもぐ")) { try { sfxBori.currentTime = 0; sfxBori.play(); } catch(e){} }
-    if (!t || t.includes("ちょっと待ってて") || t.includes("もぐもぐ")) return;
+    
+    // ★修正: "ちょっと待ってて" を除外条件から削除しました (分析中のセリフを喋らせるため)
+    if (!t || t.includes("もぐもぐ") || t.includes("接続中")) return;
 
     // 記憶に保存
     saveToNellMemory('nell', t);
@@ -132,7 +149,7 @@ window.updateNellMessage = async function(t, mood = "normal") {
 // --- 分析演出用ヘルパー ---
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// ★修正: 分析中のセリフを順次再生する関数
+// 分析中のセリフを順次再生
 async function playAnalyzeSequence(firstMessage) {
     const messages = [
         { text: firstMessage, mood: "thinking" }, // 最初の「ふむふむ...」
@@ -176,7 +193,6 @@ async function startAnalysis(b64) {
 
     // ★演出開始 (非同期で実行)
     const initialMsg = `ふむふむ…\n${currentUser.grade}年生の${currentSubject}の問題だにゃ…`;
-    // APIリクエストと並行して喋らせるため await はしない
     playAnalyzeSequence(initialMsg);
 
     try {
@@ -267,7 +283,8 @@ window.selectMode = function(m) {
     } else if (m === 'review') { 
         renderMistakeSelection(); 
     } else { 
-        document.getElementById('subject-selection-view').classList.remove('hidden'); 
+        const subjectView = document.getElementById('subject-selection-view');
+        if (subjectView) subjectView.classList.remove('hidden'); 
         updateNellMessage("どの教科にするのかにゃ？", "normal"); 
     }
 };
@@ -293,8 +310,8 @@ window.setSubject = function(s) {
         btnFast.className = "main-btn"; 
         btnFast.style.background = "#ff85a1";
         btnFast.style.width = "100%";
-        btnFast.style.cursor = "default"; 
-        btnFast.style.boxShadow = "none"; 
+        btnFast.style.cursor = "default";
+        btnFast.style.boxShadow = "none";
         btnFast.onclick = null;
     }
     if (btnPrec) btnPrec.style.display = "none";
@@ -430,25 +447,7 @@ async function startLiveChat() {
         nextStartTime = audioContext.currentTime;
         
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        
-        // 記憶をロード (Cloud優先)
-        let savedHistory = [];
-        if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) {
-            try {
-                const doc = await db.collection("memories").doc(currentUser.id).get();
-                if (doc.exists) savedHistory = doc.data().history || [];
-            } catch(e) { console.error("Firestore Read Error:", e); }
-        }
-        // フォールバック
-        if (savedHistory.length === 0) {
-            const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
-            savedHistory = JSON.parse(localStorage.getItem(memoryKey) || '[]');
-        }
-
-        const historySummary = savedHistory.slice(-15).map(m => `- ${m.role === 'user' ? 'キミ' : 'ネル'}: ${m.text}`).join('\n');
         let statusSummary = `${currentUser.name}さんは今、お話しにきたにゃ。カリカリは${currentUser.karikari}個持ってるにゃ。`;
-        if (historySummary) { statusSummary += `\n【直近の思い出】\n${historySummary}`; }
-
         const url = `${wsProto}//${location.host}?grade=${currentUser.grade}&name=${encodeURIComponent(currentUser.name)}&status=${encodeURIComponent(statusSummary)}`;
         liveSocket = new WebSocket(url); liveSocket.binaryType = "blob";
         connectionTimeout = setTimeout(() => { if (liveSocket && liveSocket.readyState !== WebSocket.OPEN) { updateNellMessage("なかなかつながらないにゃ…", "thinking"); stopLiveChat(); } }, 10000);
@@ -469,7 +468,7 @@ function arrayBufferToBase64(buffer) { let binary = ''; const bytes = new Uint8A
 function updateMiniKarikari() { if(currentUser) { const el = document.getElementById('mini-karikari-count'); if(el) el.innerText = currentUser.karikari; const el2 = document.getElementById('karikari-count'); if(el2) el2.innerText = currentUser.karikari; } }
 function showKarikariEffect(amount) { const container = document.querySelector('.nell-avatar-wrap'); if(container) { const floatText = document.createElement('div'); floatText.className = 'floating-text'; floatText.innerText = amount > 0 ? `+${amount}` : `${amount}`; floatText.style.color = amount > 0 ? '#ff9100' : '#ff5252'; floatText.style.right = '0px'; floatText.style.top = '0px'; container.appendChild(floatText); setTimeout(() => floatText.remove(), 1500); } }
 
-// --- Analyze ---
+// --- Analyze (DOM Ready) ---
 window.addEventListener('DOMContentLoaded', () => {
     const camIn = document.getElementById('hw-input-camera'); 
     const albIn = document.getElementById('hw-input-album'); 
@@ -483,8 +482,11 @@ window.handleFileUpload = async (file) => {
         return;
     }
     
-    document.getElementById('upload-controls').classList.add('hidden');
-    document.getElementById('cropper-modal').classList.remove('hidden');
+    const uploadControls = document.getElementById('upload-controls');
+    const cropperModal = document.getElementById('cropper-modal');
+    
+    if (uploadControls) uploadControls.classList.add('hidden');
+    if (cropperModal) cropperModal.classList.remove('hidden');
     
     const canvas = document.getElementById('crop-canvas'); 
     if(canvas) canvas.style.opacity = '0';
