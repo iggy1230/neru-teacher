@@ -105,7 +105,7 @@ app.post('/analyze', async (req, res) => {
         console.log("OCR Result:", transcribedText.substring(0, 100) + "...");
 
         // --- Step 2: Gemini 1.5 Pro で採点・推論 ---
-        const reasoningModelName = "gemini-1.5-pro"; // 常にProを使う（精度優先）
+        const reasoningModelName = "gemini-2.5-pro"; // 常にProを使う（精度優先）
         const reasoningModel = genAI.getGenerativeModel({ 
             model: reasoningModelName,
             generationConfig: { responseMimeType: "application/json" }
@@ -226,7 +226,10 @@ wss.on('connection', async (clientWs, req) => {
                     model: "models/gemini-2.0-flash-exp",
                     generationConfig: { 
                         responseModalities: ["AUDIO"], 
-                        speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } } } 
+                        speech_config: { 
+                            voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }, 
+                            language_code: "ja-JP" 
+                        } 
                     }, 
                     systemInstruction: {
                         parts: [{
