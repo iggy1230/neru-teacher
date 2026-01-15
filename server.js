@@ -82,7 +82,7 @@ app.post('/analyze', async (req, res) => {
         console.log(`[Analyze] Type: ${analysisType}, Subject: ${subject}, Mode: ${mode}`);
 
         // --- Step 1: Gemini 2.0 Flash で OCR (位置関係重視) ---
-        const flashModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+        const flashModel = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
         
         let additionalOcrInstruction = "";
         if (subject === 'こくご') {
