@@ -1,4 +1,4 @@
-// --- server.js (完全版 v112.0: 給食＆ゲーム演出強化) ---
+// --- server.js (完全版 v113.0: 給食プロンプト修正 & 安定版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -186,7 +186,7 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
-// --- 4. 給食反応 (特別演出 & バリエーション強化) ---
+// --- 4. 給食反応 (箇条書き禁止 & 特別演出) ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
         const { count, name } = req.body;
@@ -200,6 +200,7 @@ app.post('/lunch-reaction', async (req, res) => {
             // 10回に1回: 熱く語る（さん付け必須）
             prompt = `
             あなたは猫の「ネル先生」です。生徒「${name}」から、記念すべき${count}個目の給食（カリカリ）をもらいました！
+            
             【指示】
             1. 必ず「${name}さん」と、さん付けで呼んでください。
             2. カリカリへの愛を熱く、情熱的に語ってください。
@@ -207,14 +208,16 @@ app.post('/lunch-reaction', async (req, res) => {
             4. 文字数は50文字程度。語尾は「にゃ」「だにゃ」。
             `;
         } else {
-            // 通常時: 笑えるバリエーション（さん付けはたまに）
+            // 通常時: 箇条書き禁止ルール追加
             prompt = `
             あなたは猫の「ネル先生」です。生徒「${name}」から${count}回目の給食（カリカリ）をもらいました。
-            【指示】
-            1. 普段は名前を呼ばなくていいですが、5回に1回くらいの確率で気まぐれに「${name}さん」と呼んでください。呼ぶときは必ず「さん」をつけてください。
-            2. カリカリの味、音、匂い、食感などを独特な表現で褒めるか、または猫としてのシュールなジョークを言ってください。
-            3. ユーモアたっぷり、笑える感じで。
-            4. 20文字以内。
+            
+            【絶対守るべき指示】
+            1. 「箇条書き」や「複数の案」を出さないでください。セリフは1つだけにしてください。
+            2. 普段は名前を呼ばなくていいですが、5回に1回くらいの確率で気まぐれに「${name}さん」と呼んでください。
+            3. カリカリの味、音、匂い、食感などを独特な表現で褒めるか、または猫としてのシュールなジョークを言ってください。
+            4. ユーモアたっぷり、笑える感じで。
+            5. 20文字以内。
             `;
         }
         const result = await model.generateContent(prompt);
@@ -222,7 +225,7 @@ app.post('/lunch-reaction', async (req, res) => {
     } catch { res.json({ reply: "おいしいにゃ！", isSpecial: false }); }
 });
 
-// --- 3. ゲーム反応 (スコア連動) ---
+// --- 3. ゲーム反応 ---
 app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;
@@ -233,7 +236,6 @@ app.post('/game-reaction', async (req, res) => {
         if (type === 'start') {
             prompt = `あなたはネル先生。「${name}」がゲーム開始。「がんばれ！」と短く応援して。`;
         } else if (type === 'end') {
-            // スコアに応じたコメント
             prompt = `
             あなたはネル先生。ゲーム終了。スコアは${score}点（満点20点）です。
             スコアに応じて以下のテンションで、${name}さんに20文字以内でコメントしてください。
@@ -243,7 +245,6 @@ app.post('/game-reaction', async (req, res) => {
             語尾は「にゃ」。
             `;
         } else {
-            // プレイ中
             return res.json({ reply: "ナイスにゃ！", mood: "excited" });
         }
 

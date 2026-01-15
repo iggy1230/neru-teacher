@@ -1,13 +1,14 @@
-// --- anlyze.js (完全版 v112.0: ボタン右寄せ & ゲームスコア連携) ---
+// --- anlyze.js (完全版 v113.0: 記憶消失防止 & 安定版) ---
 
-let transcribedProblems = []; 
-let selectedProblem = null; 
-let hintIndex = 0; 
-let isAnalyzing = false; 
-let currentSubject = '';
-let currentMode = ''; 
-let lunchCount = 0; 
-let analysisType = 'precision';
+// グローバル変数の初期化
+window.transcribedProblems = []; 
+window.selectedProblem = null; 
+window.hintIndex = 0; 
+window.isAnalyzing = false; 
+window.currentSubject = '';
+window.currentMode = ''; 
+window.lunchCount = 0; 
+window.analysisType = 'precision';
 
 let liveSocket = null;
 let audioContext = null;
@@ -18,12 +19,9 @@ let currentTtsSource = null;
 let chatTranscript = ""; 
 let nextStartTime = 0;
 let connectionTimeout = null;
-
 let recognition = null;
 let isRecognitionActive = false;
-
 let gameCanvas, ctx, ball, paddle, bricks, score, gameRunning = false, gameAnimId = null;
-
 let cropImg = new Image();
 let cropPoints = [];
 let activeHandle = -1;
@@ -64,25 +62,45 @@ function startMouthAnimation() {
 }
 startMouthAnimation();
 
-// --- 記憶システム ---
+// --- ★修正: 記憶システム (二重保存・ログ強化) ---
 async function saveToNellMemory(role, text) {
-    if (!currentUser || !currentUser.id) return;
+    if (!currentUser || !currentUser.id) {
+        console.warn("⚠️ ユーザー情報がないので記憶をスキップしたにゃ");
+        return;
+    }
+    
     const newItem = { role: role, text: text, time: new Date().toISOString() };
-    if (currentUser.isGoogleUser && typeof db !== 'undefined') {
-        const docRef = db.collection("memories").doc(currentUser.id);
-        try {
-            const docSnap = await docRef.get();
-            let history = docSnap.exists ? (docSnap.data().history || []) : [];
-            history.push(newItem);
-            if (history.length > 50) history.shift(); 
-            await docRef.set({ history: history }, { merge: true });
-        } catch(e) { console.error("Memory Save Error:", e); }
-    } else {
+    console.log(`📝 記憶を保存するにゃ [${role}]: ${text}`);
+
+    // 1. ローカルストレージへの保存（バックアップとして常に実行）
+    try {
         const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
         let history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
         history.push(newItem);
-        if (history.length > 50) history.shift(); 
+        if (history.length > 50) history.shift(); // 50件まで
         localStorage.setItem(memoryKey, JSON.stringify(history));
+    } catch(e) {
+        console.error("Local Save Error:", e);
+    }
+
+    // 2. クラウド（Firestore）への同期 (Googleユーザーのみ)
+    if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) {
+        try {
+            const docRef = db.collection("memories").doc(currentUser.id);
+            const docSnap = await docRef.get();
+            let cloudHistory = docSnap.exists ? (docSnap.data().history || []) : [];
+            
+            cloudHistory.push(newItem);
+            if (cloudHistory.length > 50) cloudHistory.shift();
+
+            await docRef.set({ 
+                history: cloudHistory,
+                lastUpdated: new Date().toISOString()
+            }, { merge: true });
+            console.log("✅ クラウドに思い出を刻んだにゃ！");
+        } catch(e) {
+            console.error("❌ クラウド保存に失敗したにゃ:", e);
+        }
     }
 }
 
@@ -92,20 +110,30 @@ window.updateNellMessage = async function(t, mood = "normal") {
     const isGameHidden = gameScreen ? gameScreen.classList.contains('hidden') : true;
     const targetId = isGameHidden ? 'nell-text' : 'nell-text-game';
     const el = document.getElementById(targetId);
+    
     if (el) el.innerText = t;
+
     if (t && t.includes("もぐもぐ")) { try { sfxBori.currentTime = 0; sfxBori.play(); } catch(e){} }
-    if (!t || t.includes("ちょっと待ってて") || t.includes("もぐもぐ")) return;
+    
+    // システムメッセージ以外は記憶する
+    if (!t || t.includes("ちょっと待ってて") || t.includes("もぐもぐ") || t.includes("接続中")) return;
+
+    // ★ここで確実に保存
     saveToNellMemory('nell', t);
+
     if (typeof speakNell === 'function') {
         const textForSpeech = t.replace(/🐾/g, "");
         await speakNell(textForSpeech, mood);
     }
 };
 
-// --- モード選択 ---
+// --- モード選択 (画面遷移) ---
 window.selectMode = function(m) {
     currentMode = m; 
-    if (typeof switchScreen === 'function') switchScreen('screen-main'); 
+    
+    if (typeof switchScreen === 'function') {
+        switchScreen('screen-main'); 
+    }
     
     const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'lunch-view', 'grade-sheet-container', 'hint-detail-container'];
     ids.forEach(id => { const el = document.getElementById(id); if (el) el.classList.add('hidden'); });
@@ -113,7 +141,8 @@ window.selectMode = function(m) {
     const backBtn = document.getElementById('main-back-btn');
     if (backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = backToLobby; }
     
-    stopLiveChat(); gameRunning = false;
+    stopLiveChat(); 
+    gameRunning = false;
     const icon = document.querySelector('.nell-avatar-wrap img'); if(icon) icon.src = defaultIcon;
     document.getElementById('mini-karikari-display').classList.remove('hidden'); 
     updateMiniKarikari();
@@ -278,7 +307,7 @@ window.pressAllSolved = function(btnElement) {
     }
 };
 
-// --- Live Chat ---
+// --- Live Chat (記憶ロード強化) ---
 async function startLiveChat() {
     const btn = document.getElementById('mic-btn');
     if (liveSocket) { stopLiveChat(); return; }
@@ -293,8 +322,30 @@ async function startLiveChat() {
         nextStartTime = audioContext.currentTime;
         
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        
+        // ★記憶をロード (Cloud優先 -> Localフォールバック)
+        let savedHistory = [];
+        if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) {
+            try {
+                const doc = await db.collection("memories").doc(currentUser.id).get();
+                if (doc.exists) savedHistory = doc.data().history || [];
+            } catch(e) { console.error("Firestore Read Error:", e); }
+        }
+        
+        // Firestoreが空、またはゲストの場合はローカルからロード
+        if (savedHistory.length === 0) {
+            const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
+            savedHistory = JSON.parse(localStorage.getItem(memoryKey) || '[]');
+        }
+
+        const historySummary = savedHistory.slice(-15).map(m => `- ${m.role === 'user' ? 'キミ' : 'ネル'}: ${m.text}`).join('\n');
         let statusSummary = `${currentUser.name}さんは今、お話しにきたにゃ。カリカリは${currentUser.karikari}個持ってるにゃ。`;
+        if (historySummary) {
+            statusSummary += `\n【直近の思い出】\n${historySummary}`;
+        }
+
         const url = `${wsProto}//${location.host}?grade=${currentUser.grade}&name=${encodeURIComponent(currentUser.name)}&status=${encodeURIComponent(statusSummary)}`;
+        
         liveSocket = new WebSocket(url); liveSocket.binaryType = "blob";
         connectionTimeout = setTimeout(() => { if (liveSocket && liveSocket.readyState !== WebSocket.OPEN) { updateNellMessage("なかなかつながらないにゃ…", "thinking"); stopLiveChat(); } }, 10000);
         liveSocket.onopen = () => { clearTimeout(connectionTimeout); if(btn) { btn.innerText = "📞 つながった！(終了)"; btn.style.background = "#ff5252"; btn.disabled = false; } updateNellMessage("お待たせ！なんでも話してにゃ！", "happy"); isRecognitionActive = true; startMicrophone(); };
@@ -397,7 +448,7 @@ async function startAnalysis(b64) {
     } catch (err) { clearInterval(timer); document.getElementById('thinking-view').classList.add('hidden'); document.getElementById('upload-controls').classList.remove('hidden'); if(backBtn) backBtn.classList.remove('hidden'); updateNellMessage("エラーだにゃ…", "thinking"); } finally { isAnalyzing = false; }
 }
 
-// --- Render Helpers (★右端揃えの修正適用) ---
+// --- Render Helpers ---
 window.checkAnswerDynamically = function(id, inputElem) { const newVal = inputElem.value; const problem = transcribedProblems.find(p => p.id === id); if (!problem) return; problem.student_answer = String(newVal); const normalizedStudent = String(newVal).trim(); const normalizedCorrect = String(problem.correct_answer || "").trim(); const isCorrect = (normalizedStudent !== "") && (normalizedStudent === normalizedCorrect); const container = document.getElementById(`grade-item-${id}`); const markElem = document.getElementById(`mark-${id}`); if (container && markElem) { if (isCorrect) { markElem.innerText = "⭕"; markElem.style.color = "#ff5252"; container.style.backgroundColor = "#fff5f5"; } else { markElem.innerText = "❌"; markElem.style.color = "#4a90e2"; container.style.backgroundColor = "#f0f8ff"; } } updateGradingMessage(); };
 function updateGradingMessage() { let correctCount = 0; transcribedProblems.forEach(p => { const s = String(p.student_answer || "").trim(); const c = String(p.correct_answer || "").trim(); if (s !== "" && s === c) correctCount++; }); const scoreRate = correctCount / (transcribedProblems.length || 1); if (scoreRate === 1.0) updateNellMessage(`全問正解だにゃ！天才だにゃ〜！！`, "excited"); else if (scoreRate >= 0.5) updateNellMessage(`あと${transcribedProblems.length - correctCount}問！直してみるにゃ！`, "happy"); else updateNellMessage(`間違ってても大丈夫！入力し直してみて！`, "gentle"); }
 function renderProblemSelection() { document.getElementById('problem-selection-view').classList.remove('hidden'); const l = document.getElementById('transcribed-problem-list'); l.innerHTML = ""; transcribedProblems.forEach(p => { const div = document.createElement('div'); div.className = "grade-item"; div.style.cssText = `border-bottom:1px solid #eee; padding:15px; margin-bottom:10px; border-radius:10px; background:white; box-shadow: 0 2px 5px rgba(0,0,0,0.05);`; div.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center;"><div style="font-weight:900; color:#4a90e2; font-size:1.5rem; width:50px; text-align:center;">${p.label || '問'}</div><div style="flex:1; margin-left:10px;"><div style="font-weight:bold; font-size:0.9rem; margin-bottom:8px; color:#333;">${p.question}</div><div style="display:flex; justify-content:flex-end; align-items:center; gap:10px;"><div style="flex:1;"><input type="text" placeholder="ここにメモできるよ" value="${p.student_answer || ''}" style="width:100%; padding:8px; border:2px solid #f0f0f0; border-radius:8px; font-size:0.9rem; color:#555;"></div><div style="width:80px; text-align:right;"><button class="mini-teach-btn" onclick="startHint(${p.id})">教えて</button></div></div></div></div>`; l.appendChild(div); }); const btn = document.querySelector('#problem-selection-view button.orange-btn'); if (btn) { btn.disabled = false; btn.innerText = "✨ ぜんぶわかったにゃ！"; } }

@@ -1,4 +1,4 @@
-// --- ui.js (完全版 v109.0: 安定化) ---
+// --- ui.js (完全版 v113.0: カレンダー小型化) ---
 
 const sfxChime = new Audio('Jpn_sch_chime.mp3');
 const sfxBtn = new Audio('botan1.mp3');
@@ -25,7 +25,6 @@ window.startApp = function() {
 };
 
 window.backToTitle = async function() {
-    // ★追加: ログアウト処理があれば実行
     if (typeof window.logoutProcess === 'function') {
         await window.logoutProcess();
     }
@@ -49,8 +48,7 @@ window.backToLobby = function(suppressGreeting = false) {
 window.showEnrollment = function() {
     switchScreen('screen-enrollment');
     if (typeof window.showEnrollment === 'function') {
-        // user.jsの関数（名前が同じなので再帰に注意、user.js側でフラグリセット等してるならOK）
-        // ここでは単純に画面切り替えのみ行う
+        // user.jsの初期化処理
     }
 };
 
@@ -59,6 +57,7 @@ window.showAttendance = function() {
     if (typeof renderAttendance === 'function') renderAttendance();
 };
 
+// ★修正: カレンダーを小型化 (スクロール防止)
 window.renderAttendance = function() {
     const grid = document.getElementById('attendance-grid');
     if (!grid || !currentUser) return;
@@ -66,15 +65,23 @@ window.renderAttendance = function() {
     const month = currentCalendarDate.getMonth(); 
     const firstDay = new Date(year, month, 1).getDay(); 
     const daysInMonth = new Date(year, month + 1, 0).getDate();
+    
+    // グリッド設定の調整 (余白削減)
+    grid.style.gap = "2px";
+    grid.style.padding = "5px";
+    
     grid.innerHTML = ""; 
     const header = document.createElement('div');
-    header.style = "grid-column: span 7; display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; font-weight: bold; font-size: 1.2rem; padding: 0 10px;";
-    header.innerHTML = `<button onclick="changeCalendarMonth(-1)" class="mini-teach-btn" style="width:40px; height:40px; font-size:1.2rem; margin:0; display:flex; align-items:center; justify-content:center;">◀</button><span style="flex: 1; text-align: center;">${year}年 ${month + 1}月</span><button onclick="changeCalendarMonth(1)" class="mini-teach-btn" style="width:40px; height:40px; font-size:1.2rem; margin:0; display:flex; align-items:center; justify-content:center;">▶</button>`;
+    header.style = "grid-column: span 7; display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; font-weight: bold; font-size: 1rem; padding: 0 5px;";
+    header.innerHTML = `<button onclick="changeCalendarMonth(-1)" class="mini-teach-btn" style="width:30px; height:30px; font-size:1rem; margin:0; display:flex; align-items:center; justify-content:center;">◀</button><span style="flex: 1; text-align: center;">${year}年 ${month + 1}月</span><button onclick="changeCalendarMonth(1)" class="mini-teach-btn" style="width:30px; height:30px; font-size:1rem; margin:0; display:flex; align-items:center; justify-content:center;">▶</button>`;
     grid.appendChild(header);
+    
     const weekDays = ['日', '月', '火', '水', '木', '金', '土'];
-    weekDays.forEach(day => { const dayEl = document.createElement('div'); dayEl.innerText = day; dayEl.style = "font-size: 0.8rem; color: #888; text-align: center; font-weight:bold; padding-bottom: 5px;"; grid.appendChild(dayEl); });
+    weekDays.forEach(day => { const dayEl = document.createElement('div'); dayEl.innerText = day; dayEl.style = "font-size: 0.7rem; color: #888; text-align: center; font-weight:bold; padding-bottom: 2px;"; grid.appendChild(dayEl); });
+    
     for (let i = 0; i < firstDay; i++) grid.appendChild(document.createElement('div'));
     const todayStr = new Date().toISOString().split('T')[0];
+    
     for (let day = 1; day <= daysInMonth; day++) {
         const dateKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const hasAttended = currentUser.attendance && currentUser.attendance[dateKey];
@@ -82,8 +89,19 @@ window.renderAttendance = function() {
         div.className = "day-box";
         let borderStyle = "1px solid #f0f0f0"; let bgStyle = "#fff";
         if (dateKey === todayStr) { borderStyle = "2px solid #ff85a1"; bgStyle = "#fff0f3"; }
-        div.style = `aspect-ratio: 1/1; display: flex; flex-direction: column; align-items: center; justify-content: center; border: ${borderStyle}; background-color: ${bgStyle}; border-radius: 5px; position: relative; font-size: 0.8rem;`;
-        div.innerHTML = `<div style="font-size: 0.7rem; position: absolute; top: 2px; left: 4px; color:#555;">${day}</div><div style="height: 60%; width: 60%; display: flex; align-items: center; justify-content: center;">${hasAttended ? '<img src="nikukyuhanko.png" style="width: 100%; height: 100%; object-fit: contain;">' : ''}</div>`;
+        
+        // ★修正: 正方形比率(aspect-ratio)をやめ、高さを固定してコンパクトに
+        div.style = `height: 40px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; border: ${borderStyle}; background-color: ${bgStyle}; border-radius: 4px; position: relative; font-size: 0.7rem; overflow: hidden;`;
+        
+        div.innerHTML = `<div style="font-size: 0.6rem; color:#555; margin-top:2px;">${day}</div>`;
+        
+        if (hasAttended) {
+            const stamp = document.createElement('img');
+            stamp.src = "nikukyuhanko.png";
+            stamp.style.cssText = "position:absolute; bottom:2px; width:70%; height:auto; object-fit:contain; opacity:0.8;";
+            div.appendChild(stamp);
+        }
+        
         grid.appendChild(div);
     }
 };
