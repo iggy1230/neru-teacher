@@ -105,7 +105,7 @@ app.post('/analyze', async (req, res) => {
         console.log("OCR Result:", transcribedText.substring(0, 100) + "...");
 
         // --- Step 2: Gemini 1.5 Pro で採点・推論 ---
-        const reasoningModelName = "gemini-1.5-pro"; // 常にProを使う（精度優先）
+        const reasoningModelName = "gemini-2.5-pro"; // 常にProを使う（精度優先）
         const reasoningModel = genAI.getGenerativeModel({ 
             model: reasoningModelName,
             generationConfig: { responseMimeType: "application/json" }
