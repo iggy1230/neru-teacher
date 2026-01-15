@@ -269,7 +269,7 @@ app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, analysisType } = req.body;
         
-        let modelName = analysisType === 'precision' ? "gemini-2.5-pro" : "gemini-2.0-flash-exp";
+        let modelName = analysisType === 'precision' ? "gemini-2.5-pro" : "Gemini 2.0 Flash Thinking Mode";
         
         const model = genAI.getGenerativeModel({
             model: modelName,
@@ -364,6 +364,7 @@ app.post('/analyze', async (req, res) => {
             
             【タスク】
             画像に含まれる「問題」と思われる部分をすべて抽出し、JSONデータにしてください。
+            まず、問題をステップバイステップで論理的に解いてみて。その後に、その思考プロセスに基づいた最終的な答えをJSONで出力して。
             
             【書き起こし・抽出の絶対ルール (全モード共通)】
             1. **多少読み取りにくくても、問題文らしきものがあればすべて書き出してください。**
