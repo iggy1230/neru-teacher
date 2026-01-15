@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v98.0: 採点修正機能強化版) ---
+// --- anlyze.js (完全版 v102.0: タイトル化 & 修正版) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -132,7 +132,6 @@ window.selectMode = function(m) {
         if(btn) { btn.innerText = "🎤 おはなしする"; btn.onclick = startLiveChat; btn.disabled = false; btn.style.background = "#ff85a1"; btn.style.boxShadow = "none"; }
     } else if (m === 'lunch') {
         document.getElementById('lunch-view').classList.remove('hidden'); 
-        lunchCount = 0; 
         updateNellMessage("お腹ペコペコだにゃ……", "thinking");
     } else if (m === 'review') { 
         renderMistakeSelection(); 
@@ -155,17 +154,20 @@ window.setSubject = function(s) {
     document.getElementById('upload-controls').classList.remove('hidden'); 
     updateNellMessage(`${currentSubject}の問題をみせてにゃ！`, "happy"); 
     
+    // ★変更: 「サクサク」ボタンをコーナータイトル化（クリック不可・見た目変更）
     const btnFast = document.getElementById('mode-btn-fast');
     const btnPrec = document.getElementById('mode-btn-precision');
     
     if (btnFast && btnPrec) {
         btnFast.innerText = "📷 ネル先生に宿題を見せる";
-        btnFast.className = "camera-btn-large"; 
+        btnFast.className = "main-btn"; // カメラボタンとは別のスタイルに
         btnFast.style.background = "#ff85a1";
         btnFast.style.width = "100%";
-        btnFast.onclick = () => startAnalyzeCamera(handleFileUpload);
+        btnFast.style.cursor = "default"; // クリックできないカーソル
+        btnFast.style.boxShadow = "none"; // 押せる感を消す
+        btnFast.onclick = null; // ★機能廃止（クリックイベント削除）
         
-        btnPrec.style.display = "none";
+        btnPrec.style.display = "none"; // じっくりボタンは非表示
     }
 
     const backBtn = document.getElementById('main-back-btn');
@@ -180,6 +182,7 @@ window.setSubject = function(s) {
     }
 };
 
+// --- 給食機能 ---
 window.giveLunch = function() {
     if (currentUser.karikari < 1) return updateNellMessage("カリカリがないにゃ……", "thinking");
     
@@ -198,7 +201,8 @@ window.giveLunch = function() {
     .then(r => r.json())
     .then(d => {
         setTimeout(() => { 
-            updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy"); 
+            const mood = d.isSpecial ? "excited" : "happy";
+            updateNellMessage(d.reply || "おいしいにゃ！", mood); 
         }, 1500);
     })
     .catch(e => { 
@@ -206,12 +210,14 @@ window.giveLunch = function() {
     });
 };
 
+// --- ゲーム機能 ---
 window.showGame = function() {
     switchScreen('screen-game'); 
     document.getElementById('mini-karikari-display').classList.remove('hidden'); 
     updateMiniKarikari(); 
     initGame(); 
     fetchGameComment("start"); 
+    
     const startBtn = document.getElementById('start-game-btn');
     if (startBtn) {
         const newBtn = startBtn.cloneNode(true);
@@ -227,6 +233,7 @@ window.showGame = function() {
     }
 };
 
+// --- ヒント・正解機能 ---
 window.startHint = function(id) {
     if (window.initAudioContext) window.initAudioContext().catch(e=>{});
     selectedProblem = transcribedProblems.find(p => p.id == id); 
@@ -847,7 +854,6 @@ async function startMicrophone() {
             
             recognition.onend = () => {
                 if (isRecognitionActive && liveSocket && liveSocket.readyState === WebSocket.OPEN) {
-                    console.log("🔄 音声認識を再起動します...");
                     try { recognition.start(); } catch(e){}
                 }
             };
