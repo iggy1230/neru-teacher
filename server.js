@@ -1,4 +1,4 @@
-// --- server.js (完全版 v105.0: 国語縦書き対応 & 給食セリフ調整) ---
+// --- server.js (完全版 v106.0: 採点・教えてプロセス完全統一) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -74,17 +74,17 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- Hybrid Analyze (Flash OCR -> Pro Reasoning) ---
+// --- Hybrid Analyze (Unified Process) ---
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, analysisType } = req.body;
         
         console.log(`[Analyze] Type: ${analysisType}, Subject: ${subject}, Mode: ${mode}`);
 
-        // --- Step 1: Gemini 2.0 Flash で「手書き文字」を含むOCR ---
+        // --- Step 1: Gemini 2.0 Flash で OCR (全モード共通) ---
         const flashModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         
-        // ★修正: 国語の場合の特別指示を追加
+        // ★修正: 縦書き対応などを共通化し、まずは「すべてをテキスト化」することに集中させる
         let additionalOcrInstruction = "";
         if (subject === 'こくご') {
             additionalOcrInstruction = `
@@ -97,19 +97,16 @@ app.post('/analyze', async (req, res) => {
         const ocrPrompt = `
         この${subject}のプリント画像を詳細に読み取ってください。
         
-        【最重要タスク】
-        1. 活字の「問題文」を、一字一句正確に、改変せずに書き起こしてください。
-        2. **子供が鉛筆で書いた「手書きの答え」**を必ず読み取ってください。
-           - 子供特有の筆跡です。字が崩れていても、前後の計算式や文脈から数字・文字を推測してください。
-
-        【読み取り方向の注意】
+        【タスク】
+        画像内にある「印刷された文字（問題文）」と「手書きの文字（回答）」を、
+        位置関係を保ったまま、すべてテキストとして書き出してください。
+        
+        【注意点】
         ${additionalOcrInstruction}
+        ・どの文字が「問題」で、どの文字が「手書き」かの区別はここでは不要です。とにかく見えた文字をすべて拾ってください。
+        ・隣り合う問題の文字が混ざらないよう、空間的な区切りを意識してください。
         
-        【構造・配置の厳守】
-        ・**問題と答えの「位置関係（列・行）」を厳密に守ってください。**
-        ・隣り合う問題（右隣や左隣）の答えと混同したり、入れ替わったりしないように、空間的な配置を意識してください。
-        
-        出力は構造化せず、見えたものを上から順に（配置を意識して）テキスト化してください。
+        出力形式: プレーンテキスト
         `;
         
         const flashResult = await flashModel.generateContent([
@@ -119,14 +116,14 @@ app.post('/analyze', async (req, res) => {
         const transcribedText = flashResult.response.text();
         console.log("OCR Result:", transcribedText.substring(0, 100) + "...");
 
-        // --- Step 2: Gemini 2.5 Pro で採点・推論 ---
-        const reasoningModelName = "gemini-2.5-pro"; // 精度優先
+        // --- Step 2: Gemini 2.5 Pro で推論 (全モード共通ロジック) ---
+        const reasoningModelName = "gemini-2.5-pro"; // ★絶対固定
         const reasoningModel = genAI.getGenerativeModel({ 
             model: reasoningModelName,
             generationConfig: { responseMimeType: "application/json" }
         });
 
-        // 教科ごとの厳格な採点ルール
+        // 採点ルール
         const gradingRules = {
             'さんすう': `
                 - 筆算の繰り上がりメモを「答え」と見間違えないこと。
@@ -145,16 +142,21 @@ app.post('/analyze', async (req, res) => {
         };
         const specificRule = gradingRules[subject] || gradingRules['さんすう'];
 
-        let answerExtractionInstruction = "";
+        // ★修正: モードによる違いは「student_answer」を埋めるか「空文字」にするかだけにする。
+        // プロンプト自体を分岐させすぎず、タスク定義の中で分岐させる。
+        
+        let studentAnswerTask = "";
         if (mode === 'grade') {
-            answerExtractionInstruction = `
-            - **student_answer**: OCRテキストの中から、子供が手書きで書いたと思われる「答え」の部分を抽出して入れてください。
-            - **重要**: OCRテキストの並び順に注意し、問題に対応する正しい答えを選んでください（隣の問題の答えを入れないこと）。
-            - 読み取れない、または空欄の場合は、勝手に正解を埋めず、必ず空文字 "" にしてください。
+            studentAnswerTask = `
+            4. **student_answer (採点モード)**: 
+               - OCRテキストに含まれる「手書き文字」部分を、対応する問題の答えとして抽出してください。
+               - 空欄や判読不能な場合は、推測で正解を入れず、必ず空文字 "" にしてください。
+               - 誤字や書き間違いも、修正せずにそのまま抽出してください。
             `;
         } else {
-            answerExtractionInstruction = `
-            - **student_answer**: このモードでは生徒の答えは不要です。必ず空文字 "" にしてください。
+            studentAnswerTask = `
+            4. **student_answer (教えてモード)**: 
+               - このモードでは生徒の答えは不要です。必ず空文字 "" にしてください。
             `;
         }
 
@@ -165,13 +167,14 @@ app.post('/analyze', async (req, res) => {
         【読み取ったテキスト】
         ${transcribedText}
 
-        【最重要ルール】
-        1. **question**: 上記のOCR結果の「問題文」を**改変せず、そのまま**使ってください。
-        2. **correct_answer**: 問題文から論理的に導き出した「絶対の正解」を入れてください。
-        3. **hints**: 答えそのものは書かず、考え方や着眼点を3段階で教えてください。
-
-        【回答抽出ルール】
-        ${answerExtractionInstruction}
+        【実行タスク】
+        1. **問題の特定**: テキストから「問題番号」と「問題文」を特定してください。
+        2. **question**: 特定した「印刷された問題文」を**一字一句改変せず**そのまま格納してください。
+           - ※ここで要約したり言葉を変えると、画面と一致しなくなります。原文ママが原則です。
+        3. **correct_answer**: 問題文から論理的に導き出した「絶対の正解」を入れてください。
+           - 計算ミスや知識の間違いがないように慎重に解いてください。
+        ${studentAnswerTask}
+        5. **hints**: 答えそのものは書かず、考え方や着眼点を3段階で教えてください。
 
         【${subject}の採点・ヒント方針】
         ${specificRule}
@@ -217,15 +220,13 @@ app.post('/lunch-reaction', async (req, res) => {
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
         
         const isSpecial = (count % 10 === 0);
-        // ★修正: Flashモデルを使って毎回バリエーションを出す
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         
         let prompt = "";
         if (isSpecial) {
-            // ★特別回 (10回に1回): 名前を呼んで熱く語る
+            // 特別回 (10回に1回): 名前を呼んで熱く語る
             prompt = `
             あなたは猫の「ネル先生」です。生徒「${name}」から、記念すべき${count}個目の給食（カリカリ）をもらいました！
-            
             【指示】
             1. 必ず「${name}さん」と、さん付けで呼んでください。
             2. カリカリへの愛を熱く、情熱的に語ってください。
@@ -233,15 +234,14 @@ app.post('/lunch-reaction', async (req, res) => {
             4. 文字数は50文字程度。語尾は「にゃ」「だにゃ」。
             `;
         } else {
-            // ★通常回: 名前は呼ばない。一言だけ。複数案ださない。
+            // 通常回: 名前は呼ばない。一言だけ。
             prompt = `
             あなたは猫の「ネル先生」です。生徒から${count}回目の給食（カリカリ）をもらいました。
-            
             【指示】
             1. 名前は呼ばないでください。いきなり感想から話し始めてください。
             2. 「おいしいにゃ！」「カリカリ最高だにゃ！」など、一言だけで喜びを伝えてください。
             3. セリフの候補を複数出さないでください。1つのセリフだけを出力すること。
-            4. 毎回少し違う言い回しをしてください（味の感想、音の感想、喜び方など）。
+            4. 毎回少し違う言い回しをしてください。
             5. 20文字以内。
             `;
         }
