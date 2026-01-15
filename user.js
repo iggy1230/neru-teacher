@@ -1,4 +1,4 @@
-// --- user.js (完全版 v92.1: 設定ファイル分離対応) ---
+// --- user.js (完全版 v110.0: ログアウト機能追加) ---
 
 // Firebase初期化 (firebaseConfigは firebase-config.js から読み込まれる前提)
 let app, auth, db;
@@ -60,6 +60,19 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
+
+// ★追加: ログアウト処理
+window.logoutProcess = async function() {
+    if (auth && currentUser && currentUser.isGoogleUser) {
+        try {
+            await auth.signOut();
+            console.log("Googleログアウトしました");
+        } catch(e) {
+            console.error("Logout Error:", e);
+        }
+    }
+    currentUser = null;
+};
 
 // Googleログイン処理
 window.startGoogleLogin = function() {

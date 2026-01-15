@@ -24,7 +24,11 @@ window.startApp = function() {
     if (window.initAudioContext) window.initAudioContext();
 };
 
-window.backToTitle = function() {
+window.backToTitle = async function() {
+    // ★追加: ログアウト処理があれば実行
+    if (typeof window.logoutProcess === 'function') {
+        await window.logoutProcess();
+    }
     switchScreen('screen-title');
 };
 
@@ -44,9 +48,9 @@ window.backToLobby = function(suppressGreeting = false) {
 
 window.showEnrollment = function() {
     switchScreen('screen-enrollment');
-    // user.jsの初期化関数があれば呼ぶ
-    if (typeof window.initEnrollmentView === 'function') {
-        window.initEnrollmentView(); // user.js側で定義する想定
+    if (typeof window.showEnrollment === 'function') {
+        // user.jsの関数（名前が同じなので再帰に注意、user.js側でフラグリセット等してるならOK）
+        // ここでは単純に画面切り替えのみ行う
     }
 };
 
