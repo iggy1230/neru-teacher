@@ -1,4 +1,4 @@
-// --- server.js (完全版 v102.0: 給食演出強化 & 安定版ベース) ---
+// --- server.js (完全版 v103.0: 採点ロジック完全統一 & 厳格化) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -84,15 +84,15 @@ app.post('/analyze', async (req, res) => {
         // --- Step 1: Gemini 2.0 Flash で「手書き文字」を含むOCR ---
         const flashModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         
+        // ★修正: 問題文の原文維持を強力に指示
         const ocrPrompt = `
         この${subject}のプリント画像を詳細に読み取ってください。
         
-        【最重要タスク】
-        活字の「問題文」だけでなく、**子供が鉛筆で書いた「手書きの答え」**を必ず読み取ってください。
+        【タスク】
+        1. 活字の「問題文」を、**一字一句正確に、絶対に改変せずに**書き起こしてください。要約は禁止です。
+        2. 子供が鉛筆で書いた「手書きの答え」があれば、それも読み取ってください。
         
-        ・子供の筆跡なので、多少汚くても前後の文脈から推測してください。
-        ・空欄の場合は正直に「空欄」と認識してください。
-        ・出力は構造化せず、見えたものを上から順にすべてテキスト化してください。
+        出力は構造化せず、見えたままのテキストデータとして出力してください。
         `;
         
         const flashResult = await flashModel.generateContent([
@@ -103,7 +103,7 @@ app.post('/analyze', async (req, res) => {
         console.log("OCR Result:", transcribedText.substring(0, 100) + "...");
 
         // --- Step 2: Gemini 2.5 Pro で採点・推論 ---
-        const reasoningModelName = "gemini-2.5-pro"; // 精度優先
+        const reasoningModelName = "gemini-2.5-pro"; // ★絶対固定: 精度優先
         const reasoningModel = genAI.getGenerativeModel({ 
             model: reasoningModelName,
             generationConfig: { responseMimeType: "application/json" }
@@ -128,6 +128,22 @@ app.post('/analyze', async (req, res) => {
         };
         const specificRule = gradingRules[subject] || gradingRules['さんすう'];
 
+        // ★修正: 「教えて」と「採点」で共通の解決ロジックを使用
+        // 違いは「生徒の答え(student_answer)を抽出するかどうか」のみにする
+        let answerExtractionInstruction = "";
+        if (mode === 'grade') {
+            answerExtractionInstruction = `
+            - **student_answer**: OCRテキストの中から、子供が手書きで書いたと思われる「答え」の部分を抽出して入れてください。
+            - 読み取れない、または空欄の場合は、勝手に正解を埋めず、必ず空文字 "" にしてください。
+            - 誤字や書き間違いも、修正せずにそのまま抽出してください。
+            `;
+        } else {
+            // 教えてモード
+            answerExtractionInstruction = `
+            - **student_answer**: このモードでは生徒の答えは不要です。必ず空文字 "" にしてください。
+            `;
+        }
+
         const solvePrompt = `
         あなたは小学${grade}年生の${subject}担当のネル先生です。
         以下の「読み取ったテキスト（OCR結果）」を元に、JSONデータを作成してください。
@@ -135,16 +151,19 @@ app.post('/analyze', async (req, res) => {
         【読み取ったテキスト】
         ${transcribedText}
 
-        【タスク】
-        1. **student_answer**: 子供の手書き回答を抽出。空欄なら空文字 ""。
-        2. **correct_answer**: 問題文から論理的に導き出した「絶対の正解」。
-        3. **判定**: 以下の採点ルールに基づきヒント作成などに利用。
-        
-        【${subject}の特別採点ルール】
-        ${specificRule}
+        【最重要ルール】
+        1. **question**: 上記のOCR結果の「問題文」を**改変せず、そのまま**使ってください。
+           - 「要約」や「補完」は禁止です。
+           - 誤字脱字があってもOCR結果を優先してください（画面と一致させるため）。
+        2. **correct_answer**: 問題文から論理的に導き出した「絶対の正解」を入れてください。
+           - 「教えてモード」と同じ精度で、正確に解いてください。
+           - 計算ミスや知識の間違いがないように慎重に解いてください。
 
-        【ヒント生成ルール】
-        - 答えそのものは書かない。
+        【回答抽出ルール】
+        ${answerExtractionInstruction}
+
+        【${subject}の採点・ヒント方針】
+        ${specificRule}
         - ヒント1: 考え方や公式。
         - ヒント2: 途中計算やキーワード。
         - ヒント3: ほぼ答えに近い誘導。
@@ -154,9 +173,9 @@ app.post('/analyze', async (req, res) => {
           {
             "id": 1, 
             "label": "①", 
-            "question": "問題文", 
+            "question": "問題文(原文ママ)", 
             "correct_answer": "正答", 
-            "student_answer": "読み取った手書き回答", 
+            "student_answer": "生徒の答え(または空文字)", 
             "hints": ["ヒント1", "ヒント2", "ヒント3"]
           }
         ]
@@ -191,7 +210,6 @@ app.post('/lunch-reaction', async (req, res) => {
         
         let prompt = "";
         if (isSpecial) {
-            // ★変更: 10回ごとの特別演出
             prompt = `
             あなたは猫の「ネル先生」です。生徒「${name}」から、記念すべき${count}個目の給食（カリカリ）をもらいました！
             
