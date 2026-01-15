@@ -1,4 +1,4 @@
-// --- server.js (完全版 v99.0: 採点ロジック統一 & 給食演出強化) ---
+// --- server.js (完全版 v100.0: 安定化 & エラーハンドリング強化) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -74,15 +74,16 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- Hybrid Analyze (Flash OCR -> Pro Reasoning) ---
+// --- Hybrid Analyze (Stable Version) ---
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject } = req.body;
         
-        console.log(`[Analyze] Subject: ${subject}, Mode: ${mode}`);
+        console.log(`[Analyze Start] Subject: ${subject}, Mode: ${mode}`);
 
-        // --- Step 1: Gemini 2.0 Flash で「手書き文字」を含むOCR ---
-        const flashModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+        // --- Step 1: OCR (安定版 gemini-1.5-flash を使用) ---
+        // ※ 2.0-flash-exp は不安定な場合があるため、1.5-flash に変更
+        const flashModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         
         const ocrPrompt = `
         この${subject}のプリント画像を詳細に読み取ってください。
@@ -99,16 +100,15 @@ app.post('/analyze', async (req, res) => {
             { inlineData: { mime_type: "image/jpeg", data: image } }
         ]);
         const transcribedText = flashResult.response.text();
-        console.log("OCR Result:", transcribedText.substring(0, 100) + "...");
+        console.log("OCR Done. Length:", transcribedText.length);
 
-        // --- Step 2: Gemini 2.5 Pro で推論 (仕様統一) ---
-        // 「教えて」も「採点」も同じProモデルで、同じように正解を導き出す。
+        // --- Step 2: Reasoning (gemini-1.5-pro) ---
         const reasoningModel = genAI.getGenerativeModel({ 
             model: "gemini-1.5-pro",
             generationConfig: { responseMimeType: "application/json" }
         });
 
-        // 手書き抽出の指示（モードによる切り替え）
+        // 手書き抽出の指示
         let answerExtractionInstruction = "";
         if (mode === 'grade') {
             answerExtractionInstruction = `
@@ -117,7 +117,6 @@ app.post('/analyze', async (req, res) => {
             - 誤字や書き間違いも、修正せずにそのまま抽出してください。
             `;
         } else {
-            // 教えてモード
             answerExtractionInstruction = `
             - **student_answer**: このモードでは生徒の答えは不要です。必ず空文字 "" にしてください。
             `;
@@ -132,7 +131,7 @@ app.post('/analyze', async (req, res) => {
 
         【重要ルール】
         1. **question**: OCR結果の問題文を**改変せず、そのまま**使ってください。要約したり、勝手に補完しないでください。
-        2. **correct_answer**: 問題文から論理的に導き出した「絶対の正解」を入れてください。計算ミスや知識の間違いがないように慎重に解いてください。
+        2. **correct_answer**: 問題文から論理的に導き出した「絶対の正解」を入れてください。
         3. **hints**: 答えそのものは書かず、考え方や着眼点を3段階で教えてください。
 
         【回答抽出ルール】
@@ -154,22 +153,30 @@ app.post('/analyze', async (req, res) => {
         const proResult = await reasoningModel.generateContent(solvePrompt);
         let finalText = proResult.response.text();
         
+        // JSONクリーニング (Markdown記法 ```json ... ``` を除去)
+        finalText = finalText.replace(/```json/g, '').replace(/```/g, '').trim();
+
+        // 配列の範囲を抽出
         const firstBracket = finalText.indexOf('[');
         const lastBracket = finalText.lastIndexOf(']');
+        
         if (firstBracket !== -1 && lastBracket !== -1) {
             finalText = finalText.substring(firstBracket, lastBracket + 1);
+            const json = JSON.parse(finalText);
+            console.log("Analysis Success. Items:", json.length);
+            res.json(json);
+        } else {
+            console.error("Invalid JSON Format:", finalText);
+            throw new Error("AIが有効なデータを返しませんでした。");
         }
 
-        const json = JSON.parse(finalText);
-        res.json(json);
-
     } catch (err) { 
-        console.error("Analyze Error:", err);
+        console.error("Analyze Error Details:", err);
         res.status(500).json({ error: "解析エラーだにゃ: " + err.message }); 
     }
 });
 
-// --- 4. 給食反応 (10回ごと特別演出) ---
+// --- Other Endpoints ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
         const { count, name } = req.body;
@@ -182,19 +189,16 @@ app.post('/lunch-reaction', async (req, res) => {
         if (isSpecial) {
             prompt = `
             あなたは猫の「ネル先生」です。生徒「${name}」から、記念すべき${count}個目の給食（カリカリ）をもらいました！
-            
             【指示】
             ・カリカリへの愛を熱く、情熱的に語ってください。
             ・${name}さんへの感謝を、少し大げさなくらい感激して伝えてください。
-            ・文字数は50文字程度。
-            ・語尾は「にゃ」「だにゃ」。
+            ・文字数は50文字程度。語尾は「にゃ」「だにゃ」。
             `;
         } else {
             prompt = `
             あなたは猫の「ネル先生」です。生徒「${name}」から${count}回目の給食（カリカリ）をもらいました。
             ・「おいしいにゃ！」「最高だにゃ！」など、短く喜びを伝えて。
             ・20文字以内。
-            ・毎回少し違う言い回しで。
             `;
         }
 
@@ -233,10 +237,7 @@ wss.on('connection', async (clientWs, req) => {
                     model: "models/gemini-2.0-flash-exp",
                     generationConfig: { 
                         responseModalities: ["AUDIO"], 
-                        speech_config: { 
-                            voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }, 
-                            language_code: "ja-JP" 
-                        } 
+                        speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } } } 
                     }, 
                     systemInstruction: {
                         parts: [{
