@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v114.0: 分析演出強化 & ボタン整列) ---
+// --- anlyze.js (完全版 v115.0: 記憶修復 & 分析演出強化) ---
 
 // グローバル変数の初期化
 window.transcribedProblems = []; 
@@ -26,13 +26,14 @@ let cropImg = new Image();
 let cropPoints = [];
 let activeHandle = -1;
 
+// 分析演出用タイマー管理
+let analysisTimers = [];
+
 const sfxBori = new Audio('boribori.mp3');
 const sfxHit = new Audio('cat1c.mp3');
 const sfxPaddle = new Audio('poka02.mp3'); 
 const sfxOver = new Audio('gameover.mp3');
-// ★追加: 分析BGM
-const sfxBunseki = new Audio('bunseki.mp3');
-sfxBunseki.volume = 0.1;
+const sfxBunseki = new Audio('bunseki.mp3'); sfxBunseki.volume = 0.1;
 
 const gameHitComments = ["うまいにゃ！", "すごいにゃ！", "さすがにゃ！", "がんばれにゃ！"];
 
@@ -66,30 +67,40 @@ function startMouthAnimation() {
 }
 startMouthAnimation();
 
-// --- 記憶システム ---
+// --- ★修正: 記憶システム (最優先・堅牢化) ---
 async function saveToNellMemory(role, text) {
-    if (!currentUser || !currentUser.id) return;
+    if (!currentUser || !currentUser.id) {
+        console.warn("⚠️ ユーザー情報がないので記憶をスキップしたにゃ");
+        return;
+    }
+    
     const newItem = { role: role, text: text, time: new Date().toISOString() };
+    console.log(`📝 記憶保存: [${role}] ${text.substring(0, 10)}...`);
 
-    // 1. LocalStorage (Backup)
+    // 1. ローカルストレージ (必ず保存)
     try {
         const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
         let history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
         history.push(newItem);
-        if (history.length > 50) history.shift();
+        if (history.length > 50) history.shift(); 
         localStorage.setItem(memoryKey, JSON.stringify(history));
-    } catch(e) {}
+    } catch(e) { console.error("Local Save Error:", e); }
 
-    // 2. Firestore (Cloud)
+    // 2. Firestore (Googleユーザーなら同期)
     if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) {
-        const docRef = db.collection("memories").doc(currentUser.id);
         try {
+            const docRef = db.collection("memories").doc(currentUser.id);
             const docSnap = await docRef.get();
-            let history = docSnap.exists ? (docSnap.data().history || []) : [];
-            history.push(newItem);
-            if (history.length > 50) history.shift(); 
-            await docRef.set({ history: history }, { merge: true });
-        } catch(e) { console.error("Memory Save Error:", e); }
+            let cloudHistory = docSnap.exists ? (docSnap.data().history || []) : [];
+            
+            cloudHistory.push(newItem);
+            if (cloudHistory.length > 50) cloudHistory.shift();
+
+            await docRef.set({ 
+                history: cloudHistory,
+                lastUpdated: new Date().toISOString()
+            }, { merge: true });
+        } catch(e) { console.error("Cloud Save Error:", e); }
     }
 }
 
@@ -103,7 +114,9 @@ window.updateNellMessage = async function(t, mood = "normal") {
     if (el) el.innerText = t;
 
     if (t && t.includes("もぐもぐ")) { try { sfxBori.currentTime = 0; sfxBori.play(); } catch(e){} }
-    if (!t || t.includes("ちょっと待ってて") || t.includes("もぐもぐ")) return;
+    
+    // 特定のシステムメッセージ以外は記憶する
+    if (!t || t.includes("ちょっと待ってて") || t.includes("もぐもぐ") || t.includes("接続中")) return;
 
     saveToNellMemory('nell', t);
 
@@ -290,7 +303,7 @@ window.pressAllSolved = function(btnElement) {
     }
 };
 
-// --- Live Chat ---
+// --- Live Chat (記憶ロード強化) ---
 async function startLiveChat() {
     const btn = document.getElementById('mic-btn');
     if (liveSocket) { stopLiveChat(); return; }
@@ -306,6 +319,7 @@ async function startLiveChat() {
         
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
         
+        // 記憶をロード (Cloud優先 -> Localフォールバック)
         let savedHistory = [];
         if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) {
             try {
@@ -356,11 +370,9 @@ window.handleFileUpload = async (file) => {
         return;
     }
     
-    const uploadControls = document.getElementById('upload-controls');
-    const cropperModal = document.getElementById('cropper-modal');
-    
-    if (uploadControls) uploadControls.classList.add('hidden');
-    if (cropperModal) cropperModal.classList.remove('hidden');
+    // UIを分析前状態にセット
+    document.getElementById('upload-controls').classList.add('hidden');
+    document.getElementById('cropper-modal').classList.remove('hidden');
     
     const canvas = document.getElementById('crop-canvas'); 
     if(canvas) canvas.style.opacity = '0';
@@ -408,37 +420,105 @@ function updateCropUI(canvas) {
 function performPerspectiveCrop(sourceCanvas, points) {
     const minX = Math.min(...points.map(p => p.x)), maxX = Math.max(...points.map(p => p.x)); const minY = Math.min(...points.map(p => p.y)), maxY = Math.max(...points.map(p => p.y)); let w = maxX - minX, h = maxY - minY; if (w < 1) w = 1; if (h < 1) h = 1; const tempCv = document.createElement('canvas'); const MAX_OUT = 1536; let outW = w, outH = h; if (outW > MAX_OUT || outH > MAX_OUT) { const s = Math.min(MAX_OUT/outW, MAX_OUT/outH); outW *= s; outH *= s; } tempCv.width = outW; tempCv.height = outH; const ctx = tempCv.getContext('2d'); ctx.drawImage(sourceCanvas, minX, minY, w, h, 0, 0, outW, outH); return tempCv.toDataURL('image/jpeg', 0.85).split(',')[1];
 }
+
+// --- ★修正: 分析処理 (セリフ・BGM演出追加) ---
 async function startAnalysis(b64) {
     isAnalyzing = true; 
     document.getElementById('cropper-modal').classList.add('hidden'); 
     document.getElementById('thinking-view').classList.remove('hidden'); 
     document.getElementById('upload-controls').classList.add('hidden'); 
     const backBtn = document.getElementById('main-back-btn'); if(backBtn) backBtn.classList.add('hidden');
-    let msg = `ふむふむ…\n${currentUser.grade}年生の${currentSubject}の問題だにゃ…`; updateNellMessage(msg, "thinking"); updateProgress(0); 
-
-    // ★追加: 分析BGMとセリフ
+    
+    // BGMスタート
     try { sfxBunseki.currentTime = 0; sfxBunseki.play(); sfxBunseki.loop = true; } catch(e){}
-    const analyzeMessages = ["じーっと見て、問題を書き写してるにゃ...", "この問題、どこかで見たことあるにゃ...えーっと...", "ネル先生の天才的な頭脳で解いてるから、ちょっと待っててにゃ！", "よしよし、だいたい分かってきたにゃ..."];
-    let msgStep = 0;
 
-    let p = 0; const timer = setInterval(() => { 
-        if (p < 90) { 
-            p += 3; updateProgress(p); 
-            if (p >= 10 && msgStep === 0) { updateNellMessage(analyzeMessages[0], "thinking"); msgStep++; }
-            if (p >= 30 && msgStep === 1) { updateNellMessage(analyzeMessages[1], "thinking"); msgStep++; }
-            if (p >= 50 && msgStep === 2) { updateNellMessage(analyzeMessages[2], "excited"); msgStep++; }
-            if (p >= 75 && msgStep === 3) { updateNellMessage(analyzeMessages[3], "happy"); msgStep++; }
-        } 
-    }, 500);
+    let msg = `ふむふむ…\n${currentUser.grade}年生の${currentSubject}の問題だにゃ…`; 
+    updateNellMessage(msg, "thinking"); 
+    updateProgress(0); 
 
+    // セリフ演出用
+    const analyzeMessages = [
+        "じーっと見て、問題を書き写してるにゃ...",
+        "この問題、どこかで見たことあるにゃ...えーっと...",
+        "ネル先生の天才的な頭脳で解いてるから、ちょっと待っててにゃ！",
+        "よしよし、だいたい分かってきたにゃ..."
+    ];
+    
+    // タイマー管理 (3秒ごとにセリフ)
+    analysisTimers.forEach(t => clearTimeout(t));
+    analysisTimers = [];
+    
+    // 最初のセリフは即時、以降3秒ごと
+    analyzeMessages.forEach((text, i) => {
+        const t = setTimeout(() => {
+            if (isAnalyzing) updateNellMessage(text, i===2?"excited":"thinking");
+        }, (i + 1) * 3000); 
+        analysisTimers.push(t);
+    });
+
+    let p = 0; const timer = setInterval(() => { if (p < 95) { p += 2; updateProgress(p); } }, 500);
+    
     try {
-        const res = await fetch('/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: b64, mode: currentMode, grade: currentUser.grade, subject: currentSubject, analysisType: analysisType }) });
-        if (!res.ok) throw new Error("Server Error"); const data = await res.json();
-        if (!data || data.length === 0) { updateNellMessage("問題が見つからなかったにゃ…\nもう一度写真を撮ってみて！", "thinking"); setTimeout(() => { document.getElementById('thinking-view').classList.add('hidden'); document.getElementById('upload-controls').classList.remove('hidden'); if(backBtn) backBtn.classList.remove('hidden'); }, 3000); clearInterval(timer); isAnalyzing = false; sfxBunseki.pause(); return; }
-        transcribedProblems = data.map((prob, index) => ({ ...prob, id: index + 1, student_answer: prob.student_answer || "", status: "unanswered" }));
-        clearInterval(timer); updateProgress(100); sfxBunseki.pause();
-        setTimeout(() => { document.getElementById('thinking-view').classList.add('hidden'); const doneMsg = "読めたにゃ！"; if (currentMode === 'grade') { showGradingView(true); updateNellMessage(doneMsg, "happy").then(() => { setTimeout(() => { updateGradingMessage(); }, 1500); }); } else { renderProblemSelection(); updateNellMessage(doneMsg, "happy"); } }, 800);
-    } catch (err) { clearInterval(timer); sfxBunseki.pause(); document.getElementById('thinking-view').classList.add('hidden'); document.getElementById('upload-controls').classList.remove('hidden'); if(backBtn) backBtn.classList.remove('hidden'); updateNellMessage("エラーだにゃ…", "thinking"); } finally { isAnalyzing = false; }
+        const res = await fetch('/analyze', { 
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({ 
+                image: b64, mode: currentMode, grade: currentUser.grade, 
+                subject: currentSubject, analysisType: analysisType 
+            }) 
+        });
+        
+        if (!res.ok) throw new Error("Server Error"); 
+        const data = await res.json();
+        
+        if (!data || data.length === 0) { 
+            cleanupAnalysis();
+            updateNellMessage("問題が見つからなかったにゃ…\nもう一度写真を撮ってみて！", "thinking"); 
+            setTimeout(() => { 
+                document.getElementById('thinking-view').classList.add('hidden'); 
+                document.getElementById('upload-controls').classList.remove('hidden'); 
+                if(backBtn) backBtn.classList.remove('hidden'); 
+            }, 3000); 
+            return; 
+        }
+
+        transcribedProblems = data.map((prob, index) => ({ 
+            ...prob, id: index + 1, student_answer: prob.student_answer || "", status: "unanswered" 
+        }));
+        
+        clearInterval(timer); updateProgress(100); 
+        cleanupAnalysis();
+
+        setTimeout(() => { 
+            document.getElementById('thinking-view').classList.add('hidden'); 
+            const doneMsg = "読めたにゃ！"; 
+            if (currentMode === 'grade') { 
+                showGradingView(true); 
+                updateNellMessage(doneMsg, "happy").then(() => { 
+                    setTimeout(() => { updateGradingMessage(); }, 1500); 
+                }); 
+            } else { 
+                renderProblemSelection(); 
+                updateNellMessage(doneMsg, "happy"); 
+            } 
+        }, 800);
+
+    } catch (err) { 
+        cleanupAnalysis();
+        clearInterval(timer); 
+        document.getElementById('thinking-view').classList.add('hidden'); 
+        document.getElementById('upload-controls').classList.remove('hidden'); 
+        if(backBtn) backBtn.classList.remove('hidden'); 
+        updateNellMessage("エラーだにゃ…", "thinking"); 
+    }
+}
+
+// 分析終了時のクリーンアップ
+function cleanupAnalysis() {
+    isAnalyzing = false;
+    sfxBunseki.pause();
+    analysisTimers.forEach(t => clearTimeout(t));
+    analysisTimers = [];
 }
 
 // --- Render Helpers (★ボタン右寄せ & flex-shrink対応) ---
