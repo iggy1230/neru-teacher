@@ -1,4 +1,4 @@
-// --- ui.js (完全版 v89.0: 出席簿ボタン配置修正・全機能統合) ---
+// --- ui.js (完全版 v108.0: 画面遷移安定化) ---
 
 const sfxChime = new Audio('Jpn_sch_chime.mp3');
 const sfxBtn = new Audio('botan1.mp3');
@@ -7,37 +7,16 @@ const sfxBtn = new Audio('botan1.mp3');
 let currentCalendarDate = new Date();
 
 function switchScreen(to) {
+    // 全画面を非表示
     document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+    
+    // 指定された画面を表示
     const target = document.getElementById(to);
     if (target) {
         target.classList.remove('hidden');
         window.scrollTo({ top: 0, behavior: 'instant' });
-    }
-}
-
-function switchView(id) {
-    const ids = [
-        'subject-selection-view', 
-        'upload-controls', 
-        'thinking-view', 
-        'problem-selection-view', 
-        'final-view', 
-        'grade-sheet-container', 
-        'hint-detail-container', 
-        'chalkboard', 
-        'chat-view', 
-        'lunch-view',
-        'answer-display-area'
-    ];
-
-    ids.forEach(i => {
-        const el = document.getElementById(i);
-        if(el) el.classList.add('hidden');
-    });
-    
-    if (id) {
-        const target = document.getElementById(id);
-        if(target) target.classList.remove('hidden');
+    } else {
+        console.error(`Screen not found: ${to}`);
     }
 }
 
@@ -58,6 +37,8 @@ function backToGate() {
 function backToLobby(suppressGreeting = false) {
     switchScreen('screen-lobby');
     const shouldGreet = (typeof suppressGreeting === 'boolean') ? !suppressGreeting : true;
+    
+    // ログイン済みならメッセージ更新
     if (shouldGreet && typeof currentUser !== 'undefined' && currentUser) {
         if (typeof updateNellMessage === 'function') {
             updateNellMessage(`おかえり、${currentUser.name}さん！`, "happy");
@@ -69,8 +50,12 @@ function backToLobby(suppressGreeting = false) {
 }
 
 function showEnrollment() {
-    switchScreen('screen-enrollment');
-    if (typeof loadFaceModels === 'function') loadFaceModels();
+    // user.js の関数を呼ぶ
+    if (typeof window.showEnrollment === 'function') {
+        window.showEnrollment();
+    } else {
+        switchScreen('screen-enrollment');
+    }
 }
 
 function showAttendance() {
@@ -78,22 +63,20 @@ function showAttendance() {
     if (typeof renderAttendance === 'function') renderAttendance();
 }
 
-// ★修正: カレンダー描画ロジック (ボタン配置修正済み)
+// カレンダー描画
 window.renderAttendance = function() {
     const grid = document.getElementById('attendance-grid');
     if (!grid || !currentUser) return;
 
     const year = currentCalendarDate.getFullYear();
-    const month = currentCalendarDate.getMonth(); // 0-11
+    const month = currentCalendarDate.getMonth(); 
     
-    const firstDay = new Date(year, month, 1).getDay(); // 0(日)〜6(土)
+    const firstDay = new Date(year, month, 1).getDay(); 
     const daysInMonth = new Date(year, month + 1, 0).getDate();
 
     grid.innerHTML = ""; 
     
-    // ヘッダー（○月 ＋ ボタン）
     const header = document.createElement('div');
-    // ★修正: justify-content: space-between で左右に配置
     header.style = "grid-column: span 7; display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; font-weight: bold; font-size: 1.2rem; padding: 0 10px;";
     header.innerHTML = `
         <button onclick="changeCalendarMonth(-1)" class="mini-teach-btn" style="width:40px; height:40px; font-size:1.2rem; margin:0; display:flex; align-items:center; justify-content:center;">◀</button>
@@ -102,7 +85,6 @@ window.renderAttendance = function() {
     `;
     grid.appendChild(header);
 
-    // 曜日
     const weekDays = ['日', '月', '火', '水', '木', '金', '土'];
     weekDays.forEach(day => {
         const dayEl = document.createElement('div');
@@ -111,12 +93,10 @@ window.renderAttendance = function() {
         grid.appendChild(dayEl);
     });
 
-    // 空白
     for (let i = 0; i < firstDay; i++) {
         grid.appendChild(document.createElement('div'));
     }
 
-    // 日付
     const todayStr = new Date().toISOString().split('T')[0];
 
     for (let day = 1; day <= daysInMonth; day++) {
@@ -162,12 +142,12 @@ window.changeCalendarMonth = function(diff) {
     renderAttendance();
 };
 
-function updateProgress(p) {
+window.updateProgress = function(p) {
     const bar = document.getElementById('progress-bar');
     if (bar) bar.style.width = p + '%';
     const txt = document.getElementById('progress-percent');
     if (txt) txt.innerText = Math.floor(p);
-}
+};
 
 document.addEventListener('click', () => {
     if (window.initAudioContext) {
@@ -177,7 +157,7 @@ document.addEventListener('click', () => {
 
 document.addEventListener('click', (e) => {
     if (e.target.classList && e.target.classList.contains('main-btn') && !e.target.disabled) {
-        if (!e.target.classList.contains('title-start-btn')) {
+        if (!e.target.classList.contains('title-start-btn') && !e.target.onclick?.toString().includes('null')) {
             try { 
                 sfxBtn.currentTime = 0; 
                 sfxBtn.play(); 

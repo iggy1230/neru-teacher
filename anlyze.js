@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v103.0: フォント調整版) ---
+// --- anlyze.js (完全版 v108.0: 修正・安定動作版) ---
 
 let transcribedProblems = []; 
 let selectedProblem = null; 
@@ -7,7 +7,7 @@ let isAnalyzing = false;
 let currentSubject = '';
 let currentMode = ''; 
 let lunchCount = 0; 
-let analysisType = 'precision'; 
+let analysisType = 'precision';
 
 let liveSocket = null;
 let audioContext = null;
@@ -107,14 +107,18 @@ async function updateNellMessage(t, mood = "normal") {
     }
 }
 
-// --- モード選択 ---
+// --- モード選択 (ここが重要: 画面遷移ロジック) ---
 window.selectMode = function(m) {
     currentMode = m; 
+    
+    // UIをメイン画面に切り替え
     switchScreen('screen-main'); 
     
+    // 各種ビューを初期化（非表示）
     const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'lunch-view', 'grade-sheet-container', 'hint-detail-container'];
     ids.forEach(id => { const el = document.getElementById(id); if (el) el.classList.add('hidden'); });
     
+    // 戻るボタンの設定
     const backBtn = document.getElementById('main-back-btn');
     if (backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = backToLobby; }
     
@@ -135,6 +139,7 @@ window.selectMode = function(m) {
     } else if (m === 'review') { 
         renderMistakeSelection(); 
     } else { 
+        // 教えて・採点モードの場合は教科選択画面へ
         document.getElementById('subject-selection-view').classList.remove('hidden'); 
         updateNellMessage("どの教科にするのかにゃ？", "normal"); 
     }
@@ -153,6 +158,7 @@ window.setSubject = function(s) {
     document.getElementById('upload-controls').classList.remove('hidden'); 
     updateNellMessage(`${currentSubject}の問題をみせてにゃ！`, "happy"); 
     
+    // サクサクボタンをコーナータイトル化
     const btnFast = document.getElementById('mode-btn-fast');
     const btnPrec = document.getElementById('mode-btn-precision');
     
@@ -162,10 +168,10 @@ window.setSubject = function(s) {
         btnFast.style.background = "#ff85a1";
         btnFast.style.width = "100%";
         btnFast.style.cursor = "default"; 
-        btnFast.style.boxShadow = "none"; 
-        btnFast.onclick = null; 
+        btnFast.style.boxShadow = "none";
+        btnFast.onclick = null; // クリック無効化
         
-        btnPrec.style.display = "none";
+        btnPrec.style.display = "none"; // じっくりボタンは消す
     }
 
     const backBtn = document.getElementById('main-back-btn');
@@ -183,6 +189,7 @@ window.setSubject = function(s) {
 // --- 給食機能 ---
 window.giveLunch = function() {
     if (currentUser.karikari < 1) return updateNellMessage("カリカリがないにゃ……", "thinking");
+    
     updateNellMessage("もぐもぐ……", "normal");
     currentUser.karikari--; 
     if(typeof saveAndSync === 'function') saveAndSync(); 
@@ -743,7 +750,6 @@ function renderProblemSelection() {
                     </div>
                     <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px;">
                         <div style="flex:1;">
-                            <!-- ★変更: AIの答えを表示しない -->
                             <input type="text" placeholder="ここにメモできるよ"
                                    value="${p.student_answer || ''}"
                                    style="width:100%; padding:8px; border:2px solid #f0f0f0; border-radius:8px; font-size:0.9rem; color:#555;">
@@ -758,7 +764,6 @@ function renderProblemSelection() {
         l.appendChild(div);
     }); 
     
-    // ★修正: ボタンの状態をリセット (v86.0対応)
     const btn = document.querySelector('#problem-selection-view button.orange-btn');
     if (btn) {
         btn.disabled = false;
@@ -789,7 +794,6 @@ function showGradingView(silent = false) {
     container.innerHTML = "";
 
     transcribedProblems.forEach(p => {
-        // 安全に文字列化して比較
         const studentAns = String(p.student_answer || "").trim();
         const correctAns = String(p.correct_answer || "").trim();
         let isCorrect = (studentAns !== "") && (studentAns === correctAns);
@@ -833,7 +837,6 @@ function showGradingView(silent = false) {
     btnDiv.innerHTML = `<button onclick="finishGrading(this)" class="main-btn orange-btn">💯 採点おわり！</button>`;
     container.appendChild(btnDiv);
 
-    // silentがfalseのときのみ発話する
     if (!silent) {
         updateGradingMessage();
     }
