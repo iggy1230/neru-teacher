@@ -1,4 +1,4 @@
-// --- server.js (完全版 v108.0: 採点ロジック・原文維持の完全統一) ---
+// --- server.js (完全版 v112.0: 給食＆ゲーム演出強化) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -74,14 +74,13 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- Hybrid Analyze (Unified & Strict) ---
+// --- Hybrid Analyze ---
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, analysisType } = req.body;
-        
         console.log(`[Analyze] Type: ${analysisType}, Subject: ${subject}, Mode: ${mode}`);
 
-        // --- Step 1: Gemini 2.0 Flash で OCR (位置関係重視) ---
+        // --- Step 1: OCR (Flash) ---
         const flashModel = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
         
         let additionalOcrInstruction = "";
@@ -119,35 +118,26 @@ app.post('/analyze', async (req, res) => {
         const transcribedText = flashResult.response.text();
         console.log("OCR Result:", transcribedText.substring(0, 100) + "...");
 
-        // --- Step 2: Gemini 2.5 Pro で推論 (ロジック完全統一) ---
+        // --- Step 2: 推論 (Pro 2.5) ---
         const reasoningModelName = "gemini-2.5-pro"; // ★絶対固定
         const reasoningModel = genAI.getGenerativeModel({ 
             model: reasoningModelName,
             generationConfig: { responseMimeType: "application/json" }
         });
 
-        // 採点ルール
         const gradingRules = {
-            'さんすう': `
-                - 単位（cm, L, kgなど）が問題で指定されている場合、単位がない答えは不正解。
-                - 数字の「0」と「6」、「1」と「7」の見間違いに注意。`,
-            'こくご': `
-                - 送り仮名が間違っている場合は不正解。
-                - 読解問題は、文末（〜こと、〜から等）が設問の要求に合っているかチェック。`,
-            'りか': `
-                - カタカナ指定の用語（例：ジョウロ）をひらがなで書いていたら不正解。`,
-            'しゃかい': `
-                - 漢字指定の用語をひらがなで書いていたら不正解。`
+            'さんすう': `- 単位（cm, L, kgなど）が問題で指定されている場合、単位がない答えは不正解。\n- 数字の「0」と「6」、「1」と「7」の見間違いに注意。`,
+            'こくご': `- 送り仮名が間違っている場合は不正解。\n- 読解問題は、文末（〜こと、〜から等）が設問の要求に合っているかチェック。`,
+            'りか': `- カタカナ指定の用語（例：ジョウロ）をひらがなで書いていたら不正解。`,
+            'しゃかい': `- 漢字指定の用語をひらがなで書いていたら不正解。`
         };
         const specificRule = gradingRules[subject] || gradingRules['さんすう'];
 
-        // ★修正: モードに関わらず「問題文の特定」ロジックは同一にする
-        // 違いは「答えを空欄にするか、OCRから抽出するか」のみ
         let studentAnswerInstruction = "";
         if (mode === 'grade') {
             studentAnswerInstruction = `
             - **student_answer**: OCRテキストの中から、手書き文字部分を抽出して入れてください。
-               - 空欄や判読不能な場合は、必ず空文字 "" にしてください（勝手に正解を入れない）。
+               - 空欄や判読不能な場合は、必ず空文字 "" にしてください。
                - 誤字や書き間違いも、修正せずにそのまま抽出してください。
             `;
         } else {
@@ -164,18 +154,10 @@ app.post('/analyze', async (req, res) => {
         ${transcribedText}
 
         【作成ルール】
-        1. **question**: 
-           - OCRテキストの「問題文」を**そのまま、一字一句改変せず**に使ってください。
-           - 要約したり、表現を変えたりすることは**禁止**です。「教えてモード」と同じ精度で書き起こしてください。
-        
-        2. **correct_answer**: 
-           - 問題文から論理的に導き出した「絶対の正解」を入れてください。
-        
-        3. **student_answer**:
-           ${studentAnswerInstruction}
-        
-        4. **hints**: 
-           - 答えそのものは書かず、考え方や着眼点を3段階で教えてください。
+        1. **question**: OCRテキストの「問題文」を**そのまま、一字一句改変せず**に使ってください。要約禁止。
+        2. **correct_answer**: 問題文から論理的に導き出した「絶対の正解」を入れてください。
+        3. **student_answer**: ${studentAnswerInstruction}
+        4. **hints**: 答えそのものは書かず、考え方や着眼点を3段階で教えてください。
 
         【${subject}の採点方針】
         ${specificRule}
@@ -183,25 +165,18 @@ app.post('/analyze', async (req, res) => {
         【出力JSON形式 (リスト)】
         [
           {
-            "id": 1, 
-            "label": "①", 
-            "question": "問題文(原文ママ)", 
-            "correct_answer": "正答", 
-            "student_answer": "生徒の答え(または空文字)", 
-            "hints": ["ヒント1", "ヒント2", "ヒント3"]
+            "id": 1, "label": "①", "question": "問題文(原文ママ)", "correct_answer": "正答", "student_answer": "生徒の答え(または空文字)", "hints": ["ヒント1", "ヒント2", "ヒント3"]
           }
         ]
         `;
 
         const proResult = await reasoningModel.generateContent(solvePrompt);
         let finalText = proResult.response.text();
-        
         const firstBracket = finalText.indexOf('[');
         const lastBracket = finalText.lastIndexOf(']');
         if (firstBracket !== -1 && lastBracket !== -1) {
             finalText = finalText.substring(firstBracket, lastBracket + 1);
         }
-
         const json = JSON.parse(finalText);
         res.json(json);
 
@@ -211,30 +186,35 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
-// --- Other Endpoints ---
+// --- 4. 給食反応 (特別演出 & バリエーション強化) ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
         const { count, name } = req.body;
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
+        
         const isSpecial = (count % 10 === 0);
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+        
         let prompt = "";
         if (isSpecial) {
+            // 10回に1回: 熱く語る（さん付け必須）
             prompt = `
             あなたは猫の「ネル先生」です。生徒「${name}」から、記念すべき${count}個目の給食（カリカリ）をもらいました！
             【指示】
-            ・必ず「${name}さん」と、さん付けで呼んでください。
-            ・カリカリへの愛を熱く、情熱的に語ってください。
-            ・文字数は50文字程度。語尾は「にゃ」「だにゃ」。
+            1. 必ず「${name}さん」と、さん付けで呼んでください。
+            2. カリカリへの愛を熱く、情熱的に語ってください。
+            3. 感謝を少し大げさなくらい感激して伝えてください。
+            4. 文字数は50文字程度。語尾は「にゃ」「だにゃ」。
             `;
         } else {
+            // 通常時: 笑えるバリエーション（さん付けはたまに）
             prompt = `
-            あなたは猫の「ネル先生」です。生徒から${count}回目の給食（カリカリ）をもらいました。
+            あなたは猫の「ネル先生」です。生徒「${name}」から${count}回目の給食（カリカリ）をもらいました。
             【指示】
-            ・名前は呼ばないでください。
-            ・「おいしいにゃ！」「カリカリ最高だにゃ！」など、一言だけで喜びを伝えてください。
-            ・セリフは1つだけ出力してください。
-            ・20文字以内。
+            1. 普段は名前を呼ばなくていいですが、5回に1回くらいの確率で気まぐれに「${name}さん」と呼んでください。呼ぶときは必ず「さん」をつけてください。
+            2. カリカリの味、音、匂い、食感などを独特な表現で褒めるか、または猫としてのシュールなジョークを言ってください。
+            3. ユーモアたっぷり、笑える感じで。
+            4. 20文字以内。
             `;
         }
         const result = await model.generateContent(prompt);
@@ -242,7 +222,38 @@ app.post('/lunch-reaction', async (req, res) => {
     } catch { res.json({ reply: "おいしいにゃ！", isSpecial: false }); }
 });
 
-app.post('/game-reaction', async (req, res) => { res.json({ reply: "がんばれにゃ！", mood: "excited" }); });
+// --- 3. ゲーム反応 (スコア連動) ---
+app.post('/game-reaction', async (req, res) => {
+    try {
+        const { type, name, score } = req.body;
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+        let prompt = "";
+        let mood = "excited";
+
+        if (type === 'start') {
+            prompt = `あなたはネル先生。「${name}」がゲーム開始。「がんばれ！」と短く応援して。`;
+        } else if (type === 'end') {
+            // スコアに応じたコメント
+            prompt = `
+            あなたはネル先生。ゲーム終了。スコアは${score}点（満点20点）です。
+            スコアに応じて以下のテンションで、${name}さんに20文字以内でコメントしてください。
+            ・0-5点: 下手すぎて笑ってしまう感じで励ます。
+            ・6-15点: まあまあだね、と上から目線で褒める。
+            ・16-20点: すごい！と大げさに驚く。
+            語尾は「にゃ」。
+            `;
+        } else {
+            // プレイ中
+            return res.json({ reply: "ナイスにゃ！", mood: "excited" });
+        }
+
+        const result = await model.generateContent(prompt);
+        res.json({ reply: result.response.text().trim(), mood });
+    } catch { 
+        res.json({ reply: "おつかれさまにゃ！", mood: "happy" }); 
+    }
+});
+
 app.post('/summarize-notes', async (req, res) => { res.json({ notes: [] }); }); 
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));

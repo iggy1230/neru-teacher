@@ -1,4 +1,4 @@
-// --- user.js (完全版 v110.0: ログアウト機能追加) ---
+// --- user.js (完全版 v112.0: 出席ボーナス実装) ---
 
 // Firebase初期化 (firebaseConfigは firebase-config.js から読み込まれる前提)
 let app, auth, db;
@@ -61,15 +61,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// ★追加: ログアウト処理
+// ログアウト処理
 window.logoutProcess = async function() {
     if (auth && currentUser && currentUser.isGoogleUser) {
         try {
             await auth.signOut();
-            console.log("Googleログアウトしました");
-        } catch(e) {
-            console.error("Logout Error:", e);
-        }
+        } catch(e) { console.error("Logout Error:", e); }
     }
     currentUser = null;
 };
@@ -77,31 +74,23 @@ window.logoutProcess = async function() {
 // Googleログイン処理
 window.startGoogleLogin = function() {
     if (!auth) return alert("Firebaseの設定ファイル(firebase-config.js)が見つからないにゃ！");
-    
     const provider = new firebase.auth.GoogleAuthProvider();
     auth.signInWithPopup(provider)
         .then(async (result) => {
             const user = result.user;
             const doc = await db.collection("users").doc(user.uid).get();
-            
             if (doc.exists) {
                 currentUser = doc.data();
                 currentUser.isGoogleUser = true; 
                 login(currentUser, true);
             } else {
-                currentUser = { 
-                    id: user.uid, 
-                    isGoogleUser: true 
-                };
+                currentUser = { id: user.uid, isGoogleUser: true };
                 window.isGoogleEnrollment = true;
                 alert("はじめましてだにゃ！\nGoogleアカウントで入学手続きをするにゃ！");
                 showEnrollment();
             }
         })
-        .catch((error) => {
-            console.error("Login Error:", error);
-            alert("ログインに失敗したにゃ...\n" + error.message);
-        });
+        .catch((error) => { alert("ログインに失敗したにゃ...\n" + error.message); });
 };
 
 function setupTextInputEvents() {
@@ -240,7 +229,6 @@ async function loadFaceModels() {
         if(btn) btn.disabled = false;
         if(enrollFile) updatePhotoPreview(enrollFile);
     } catch (e) {
-        console.error("Model Load Error:", e);
         if(status) status.innerText = "AIの準備に失敗したにゃ…(手動モード)";
         if(btn) btn.disabled = false;
     }
@@ -445,7 +433,9 @@ async function processAndCompleteEnrollment() {
                 history: (currentUser && currentUser.history) || {},
                 mistakes: (currentUser && currentUser.mistakes) || [],
                 attendance: (currentUser && currentUser.attendance) || {},
-                memory: (currentUser && currentUser.memory) || ""
+                memory: (currentUser && currentUser.memory) || "",
+                lastLogin: (currentUser && currentUser.lastLogin) || "",
+                streak: (currentUser && currentUser.streak) || 0
             };
             
             if (db) {
@@ -471,7 +461,8 @@ async function processAndCompleteEnrollment() {
                 const newUser = { 
                     id: Date.now(), name, grade, photo: finalPhoto, karikari: 100, 
                     isGoogleUser: false, 
-                    history: {}, mistakes: [], attendance: {}, memory: "" 
+                    history: {}, mistakes: [], attendance: {}, memory: "",
+                    lastLogin: "", streak: 0
                 };
                 users.push(newUser);
                 localStorage.setItem('nekoneko_users', JSON.stringify(users)); 
@@ -513,21 +504,46 @@ function renderUserList() {
     }); 
 }
 
+// --- ★修正: 出席ボーナスロジック ---
 function login(user, isGoogle = false) { 
     try { sfxDoor.currentTime = 0; sfxDoor.play(); } catch(e){}
     currentUser = user; 
     if (!currentUser.attendance) currentUser.attendance = {}; 
+    
+    // 出席＆ボーナス判定
+    const today = new Date().toISOString().split('T')[0]; 
+    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+
+    // 初めてのログインか、日付が変わった場合のみ処理
+    if (currentUser.lastLogin !== today) {
+        if (currentUser.lastLogin === yesterday) {
+            // 連続ログイン
+            currentUser.streak = (currentUser.streak || 0) + 1;
+        } else {
+            // 途切れた or 初回
+            currentUser.streak = 1;
+        }
+        
+        currentUser.lastLogin = today;
+        currentUser.attendance[today] = true;
+
+        // ボーナス判定 (3日目以降はずっと)
+        if (currentUser.streak >= 3) {
+            currentUser.karikari += 100;
+            setTimeout(() => { 
+                alert(`㊗️ ${currentUser.streak}日連続出席！\nボーナスでカリカリ100個ゲットだにゃ！🍖✨`); 
+                showKarikariEffect(100);
+            }, 1000);
+        }
+        
+        saveAndSync(); 
+    }
+    
     const avatar = document.getElementById('current-student-avatar'); 
     if (avatar) avatar.src = user.photo; 
     const karikari = document.getElementById('karikari-count'); 
     if (karikari) karikari.innerText = user.karikari || 0; 
-    
-    const today = new Date().toISOString().split('T')[0]; 
-    if (!currentUser.attendance[today]) { 
-        currentUser.attendance[today] = true; 
-        saveAndSync(); 
-    } 
-    
+
     switchScreen('screen-lobby'); 
     if (window.justEnrolledId === user.id) {
         updateNellMessage(`${user.name}さん、入学おめでとうだにゃ！`, "excited");
@@ -541,6 +557,8 @@ async function saveAndSync() {
     if (!currentUser) return; 
     const kCounter = document.getElementById('karikari-count'); 
     if (kCounter) kCounter.innerText = currentUser.karikari;
+    const miniKCounter = document.getElementById('mini-karikari-count');
+    if (miniKCounter) miniKCounter.innerText = currentUser.karikari;
 
     if (currentUser.isGoogleUser && db) {
         try {
