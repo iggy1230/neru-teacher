@@ -82,7 +82,7 @@ app.post('/analyze', async (req, res) => {
 
         // ★手書き文字認識に強いモデル
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-1.5-pro", 
+            model: "gemini-2.5-pro", 
             generationConfig: { responseMimeType: "application/json" } 
         });
 
