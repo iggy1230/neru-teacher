@@ -1,8 +1,9 @@
-// --- ui.js (完全版 v119.0: 画面遷移安定化) ---
+// --- ui.js (完全版 v120.0: 画面遷移安定化) ---
 
 const sfxChime = new Audio('Jpn_sch_chime.mp3');
 const sfxBtn = new Audio('botan1.mp3');
 
+// カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
 
 // グローバルに定義 (anlyze.jsから呼べるように)
@@ -47,7 +48,8 @@ window.backToLobby = function(suppressGreeting = false) {
 window.showEnrollment = function() {
     switchScreen('screen-enrollment');
     if (typeof window.showEnrollment === 'function') {
-        // user.js側の同名関数がある場合のフック（必要に応じて）
+        // user.jsの関数（名前が同じなので再帰に注意、user.js側でフラグリセット等してるならOK）
+        // ここでは単純に画面切り替えのみ行う
     }
 };
 

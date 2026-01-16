@@ -51,7 +51,7 @@ app.post('/analyze', async (req, res) => {
         const { image, grade, name } = req.body;
         // Gemini 1.5 Proを使用 (2.5はまだ安定していない可能性があるため1.5へ安全策)
         const model = googleAI.getGenerativeModel({ 
-            model: "gemini-1.5-pro",
+            model: "gemini-2.5-pro",
             generationConfig: { responseMimeType: "application/json" }
         });
 
