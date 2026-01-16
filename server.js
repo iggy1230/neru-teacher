@@ -1,4 +1,4 @@
-// --- server.js (完全版 v114.0: Analyzeスリム化 & Pro単独処理) ---
+// --- server.js (完全版 v114.0: Analyzeスリム化 & 安定版ベース) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -74,21 +74,22 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- Analyze (Slim Version) ---
+// --- Hybrid Analyze (Slim Version) ---
 app.post('/analyze', async (req, res) => {
     try {
         const { image, subject, grade, name } = req.body;
 
         // Proモデルに直接画像を見せるにゃ！
+        // (元の変数名 genAI を使用)
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.5-pro", 
             generationConfig: { responseMimeType: "application/json" } 
         });
 
-        const prompt = `あなたは教育AI「ネル先生」です。相手は${grade || '小学'}年生の${name || '生徒'}ちゃんです。
+        const prompt = `あなたは教育AI「ネル先生」です。相手は${grade}年生の${name}ちゃんです。
         画像内の問題を解き、以下のJSON形式で返してください。
         【形式】[{"id": 1, "label": "問1", "question": "問題の内容", "answer": "答え", "hint1": "考え方", "hint2": "ヒント"}]
-        ※問題文は要約しても良いので、正確に解くことを最優先してください。`;
+        ※問題文は要約しないでください。正確に解くことを最優先してください。`;
 
         // 画像とプロンプトを同時に送るにゃ！
         const result = await model.generateContent([
@@ -100,26 +101,14 @@ app.post('/analyze', async (req, res) => {
         const jsonMatch = responseText.match(/\[[\s\S]*\]/);
         const problems = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
 
-        // フロントエンド(anlyze.js)が期待するキー名へ変換
-        const formattedProblems = problems.map(p => ({
-            id: p.id,
-            label: p.label,
-            question: p.question,
-            correct_answer: p.answer, // answer -> correct_answer
-            student_answer: "", // 採点機能用のプレースホルダー
-            hints: [p.hint1, p.hint2].filter(h => h) // hint1,2 -> hints配列
-        }));
-
-        // 配列を直接返す (anlyze.jsは配列を期待しているため)
-        res.json(formattedProblems);
-        
+        res.json({ problems });
     } catch (error) {
         console.error("解析エラーにゃ:", error);
-        res.status(500).json({ error: "解析に失敗したにゃ: " + error.message });
+        res.status(500).json({ error: "解析に失敗したにゃ" });
     }
 });
 
-// --- Other Endpoints ---
+// --- 4. 給食反応 (箇条書き禁止 & 特別演出 - v113.0仕様) ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
         const { count, name } = req.body;
@@ -130,16 +119,21 @@ app.post('/lunch-reaction', async (req, res) => {
         
         let prompt = "";
         if (isSpecial) {
+            // 10回に1回: 熱く語る（さん付け必須）
             prompt = `
             あなたは猫の「ネル先生」です。生徒「${name}」から、記念すべき${count}個目の給食（カリカリ）をもらいました！
+            
             【指示】
-            ・必ず「${name}さん」と、さん付けで呼んでください。
-            ・カリカリへの愛を熱く、情熱的に語ってください。
-            ・文字数は50文字程度。語尾は「にゃ」「だにゃ」。
+            1. 必ず「${name}さん」と、さん付けで呼んでください。
+            2. カリカリへの愛を熱く、情熱的に語ってください。
+            3. 感謝を少し大げさなくらい感激して伝えてください。
+            4. 文字数は50文字程度。語尾は「にゃ」「だにゃ」。
             `;
         } else {
+            // 通常時: 箇条書き禁止ルール追加
             prompt = `
             あなたは猫の「ネル先生」です。生徒「${name}」から${count}回目の給食（カリカリ）をもらいました。
+            
             【絶対守るべき指示】
             1. 「箇条書き」や「複数の案」を出さないでください。セリフは1つだけにしてください。
             2. 普段は名前を呼ばなくていいですが、5回に1回くらいの確率で気まぐれに「${name}さん」と呼んでください。
@@ -153,6 +147,7 @@ app.post('/lunch-reaction', async (req, res) => {
     } catch { res.json({ reply: "おいしいにゃ！", isSpecial: false }); }
 });
 
+// --- 3. ゲーム反応 ---
 app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;
