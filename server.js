@@ -1,4 +1,4 @@
-// --- server.js (完全版 v114.0: プロンプトスリム化 & 安定版) ---
+// --- server.js (完全版 v114.0: Analyzeスリム化 & Pro単独処理) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -74,68 +74,52 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- Hybrid Analyze ---
+// --- Analyze (Slim Version) ---
 app.post('/analyze', async (req, res) => {
     try {
-        const { image, mode, grade, subject, analysisType } = req.body;
-        console.log(`[Analyze] Type: ${analysisType}, Subject: ${subject}, Mode: ${mode}`);
+        const { image, subject, grade, name } = req.body;
 
-        // --- Step 1: OCR (Flash) ---
-        // 画像からテキストを抽出（ここはシンプルに）
-        const flashModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
-        const ocrPrompt = `この${subject}のプリント画像を読み取り、書かれている内容をテキスト化してください。`;
-        
-        const flashResult = await flashModel.generateContent([
-            ocrPrompt,
-            { inlineData: { mime_type: "image/jpeg", data: image } }
-        ]);
-        const transcribedText = flashResult.response.text();
-        console.log("OCR Result Length:", transcribedText.length);
-
-        // --- Step 2: 推論 (Pro 2.5) ---
-        const reasoningModel = genAI.getGenerativeModel({ 
-            model: "gemini-2.5-pro",
-            generationConfig: { responseMimeType: "application/json" }
+        // Proモデルに直接画像を見せるにゃ！
+        const model = genAI.getGenerativeModel({ 
+            model: "gemini-2.5-pro", 
+            generationConfig: { responseMimeType: "application/json" } 
         });
 
-        // ★修正: スリム化されたプロンプト
-        const solvePrompt = `あなたは教育AI「ネル先生」です。
-        画像の問題を解き、以下のJSON形式で返してください。
+        const prompt = `あなたは教育AI「ネル先生」です。相手は${grade || '小学'}年生の${name || '生徒'}ちゃんです。
+        画像内の問題を解き、以下のJSON形式で返してください。
         【形式】[{"id": 1, "label": "問1", "question": "問題の内容", "answer": "答え", "hint1": "考え方", "hint2": "ヒント"}]
-        ※問題文は要約しても良いので、正確に解くことを最優先してください。
-        
-        【読み取ったテキスト】
-        ${transcribedText}`;
+        ※問題文は要約しても良いので、正確に解くことを最優先してください。`;
 
-        const proResult = await reasoningModel.generateContent(solvePrompt);
-        let finalText = proResult.response.text();
-        
-        const firstBracket = finalText.indexOf('[');
-        const lastBracket = finalText.lastIndexOf(']');
-        if (firstBracket !== -1 && lastBracket !== -1) {
-            finalText = finalText.substring(firstBracket, lastBracket + 1);
-        }
-        const rawJson = JSON.parse(finalText);
+        // 画像とプロンプトを同時に送るにゃ！
+        const result = await model.generateContent([
+            prompt,
+            { inlineData: { mime_type: "image/jpeg", data: image } }
+        ]);
 
-        // ★変換: フロントエンドの形式に合わせて整形
-        const formattedJson = rawJson.map(item => ({
-            id: item.id,
-            label: item.label,
-            question: item.question,
-            correct_answer: item.answer, // answer -> correct_answer
-            student_answer: "", // 今回は手書き抽出しないため空
-            hints: [item.hint1, item.hint2].filter(h => h) // hint1, hint2 -> hints array
+        const responseText = result.response.text();
+        const jsonMatch = responseText.match(/\[[\s\S]*\]/);
+        const problems = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
+
+        // フロントエンド(anlyze.js)が期待するキー名へ変換
+        const formattedProblems = problems.map(p => ({
+            id: p.id,
+            label: p.label,
+            question: p.question,
+            correct_answer: p.answer, // answer -> correct_answer
+            student_answer: "", // 採点機能用のプレースホルダー
+            hints: [p.hint1, p.hint2].filter(h => h) // hint1,2 -> hints配列
         }));
 
-        res.json(formattedJson);
-
-    } catch (err) { 
-        console.error("Analyze Error:", err);
-        res.status(500).json({ error: "解析エラーだにゃ: " + err.message }); 
+        // 配列を直接返す (anlyze.jsは配列を期待しているため)
+        res.json(formattedProblems);
+        
+    } catch (error) {
+        console.error("解析エラーにゃ:", error);
+        res.status(500).json({ error: "解析に失敗したにゃ: " + error.message });
     }
 });
 
-// --- 4. 給食反応 (箇条書き禁止 & 特別演出) ---
+// --- Other Endpoints ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
         const { count, name } = req.body;
@@ -151,7 +135,6 @@ app.post('/lunch-reaction', async (req, res) => {
             【指示】
             ・必ず「${name}さん」と、さん付けで呼んでください。
             ・カリカリへの愛を熱く、情熱的に語ってください。
-            ・感謝を少し大げさなくらい感激して伝えてください。
             ・文字数は50文字程度。語尾は「にゃ」「だにゃ」。
             `;
         } else {
@@ -170,7 +153,6 @@ app.post('/lunch-reaction', async (req, res) => {
     } catch { res.json({ reply: "おいしいにゃ！", isSpecial: false }); }
 });
 
-// --- 3. ゲーム反応 ---
 app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;

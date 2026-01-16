@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v110.0: 記憶断捨離フィルター搭載) ---
+// --- anlyze.js (完全版 v115.0: 記憶修復 & 分析演出強化) ---
 
 // グローバル変数の初期化
 window.transcribedProblems = []; 
@@ -19,20 +19,22 @@ let currentTtsSource = null;
 let chatTranscript = ""; 
 let nextStartTime = 0;
 let connectionTimeout = null;
-
 let recognition = null;
 let isRecognitionActive = false;
-
 let gameCanvas, ctx, ball, paddle, bricks, score, gameRunning = false, gameAnimId = null;
-
 let cropImg = new Image();
 let cropPoints = [];
 let activeHandle = -1;
+
+// 分析演出用タイマー管理
+let analysisTimers = [];
 
 const sfxBori = new Audio('boribori.mp3');
 const sfxHit = new Audio('cat1c.mp3');
 const sfxPaddle = new Audio('poka02.mp3'); 
 const sfxOver = new Audio('gameover.mp3');
+const sfxBunseki = new Audio('bunseki.mp3'); sfxBunseki.volume = 0.1;
+
 const gameHitComments = ["うまいにゃ！", "すごいにゃ！", "さすがにゃ！", "がんばれにゃ！"];
 
 const subjectImages = {
@@ -65,37 +67,22 @@ function startMouthAnimation() {
 }
 startMouthAnimation();
 
-// --- ★記憶システム (断捨離フィルター実装版) ---
+// --- ★修正: 記憶システム (最優先・堅牢化) ---
 async function saveToNellMemory(role, text) {
-    if (!currentUser || !currentUser.id) return;
-
-    // --- フィルター (お耳の関所) ---
-    // 1. 2文字以下は覚えない
-    if (text.length <= 2) return;
-
-    // 2. 意味のない相槌や呼びかけを無視
-    const ignoreWords = ["あー", "えーと", "うーん", "あのー", "はい", "ねえ", "ネル先生", "にゃー"];
-    if (ignoreWords.includes(text.trim())) {
-        console.log("🤫 不要な相槌なので覚えなかったにゃ:", text);
+    if (!currentUser || !currentUser.id) {
+        console.warn("⚠️ ユーザー情報がないので記憶をスキップしたにゃ");
         return;
     }
-    // --- フィルターここまで ---
-
+    
     const newItem = { role: role, text: text, time: new Date().toISOString() };
+    console.log(`📝 記憶保存: [${role}] ${text.substring(0, 10)}...`);
 
-    // 1. LocalStorage (バックアップ)
+    // 1. ローカルストレージ (必ず保存)
     try {
         const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
         let history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
-        
-        // 重複チェック（直前と同じなら保存しない）
-        if (history.length > 0 && history[history.length - 1].text === text) {
-            console.log("🤫 同じこと言ってるから覚えないにゃ:", text);
-            return;
-        }
-
         history.push(newItem);
-        if (history.length > 50) history.shift(); // 50件制限
+        if (history.length > 50) history.shift(); 
         localStorage.setItem(memoryKey, JSON.stringify(history));
     } catch(e) { console.error("Local Save Error:", e); }
 
@@ -106,9 +93,6 @@ async function saveToNellMemory(role, text) {
             const docSnap = await docRef.get();
             let cloudHistory = docSnap.exists ? (docSnap.data().history || []) : [];
             
-            // クラウド側でも重複チェック
-            if (cloudHistory.length > 0 && cloudHistory[cloudHistory.length - 1].text === text) return;
-
             cloudHistory.push(newItem);
             if (cloudHistory.length > 50) cloudHistory.shift();
 
@@ -130,7 +114,9 @@ window.updateNellMessage = async function(t, mood = "normal") {
     if (el) el.innerText = t;
 
     if (t && t.includes("もぐもぐ")) { try { sfxBori.currentTime = 0; sfxBori.play(); } catch(e){} }
-    if (!t || t.includes("ちょっと待ってて") || t.includes("もぐもぐ")) return;
+    
+    // 特定のシステムメッセージ以外は記憶する
+    if (!t || t.includes("ちょっと待ってて") || t.includes("もぐもぐ") || t.includes("接続中")) return;
 
     saveToNellMemory('nell', t);
 
@@ -151,7 +137,8 @@ window.selectMode = function(m) {
     const backBtn = document.getElementById('main-back-btn');
     if (backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = backToLobby; }
     
-    stopLiveChat(); gameRunning = false;
+    stopLiveChat(); 
+    gameRunning = false;
     const icon = document.querySelector('.nell-avatar-wrap img'); if(icon) icon.src = defaultIcon;
     document.getElementById('mini-karikari-display').classList.remove('hidden'); 
     updateMiniKarikari();
@@ -316,7 +303,7 @@ window.pressAllSolved = function(btnElement) {
     }
 };
 
-// --- Live Chat ---
+// --- Live Chat (記憶ロード強化) ---
 async function startLiveChat() {
     const btn = document.getElementById('mic-btn');
     if (liveSocket) { stopLiveChat(); return; }
@@ -332,6 +319,7 @@ async function startLiveChat() {
         
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
         
+        // 記憶をロード (Cloud優先 -> Localフォールバック)
         let savedHistory = [];
         if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) {
             try {
@@ -526,7 +514,7 @@ async function startAnalysis(b64) {
 }
 
 // 分析終了時のクリーンアップ
-function cleanupAnalysis(timerId) {
+function cleanupAnalysis() {
     isAnalyzing = false;
     sfxBunseki.pause();
     analysisTimers.forEach(t => clearTimeout(t));
