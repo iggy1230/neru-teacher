@@ -89,7 +89,7 @@ app.post('/analyze', async (req, res) => {
         // マルチモーダル対応モデルを使用（Gemini 2.0 Flash または Pro）
         // ※ 画像も文字も一度に理解できるモデルを指定
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-1.5-pro-002", // 高速で画像認識に強いモデル
+            model: "gemini-2.5-pro", // 高速で画像認識に強いモデル
             generationConfig: { responseMimeType: "application/json" } 
         });
 
