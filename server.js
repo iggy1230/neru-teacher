@@ -1,4 +1,5 @@
-// --- server.js (完全版 v117.0: 高精度OCR & 高速解析統合版) ---
+// --- server.js (完全版 v118.0: JSON解析強化 & 安定版) ---
+
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import express from 'express';
@@ -8,7 +9,6 @@ import { fileURLToPath } from 'url';
 import WebSocket, { WebSocketServer } from 'ws';
 import { parse } from 'url';
 import dotenv from 'dotenv';
-import fs from 'fs/promises';
 
 dotenv.config();
 
@@ -22,12 +22,36 @@ app.use(express.static(path.join(__dirname, '.')));
 
 const googleAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// --- 共通解析エンドポイント (教えて/採点 共通) ---
+// --- ヘルパー: 頑丈なJSONパーサー ---
+function extractAndParseJSON(text) {
+    try {
+        // 1. そのままパース
+        return JSON.parse(text);
+    } catch (e) {
+        // 2. Markdown記法 ```json ... ``` を除去
+        let clean = text.replace(/```json/g, '').replace(/```/g, '').trim();
+        try { return JSON.parse(clean); } catch (e) {}
+
+        // 3. 配列 [ ... ] を無理やり抽出
+        const start = clean.indexOf('[');
+        const end = clean.lastIndexOf(']');
+        if (start !== -1 && end !== -1) {
+            clean = clean.substring(start, end + 1);
+            try { return JSON.parse(clean); } catch (e) {}
+        }
+        
+        console.error("JSON Parse Error Text:", text);
+        return []; // 失敗したら空配列を返してクラッシュ回避
+    }
+}
+
+// --- 共通解析エンドポイント ---
 app.post('/analyze', async (req, res) => {
     try {
         const { image, grade, name } = req.body;
+        // Gemini 1.5 Proを使用 (2.5はまだ安定していない可能性があるため1.5へ安全策)
         const model = googleAI.getGenerativeModel({ 
-            model: "gemini-2.5-pro",
+            model: "gemini-1.5-pro",
             generationConfig: { responseMimeType: "application/json" }
         });
 
@@ -61,37 +85,41 @@ app.post('/analyze', async (req, res) => {
         ]);
 
         const responseText = result.response.text();
-        const jsonMatch = responseText.match(/\[[\s\S]*\]/);
-        res.json({ problems: jsonMatch ? JSON.parse(jsonMatch[0]) : [] });
+        // 頑丈なパーサーを通す
+        const problems = extractAndParseJSON(responseText);
+
+        res.json({ problems });
     } catch (error) {
         console.error("解析エラー:", error);
-        res.status(500).json({ error: "解析に失敗したにゃ" });
+        // クライアントには空の結果を返して止まらないようにする
+        res.status(500).json({ error: "解析に失敗したにゃ", details: error.message });
     }
 });
 
 // --- 給食リアクション ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
-        const { count, name } = req.body;
+        const { menu, name } = req.body;
         const model = googleAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
-        const result = await model.generateContent(`${name}から${count}回目の給食（カリカリ）をもらったネル先生（猫）の喜ぶセリフを語尾「にゃ」で1つ短く返して。`);
-        res.json({ reply: result.response.text(), isSpecial: count % 10 === 0 });
+        const result = await model.generateContent(`${name}から${menu}をもらったネル先生（猫）の喜ぶセリフを語尾「にゃ」で1つ短く返して。`);
+        res.json({ reply: result.response.text() });
     } catch (e) { res.json({ reply: "おいしいにゃ！ありがとうにゃ！" }); }
 });
 
 // --- 音声合成 ---
 let ttsClient;
 try {
+    // 認証情報がある場合のみ初期化
     if (process.env.GOOGLE_CREDENTIALS_JSON) {
         const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
         ttsClient = new textToSpeech.TextToSpeechClient({ credentials });
     } else {
         ttsClient = new textToSpeech.TextToSpeechClient();
     }
-} catch (e) { console.error("TTS Init Error:", e); }
+} catch (e) { console.error("TTS Init Skipped:", e.message); }
 
 app.post('/synthesize', async (req, res) => {
-    if (!ttsClient) return res.status(500).send("TTS Not Configured");
+    if (!ttsClient) return res.json({ audioContent: null }); // TTS無効なら何もしない
     try {
         const [response] = await ttsClient.synthesizeSpeech({
             input: { text: req.body.text },
@@ -99,14 +127,14 @@ app.post('/synthesize', async (req, res) => {
             audioConfig: { audioEncoding: 'MP3', speakingRate: 1.1 },
         });
         res.json({ audioContent: response.audioContent.toString('base64') });
-    } catch (e) { res.status(500).send(e.message); }
+    } catch (e) { 
+        console.error("TTS Error:", e);
+        res.status(500).send(e.message); 
+    }
 });
 
-app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
-
-// --- WebSocket (リアルタイム対話) ---
-const PORT = process.env.PORT || 3000;
-const server = app.listen(PORT, () => console.log("Server ready!"));
+// --- WebSocket ---
+const server = app.listen(process.env.PORT || 3000, () => console.log("Server ready!"));
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', (clientWs, req) => {
@@ -123,10 +151,9 @@ wss.on('connection', (clientWs, req) => {
                     responseModalities: ["AUDIO"],
                     speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }, language_code: "ja-JP" }
                 },
-                systemInstruction: { parts: [{ text: `あなたはネル先生（猫）。相手は${grade}年生の${name}。語尾は「にゃ」。会話履歴に基づき親身に接して。履歴：${status}` }] }
+                systemInstruction: { parts: [{ text: `あなたはネル先生（猫）。相手は${grade}年生の${name}。語尾は「にゃ」。履歴：${status}` }] }
             }
         }));
-        if (clientWs.readyState === WebSocket.OPEN) clientWs.send(JSON.stringify({ type: "server_ready" }));
     });
 
     clientWs.on('message', (data) => {
