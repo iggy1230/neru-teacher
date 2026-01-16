@@ -1,4 +1,4 @@
-// --- ui.js (完全版 v120.0: 画面遷移安定化) ---
+// --- ui.js (完全版 v113.0: カレンダー小型化) ---
 
 const sfxChime = new Audio('Jpn_sch_chime.mp3');
 const sfxBtn = new Audio('botan1.mp3');
@@ -48,8 +48,7 @@ window.backToLobby = function(suppressGreeting = false) {
 window.showEnrollment = function() {
     switchScreen('screen-enrollment');
     if (typeof window.showEnrollment === 'function') {
-        // user.jsの関数（名前が同じなので再帰に注意、user.js側でフラグリセット等してるならOK）
-        // ここでは単純に画面切り替えのみ行う
+        // user.jsの初期化処理
     }
 };
 
@@ -58,6 +57,7 @@ window.showAttendance = function() {
     if (typeof renderAttendance === 'function') renderAttendance();
 };
 
+// ★修正: カレンダーを小型化 (スクロール防止)
 window.renderAttendance = function() {
     const grid = document.getElementById('attendance-grid');
     if (!grid || !currentUser) return;
@@ -66,6 +66,7 @@ window.renderAttendance = function() {
     const firstDay = new Date(year, month, 1).getDay(); 
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     
+    // グリッド設定の調整 (余白削減)
     grid.style.gap = "2px";
     grid.style.padding = "5px";
     
@@ -88,14 +89,19 @@ window.renderAttendance = function() {
         div.className = "day-box";
         let borderStyle = "1px solid #f0f0f0"; let bgStyle = "#fff";
         if (dateKey === todayStr) { borderStyle = "2px solid #ff85a1"; bgStyle = "#fff0f3"; }
+        
+        // ★修正: 正方形比率(aspect-ratio)をやめ、高さを固定してコンパクトに
         div.style = `height: 40px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; border: ${borderStyle}; background-color: ${bgStyle}; border-radius: 4px; position: relative; font-size: 0.7rem; overflow: hidden;`;
+        
         div.innerHTML = `<div style="font-size: 0.6rem; color:#555; margin-top:2px;">${day}</div>`;
+        
         if (hasAttended) {
             const stamp = document.createElement('img');
             stamp.src = "nikukyuhanko.png";
             stamp.style.cssText = "position:absolute; bottom:2px; width:70%; height:auto; object-fit:contain; opacity:0.8;";
             div.appendChild(stamp);
         }
+        
         grid.appendChild(div);
     }
 };
