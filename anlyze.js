@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v147.0: 異表記対応 & 複数回答UI修正) ---
+// --- anlyze.js (完全版 v148.0: レイアウト完全固定 & 幅統一版) ---
 
 // グローバル変数の初期化
 window.transcribedProblems = []; 
@@ -292,7 +292,6 @@ window.startHint = function(id) {
     selectedProblem = transcribedProblems.find(p => p.id == id); 
     if (!selectedProblem) return updateNellMessage("データエラーだにゃ", "thinking");
     
-    // ヒント状態初期化
     if (!selectedProblem.currentHintLevel) selectedProblem.currentHintLevel = 1;
     if (selectedProblem.maxUnlockedHintLevel === undefined) selectedProblem.maxUnlockedHintLevel = 0;
 
@@ -381,7 +380,7 @@ window.revealAnswer = function() {
     updateNellMessage(`答えは「${selectedProblem.correct_answer}」だにゃ！`, "gentle"); 
 };
 
-// --- ★修正: 共通リスト生成 (右端固定 & 初期空白対応) ---
+// --- ★修正: リスト生成 (レイアウト完全固定 & 幅統一) ---
 function createProblemItem(p, mode) {
     const isGradeMode = (mode === 'grade');
     
@@ -398,12 +397,11 @@ function createProblemItem(p, mode) {
         const mark = isCorrect ? "⭕" : "❌"; 
         const markColor = isCorrect ? "#ff5252" : "#4a90e2"; 
         bgStyle = isCorrect ? "background:#fff5f5;" : "background:#f0f8ff;";
-        markHtml = `<div id="mark-${p.id}" style="font-weight:900; color:${markColor}; font-size:2rem; width:50px; text-align:center;">${mark}</div>`;
+        markHtml = `<div id="mark-${p.id}" style="font-weight:900; color:${markColor}; font-size:2rem; width:50px; text-align:center; flex-shrink:0;">${mark}</div>`;
     } else {
-        markHtml = `<div id="mark-${p.id}" style="font-weight:900; color:#4a90e2; font-size:2rem; width:50px; text-align:center;"></div>`;
+        markHtml = `<div id="mark-${p.id}" style="font-weight:900; color:#4a90e2; font-size:2rem; width:50px; text-align:center; flex-shrink:0;"></div>`;
     }
 
-    // ★修正: カンマのみで分割（|は分割しない）
     const correctAnswers = String(p.correct_answer || "").split(/,|、/).map(s => s.trim()).filter(s => s);
     const studentAnswers = String(p.student_answer || "").split(/,|、/).map(s => s.trim()); 
     let inputHtml = "";
@@ -419,16 +417,20 @@ function createProblemItem(p, mode) {
     } else {
         const onInput = isGradeMode ? `oninput="checkAnswerDynamically(${p.id}, this)"` : "";
         const idAttr = isGradeMode ? "" : `id="single-input-${p.id}"`;
-        inputHtml += `<input type="text" ${idAttr} value="${p.student_answer || ""}" ${onInput} style="width:100%; padding:8px; border:2px solid #ddd; border-radius:8px; font-size:1rem; font-weight:bold; color:#333; box-sizing:border-box;">`;
+        // 幅統一のためdivで包む
+        inputHtml = `<div style="width:100%;">
+            <input type="text" ${idAttr} value="${p.student_answer || ""}" ${onInput} style="width:100%; padding:8px; border:2px solid #ddd; border-radius:8px; font-size:1rem; font-weight:bold; color:#333; box-sizing:border-box;">
+        </div>`;
     }
 
     let buttonsHtml = "";
     if (isGradeMode) {
-        buttonsHtml = `<div style="display:flex; flex-direction:column; gap:5px; width:80px; flex-shrink:0; justify-content:center;">
+        // ★修正: margin-left: auto で右寄せ
+        buttonsHtml = `<div style="display:flex; flex-direction:column; gap:5px; width:80px; flex-shrink:0; justify-content:center; margin-left:auto;">
             <button class="mini-teach-btn" onclick="startHint(${p.id})" style="width:100%;">教えて</button>
         </div>`;
     } else {
-        buttonsHtml = `<div style="display:flex; flex-direction:column; gap:5px; width:80px; flex-shrink:0;">
+        buttonsHtml = `<div style="display:flex; flex-direction:column; gap:5px; width:80px; flex-shrink:0; margin-left:auto;">
             <button class="mini-teach-btn" onclick="checkOneProblem(${p.id})" style="background:#ff85a1; width:100%;">採点</button>
             <button class="mini-teach-btn" onclick="startHint(${p.id})" style="width:100%;">教えて</button>
         </div>`;
@@ -440,13 +442,13 @@ function createProblemItem(p, mode) {
     div.style.cssText = `border-bottom:1px solid #eee; padding:15px; margin-bottom:10px; border-radius:10px; ${bgStyle}`; 
     
     div.innerHTML = `
-        <div style="display:flex; align-items:center;">
+        <div style="display:flex; align-items:center; width:100%;">
             ${markHtml}
-            <div style="flex:1; margin-left:10px; display:flex; flex-direction:column; width:100%;">
+            <div style="flex:1; margin-left:10px; display:flex; flex-direction:column; min-width:0;">
                 <div style="font-size:0.9rem; color:#888; margin-bottom:4px;">${p.label || '問'}</div>
                 <div style="font-weight:bold; font-size:0.9rem; margin-bottom:8px; width:100%; word-break:break-all;">${p.question}</div>
-                <div style="display:flex; gap:10px; align-items:flex-start; width:100%; justify-content: space-between;">
-                    <div style="flex:1; min-width:0;">
+                <div style="display:flex; gap:10px; align-items:flex-start; width:100%; justify-content:space-between;">
+                    <div style="flex:1; min-width:0; margin-right:5px;">
                         ${inputHtml}
                         <div style="font-size:0.7rem; color:#666; margin-top:4px;">キミの答え (直せるよ)</div>
                     </div>
@@ -491,7 +493,7 @@ window.renderProblemSelection = function() {
     if (btn) { btn.disabled = false; btn.innerText = "✨ ぜんぶわかったにゃ！"; } 
 };
 
-// --- ★修正: 採点ロジック (別解 | 対応 & 複数回答順不同) ---
+// --- 採点ロジック ---
 
 function normalizeAnswer(str) {
     if (!str) return "";
@@ -502,15 +504,12 @@ function normalizeAnswer(str) {
     return normalized;
 }
 
-// 答え合わせヘルパー: 1つの入力値が、正解候補のどれかと一致するか
-// correctString: "高い|たかい" のようなパイプ区切りの文字列を想定
 function isMatch(student, correctString) {
     const s = normalizeAnswer(student);
-    const options = normalizeAnswer(correctString).split('|'); // パイプで分割
+    const options = normalizeAnswer(correctString).split('|'); 
     return options.some(opt => opt === s);
 }
 
-// 複数回答チェック (順不同対応)
 window.checkMultiAnswer = function(id) {
     const problem = transcribedProblems.find(p => p.id === id);
     if (!problem) return;
@@ -520,15 +519,11 @@ window.checkMultiAnswer = function(id) {
     
     problem.student_answer = userValues.join(",");
     
-    // 正解リスト (カンマ区切り) -> ["高い|たかい", "低い|ひくい"] のような配列になる
     const correctList = String(problem.correct_answer || "").split(/,|、/);
     
-    // 数が合わない場合は不正解
     if (userValues.length !== correctList.length) {
         problem.is_correct = false;
     } else {
-        // マッチング処理 (順不同)
-        // ユーザーの入力それぞれについて、正解リストの中から「まだ使われていない」かつ「マッチする」ものを探す
         const usedIndices = new Set();
         let matchCount = 0;
 
@@ -538,7 +533,7 @@ window.checkMultiAnswer = function(id) {
                     if (isMatch(uVal, correctList[i])) {
                         usedIndices.add(i);
                         matchCount++;
-                        break; // このユーザー入力はマッチしたので次の入力へ
+                        break; 
                     }
                 }
             }
@@ -556,7 +551,6 @@ window.checkAnswerDynamically = function(id, inputElem) {
     if (!problem) return; 
     
     problem.student_answer = String(newVal); 
-    // 単一回答ならシンプルに isMatch
     const isCorrect = isMatch(newVal, String(problem.correct_answer || ""));
     
     problem.is_correct = isCorrect; 
@@ -579,7 +573,6 @@ window.checkOneProblem = function(id) {
         if(input) userValues = [input.value];
     }
 
-    // 採点ロジックは checkMultiAnswer と同じ
     let isCorrect = true;
     if (userValues.length !== correctList.length) {
         isCorrect = false;
