@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v154.0: 記憶の選別・質向上版) ---
+// --- anlyze.js (完全版 v155.0: 記憶の厳選・純粋会話のみ保存) ---
 
 // グローバル変数の初期化
 window.transcribedProblems = []; 
@@ -105,7 +105,6 @@ async function saveToNellMemory(role, text) {
             const docRef = db.collection("memories").doc(currentUser.id);
             const docSnap = await docRef.get();
             let cloudHistory = docSnap.exists ? (docSnap.data().history || []) : [];
-            // 直近重複回避
             if (cloudHistory.length > 0 && cloudHistory[cloudHistory.length - 1].text === trimmed) return;
             
             cloudHistory.push(newItem);
@@ -222,9 +221,8 @@ window.clearAllMemories = async function() {
     await renderMemoryList();
 };
 
-
-// --- メッセージ更新 (★修正: saveToMemoryフラグ追加) ---
-// default: saveToMemory = false (システムメッセージは保存しない)
+// --- メッセージ更新 ---
+// saveToMemory = true なら記憶する (デフォルトはfalse)
 window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false) {
     const gameScreen = document.getElementById('screen-game');
     const isGameHidden = gameScreen ? gameScreen.classList.contains('hidden') : true;
@@ -233,11 +231,6 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     if (el) el.innerText = t;
     if (t && t.includes("もぐもぐ")) { try { sfxBori.currentTime = 0; sfxBori.play(); } catch(e){} }
     
-    // 特定のワードを含む場合は、フラグに関わらず保存しない（念のため）
-    if (!t || t.includes("ちょっと待ってて") || t.includes("もぐもぐ") || t.includes("接続中")) {
-        saveToMemory = false;
-    }
-
     if (saveToMemory) {
         saveToNellMemory('nell', t);
     }
@@ -268,18 +261,15 @@ window.selectMode = function(m) {
 
     if (m === 'chat') {
         document.getElementById('chat-view').classList.remove('hidden');
-        // 保存しない
         updateNellMessage("「おはなしする」を押してね！", "gentle", false);
     } else if (m === 'lunch') {
         document.getElementById('lunch-view').classList.remove('hidden'); 
-        // 保存しない
         updateNellMessage("お腹ペコペコだにゃ……", "thinking", false);
     } else if (m === 'review') { 
         renderMistakeSelection(); 
     } else { 
         const subjectView = document.getElementById('subject-selection-view');
         if (subjectView) subjectView.classList.remove('hidden'); 
-        // 保存しない
         updateNellMessage("どの教科にするのかにゃ？", "normal", false); 
     }
 };
@@ -289,7 +279,6 @@ window.setSubject = function(s) {
     const icon = document.querySelector('.nell-avatar-wrap img'); if(icon&&subjectImages[s]){icon.src=subjectImages[s].base; icon.onerror=()=>{icon.src=defaultIcon;};} 
     document.getElementById('subject-selection-view').classList.add('hidden'); 
     document.getElementById('upload-controls').classList.remove('hidden'); 
-    // 保存しない
     updateNellMessage(`${currentSubject}の問題をみせてにゃ！`, "happy", false); 
     
     const btnFast = document.getElementById('mode-btn-fast');
@@ -391,11 +380,9 @@ window.startAnalysis = async function(b64) {
             const doneMsg = "読めたにゃ！"; 
             if (currentMode === 'grade') { 
                 showGradingView(true); 
-                // 結果発表も保存しない (false)
                 updateNellMessage(doneMsg, "happy", false).then(() => setTimeout(updateGradingMessage, 1500)); 
             } else { 
                 renderProblemSelection(); 
-                // 保存しない (false)
                 updateNellMessage(doneMsg, "happy", false); 
             } 
         }, 1500); 
@@ -435,7 +422,6 @@ window.startHint = function(id) {
     const board = document.getElementById('chalkboard'); if(board) { board.innerText = selectedProblem.question; board.classList.remove('hidden'); }
     document.getElementById('main-back-btn').classList.add('hidden');
     
-    // 保存しない
     updateNellMessage("ヒントを見るにゃ？", "thinking", false);
     
     const nextBtn = document.getElementById('next-hint-btn'); const revealBtn = document.getElementById('reveal-answer-btn');
@@ -486,7 +472,6 @@ window.showNextHint = function() {
         p.currentHintLevel = 1; 
     }
 
-    // ヒントの内容は重要かもしれないが、基本は学習フローの一部なので保存しない
     updateNellMessage(text, "thinking", false);
     const hl = document.getElementById('hint-step-label'); 
     if(hl) hl.innerText = `ヒント Lv.${targetLevel}`; 
@@ -517,7 +502,7 @@ window.revealAnswer = function() {
     updateNellMessage(`答えは「${selectedProblem.correct_answer}」だにゃ！`, "gentle", false); 
 };
 
-// ... (createProblemItem, showGradingViewなどは変更なし) ...
+// ... (createProblemItem, showGradingView等は変更なし) ...
 function createProblemItem(p, mode) {
     const isGradeMode = (mode === 'grade');
     let markHtml = "";
@@ -648,7 +633,7 @@ async function startLiveChat() {
         liveSocket = new WebSocket(url); liveSocket.binaryType = "blob"; 
         
         connectionTimeout = setTimeout(() => { if (liveSocket && liveSocket.readyState !== WebSocket.OPEN) { updateNellMessage("なかなかつながらないにゃ…", "thinking", false); stopLiveChat(); } }, 10000); 
-        liveSocket.onopen = () => { clearTimeout(connectionTimeout); if(btn) { btn.innerText = "📞 つながった！(終了)"; btn.style.background = "#ff5252"; btn.disabled = false; } updateNellMessage("お待たせ！なんでも話してにゃ！", "happy", true); isRecognitionActive = true; startMicrophone(); }; 
+        liveSocket.onopen = () => { clearTimeout(connectionTimeout); if(btn) { btn.innerText = "📞 つながった！(終了)"; btn.style.background = "#ff5252"; btn.disabled = false; } updateNellMessage("お待たせ！なんでも話してにゃ！", "happy", false); isRecognitionActive = true; startMicrophone(); }; 
         liveSocket.onmessage = async (event) => { 
             try { 
                 let data = event.data instanceof Blob ? JSON.parse(await event.data.text()) : JSON.parse(event.data); 
@@ -656,7 +641,7 @@ async function startLiveChat() {
                     data.serverContent.modelTurn.parts.forEach(p => { 
                         if (p.inlineData) playLivePcmAudio(p.inlineData.data); 
                         if (p.text) { 
-                            saveToNellMemory('nell', p.text); // チャットは保存
+                            saveToNellMemory('nell', p.text); 
                             const el = document.getElementById('nell-text');
                             if(el) el.innerText = p.text; 
                         } 
