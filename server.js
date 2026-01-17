@@ -1,4 +1,4 @@
-// --- server.js (完全版 v125.0: 記憶変数名の修正 & Gemini 2.0 Pro) ---
+// --- server.js (完全版 v127.0: 縦書き・カタカナ誤読防止強化版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -74,22 +74,32 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- Analyze (Gemini 2.0 Pro) ---
+// --- Analyze (Gemini 2.5 Pro) ---
 app.post('/analyze', async (req, res) => {
     try {
-        const { image, mode, grade, subject } = req.body;
-        console.log(`[Analyze] Subject: ${subject}, Grade: ${grade}, Mode: ${mode} (Model: Gemini 2.0 Pro)`);
+        const { image, mode, grade, subject, name } = req.body;
+        console.log(`[Analyze] Subject: ${subject}, Grade: ${grade}, Name: ${name}, Mode: ${mode}`);
 
+        // 空間認識能力が高い最新モデルを使用
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.5-pro",
             generationConfig: { responseMimeType: "application/json" }
         });
 
+        // ★教科別の詳細ルール（国語の縦書き・カタカナ対策を大幅強化）
         const ocrRules = {
-            'さんすう': `・数式、筆算の配置を正確に読み取る。隣の問題の数字を混同しないこと。`,
-            'こくご': `・縦書き問題は右から左へ。漢字書き取りの枠（□）を正確に認識。`,
-            'りか': `・図や表と設問の位置関係を把握。選択問題の記号（ア、イ）を見落とさない。`,
-            'しゃかい': `・地図や資料の近くにある設問をセットで認識。`
+            'さんすう': `
+                ・数式、筆算の配置を正確に読み取る。
+                ・隣の問題の数字を混同しないよう、設問番号との距離を確認する。`,
+            'こくご': `
+                ・【重要】縦書きレイアウトの認識強化。
+                ・設問番号（問一、①など）の『真下』または『すぐ左』にある解答欄を、その問題の答えとして認識すること。
+                ・離れた場所にある解答欄（2問先など）を誤って結びつけないよう、幾何学的な距離を厳密に判定してください。
+                ・カタカナの選択肢（ア、イ、ウ、エ）は、形状が似ていても筆跡を慎重に区別してください（特に「イ」と「ウ」、「ア」と「マ」の混同に注意）。`,
+            'りか': `
+                ・図や表と設問の位置関係を把握。選択問題の記号（ア、イ）を見落とさない。`,
+            'しゃかい': `
+                ・地図や資料の近くにある設問をセットで認識。`
         };
 
         const hintRules = {
@@ -100,16 +110,16 @@ app.post('/analyze', async (req, res) => {
         };
 
         const prompt = `
-        あなたは小学${grade}年生の${subject}担当の教育AI「ネル先生」です。
+        あなたは小学${grade}年生の${name}さんの${subject}担当の教育AI「ネル先生」です。
         画像を解析し、正確なJSONデータを生成してください。
 
-        【読み取りの注意点（誤読防止）】
-        1. **レイアウト認識**: 段組がある場合、左の列の上から下、次に右の列の上から下の順。
-        2. **回答の紐付け**: 手書き文字は幾何学的にもっとも近い設問に紐付ける。隣の問題の答えを混同しない。
+        【読み取りの注意点（空間認識・誤読防止）】
+        1. **縦書き対応**: 国語などの縦書き問題では、視線の移動は「右の行から左の行」へ、行内は「上から下」へとなります。
+        2. **回答の紐付け**: 手書き文字は、必ず**幾何学的にもっとも近い設問**に紐付けてください。数センチ離れた別の解答欄と入れ替わらないように注意してください。
 
         【タスク】
         1. 問題文を書き起こす。
-        2. 手書きの答えを読み取る（空欄は ""）。
+        2. ${name}さんが書いた「手書きの答え」を読み取る（空欄は ""）。
            ${ocrRules[subject] || ""}
         3. 正解を導き出し、手書きの答えと判定(is_correct)する。
         4. 3段階のヒントを作成する。
@@ -162,7 +172,7 @@ app.post('/lunch-reaction', async (req, res) => {
         const isSpecial = (count % 10 === 0);
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         let prompt = isSpecial 
-            ? `あなたは猫の「ネル先生」。生徒「${name}」さんから${count}個目の給食をもらいました！感謝感激して50文字以内で熱く語ってください。語尾は「にゃ」。`
+            ? `あなたは猫の「ネル先生」。生徒「${name}」さんから${count}個目の給食をもらいました！感謝感激して、50文字以内で熱く語ってください。語尾は「にゃ」。`
             : `あなたは猫の「ネル先生」。生徒「${name}」さんから${count}回目の給食をもらいました。20文字以内で面白くリアクションして。語尾は「にゃ」。`;
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text().trim(), isSpecial });
@@ -194,8 +204,6 @@ wss.on('connection', async (clientWs, req) => {
     const params = parse(req.url, true).query;
     const grade = params.grade || "1";
     const name = decodeURIComponent(params.name || "生徒");
-    
-    // ★修正: params.status -> params.context に変更！
     const statusContext = decodeURIComponent(params.context || "特になし");
 
     const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${process.env.GEMINI_API_KEY}`;
