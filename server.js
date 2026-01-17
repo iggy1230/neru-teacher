@@ -1,4 +1,4 @@
-// --- server.js (完全版 v126.0: 変数名修正 & 名前対応 & Gemini 2.0 Pro) ---
+// --- server.js (完全版 v128.1: 給食プロンプト修正 & Gemini 2.5 Pro 固定) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -74,12 +74,11 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- Analyze (Gemini 2.5 Pro) ---
+// --- Analyze (Gemini 2.5 Pro - Fixed Stable Version) ---
 app.post('/analyze', async (req, res) => {
     try {
-        // ★修正: name を受け取るように追加
         const { image, mode, grade, subject, name } = req.body;
-        console.log(`[Analyze] Subject: ${subject}, Grade: ${grade}, Name: ${name}, Mode: ${mode}`);
+        console.log(`[Analyze] Subject: ${subject}, Grade: ${grade}, Name: ${name}, Mode: ${mode} (Model: Gemini 2.5 Pro)`);
 
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.5-pro",
@@ -100,7 +99,6 @@ app.post('/analyze', async (req, res) => {
             'しゃかい': `ヒント1(資料)、ヒント2(知識)、ヒント3(頭文字)`
         };
 
-        // ★修正: プロンプト内で名前を呼ぶように変更
         const prompt = `
         あなたは小学${grade}年生の${name}さんの${subject}担当の教育AI「ネル先生」です。
         画像を解析し、正確なJSONデータを生成してください。
@@ -156,16 +154,19 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
-// --- 4. 給食反応 ---
+// --- 4. 給食反応 (修正済) ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
         const { count, name } = req.body;
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
         const isSpecial = (count % 10 === 0);
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+        
+        // ★修正箇所: 通常時も「さん」付けするように変更
         let prompt = isSpecial 
             ? `あなたは猫の「ネル先生」。生徒「${name}」さんから${count}個目の給食をもらいました！感謝感激して、50文字以内で熱く語ってください。語尾は「にゃ」。`
             : `あなたは猫の「ネル先生」。生徒「${name}」さんから${count}回目の給食をもらいました。20文字以内で面白くリアクションして。語尾は「にゃ」。`;
+            
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text().trim(), isSpecial });
     } catch { res.json({ reply: "おいしいにゃ！", isSpecial: false }); }
@@ -196,8 +197,6 @@ wss.on('connection', async (clientWs, req) => {
     const params = parse(req.url, true).query;
     const grade = params.grade || "1";
     const name = decodeURIComponent(params.name || "生徒");
-    
-    // ★修正: params.status -> params.context に変更！
     const statusContext = decodeURIComponent(params.context || "特になし");
 
     const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${process.env.GEMINI_API_KEY}`;
