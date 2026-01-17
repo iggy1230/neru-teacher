@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v151.1: 記憶デバッグログ追加版) ---
+// --- anlyze.js (完全版 v149.0: 採点効果音追加 & レイアウト維持) ---
 
 // グローバル変数の初期化
 window.transcribedProblems = []; 
@@ -32,6 +32,7 @@ let activeHandle = -1;
 
 let analysisTimers = [];
 
+// 効果音リソース
 const sfxBori = new Audio('boribori.mp3');
 const sfxHit = new Audio('cat1c.mp3');
 const sfxPaddle = new Audio('poka02.mp3'); 
@@ -39,6 +40,10 @@ const sfxOver = new Audio('gameover.mp3');
 const sfxBunseki = new Audio('bunseki.mp3'); 
 sfxBunseki.volume = 0.05; 
 const sfxHirameku = new Audio('hirameku.mp3'); 
+
+// ★追加: 採点用効果音
+const sfxMaru = new Audio('maru.mp3');
+const sfxBatu = new Audio('batu.mp3');
 
 const gameHitComments = ["うまいにゃ！", "すごいにゃ！", "さすがにゃ！", "がんばれにゃ！"];
 
@@ -73,90 +78,33 @@ function startMouthAnimation() {
 }
 startMouthAnimation();
 
-// --- 記憶システム (★修正: デバッグログ追加) ---
+// --- 記憶システム ---
 async function saveToNellMemory(role, text) {
-    if (!currentUser || !currentUser.id) {
-        console.warn("⚠️ ユーザー情報がないため記憶できません");
-        return;
-    }
-    
+    if (!currentUser || !currentUser.id) return;
     const trimmed = text.trim();
-    
-    // 断捨離フィルター
-    const ignoreWords = ["あー", "えーと", "うーん", "はい", "ねえ", "ネル先生", "にゃー", "にゃ", "。", "ok", "OK"];
-    
-    if (trimmed.length <= 2 || ignoreWords.includes(trimmed)) {
-        console.log(`✂️ 記憶スキップ(短文/除外): "${trimmed}"`);
-        return; 
-    }
+    const ignoreWords = ["あー", "えーと", "うーん", "はい", "ねえ", "ネル先生", "にゃー", "にゃ"];
+    if (trimmed.length <= 2 || ignoreWords.includes(trimmed)) return;
 
     const newItem = { role: role, text: trimmed, time: new Date().toISOString() };
-    console.log(`🧠 メモリ保存プロセス開始: [${role}] "${trimmed}"`);
-
-    // 1. ローカルストレージ (常に保存)
     try {
         const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
         let history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
-        
-        // 重複チェック
-        if (history.length > 0 && history[history.length - 1].text === trimmed) {
-            console.log("🔁 ローカル: 重複のためスキップ");
-        } else {
-            history.push(newItem);
-            if (history.length > 50) history.shift(); 
-            localStorage.setItem(memoryKey, JSON.stringify(history));
-            console.log(`📂 ローカル保存完了 (現在${history.length}件)`);
-        }
-    } catch(e) {
-        console.error("❌ ローカル保存エラー:", e);
-    }
+        if (history.length > 0 && history[history.length - 1].text === trimmed) return;
+        history.push(newItem);
+        if (history.length > 50) history.shift(); 
+        localStorage.setItem(memoryKey, JSON.stringify(history));
+    } catch(e) {}
 
-    // 2. Firebase (Googleユーザーのみ)
-    if (currentUser.isGoogleUser) {
-        if (typeof db !== 'undefined' && db !== null) {
-            try {
-                console.log("☁️ Firestoreへアクセス中...");
-                const docRef = db.collection("memories").doc(currentUser.id);
-                const docSnap = await docRef.get();
-                
-                let cloudHistory = [];
-                if (docSnap.exists) {
-                    cloudHistory = docSnap.data().history || [];
-                    console.log(`☁️ 既存のクラウド記憶を取得: ${cloudHistory.length}件`);
-                } else {
-                    console.log("☁️ 新規クラウド記憶を作成します");
-                }
-
-                // 重複チェック
-                if (cloudHistory.length > 0 && cloudHistory[cloudHistory.length - 1].text === trimmed) {
-                    console.log("🔁 クラウド: 重複のためスキップ");
-                    return;
-                }
-
-                cloudHistory.push(newItem);
-                
-                // 50件制限
-                if (cloudHistory.length > 50) {
-                    cloudHistory.shift();
-                    console.log("🧹 クラウド記憶が50件を超えたため古いものを削除しました");
-                }
-
-                await docRef.set({ 
-                    history: cloudHistory, 
-                    lastUpdated: new Date().toISOString() 
-                }, { merge: true });
-
-                console.log(`✅ クラウド保存成功！ (現在${cloudHistory.length}件)`);
-                console.dir(cloudHistory); // 配列の中身をコンソールに表示
-
-            } catch(e) { 
-                console.error("❌ Firestore保存エラー:", e); 
-            }
-        } else {
-            console.warn("⚠️ dbオブジェクトが見つかりません。Firebase初期化エラーの可能性があります。");
-        }
-    } else {
-        console.log("👤 ゲストユーザーのためクラウド保存はスキップしました");
+    if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) {
+        try {
+            const docRef = db.collection("memories").doc(currentUser.id);
+            const docSnap = await docRef.get();
+            let cloudHistory = docSnap.exists ? (docSnap.data().history || []) : [];
+            if (cloudHistory.length > 0 && cloudHistory[cloudHistory.length - 1].text === trimmed) return;
+            cloudHistory.push(newItem);
+            if (cloudHistory.length > 50) cloudHistory.shift();
+            await docRef.set({ history: cloudHistory, lastUpdated: new Date().toISOString() }, { merge: true });
+        } catch(e) {}
     }
 }
 
@@ -170,7 +118,6 @@ window.updateNellMessage = async function(t, mood = "normal") {
     if (t && t.includes("もぐもぐ")) { try { sfxBori.currentTime = 0; sfxBori.play(); } catch(e){} }
     if (!t || t.includes("ちょっと待ってて") || t.includes("もぐもぐ") || t.includes("接続中")) return;
     
-    // ネル先生の発言も記憶する
     saveToNellMemory('nell', t);
     
     if (typeof speakNell === 'function') {
@@ -350,7 +297,6 @@ window.startHint = function(id) {
     selectedProblem = transcribedProblems.find(p => p.id == id); 
     if (!selectedProblem) return updateNellMessage("データエラーだにゃ", "thinking");
     
-    // ヒント状態初期化
     if (!selectedProblem.currentHintLevel) selectedProblem.currentHintLevel = 1;
     if (selectedProblem.maxUnlockedHintLevel === undefined) selectedProblem.maxUnlockedHintLevel = 0;
 
@@ -578,12 +524,11 @@ window.checkMultiAnswer = function(id) {
     
     const correctList = String(problem.correct_answer || "").split(/,|、/);
     
-    if (userValues.length !== correctList.length) {
-        problem.is_correct = false;
-    } else {
+    // ★修正: 採点効果音ロジック
+    let allCorrect = false;
+    if (userValues.length === correctList.length) {
         const usedIndices = new Set();
         let matchCount = 0;
-
         for (const uVal of userValues) {
             for (let i = 0; i < correctList.length; i++) {
                 if (!usedIndices.has(i)) {
@@ -595,11 +540,20 @@ window.checkMultiAnswer = function(id) {
                 }
             }
         }
-        problem.is_correct = (matchCount === correctList.length);
+        allCorrect = (matchCount === correctList.length);
     }
     
-    updateMarkDisplay(id, problem.is_correct);
+    problem.is_correct = allCorrect;
+    updateMarkDisplay(id, allCorrect);
     if (currentMode === 'grade') updateGradingMessage();
+
+    // 音声: 正解時のみ鳴らす (入力中うるさいため)
+    if (allCorrect) { 
+        try { sfxMaru.currentTime = 0; sfxMaru.play(); } catch(e){} 
+    } else if (problem.student_answer.trim().length > 0) {
+        // 不正解時は、空でなければバツ音
+        try { sfxBatu.currentTime = 0; sfxBatu.play(); } catch(e){} 
+    }
 };
 
 window.checkAnswerDynamically = function(id, inputElem) { 
@@ -613,6 +567,13 @@ window.checkAnswerDynamically = function(id, inputElem) {
     problem.is_correct = isCorrect; 
     updateMarkDisplay(id, isCorrect);
     if (currentMode === 'grade') updateGradingMessage(); 
+
+    // 音声:
+    if (isCorrect) { 
+        try { sfxMaru.currentTime = 0; sfxMaru.play(); } catch(e){} 
+    } else if (newVal.trim().length > 0) {
+        try { sfxBatu.currentTime = 0; sfxBatu.play(); } catch(e){} 
+    }
 };
 
 window.checkOneProblem = function(id) {
@@ -630,10 +591,8 @@ window.checkOneProblem = function(id) {
         if(input) userValues = [input.value];
     }
 
-    let isCorrect = true;
-    if (userValues.length !== correctList.length) {
-        isCorrect = false;
-    } else {
+    let isCorrect = false;
+    if (userValues.length === correctList.length) {
         const usedIndices = new Set();
         let matchCount = 0;
         for (const uVal of userValues) {
@@ -653,6 +612,13 @@ window.checkOneProblem = function(id) {
     const markElem = document.getElementById(`mark-${id}`);
     const container = document.getElementById(`grade-item-${id}`);
     
+    // ★修正: ボタン採点時は必ず音を鳴らす
+    if (isCorrect) {
+        try { sfxMaru.currentTime = 0; sfxMaru.play(); } catch(e){} 
+    } else {
+        try { sfxBatu.currentTime = 0; sfxBatu.play(); } catch(e){} 
+    }
+
     if (markElem && container) {
         if (isCorrect) {
             markElem.innerText = "⭕";
