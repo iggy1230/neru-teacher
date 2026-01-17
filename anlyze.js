@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v146.0: 柔軟採点 & UI修正) ---
+// --- anlyze.js (完全版 v147.0: 異表記対応 & 複数回答UI修正) ---
 
 // グローバル変数の初期化
 window.transcribedProblems = []; 
@@ -403,7 +403,7 @@ function createProblemItem(p, mode) {
         markHtml = `<div id="mark-${p.id}" style="font-weight:900; color:#4a90e2; font-size:2rem; width:50px; text-align:center;"></div>`;
     }
 
-    // 入力欄 (複数回答対応)
+    // ★修正: カンマのみで分割（|は分割しない）
     const correctAnswers = String(p.correct_answer || "").split(/,|、/).map(s => s.trim()).filter(s => s);
     const studentAnswers = String(p.student_answer || "").split(/,|、/).map(s => s.trim()); 
     let inputHtml = "";
@@ -491,7 +491,8 @@ window.renderProblemSelection = function() {
     if (btn) { btn.disabled = false; btn.innerText = "✨ ぜんぶわかったにゃ！"; } 
 };
 
-// --- ★修正: 採点ロジック (表記ゆれ対応) ---
+// --- ★修正: 採点ロジック (別解 | 対応 & 複数回答順不同) ---
+
 function normalizeAnswer(str) {
     if (!str) return "";
     let normalized = str.trim().replace(/[\u30a1-\u30f6]/g, function(match) {
@@ -501,14 +502,12 @@ function normalizeAnswer(str) {
     return normalized;
 }
 
-function isAnswerCorrect(student, correct) {
+// 答え合わせヘルパー: 1つの入力値が、正解候補のどれかと一致するか
+// correctString: "高い|たかい" のようなパイプ区切りの文字列を想定
+function isMatch(student, correctString) {
     const s = normalizeAnswer(student);
-    
-    // 正解データ側もカンマ区切りで複数の可能性がある（漢字,ひらがな等）
-    const correctOptions = normalizeAnswer(correct).split(/,|、/);
-    
-    // どれか一つでも一致すればOK
-    return correctOptions.some(opt => opt === s);
+    const options = normalizeAnswer(correctString).split('|'); // パイプで分割
+    return options.some(opt => opt === s);
 }
 
 // 複数回答チェック (順不同対応)
@@ -517,32 +516,37 @@ window.checkMultiAnswer = function(id) {
     if (!problem) return;
 
     const inputs = document.querySelectorAll(`.multi-input-${id}`);
-    const values = Array.from(inputs).map(input => normalizeAnswer(input.value));
+    const userValues = Array.from(inputs).map(input => input.value);
     
-    problem.student_answer = Array.from(inputs).map(i => i.value.trim()).join(",");
+    problem.student_answer = userValues.join(",");
     
-    // 正解データ（"ア,イ" のような形式）
-    const correctAnswers = String(problem.correct_answer || "").split(/,|、/).map(s => normalizeAnswer(s));
+    // 正解リスト (カンマ区切り) -> ["高い|たかい", "低い|ひくい"] のような配列になる
+    const correctList = String(problem.correct_answer || "").split(/,|、/);
     
-    // ソートして比較 (順不同対応)
-    values.sort();
-    correctAnswers.sort();
-    
-    let allCorrect = true;
-    // 数が合わない時点で不正解
-    if (values.length !== correctAnswers.length) {
-        allCorrect = false;
+    // 数が合わない場合は不正解
+    if (userValues.length !== correctList.length) {
+        problem.is_correct = false;
     } else {
-        for(let i=0; i<correctAnswers.length; i++) {
-            if (values[i] !== correctAnswers[i]) {
-                allCorrect = false;
-                break;
+        // マッチング処理 (順不同)
+        // ユーザーの入力それぞれについて、正解リストの中から「まだ使われていない」かつ「マッチする」ものを探す
+        const usedIndices = new Set();
+        let matchCount = 0;
+
+        for (const uVal of userValues) {
+            for (let i = 0; i < correctList.length; i++) {
+                if (!usedIndices.has(i)) {
+                    if (isMatch(uVal, correctList[i])) {
+                        usedIndices.add(i);
+                        matchCount++;
+                        break; // このユーザー入力はマッチしたので次の入力へ
+                    }
+                }
             }
         }
+        problem.is_correct = (matchCount === correctList.length);
     }
     
-    problem.is_correct = allCorrect;
-    updateMarkDisplay(id, allCorrect);
+    updateMarkDisplay(id, problem.is_correct);
     if (currentMode === 'grade') updateGradingMessage();
 };
 
@@ -552,45 +556,48 @@ window.checkAnswerDynamically = function(id, inputElem) {
     if (!problem) return; 
     
     problem.student_answer = String(newVal); 
-    const isCorrect = isAnswerCorrect(newVal, String(problem.correct_answer || ""));
+    // 単一回答ならシンプルに isMatch
+    const isCorrect = isMatch(newVal, String(problem.correct_answer || ""));
     
     problem.is_correct = isCorrect; 
     updateMarkDisplay(id, isCorrect);
     if (currentMode === 'grade') updateGradingMessage(); 
 };
 
-// 教えてモードの個別採点
 window.checkOneProblem = function(id) {
     const problem = transcribedProblems.find(p => p.id === id);
     if (!problem) return;
 
-    // 正解データの準備
-    const correctRaw = String(problem.correct_answer || "");
-    const correctAnswers = correctRaw.split(/,|、/).map(s => normalizeAnswer(s));
-    correctAnswers.sort();
-
+    const correctList = String(problem.correct_answer || "").split(/,|、/);
     let userValues = [];
-    if (correctAnswers.length > 1) {
+
+    if (correctList.length > 1) {
         const inputs = document.querySelectorAll(`.multi-input-${id}`);
-        userValues = Array.from(inputs).map(i => normalizeAnswer(i.value));
+        userValues = Array.from(inputs).map(i => i.value);
     } else {
         const input = document.getElementById(`single-input-${id}`);
-        if(input) userValues = [normalizeAnswer(input.value)];
+        if(input) userValues = [input.value];
     }
-    userValues.sort();
 
-    // 判定ロジック (簡易版: 複数正解の「ひらがな/漢字」までは未対応だが、基本はOK)
-    // ※ 複数回答かつ「漢字orひらがな」対応は複雑になるため、今回は「順不同」を優先
+    // 採点ロジックは checkMultiAnswer と同じ
     let isCorrect = true;
-    if (userValues.length !== correctAnswers.length) {
+    if (userValues.length !== correctList.length) {
         isCorrect = false;
     } else {
-        for(let i=0; i<correctAnswers.length; i++) {
-            if (userValues[i] !== correctAnswers[i]) {
-                isCorrect = false;
-                break;
+        const usedIndices = new Set();
+        let matchCount = 0;
+        for (const uVal of userValues) {
+            for (let i = 0; i < correctList.length; i++) {
+                if (!usedIndices.has(i)) {
+                    if (isMatch(uVal, correctList[i])) {
+                        usedIndices.add(i);
+                        matchCount++;
+                        break;
+                    }
+                }
             }
         }
+        isCorrect = (matchCount === correctList.length);
     }
 
     const markElem = document.getElementById(`mark-${id}`);
