@@ -1,4 +1,4 @@
-// --- server.js (完全版 v144.0: 柔軟な正解データ生成 & Gemini 2.5 Pro 固定) ---
+// --- server.js (完全版 v145.0: 選択肢書き起こし強化 & 演出維持) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -74,7 +74,7 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- Analyze (Gemini 2.5 Pro - Fixed Stable Version) ---
+// --- Analyze (Gemini 2.5 Pro) ---
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, name } = req.body;
@@ -85,16 +85,18 @@ app.post('/analyze', async (req, res) => {
             generationConfig: { responseMimeType: "application/json" }
         });
 
+        // ★修正: 選択肢書き起こし指示を追加
         const ocrRules = {
             'さんすう': `
                 ・数式、筆算の配置を正確に読み取る。
                 ・解答欄に数字が書かれていない場合は、計算して答えが分かったとしても絶対に書き込まないこと。必ず空文字""にする。`,
             'こくご': `
                 ・【原則縦書き】右の列から左の列へ読み進める。
-                ・隣り合う列の選択肢を混同しない。
+                ・選択肢（ア、イ、ウなど）がある場合、その記号だけでなく「選択肢の内容」も含めて問題文として書き起こすこと。
                 ・漢字書き取りの枠（□）内に筆跡がない場合は、絶対に漢字を埋めないこと。必ず空文字""にする。`,
             'りか': `
                 ・図や表と設問の位置関係を把握。
+                ・選択問題の選択肢（ア、イ...とそれに続く文章）は、問題文の一部として省略せずに書き起こすこと。
                 ・「2つ選びなさい」等の問題で正解が複数の場合は、"ア,イ"のようにカンマ区切りで一つの文字列にすること。
                 ・解答欄に手書きの筆跡が確実に見えない場合は、正解が分かっても絶対に空欄（""）とすること。ハルシネーション厳禁。`,
             'しゃかい': `
@@ -121,7 +123,9 @@ app.post('/analyze', async (req, res) => {
            - 手書き文字は幾何学的にもっとも近い設問に紐付ける。
 
         【タスク】
-        1. 問題文を書き起こす。
+        1. **問題文の書き起こし**:
+           - 設問文だけでなく、**選択肢の文章（ア：〜、イ：〜）も省略せずに全て書き起こして**ください。
+           - 生徒が何を選べばいいのか分かるように情報を網羅してください。
         2. ${name}さんが書いた「手書きの答え」を読み取る（空欄は ""）。
            - **【最重要・全教科共通】空欄判定**: 
              解答欄に**手書きの筆跡がない場合**は、絶対に正解を推測して埋めず、必ず空文字 "" にすること。
@@ -138,7 +142,7 @@ app.post('/analyze', async (req, res) => {
           {
             "id": 1,
             "label": "①",
-            "question": "問題文",
+            "question": "問題文 (選択肢の内容も含む)",
             "correct_answer": "正解 (複数はカンマ区切り)",
             "student_answer": "手書きの答え (複数はカンマ区切り、空欄なら空文字)",
             "is_correct": true,

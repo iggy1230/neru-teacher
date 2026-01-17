@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v144.0: レイアウト整列 & 柔軟採点) ---
+// --- anlyze.js (完全版 v145.0: 右端固定レイアウト & 初期空白表示) ---
 
 // グローバル変数の初期化
 window.transcribedProblems = []; 
@@ -292,7 +292,6 @@ window.startHint = function(id) {
     selectedProblem = transcribedProblems.find(p => p.id == id); 
     if (!selectedProblem) return updateNellMessage("データエラーだにゃ", "thinking");
     
-    // ヒント状態初期化
     if (!selectedProblem.currentHintLevel) selectedProblem.currentHintLevel = 1;
     if (selectedProblem.maxUnlockedHintLevel === undefined) selectedProblem.maxUnlockedHintLevel = 0;
 
@@ -381,11 +380,11 @@ window.revealAnswer = function() {
     updateNellMessage(`答えは「${selectedProblem.correct_answer}」だにゃ！`, "gentle"); 
 };
 
-// --- ★修正: 採点・教えて共通のリスト生成ロジック ---
+// --- ★修正: 共通リスト生成関数 (ボタン配置の改善 & 初期空白対応) ---
 function createProblemItem(p, mode) {
     const isGradeMode = (mode === 'grade');
     
-    // 正誤マーク (採点モードのみ、最初は表示。教えてモードは空)
+    // 正誤マーク (教えてモードの場合は最初は空)
     let markHtml = "";
     let bgStyle = "background:white;";
     
@@ -401,8 +400,8 @@ function createProblemItem(p, mode) {
         bgStyle = isCorrect ? "background:#fff5f5;" : "background:#f0f8ff;";
         markHtml = `<div id="mark-${p.id}" style="font-weight:900; color:${markColor}; font-size:2rem; width:50px; text-align:center;">${mark}</div>`;
     } else {
-        // 教えてモード：最初は問題番号
-        markHtml = `<div id="mark-${p.id}" style="font-weight:900; color:#4a90e2; font-size:1.5rem; width:50px; text-align:center;">${p.label || '問'}</div>`;
+        // ★修正: 教えてモードの初期状態は空白（枠だけ確保）
+        markHtml = `<div id="mark-${p.id}" style="font-weight:900; color:#4a90e2; font-size:2rem; width:50px; text-align:center;"></div>`;
     }
 
     // 入力欄 (複数回答対応)
@@ -410,31 +409,27 @@ function createProblemItem(p, mode) {
     const studentAnswers = String(p.student_answer || "").split(/,|、/).map(s => s.trim()); 
     let inputHtml = "";
     
-    // どちらのモードでも、入力欄の構造は統一
     if (correctAnswers.length > 1) {
         inputHtml = `<div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px; width:100%;">`;
         for (let i = 0; i < correctAnswers.length; i++) {
             let val = studentAnswers[i] || "";
-            // 教えてモードの場合は、採点ボタンで判定するため自動チェックはOFF
             const onInput = isGradeMode ? `oninput="checkMultiAnswer(${p.id})"` : "";
             inputHtml += `<input type="text" value="${val}" class="multi-input-${p.id}" ${onInput} style="width:100%; padding:8px; border:2px solid #ddd; border-radius:8px; font-size:1rem; font-weight:bold; color:#333; min-width:0; box-sizing:border-box;">`;
         }
         inputHtml += `</div>`;
     } else {
         const onInput = isGradeMode ? `oninput="checkAnswerDynamically(${p.id}, this)"` : "";
-        // 教えてモードでは単一回答用IDを付与
         const idAttr = isGradeMode ? "" : `id="single-input-${p.id}"`;
         inputHtml += `<input type="text" ${idAttr} value="${p.student_answer || ""}" ${onInput} style="width:100%; padding:8px; border:2px solid #ddd; border-radius:8px; font-size:1rem; font-weight:bold; color:#333; box-sizing:border-box;">`;
     }
 
-    // 右側のボタン群
+    // ★修正: ボタンレイアウト (右端固定 & 統一)
     let buttonsHtml = "";
     if (isGradeMode) {
-        buttonsHtml = `<div style="width:80px; text-align:right; flex-shrink:0;">
-            <button class="mini-teach-btn" onclick="startHint(${p.id})">教えて</button>
+        buttonsHtml = `<div style="display:flex; flex-direction:column; gap:5px; width:80px; flex-shrink:0; justify-content:center;">
+            <button class="mini-teach-btn" onclick="startHint(${p.id})" style="width:100%;">教えて</button>
         </div>`;
     } else {
-        // ★修正: 教えてモードに「採点」ボタン追加、縦並び
         buttonsHtml = `<div style="display:flex; flex-direction:column; gap:5px; width:80px; flex-shrink:0;">
             <button class="mini-teach-btn" onclick="checkOneProblem(${p.id})" style="background:#ff85a1; width:100%;">採点</button>
             <button class="mini-teach-btn" onclick="startHint(${p.id})" style="width:100%;">教えて</button>
@@ -446,16 +441,17 @@ function createProblemItem(p, mode) {
     div.id = `grade-item-${p.id}`; 
     div.style.cssText = `border-bottom:1px solid #eee; padding:15px; margin-bottom:10px; border-radius:10px; ${bgStyle}`; 
     
+    // ★修正: justify-content を space-between にして、入力欄とボタンを左右に分ける
     div.innerHTML = `
-        <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div style="display:flex; align-items:center;">
             ${markHtml}
-            <div style="flex:1; margin-left:10px;">
+            <div style="flex:1; margin-left:10px; display:flex; flex-direction:column; width:100%;">
                 <div style="font-size:0.9rem; color:#888; margin-bottom:4px;">${p.label || '問'}</div>
-                <div style="font-weight:bold; font-size:0.9rem; margin-bottom:8px;">${p.question}</div>
-                <div style="display:flex; gap:10px; font-size:0.9rem; align-items:center; width:100%;">
-                    <div style="flex:1;">
-                        <div style="font-size:0.7rem; color:#666;">キミの答え (直せるよ)</div>
+                <div style="font-weight:bold; font-size:0.9rem; margin-bottom:8px; width:100%; word-break:break-all;">${p.question}</div>
+                <div style="display:flex; gap:10px; align-items:flex-start; width:100%; justify-content: space-between;">
+                    <div style="flex:1; min-width:0;">
                         ${inputHtml}
+                        <div style="font-size:0.7rem; color:#666; margin-top:4px;">キミの答え (直せるよ)</div>
                     </div>
                     ${buttonsHtml}
                 </div>
@@ -500,18 +496,12 @@ window.renderProblemSelection = function() {
 
 // --- 採点ロジック (柔軟対応版) ---
 
-// ひらがな/カタカナ/漢字を正規化して比較する関数
 function normalizeAnswer(str) {
     if (!str) return "";
-    // カタカナをひらがなに変換
     let normalized = str.trim().replace(/[\u30a1-\u30f6]/g, function(match) {
         var chr = match.charCodeAt(0) - 0x60;
         return String.fromCharCode(chr);
     });
-    // ここに簡易的な漢字→ひらがな変換を入れるのは難しいので
-    // 「文字列が一致」または「ユーザー入力が正解データに含まれる（逆も然り）」
-    // などの緩い判定を行うか、サーバー側で柔軟に返すのが基本。
-    // 今回はカタカナ⇔ひらがな統一まで。
     return normalized;
 }
 
@@ -519,10 +509,9 @@ function normalizeAnswer(str) {
 function isAnswerCorrect(student, correct) {
     const s = normalizeAnswer(student);
     const c = normalizeAnswer(correct);
-    return s === c; // シンプル比較（将来的には漢字・ひらがな辞書が必要）
+    return s === c; 
 }
 
-// ★修正: 複数回答チェック (順不同対応)
 window.checkMultiAnswer = function(id) {
     const problem = transcribedProblems.find(p => p.id === id);
     if (!problem) return;
@@ -530,13 +519,10 @@ window.checkMultiAnswer = function(id) {
     const inputs = document.querySelectorAll(`.multi-input-${id}`);
     const values = Array.from(inputs).map(input => normalizeAnswer(input.value));
     
-    // 現在の入力値を保存
     problem.student_answer = Array.from(inputs).map(i => i.value.trim()).join(",");
     
-    // 正解データを配列化して正規化
     const correctAnswers = String(problem.correct_answer || "").split(/,|、/).map(s => normalizeAnswer(s));
     
-    // ソートして比較 (順不同対応)
     values.sort();
     correctAnswers.sort();
     
@@ -554,11 +540,9 @@ window.checkMultiAnswer = function(id) {
     
     problem.is_correct = allCorrect;
     updateMarkDisplay(id, allCorrect);
-    // モードによって全体の更新をするか決める
     if (currentMode === 'grade') updateGradingMessage();
 };
 
-// 単一回答チェック
 window.checkAnswerDynamically = function(id, inputElem) { 
     const newVal = inputElem.value; 
     const problem = transcribedProblems.find(p => p.id === id); 
@@ -572,17 +556,14 @@ window.checkAnswerDynamically = function(id, inputElem) {
     if (currentMode === 'grade') updateGradingMessage(); 
 };
 
-// 教えてモードの個別採点ボタン
 window.checkOneProblem = function(id) {
     const problem = transcribedProblems.find(p => p.id === id);
     if (!problem) return;
 
-    // 正解データの準備
     const correctRaw = String(problem.correct_answer || "");
     const correctAnswers = correctRaw.split(/,|、/).map(s => normalizeAnswer(s));
-    correctAnswers.sort(); // 順不同対応のためソート
+    correctAnswers.sort();
 
-    // ユーザー入力の取得
     let userValues = [];
     if (correctAnswers.length > 1) {
         const inputs = document.querySelectorAll(`.multi-input-${id}`);
@@ -593,7 +574,6 @@ window.checkOneProblem = function(id) {
     }
     userValues.sort();
 
-    // 判定
     let isCorrect = true;
     if (userValues.length !== correctAnswers.length) {
         isCorrect = false;
@@ -606,7 +586,6 @@ window.checkOneProblem = function(id) {
         }
     }
 
-    // 表示更新
     const markElem = document.getElementById(`mark-${id}`);
     const container = document.getElementById(`grade-item-${id}`);
     
@@ -622,7 +601,6 @@ window.checkOneProblem = function(id) {
             container.style.backgroundColor = "#f0f8ff";
             updateNellMessage("おしい！もう一回考えてみて！", "gentle");
         }
-        markElem.style.fontSize = "2rem"; 
     }
 };
 
