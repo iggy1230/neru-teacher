@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v145.0: 右端固定レイアウト & 初期空白表示) ---
+// --- anlyze.js (完全版 v146.0: 柔軟採点 & UI修正) ---
 
 // グローバル変数の初期化
 window.transcribedProblems = []; 
@@ -292,6 +292,7 @@ window.startHint = function(id) {
     selectedProblem = transcribedProblems.find(p => p.id == id); 
     if (!selectedProblem) return updateNellMessage("データエラーだにゃ", "thinking");
     
+    // ヒント状態初期化
     if (!selectedProblem.currentHintLevel) selectedProblem.currentHintLevel = 1;
     if (selectedProblem.maxUnlockedHintLevel === undefined) selectedProblem.maxUnlockedHintLevel = 0;
 
@@ -380,11 +381,10 @@ window.revealAnswer = function() {
     updateNellMessage(`答えは「${selectedProblem.correct_answer}」だにゃ！`, "gentle"); 
 };
 
-// --- ★修正: 共通リスト生成関数 (ボタン配置の改善 & 初期空白対応) ---
+// --- ★修正: 共通リスト生成 (右端固定 & 初期空白対応) ---
 function createProblemItem(p, mode) {
     const isGradeMode = (mode === 'grade');
     
-    // 正誤マーク (教えてモードの場合は最初は空)
     let markHtml = "";
     let bgStyle = "background:white;";
     
@@ -400,7 +400,6 @@ function createProblemItem(p, mode) {
         bgStyle = isCorrect ? "background:#fff5f5;" : "background:#f0f8ff;";
         markHtml = `<div id="mark-${p.id}" style="font-weight:900; color:${markColor}; font-size:2rem; width:50px; text-align:center;">${mark}</div>`;
     } else {
-        // ★修正: 教えてモードの初期状態は空白（枠だけ確保）
         markHtml = `<div id="mark-${p.id}" style="font-weight:900; color:#4a90e2; font-size:2rem; width:50px; text-align:center;"></div>`;
     }
 
@@ -423,7 +422,6 @@ function createProblemItem(p, mode) {
         inputHtml += `<input type="text" ${idAttr} value="${p.student_answer || ""}" ${onInput} style="width:100%; padding:8px; border:2px solid #ddd; border-radius:8px; font-size:1rem; font-weight:bold; color:#333; box-sizing:border-box;">`;
     }
 
-    // ★修正: ボタンレイアウト (右端固定 & 統一)
     let buttonsHtml = "";
     if (isGradeMode) {
         buttonsHtml = `<div style="display:flex; flex-direction:column; gap:5px; width:80px; flex-shrink:0; justify-content:center;">
@@ -441,7 +439,6 @@ function createProblemItem(p, mode) {
     div.id = `grade-item-${p.id}`; 
     div.style.cssText = `border-bottom:1px solid #eee; padding:15px; margin-bottom:10px; border-radius:10px; ${bgStyle}`; 
     
-    // ★修正: justify-content を space-between にして、入力欄とボタンを左右に分ける
     div.innerHTML = `
         <div style="display:flex; align-items:center;">
             ${markHtml}
@@ -494,8 +491,7 @@ window.renderProblemSelection = function() {
     if (btn) { btn.disabled = false; btn.innerText = "✨ ぜんぶわかったにゃ！"; } 
 };
 
-// --- 採点ロジック (柔軟対応版) ---
-
+// --- ★修正: 採点ロジック (表記ゆれ対応) ---
 function normalizeAnswer(str) {
     if (!str) return "";
     let normalized = str.trim().replace(/[\u30a1-\u30f6]/g, function(match) {
@@ -505,13 +501,17 @@ function normalizeAnswer(str) {
     return normalized;
 }
 
-// 答え合わせのコアロジック
 function isAnswerCorrect(student, correct) {
     const s = normalizeAnswer(student);
-    const c = normalizeAnswer(correct);
-    return s === c; 
+    
+    // 正解データ側もカンマ区切りで複数の可能性がある（漢字,ひらがな等）
+    const correctOptions = normalizeAnswer(correct).split(/,|、/);
+    
+    // どれか一つでも一致すればOK
+    return correctOptions.some(opt => opt === s);
 }
 
+// 複数回答チェック (順不同対応)
 window.checkMultiAnswer = function(id) {
     const problem = transcribedProblems.find(p => p.id === id);
     if (!problem) return;
@@ -521,12 +521,15 @@ window.checkMultiAnswer = function(id) {
     
     problem.student_answer = Array.from(inputs).map(i => i.value.trim()).join(",");
     
+    // 正解データ（"ア,イ" のような形式）
     const correctAnswers = String(problem.correct_answer || "").split(/,|、/).map(s => normalizeAnswer(s));
     
+    // ソートして比較 (順不同対応)
     values.sort();
     correctAnswers.sort();
     
     let allCorrect = true;
+    // 数が合わない時点で不正解
     if (values.length !== correctAnswers.length) {
         allCorrect = false;
     } else {
@@ -556,10 +559,12 @@ window.checkAnswerDynamically = function(id, inputElem) {
     if (currentMode === 'grade') updateGradingMessage(); 
 };
 
+// 教えてモードの個別採点
 window.checkOneProblem = function(id) {
     const problem = transcribedProblems.find(p => p.id === id);
     if (!problem) return;
 
+    // 正解データの準備
     const correctRaw = String(problem.correct_answer || "");
     const correctAnswers = correctRaw.split(/,|、/).map(s => normalizeAnswer(s));
     correctAnswers.sort();
@@ -574,6 +579,8 @@ window.checkOneProblem = function(id) {
     }
     userValues.sort();
 
+    // 判定ロジック (簡易版: 複数正解の「ひらがな/漢字」までは未対応だが、基本はOK)
+    // ※ 複数回答かつ「漢字orひらがな」対応は複雑になるため、今回は「順不同」を優先
     let isCorrect = true;
     if (userValues.length !== correctAnswers.length) {
         isCorrect = false;
