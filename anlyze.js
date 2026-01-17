@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v148.0: レイアウト完全固定 & 幅統一版) ---
+// --- anlyze.js (完全版 v149.0: v148.0と同じ内容) ---
 
 // グローバル変数の初期化
 window.transcribedProblems = []; 
@@ -292,6 +292,7 @@ window.startHint = function(id) {
     selectedProblem = transcribedProblems.find(p => p.id == id); 
     if (!selectedProblem) return updateNellMessage("データエラーだにゃ", "thinking");
     
+    // ヒント状態初期化
     if (!selectedProblem.currentHintLevel) selectedProblem.currentHintLevel = 1;
     if (selectedProblem.maxUnlockedHintLevel === undefined) selectedProblem.maxUnlockedHintLevel = 0;
 
@@ -380,7 +381,7 @@ window.revealAnswer = function() {
     updateNellMessage(`答えは「${selectedProblem.correct_answer}」だにゃ！`, "gentle"); 
 };
 
-// --- ★修正: リスト生成 (レイアウト完全固定 & 幅統一) ---
+// --- リスト生成 (右端固定 & 幅統一 & 初期空白対応) ---
 function createProblemItem(p, mode) {
     const isGradeMode = (mode === 'grade');
     
@@ -417,7 +418,6 @@ function createProblemItem(p, mode) {
     } else {
         const onInput = isGradeMode ? `oninput="checkAnswerDynamically(${p.id}, this)"` : "";
         const idAttr = isGradeMode ? "" : `id="single-input-${p.id}"`;
-        // 幅統一のためdivで包む
         inputHtml = `<div style="width:100%;">
             <input type="text" ${idAttr} value="${p.student_answer || ""}" ${onInput} style="width:100%; padding:8px; border:2px solid #ddd; border-radius:8px; font-size:1rem; font-weight:bold; color:#333; box-sizing:border-box;">
         </div>`;
@@ -425,7 +425,6 @@ function createProblemItem(p, mode) {
 
     let buttonsHtml = "";
     if (isGradeMode) {
-        // ★修正: margin-left: auto で右寄せ
         buttonsHtml = `<div style="display:flex; flex-direction:column; gap:5px; width:80px; flex-shrink:0; justify-content:center; margin-left:auto;">
             <button class="mini-teach-btn" onclick="startHint(${p.id})" style="width:100%;">教えて</button>
         </div>`;
