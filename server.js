@@ -1,4 +1,4 @@
-// --- server.js (完全版 v128.1: 給食プロンプト修正 & Gemini 2.5 Pro 固定) ---
+// --- server.js (完全版 v129.0: チャット人格強化 & Gemini 2.5 Pro 固定) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -80,6 +80,7 @@ app.post('/analyze', async (req, res) => {
         const { image, mode, grade, subject, name } = req.body;
         console.log(`[Analyze] Subject: ${subject}, Grade: ${grade}, Name: ${name}, Mode: ${mode} (Model: Gemini 2.5 Pro)`);
 
+        // ★ユーザー指定: Gemini 2.5 Pro で固定
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.5-pro",
             generationConfig: { responseMimeType: "application/json" }
@@ -154,7 +155,7 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
-// --- 4. 給食反応 (修正済) ---
+// --- 4. 給食反応 ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
         const { count, name } = req.body;
@@ -162,7 +163,6 @@ app.post('/lunch-reaction', async (req, res) => {
         const isSpecial = (count % 10 === 0);
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         
-        // ★修正箇所: 通常時も「さん」付けするように変更
         let prompt = isSpecial 
             ? `あなたは猫の「ネル先生」。生徒「${name}」さんから${count}個目の給食をもらいました！感謝感激して、50文字以内で熱く語ってください。語尾は「にゃ」。`
             : `あなたは猫の「ネル先生」。生徒「${name}」さんから${count}回目の給食をもらいました。20文字以内で面白くリアクションして。語尾は「にゃ」。`;
@@ -205,6 +205,28 @@ wss.on('connection', async (clientWs, req) => {
     try {
         geminiWs = new WebSocket(GEMINI_URL);
         geminiWs.on('open', () => {
+            // ★指定された詳細なシステムインストラクション
+            const systemInstructionText = `
+            あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。相手は小学${grade}年生の${name}さん。
+            【話し方のルール】
+            1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
+            2. 親しみやすい日本の小学校の先生として、一文字一文字をはっきりと、丁寧に発音してにゃ。
+            3. 特に最初や最後の音を、一文字抜かしたり消したりせずに、最初から最後までしっかり声に出して喋るのがコツだにゃ。
+            4. 落ち着いた日本語のリズムを大切にして、親しみやすく話してにゃ。
+            5. 給食(餌)のカリカリが大好物にゃ。
+            6. とにかく何でも知っているにゃ。
+            7. まれに「○○さんは宿題は終わったかにゃ？」や「そろそろ宿題始めようかにゃ？」と宿題を促してくる
+            8. 句読点で自然な間をとる
+            9. 日本語をとても上手にしゃべる猫だにゃ
+            10. いつも高いトーンで話してにゃ
+
+            【NGなこと】
+            ・ロボットみたいに不自然に区切るのではなく、繋がりのある滑らかな日本語でお願いにゃ。
+            ・早口になりすぎて、言葉の一部が消えてしまうのはダメだにゃ。
+            
+            【現在の状況】${statusContext}
+            `;
+
             geminiWs.send(JSON.stringify({
                 setup: {
                     model: "models/gemini-2.0-flash-exp",
@@ -216,11 +238,7 @@ wss.on('connection', async (clientWs, req) => {
                         } 
                     }, 
                     systemInstruction: {
-                        parts: [{
-                            text: `あなたはネル先生（猫）。相手は${grade}年生の${name}。
-                            語尾は「にゃ」。明るく親しみやすく。
-                            【状況・記憶】${statusContext}`
-                        }]
+                        parts: [{ text: systemInstructionText }]
                     }
                 }
             }));
