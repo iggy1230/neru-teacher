@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v140.0: ヒント無料化・複数回答UI・新セリフ) ---
+// --- anlyze.js (完全版 v142.0: 分析セリフThinking統一版) ---
 
 // グローバル変数の初期化
 window.transcribedProblems = []; 
@@ -175,7 +175,7 @@ window.setSubject = function(s) {
 
 window.setAnalyzeMode = function(type) { analysisType = 'precision'; };
 
-// --- 分析ロジック (セリフ増量版) ---
+// --- 分析ロジック ---
 window.startAnalysis = async function(b64) {
     if (isAnalyzing) return;
     isAnalyzing = true; 
@@ -196,18 +196,18 @@ window.startAnalysis = async function(b64) {
         updateProgress(p); 
     }, 300);
 
-    // ★修正: 指定された新セリフリスト
     const performAnalysisNarration = async () => {
+        // ★修正: 全て mood: "thinking" に統一
         const msgs = [
             { text: "じーっと見て、問題を書き写してるにゃ...", mood: "thinking" },
             { text: "肉球がちょっとじゃまだにゃ…", mood: "thinking" },
             { text: "ふむふむ…この問題、なかなか手強いにゃ。", mood: "thinking" },
-            { text: "今、ネル先生の天才的な頭脳で解いてるからにゃね…", mood: "excited" },
+            { text: "今、ネル先生の天才的な頭脳で解いてるからにゃね…", mood: "thinking" },
             { text: "この問題、どこかで見たことあるにゃ...えーっと...", mood: "thinking" },
             { text: "しっぽの先まで集中して考え中だにゃ…", mood: "thinking" },
-            { text: "うにゃ〜、この問題は手強いにゃ…。でも大丈夫、ネル先生のピピピッ！と光るヒゲが、正解をバッチリ受信してるにゃ！", mood: "excited" },
-            { text: "にゃるほど…だいたい分かってきたにゃ...", mood: "happy" },
-            { text: "あとちょっとで、ネル先生の脳みそが『ピコーン！』って鳴るにゃ！", mood: "excited" }
+            { text: "うにゃ〜、この問題は手強いにゃ…。でも大丈夫、ネル先生のピピピッ！と光るヒゲが、正解をバッチリ受信してるにゃ！", mood: "thinking" },
+            { text: "にゃるほど…だいたい分かってきたにゃ...", mood: "thinking" },
+            { text: "あとちょっとで、ネル先生の脳みそが『ピコーン！』って鳴るにゃ！", mood: "thinking" }
         ];
         
         for (const item of msgs) {
@@ -245,7 +245,7 @@ window.startAnalysis = async function(b64) {
             student_answer: prob.student_answer || "", 
             status: prob.student_answer ? "answered" : "unanswered",
             currentHintLevel: 1,
-            maxUnlockedHintLevel: 0 // ★追加: 解放済みヒントレベル管理
+            maxUnlockedHintLevel: 0 
         }));
         
         isAnalyzing = false; // ループ停止
@@ -307,7 +307,6 @@ window.startHint = function(id) {
     const nextBtn = document.getElementById('next-hint-btn'); const revealBtn = document.getElementById('reveal-answer-btn');
     
     if(nextBtn) { 
-        // 最初のヒントがすでに解放済みなら「見る」ボタンにする
         let label = selectedProblem.maxUnlockedHintLevel >= 1 ? "ヒント1を見る (済)" : "🍖 カリカリ5個でヒント！";
         nextBtn.innerText = label; 
         nextBtn.classList.remove('hidden'); 
@@ -317,7 +316,6 @@ window.startHint = function(id) {
     const hl = document.getElementById('hint-step-label'); if(hl) hl.innerText = "考え方";
 };
 
-// ★修正: ヒント課金ロジック（解放済みなら無料）
 window.showNextHint = function() {
     if (window.initAudioContext) window.initAudioContext();
     const p = selectedProblem;
@@ -328,7 +326,7 @@ window.showNextHint = function() {
 
     let targetLevel = p.currentHintLevel; 
     
-    // まだ解放していないレベルならコストチェック
+    // 課金判定
     if (targetLevel > p.maxUnlockedHintLevel) {
         let cost = 5;
         if (currentUser.karikari < cost) return updateNellMessage(`カリカリが足りないにゃ…あと${cost}個！`, "thinking");
@@ -338,7 +336,6 @@ window.showNextHint = function() {
         updateMiniKarikari(); 
         showKarikariEffect(-cost);
         
-        // 最大解放レベルを更新
         p.maxUnlockedHintLevel = targetLevel;
     }
 
@@ -360,10 +357,8 @@ window.showNextHint = function() {
     const hl = document.getElementById('hint-step-label'); 
     if(hl) hl.innerText = `ヒント Lv.${targetLevel}`; 
     
-    // ボタンのテキスト更新 (次のレベルが解放済みかチェック)
     const nextBtn = document.getElementById('next-hint-btn');
     if (nextBtn) {
-        // 次に表示するレベル
         let nextLvl = p.currentHintLevel; 
         if (nextLvl > p.maxUnlockedHintLevel) {
              nextBtn.innerText = "🍖 さらに5個あげてヒント！";
@@ -372,7 +367,6 @@ window.showNextHint = function() {
         }
     }
 
-    // 答えを見るボタン（Lv3まで解放したら常時表示でも良いが、フロー通りLv3閲覧後に表示）
     const revealBtn = document.getElementById('reveal-answer-btn');
     if (p.maxUnlockedHintLevel >= 3 && revealBtn) {
         revealBtn.classList.remove('hidden'); 
@@ -389,9 +383,7 @@ window.revealAnswer = function() {
     updateNellMessage(`答えは「${selectedProblem.correct_answer}」だにゃ！`, "gentle"); 
 };
 
-// ... (以下略)
-
-// ★修正: showGradingView で複数回答欄の自動生成
+// --- 2列グリッドで入力欄を表示 (はみ出し防止) ---
 window.showGradingView = function(silent = false) { 
     document.getElementById('problem-selection-view').classList.add('hidden'); 
     document.getElementById('final-view').classList.remove('hidden'); 
@@ -412,24 +404,20 @@ window.showGradingView = function(silent = false) {
         const markColor = isCorrect ? "#ff5252" : "#4a90e2"; 
         const bgStyle = isCorrect ? "background:#fff5f5;" : "background:#f0f8ff;"; 
         
-        // 正解がカンマを含んでいるかチェック
         const correctAnswers = String(p.correct_answer || "").split(/,|、/).map(s => s.trim()).filter(s => s);
-        const studentAnswers = String(p.student_answer || "").split(/,|、/).map(s => s.trim()); // 空文字も含める(位置あわせのため)
+        const studentAnswers = String(p.student_answer || "").split(/,|、/).map(s => s.trim()); 
 
         let inputHtml = "";
         
-        // カンマ区切りの数だけ入力欄を作る
         if (correctAnswers.length > 1) {
-            inputHtml = `<div style="display:flex; gap:5px;">`;
+            inputHtml = `<div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px; width:100%;">`;
             for (let i = 0; i < correctAnswers.length; i++) {
-                // 生徒の答えがあれば入れる、なければ空
                 let val = studentAnswers[i] || "";
-                inputHtml += `<input type="text" value="${val}" class="multi-input-${p.id}" oninput="checkMultiAnswer(${p.id})" style="flex:1; padding:8px; border:2px solid #ddd; border-radius:8px; font-size:1rem; font-weight:bold; color:#333; min-width:0;">`;
+                inputHtml += `<input type="text" value="${val}" class="multi-input-${p.id}" oninput="checkMultiAnswer(${p.id})" style="width:100%; padding:8px; border:2px solid #ddd; border-radius:8px; font-size:1rem; font-weight:bold; color:#333; min-width:0; box-sizing:border-box;">`;
             }
             inputHtml += `</div>`;
         } else {
-            // 通常の1つだけの入力欄
-            inputHtml = `<input type="text" value="${p.student_answer || ""}" oninput="checkAnswerDynamically(${p.id}, this)" style="width:100%; padding:8px; border:2px solid #ddd; border-radius:8px; font-size:1rem; font-weight:bold; color:#333;">`;
+            inputHtml = `<input type="text" value="${p.student_answer || ""}" oninput="checkAnswerDynamically(${p.id}, this)" style="width:100%; padding:8px; border:2px solid #ddd; border-radius:8px; font-size:1rem; font-weight:bold; color:#333; box-sizing:border-box;">`;
         }
 
         const div = document.createElement('div'); 
@@ -466,22 +454,19 @@ window.showGradingView = function(silent = false) {
     if (!silent) { updateGradingMessage(); } 
 };
 
-// ★追加: 複数回答用のチェック関数
+// 複数回答チェック
 window.checkMultiAnswer = function(id) {
     const problem = transcribedProblems.find(p => p.id === id);
     if (!problem) return;
 
-    // クラス名から全ての入力欄を取得して結合
     const inputs = document.querySelectorAll(`.multi-input-${id}`);
     const values = Array.from(inputs).map(input => input.value.trim());
-    const combinedStudent = values.join(","); // カンマ区切りで保存
+    const combinedStudent = values.join(",");
     
     problem.student_answer = combinedStudent;
     
-    // 正解と比較（順不同は考慮せず、とりあえず位置で比較）
     const correctAnswers = String(problem.correct_answer || "").split(/,|、/).map(s => s.trim());
     
-    // すべての欄が一致しているか
     let allCorrect = true;
     if (values.length !== correctAnswers.length) allCorrect = false;
     else {
@@ -514,7 +499,6 @@ window.checkAnswerDynamically = function(id, inputElem) {
     updateGradingMessage(); 
 };
 
-// マーク表示更新用ヘルパー
 function updateMarkDisplay(id, isCorrect) {
     const container = document.getElementById(`grade-item-${id}`); 
     const markElem = document.getElementById(`mark-${id}`); 
@@ -551,20 +535,19 @@ window.renderProblemSelection = function() {
         div.className = "grade-item"; 
         div.style.cssText = `border-bottom:1px solid #eee; padding:15px; margin-bottom:10px; border-radius:10px; background:white; box-shadow: 0 2px 5px rgba(0,0,0,0.05);`; 
         
-        // 複数回答なら分割表示
         const correctAnswers = String(p.correct_answer || "").split(/,|、/);
         const studentAnswers = String(p.student_answer || "").split(/,|、/);
         let inputHtml = "";
         
         if (correctAnswers.length > 1) {
-            inputHtml = `<div style="display:flex; gap:5px;">`;
+            inputHtml = `<div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px; width:100%;">`;
             for (let i = 0; i < correctAnswers.length; i++) {
                 let val = studentAnswers[i] || "";
-                inputHtml += `<input type="text" value="${val}" style="flex:1; padding:8px; border:2px solid #f0f0f0; border-radius:8px; font-size:0.9rem; color:#555; font-weight:bold;">`;
+                inputHtml += `<input type="text" value="${val}" style="width:100%; padding:8px; border:2px solid #f0f0f0; border-radius:8px; font-size:0.9rem; color:#555; font-weight:bold; box-sizing:border-box; min-width:0;">`;
             }
             inputHtml += `</div>`;
         } else {
-            inputHtml = `<input type="text" value="${p.student_answer || ""}" style="width:100%; padding:8px; border:2px solid #f0f0f0; border-radius:8px; font-size:0.9rem; color:#555; font-weight:bold;">`;
+            inputHtml = `<input type="text" value="${p.student_answer || ""}" style="width:100%; padding:8px; border:2px solid #f0f0f0; border-radius:8px; font-size:0.9rem; color:#555; font-weight:bold; box-sizing:border-box;">`;
         }
 
         div.innerHTML = `
@@ -589,7 +572,6 @@ window.renderProblemSelection = function() {
     if (btn) { btn.disabled = false; btn.innerText = "✨ ぜんぶわかったにゃ！"; } 
 };
 
-// ... (以下略、giveLunch, showGame, startLiveChat などは変更なし)
 window.backToProblemSelection = function() { document.getElementById('final-view').classList.add('hidden'); document.getElementById('hint-detail-container').classList.add('hidden'); document.getElementById('chalkboard').classList.add('hidden'); document.getElementById('answer-display-area').classList.add('hidden'); if (currentMode === 'grade') showGradingView(); else { renderProblemSelection(); updateNellMessage("他も見るにゃ？", "normal"); } const backBtn = document.getElementById('main-back-btn'); if(backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = backToLobby; } };
 window.pressThanks = function() { window.backToProblemSelection(); };
 window.finishGrading = async function(btnElement) { if(btnElement) { btnElement.disabled = true; btnElement.innerText = "採点完了！"; } if (currentUser) { currentUser.karikari += 100; saveAndSync(); updateMiniKarikari(); showKarikariEffect(100); } await updateNellMessage("よくがんばったにゃ！カリカリ100個あげる！", "excited"); setTimeout(() => { if(typeof backToLobby === 'function') backToLobby(true); }, 3000); };
