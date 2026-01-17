@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v127.0: 名前送信 & ヒント進化 & 記憶変数修正) ---
+// --- anlyze.js (完全版 v126.0: 名前送信 & ヒント進化 & 記憶変数修正) ---
 
 // グローバル変数の初期化
 window.transcribedProblems = []; 
@@ -198,6 +198,7 @@ window.startAnalysis = async function(b64) {
         const res = await fetch('/analyze', { 
             method: 'POST', 
             headers: { 'Content-Type': 'application/json' }, 
+            // ★修正: name を追加してネル先生に名前を教えるにゃ！
             body: JSON.stringify({ 
                 image: b64, 
                 mode: currentMode, 
