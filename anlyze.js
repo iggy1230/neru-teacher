@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v150.0: 記憶システム完全復元 & ユーザーID管理) ---
+// --- anlyze.js (完全版 v151.0: 記憶フィルター強化 & 既存機能維持) ---
 
 // グローバル変数の初期化
 window.transcribedProblems = []; 
@@ -73,12 +73,20 @@ function startMouthAnimation() {
 }
 startMouthAnimation();
 
-// --- ★修正: 記憶システム (ユーザーIDベース) ---
+// --- 記憶システム (★修正: 断捨離フィルター強化) ---
 async function saveToNellMemory(role, text) {
     if (!currentUser || !currentUser.id) return;
+    
     const trimmed = text.trim();
-    const ignoreWords = ["あー", "えーと", "うーん", "はい", "ねえ", "ネル先生", "にゃー", "にゃ"];
-    if (trimmed.length <= 2 || ignoreWords.includes(trimmed)) return;
+    
+    // 🐈 記憶の断捨離フィルターだにゃ！
+    // 2文字以下、または相槌リストに含まれるなら覚えない
+    const ignoreWords = ["あー", "えーと", "うーん", "はい", "ねえ", "ネル先生", "にゃー", "にゃ", "。", "ok", "OK"];
+    
+    if (trimmed.length <= 2 || ignoreWords.includes(trimmed)) {
+        // console.log("🤫 軽い相槌だから覚えないでおくにゃ:", trimmed);
+        return; 
+    }
 
     const newItem = { role: role, text: trimmed, time: new Date().toISOString() };
     
@@ -86,7 +94,7 @@ async function saveToNellMemory(role, text) {
     try {
         const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
         let history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
-        if (history.length > 0 && history[history.length - 1].text === trimmed) return; // 重複回避
+        if (history.length > 0 && history[history.length - 1].text === trimmed) return; // 直近重複回避
         history.push(newItem);
         if (history.length > 50) history.shift(); 
         localStorage.setItem(memoryKey, JSON.stringify(history));
@@ -98,7 +106,7 @@ async function saveToNellMemory(role, text) {
             const docRef = db.collection("memories").doc(currentUser.id);
             const docSnap = await docRef.get();
             let cloudHistory = docSnap.exists ? (docSnap.data().history || []) : [];
-            if (cloudHistory.length > 0 && cloudHistory[cloudHistory.length - 1].text === trimmed) return;
+            if (cloudHistory.length > 0 && cloudHistory[cloudHistory.length - 1].text === trimmed) return; // 直近重複回避
             cloudHistory.push(newItem);
             if (cloudHistory.length > 50) cloudHistory.shift();
             await docRef.set({ history: cloudHistory, lastUpdated: new Date().toISOString() }, { merge: true });
@@ -383,7 +391,7 @@ window.revealAnswer = function() {
     updateNellMessage(`答えは「${selectedProblem.correct_answer}」だにゃ！`, "gentle"); 
 };
 
-// --- リスト生成 (共通) ---
+// --- リスト生成 (右端固定 & 幅統一 & 初期空白対応) ---
 function createProblemItem(p, mode) {
     const isGradeMode = (mode === 'grade');
     
