@@ -1,4 +1,4 @@
-// --- user.js (完全修正版 v131.0: スマホ容量オーバー対策 & JPEG軽量化) ---
+// --- user.js (完全修正版 v132.0: 超軽量化・多人数対応版) ---
 
 // Firebase初期化
 let app, auth, db;
@@ -259,8 +259,17 @@ async function renderForSave() {
     const img = new Image(); img.crossOrigin = "Anonymous"; 
     try { await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = 'student-id-base.png?' + new Date().getTime(); }); } catch (e) { return null; }
     
-    const canvas = document.createElement('canvas'); const BASE_W = 480; const scaleFactor = BASE_W / img.width; canvas.width = BASE_W; canvas.height = img.height * scaleFactor; 
-    const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, canvas.width, canvas.height); const rx = canvas.width / 640; const ry = canvas.height / 400;
+    // ★修正: 容量削減のため幅を480->300に縮小
+    const BASE_W = 300; 
+    const scaleFactor = BASE_W / img.width; 
+    const canvas = document.createElement('canvas');
+    canvas.width = BASE_W; canvas.height = img.height * scaleFactor; 
+    
+    const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, canvas.width, canvas.height); 
+    
+    // 描画座標系のスケーリング (元が640x400基準)
+    const rx = canvas.width / 640; 
+    const ry = canvas.height / 400;
     
     if (enrollFile) {
         try {
@@ -309,8 +318,8 @@ async function renderForSave() {
     }
     const nameVal = document.getElementById('new-student-name').value; const gradeVal = document.getElementById('new-student-grade').value; ctx.fillStyle = "#333"; const fontSize = 32 * rx; ctx.font = `bold ${fontSize}px 'M PLUS Rounded 1c', sans-serif`; ctx.textAlign = "left"; ctx.textBaseline = "middle"; const textX = 346 * rx; if (gradeVal) ctx.fillText(gradeVal + "年生", textX, 168 * ry + 1); if (nameVal) ctx.fillText(nameVal, textX, 231 * ry + 3);
     
-    // ★修正: 容量削減のため JPEG 0.8 で出力
-    try { return canvas.toDataURL('image/jpeg', 0.8); } catch (e) { return null; }
+    // ★修正: 容量削減のため JPEG 0.5 で出力 (PNGは使わない)
+    try { return canvas.toDataURL('image/jpeg', 0.5); } catch (e) { return null; }
 }
 
 async function processAndCompleteEnrollment() {
