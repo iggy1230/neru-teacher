@@ -1,4 +1,4 @@
-// --- user.js (完全版 v112.1: 出席ボーナス強化) ---
+// --- user.js (完全修正版 v130.0: 猫耳バグ修正 & 入学フリーズ防止) ---
 
 // Firebase初期化
 let app, auth, db;
@@ -171,7 +171,10 @@ async function loadFaceModels() {
         const MODEL_URL = 'https://cdn.jsdelivr.net/gh/cgarciagl/face-api.js@0.22.2/weights';
         await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL); await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
         modelsLoaded = true; if(status) status.innerText = "AI準備完了にゃ！"; if(btn) btn.disabled = false; if(enrollFile) updatePhotoPreview(enrollFile);
-    } catch (e) { if(status) status.innerText = "AIの準備に失敗したにゃ…(手動モード)"; if(btn) btn.disabled = false; }
+    } catch (e) { 
+        if(status) status.innerText = "AIの準備に失敗したにゃ…(手動モード)"; 
+        if(btn) btn.disabled = false; 
+    }
 }
 
 async function resizeForAI(img, maxSize = 800) {
@@ -183,24 +186,52 @@ async function resizeForAI(img, maxSize = 800) {
     });
 }
 
+// ★修正: プレビュー時の猫耳表示バグ修正 (変数名 photoImg -> img)
 async function updatePhotoPreview(file) {
     window.isEditingInitialized = false; window.isEditMode = true; resetPreviewForEditing(); enrollFile = file;
     const slot = document.getElementById('id-photo-slot'); if (!slot) return;
     slot.innerHTML = '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#666;font-size:0.8rem;font-weight:bold;">🐱 加工中にゃ...</div>';
-    const img = new Image(); img.src = URL.createObjectURL(file); await new Promise(r => img.onload = r);
+    
+    const img = new Image(); 
+    img.src = URL.createObjectURL(file); 
+    await new Promise(r => img.onload = r);
+    
     const canvas = document.createElement('canvas'); canvas.width = img.width; canvas.height = img.height;
     canvas.style.width = '100%'; canvas.style.height = '100%'; canvas.style.objectFit = 'cover';
-    const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0); slot.innerHTML = ''; slot.appendChild(canvas);
+    const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0); 
+    slot.innerHTML = ''; slot.appendChild(canvas);
+    
     if (modelsLoaded) {
         try {
-            const aiImg = await resizeForAI(img); const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 });
+            const aiImg = await resizeForAI(img); 
+            const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 });
             const detection = await faceapi.detectSingleFace(aiImg, options).withFaceLandmarks();
+            
             if (detection) {
                 const landmarks = detection.landmarks;
                 const nose = landmarks.getNose()[3]; const leftEyeBrow = landmarks.getLeftEyeBrow()[2]; const rightEyeBrow = landmarks.getRightEyeBrow()[2];
-                const aiScale = photoImg.width / aiImg.width; const transX = (val) => (val - cropX) * scale + destX; const transY = (val) => (val - cropY) * scale + destY; const transS = (val) => val * scale;
-                if (decoMuzzle.complete) { const nX = transX(nose.x * aiScale); const nY = transY(nose.y * aiScale); const faceW = transS(detection.detection.box.width * aiScale); const muzW = faceW * 0.8; const muzH = muzW * 0.8; ctx.drawImage(decoMuzzle, nX - muzW/2, nY - muzH/2.5, muzW, muzH); }
-                if (decoEars.complete) { const browX = transX(((leftEyeBrow.x + rightEyeBrow.x)/2) * aiScale); const browY = transY(((leftEyeBrow.y + rightEyeBrow.y)/2) * aiScale); const faceW = transS(detection.detection.box.width * aiScale); const earW = faceW * 1.7; const earH = earW * 0.7; const earOffset = earH * 0.35; ctx.drawImage(decoEars, browX - earW/2, browY - earH + earOffset, earW, earH); }
+                
+                // ★修正: ここで photoImg (未定義) を使っていたバグを img に修正
+                const aiScale = img.width / aiImg.width; 
+                
+                // プレビュー用はシンプルに座標変換
+                const transX = (val) => val * aiScale;
+                const transY = (val) => val * aiScale;
+                const transS = (val) => val * aiScale;
+
+                if (decoMuzzle.complete) { 
+                    const nX = transX(nose.x); const nY = transY(nose.y); 
+                    const faceW = transS(detection.detection.box.width); 
+                    const muzW = faceW * 0.8; const muzH = muzW * 0.8; 
+                    ctx.drawImage(decoMuzzle, nX - muzW/2, nY - muzH/2.5, muzW, muzH); 
+                }
+                if (decoEars.complete) { 
+                    const browX = transX((leftEyeBrow.x + rightEyeBrow.x)/2); 
+                    const browY = transY((leftEyeBrow.y + rightEyeBrow.y)/2); 
+                    const faceW = transS(detection.detection.box.width); 
+                    const earW = faceW * 1.7; const earH = earW * 0.7; const earOffset = earH * 0.35; 
+                    ctx.drawImage(decoEars, browX - earW/2, browY - earH + earOffset, earW, earH); 
+                }
             }
         } catch (e) { console.error("Preview AI Error:", e); }
     }
@@ -228,15 +259,59 @@ async function startEnrollmentWebCamera(callback) {
 
 function closeEnrollCamera() { const modal = document.getElementById('camera-modal'); const video = document.getElementById('camera-video'); if (enrollStream) { enrollStream.getTracks().forEach(t => t.stop()); enrollStream = null; } if (video) video.srcObject = null; if (modal) modal.classList.add('hidden'); }
 
+// ★修正: 本番保存用の描画処理 (AIエラー時に止まらないようにtry-catch強化)
 async function renderForSave() {
-    const img = new Image(); img.crossOrigin = "Anonymous"; try { await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = 'student-id-base.png?' + new Date().getTime(); }); } catch (e) { return null; }
-    const canvas = document.createElement('canvas'); const BASE_W = 480; const scaleFactor = BASE_W / img.width; canvas.width = BASE_W; canvas.height = img.height * scaleFactor; const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, canvas.width, canvas.height); const rx = canvas.width / 640; const ry = canvas.height / 400;
+    const img = new Image(); img.crossOrigin = "Anonymous"; 
+    try { await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = 'student-id-base.png?' + new Date().getTime(); }); } catch (e) { return null; }
+    
+    const canvas = document.createElement('canvas'); const BASE_W = 480; const scaleFactor = BASE_W / img.width; canvas.width = BASE_W; canvas.height = img.height * scaleFactor; 
+    const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, canvas.width, canvas.height); const rx = canvas.width / 640; const ry = canvas.height / 400;
+    
     if (enrollFile) {
         try {
             const photoImg = new Image(); photoImg.src = URL.createObjectURL(enrollFile); await new Promise(r => photoImg.onload = r);
-            const destX = 35 * rx; const destY = 143 * ry; const destW = 195 * rx; const destH = 180 * ry; const scale = Math.max(destW / photoImg.width, destH / photoImg.height); const cropW = destW / scale; const cropH = destH / scale; const cropX = (photoImg.width - cropW) / 2; const cropY = (photoImg.height - cropH) / 2;
-            ctx.save(); ctx.beginPath(); ctx.roundRect(destX, destY, destW, destH, 2 * rx); ctx.clip(); ctx.drawImage(photoImg, cropX, cropY, cropW, cropH, destX, destY, destW, destH); ctx.restore();
-            // ... (Face API decoration code omitted for brevity but should be included) ...
+            const destX = 35 * rx; const destY = 143 * ry; const destW = 195 * rx; const destH = 180 * ry; 
+            const scale = Math.max(destW / photoImg.width, destH / photoImg.height); 
+            const cropW = destW / scale; const cropH = destH / scale; 
+            const cropX = (photoImg.width - cropW) / 2; const cropY = (photoImg.height - cropH) / 2;
+            
+            ctx.save(); ctx.beginPath(); ctx.roundRect(destX, destY, destW, destH, 2 * rx); ctx.clip(); 
+            ctx.drawImage(photoImg, cropX, cropY, cropW, cropH, destX, destY, destW, destH); ctx.restore();
+            
+            // AI Decorations
+            if (modelsLoaded) {
+                try {
+                    const aiImg = await resizeForAI(photoImg); 
+                    const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 });
+                    const detection = await faceapi.detectSingleFace(aiImg, options).withFaceLandmarks();
+                    
+                    if (detection) {
+                        const landmarks = detection.landmarks;
+                        const nose = landmarks.getNose()[3]; const leftEyeBrow = landmarks.getLeftEyeBrow()[2]; const rightEyeBrow = landmarks.getRightEyeBrow()[2];
+                        const aiScale = photoImg.width / aiImg.width; 
+                        const transX = (val) => (val - cropX) * scale + destX; 
+                        const transY = (val) => (val - cropY) * scale + destY; 
+                        const transS = (val) => val * scale;
+                        
+                        if (decoMuzzle.complete) { 
+                            const nX = transX(nose.x * aiScale); const nY = transY(nose.y * aiScale); 
+                            const faceW = transS(detection.detection.box.width * aiScale); 
+                            const muzW = faceW * 0.8; const muzH = muzW * 0.8; 
+                            ctx.drawImage(decoMuzzle, nX - muzW/2, nY - muzH/2.5, muzW, muzH); 
+                        }
+                        if (decoEars.complete) { 
+                            const browX = transX(((leftEyeBrow.x + rightEyeBrow.x)/2) * aiScale); 
+                            const browY = transY(((leftEyeBrow.y + rightEyeBrow.y)/2) * aiScale); 
+                            const faceW = transS(detection.detection.box.width * aiScale); 
+                            const earW = faceW * 1.7; const earH = earW * 0.7; const earOffset = earH * 0.35; 
+                            ctx.drawImage(decoEars, browX - earW/2, browY - earH + earOffset, earW, earH); 
+                        }
+                    }
+                } catch(aiErr) {
+                    console.error("AI Decoration Failed (Non-fatal):", aiErr);
+                    // AI失敗しても写真は貼れているので続行する
+                }
+            }
         } catch(e) { console.error(e); }
     } else if (window.isEditMode && currentUser) {
         try { const currentImg = new Image(); currentImg.src = currentUser.photo; await new Promise(r => currentImg.onload = r); const sX = currentImg.width * 0.055; const sY = currentImg.height * 0.3575; const sW = currentImg.width * 0.305; const sH = currentImg.height * 0.45; const dX = 35 * rx; const dY = 143 * ry; const dW = 195 * rx; const dH = 180 * ry; ctx.drawImage(currentImg, sX, sY, sW, sH, dX, dY, dW, dH); } catch(e) {}
@@ -248,9 +323,16 @@ async function renderForSave() {
 async function processAndCompleteEnrollment() {
     const name = document.getElementById('new-student-name').value; const grade = document.getElementById('new-student-grade').value; const btn = document.getElementById('complete-btn');
     if(!name || !grade) return alert("お名前と学年を入れてにゃ！");
-    btn.disabled = true; btn.innerText = window.isEditMode ? "更新中にゃ..." : "作成中にゃ..."; await new Promise(r => setTimeout(r, 100));
-    let finalPhoto = await renderForSave(); if (!finalPhoto) finalPhoto = (window.isEditMode && currentUser) ? currentUser.photo : "student-id-base.png";
+    
+    // ★修正: ボタン連打防止とフリーズ防止の構造
+    btn.disabled = true; 
+    btn.innerText = window.isEditMode ? "更新中にゃ..." : "作成中にゃ..."; 
+    await new Promise(r => setTimeout(r, 100)); // UI更新用ウェイト
+
     try {
+        let finalPhoto = await renderForSave(); 
+        if (!finalPhoto) finalPhoto = (window.isEditMode && currentUser) ? currentUser.photo : "student-id-base.png";
+        
         let updatedUser;
         if (window.isGoogleEnrollment || (currentUser && currentUser.isGoogleUser)) {
             const uid = currentUser.id;
@@ -267,12 +349,18 @@ async function processAndCompleteEnrollment() {
             }
         }
         document.getElementById('new-student-name').value = ""; document.getElementById('new-student-grade').value = ""; enrollFile = null; updateIDPreviewText(); const slot = document.getElementById('id-photo-slot'); if(slot) slot.innerHTML = '';
-    } catch (err) { alert("エラーが発生したにゃ……\n" + err.message); } finally { btn.disabled = false; btn.innerText = window.isEditMode ? "更新する！" : "入学する！"; }
+    } catch (err) { 
+        alert("エラーが発生したにゃ……\n" + err.message); 
+        console.error(err);
+    } finally { 
+        // ★修正: エラーでも成功でも必ずボタンを戻す
+        btn.disabled = false; 
+        btn.innerText = window.isEditMode ? "更新する！" : "入学する！"; 
+    }
 }
 
 function renderUserList() { const list = document.getElementById('user-list'); if(!list) return; list.innerHTML = users.length ? "" : "<p style='text-align:center; width:100%; color:white; font-weight:bold; opacity:0.8;'>まだ誰もいないにゃ</p>"; users.forEach(user => { const div = document.createElement('div'); div.className = "user-card"; div.innerHTML = `<img src="${user.photo}"><div class="card-karikari-badge">🍖${user.karikari || 0}</div>`; div.onclick = () => login(user, false); list.appendChild(div); }); }
 
-// --- ★修正: 出席ボーナスロジック (3日連続ボーナス) ---
 function login(user, isGoogle = false) { 
     try { sfxDoor.currentTime = 0; sfxDoor.play(); } catch(e){}
     currentUser = user; 
@@ -282,20 +370,16 @@ function login(user, isGoogle = false) {
     const today = new Date().toISOString().split('T')[0]; 
     const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
 
-    // 初めてのログインか、日付が変わった場合のみ処理
     if (currentUser.lastLogin !== today) {
         if (currentUser.lastLogin === yesterday) {
-            // 連続ログイン
             currentUser.streak = (currentUser.streak || 0) + 1;
         } else {
-            // 途切れた or 初回
             currentUser.streak = 1;
         }
         
         currentUser.lastLogin = today;
         currentUser.attendance[today] = true;
 
-        // ボーナス判定 (3日連続以上なら毎日ボーナス)
         if (currentUser.streak >= 3) {
             currentUser.karikari += 100;
             setTimeout(() => { 
