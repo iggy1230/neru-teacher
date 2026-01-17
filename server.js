@@ -1,4 +1,4 @@
-// --- server.js (完全版 v2026.0: Gemini 3 Flash & Code Execution 搭載) ---
+// --- server.js (完全版 v123.0: Gemini 2.5 Pro 安定・高精度版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -41,7 +41,6 @@ async function appendToServerLog(name, text) {
 let genAI, ttsClient;
 try {
     if (!process.env.GEMINI_API_KEY) console.error("⚠️ GEMINI_API_KEY が設定されていません。");
-    // 2026年最新SDKとして初期化
     genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     
     if (process.env.GOOGLE_CREDENTIALS_JSON) {
@@ -56,7 +55,7 @@ try {
 // API Endpoints
 // ==========================================
 
-// --- TTS (Text to Speech) ---
+// --- TTS ---
 app.post('/synthesize', async (req, res) => {
     try {
         if (!ttsClient) throw new Error("TTS Not Ready");
@@ -75,74 +74,85 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- ★修正: Analyze (Gemini 3 Flash 最強版) ---
+// --- ★修正: Analyze (Gemini 2.5 Pro 3段階ヒント・高精度版) ---
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject } = req.body;
-        console.log(`[Analyze] Subject: ${subject}, Grade: ${grade}, Mode: ${mode} (Gemini 3 Flash Running...)`);
+        console.log(`[Analyze] Subject: ${subject}, Grade: ${grade}, Mode: ${mode} (Model: Gemini 2.5 Pro)`);
 
-        // ★2026年最新モデル: Gemini 3 Flash Preview
-        // Thinking Mode & Code Execution をフル活用
+        // ★最強の目: Gemini 2.5 Pro
+        // 複雑な推論とOCR精度を最優先する設定
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-3-flash-preview", 
-            generationConfig: { 
-                responseMimeType: "application/json",
-                // 【Thinking Mode】思考プロセスを有効化 (Mediumレベル)
-                thinkingConfig: { thinkingLevel: "medium" } 
-            },
-            // 【Code Execution】Pythonコード実行による計算検証を有効化
-            tools: [{ codeExecution: {} }]
+            model: "models/gemini-2.5-pro", 
+            generationConfig: { responseMimeType: "application/json" }
         });
 
-        // 教科別の詳細ルール（v118の資産を継承して精度維持）
+        // 教科別の書き起こし・OCRルール（Proの精度を活かす詳細指示）
         const ocrRules = {
-            'さんすう': `・数式や筆算は、Code Execution機能を使って必ず計算結果を検証してください。`,
-            'こくご': `・縦書きは右から左へ。漢字書き取りは『□(ふりがな)』形式で。`,
-            'りか': `・グラフや図表の数値を正確に読み取ること。`,
-            'しゃかい': `・歴史用語や地名は正確な漢字で読み取ること。`
+            'さんすう': `
+                ・数式、筆算の配置、単位（cm, L, kgなど）を正確に読み取ってください。
+                ・数字の書き間違い（例: 0と6、1と7）も、子供の筆跡として忠実に読み取ってください。`,
+            'こくご': `
+                ・縦書き問題は右行から左行へ順に読み取ってください。
+                ・漢字の書き取りは『□(ふりがな)』形式で。送り仮名のミスも修正せずそのまま読み取ってください。`,
+            'りか': `
+                ・グラフの目盛り、実験器具の名称、記号選択（ア、イ、ウ）を正確に。`,
+            'しゃかい': `
+                ・地図記号、年号、人名の漢字（旧字含む）を正確に。`
         };
 
+        // 3段階ヒント生成ルール
         const hintRules = {
-            'さんすう': `・計算問題は、Pythonで検算した正確な値を元にヒントを出すこと。`,
-            'こくご': `・読解は本文の該当箇所を探させるヒント。漢字は部首や構成のヒント。`,
-            'りか': `・実験器具の使い方や、図表の読み取り方をヒントにする。`,
-            'しゃかい': `・関連する用語や時代の前後関係をヒントにする。`
+            'さんすう': `
+                ・ヒント1（方針）: 計算の種類や公式の確認（例:「あわせていくつ？だから…」）。
+                ・ヒント2（気付き）: 単位変換や繰り上がり等の注意点（例:「1mは100cmだにゃ」）。
+                ・ヒント3（核心）: 答えの一歩手前（例:「一の位は計算できたにゃ？次は…」）。`,
+            'こくご': `
+                ・ヒント1（着眼点）: 漢字の部首や、文章中の探す場所（例:「『しかし』の後ろを見てにゃ」）。
+                ・ヒント2（構成）: 画数や熟語の構成（例:「きへんだにゃ」）。
+                ・ヒント3（類似）: 形の似ている文字や対義語（例:「『右』の反対だにゃ」）。`,
+            'りか': `
+                ・ヒント1: 図や表の注目ポイント。
+                ・ヒント2: 実験の目的や用語の定義。
+                ・ヒント3: 選択肢の絞り込み。`,
+            'しゃかい': `
+                ・ヒント1: 資料の読み取り方。
+                ・ヒント2: 時代の流れや関連用語。
+                ・ヒント3: キーワードの頭文字など。`
         };
 
-        // ★最強プロンプト
         const prompt = `
         あなたは小学${grade}年生の${subject}担当の教育AI「ネル先生」です。
-        最新の **Gemini 3 Flash** の能力（超高精度OCR、思考モード、コード実行）を駆使して、画像を解析してください。
+        添付画像を、最高レベルの精度を持つGemini 2.5 Proとして解析し、JSON配列で返してください。
 
-        【タスク実行手順】
-        1. **画像認識 (OCR)**: 
-           - 印刷された「問題文」と、子供が書いた「手書きの答え」を正確に読み取ってください。
-           - 消しゴムの跡や、独特な書き順も文脈から補正して読み取ってください。
+        【タスク1: 超高精度OCR】
+        1. 印刷された「問題文」を一字一句正確に書き起こしてください。
+        2. 子供が書いた「手書きの答え」を、文脈と筆跡から判断して読み取ってください。
+           - 空欄は空文字 "" とする。
+           - 誤字や消しゴム跡も考慮し、書かれている「現状」を正確にデータ化する。
            ${ocrRules[subject] || ""}
 
-        2. **正誤判定 & 検証 (Thinking & Code Execution)**:
-           - **算数の場合**: 読み取った数式を必ず **Code Execution (Python)** で計算し、正解を導き出してください。AIの思い込みによる計算ミスは許されません。
-           - 正解と手書きの答えを比較し、厳密に判定(is_correct)してください。
+        【タスク2: 厳密な採点】
+        1. 問題文から論理的に「正解」を導き出してください。
+        2. 手書きの答えと正解を比較し、判定(is_correct)を行ってください。
+           - 算数の単位忘れ、国語の送り仮名ミス、漢字指定等は「不正解」として扱ってください。
 
-        3. **アドバイス作成 (Thinking Mode)**:
-           - なぜ生徒がその答えを書いたのか、思考モードで「間違いの原因」を推測してください。
-           - その推測に基づき、答えそのものではなく「気付き」を与えるヒントを3段階で作成してください。
-           ${hintRules[subject] || ""}
+        【タスク3: 3段階ヒント生成】
+        以下の指針に従い、答えを直接教えずに導くヒントを作成してください。
+        ${hintRules[subject] || ""}
 
         【出力JSONフォーマット】
         [
           {
             "id": 1,
-            "label": "①",
-            "question": "問題文(原文ママ)",
+            "label": "①", // 問題番号
+            "question": "問題文",
             "correct_answer": "正解",
-            "student_answer": "読み取った手書きの答え(空欄なら空文字)",
+            "student_answer": "手書きの答え",
             "is_correct": true, // または false
-            "hints": ["ヒント1 (思考モードの結果に基づく)", "ヒント2", "ヒント3"]
+            "hints": ["ヒント1(方針)", "ヒント2(気付き)", "ヒント3(核心)"]
           }
         ]
-        
-        ※ 思考プロセス(thought)はJSONに含めず、結果のJSON配列のみを出力してください。
         `;
 
         const result = await model.generateContent([
@@ -152,55 +162,62 @@ app.post('/analyze', async (req, res) => {
 
         const responseText = result.response.text();
         
-        // JSON抽出処理（Thinking Modeの思考ログが混ざる可能性を考慮して厳密に抽出）
+        // JSON抽出とパース
         let problems = [];
         try {
             const jsonMatch = responseText.match(/\[[\s\S]*\]/);
             if (jsonMatch) {
                 problems = JSON.parse(jsonMatch[0]);
             } else {
-                // そのままパースを試みる
                 problems = JSON.parse(responseText);
             }
         } catch (e) {
             console.error("JSON Parse Error:", responseText);
-            throw new Error("AIの応答がJSON形式ではありませんでした。");
+            throw new Error("AIの応答が正しいJSON形式ではありませんでした。");
         }
 
         res.json(problems);
 
     } catch (error) {
         console.error("解析エラー:", error);
-        // エラーハンドリングもネル先生らしく
-        res.status(500).json({ error: "Gemini 3 Flashの起動に失敗したにゃ。APIキーかSDKを確認してにゃ！: " + error.message });
+        res.status(500).json({ error: "解析に失敗したにゃ: " + error.message });
     }
 });
 
-// --- 4. 給食反応 (v118準拠) ---
+// --- 4. 給食反応 ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
         const { count, name } = req.body;
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
+        
         const isSpecial = (count % 10 === 0);
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" }); // 会話は軽量モデルでOK
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+        
         let prompt = isSpecial 
-            ? `あなたは猫のネル先生。生徒${name}さんから${count}個目の給食をもらいました。感謝感激して50文字以内で熱く語って。語尾は「にゃ」。`
-            : `あなたは猫のネル先生。生徒${name}から${count}回目の給食をもらいました。20文字以内で面白くリアクションして。語尾は「にゃ」。`;
+            ? `あなたは猫の「ネル先生」。生徒「${name}」さんから${count}個目の給食をもらいました！感謝感激して、50文字以内で熱く語ってください。語尾は「にゃ」。`
+            : `あなたは猫の「ネル先生」。生徒「${name}」から${count}回目の給食をもらいました。20文字以内で面白くリアクションして。語尾は「にゃ」。`;
+        
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text().trim(), isSpecial });
     } catch { res.json({ reply: "おいしいにゃ！", isSpecial: false }); }
 });
 
-// --- 3. ゲーム反応 (v118準拠) ---
+// --- 3. ゲーム反応 ---
 app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         let prompt = "";
         let mood = "excited";
-        if (type === 'start') prompt = `ネル先生として${name}のゲーム開始を短く応援して。`;
-        else if (type === 'end') prompt = `ネル先生としてゲーム終了後の${name}（スコア${score}/20）に20文字以内でコメントして。0-5点は励まし、6-15点は褒め、16点以上は絶賛。語尾は「にゃ」。`;
-        else return res.json({ reply: "ナイスにゃ！", mood: "excited" });
+
+        if (type === 'start') {
+            prompt = `ネル先生として${name}のゲーム開始を短く応援して。`;
+        } else if (type === 'end') {
+            prompt = `ネル先生としてゲーム終了後の${name}（スコア${score}/20）に20文字以内でコメントして。0-5点は励まし、6-15点は褒め、16点以上は絶賛。語尾は「にゃ」。`;
+        } else {
+            return res.json({ reply: "ナイスにゃ！", mood: "excited" });
+        }
+
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text().trim(), mood });
     } catch { res.json({ reply: "おつかれさまにゃ！", mood: "happy" }); }
@@ -218,23 +235,48 @@ wss.on('connection', async (clientWs, req) => {
     const grade = params.grade || "1";
     const name = decodeURIComponent(params.name || "生徒");
     const statusContext = decodeURIComponent(params.status || "特になし");
+
     const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${process.env.GEMINI_API_KEY}`;
+    
     let geminiWs = null;
     try {
         geminiWs = new WebSocket(GEMINI_URL);
         geminiWs.on('open', () => {
             geminiWs.send(JSON.stringify({
                 setup: {
-                    model: "models/gemini-2.0-flash-exp",
-                    generationConfig: { responseModalities: ["AUDIO"], speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }, language_code: "ja-JP" } }, 
-                    systemInstruction: { parts: [{ text: `あなたはネル先生（猫）。相手は${grade}年生の${name}。語尾は「にゃ」。【状況】${statusContext}` }] }
+                    model: "models/gemini-2.0-flash-exp", // チャットはFlashで高速応答
+                    generationConfig: { 
+                        responseModalities: ["AUDIO"], 
+                        speech_config: { 
+                            voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }, 
+                            language_code: "ja-JP" 
+                        } 
+                    }, 
+                    systemInstruction: {
+                        parts: [{
+                            text: `あなたはネル先生（猫）。相手は${grade}年生の${name}。
+                            語尾は「にゃ」。明るく親しみやすく。
+                            【状況】${statusContext}`
+                        }]
+                    }
                 }
             }));
             if (clientWs.readyState === WebSocket.OPEN) clientWs.send(JSON.stringify({ type: "server_ready" }));
         });
-        clientWs.on('message', (data) => { const msg = JSON.parse(data); if (msg.base64Audio && geminiWs.readyState === WebSocket.OPEN) geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: msg.base64Audio }] } })); });
-        geminiWs.on('message', (data) => { if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data); });
-        geminiWs.on('error', (e) => console.error(e));
+
+        clientWs.on('message', (data) => {
+            const msg = JSON.parse(data);
+            if (msg.base64Audio && geminiWs.readyState === WebSocket.OPEN) {
+                geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: msg.base64Audio }] } }));
+            }
+        });
+
+        geminiWs.on('message', (data) => {
+            if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data);
+        });
+
+        geminiWs.on('error', (e) => console.error("Gemini WS Error:", e));
         clientWs.on('close', () => geminiWs.close());
+
     } catch (e) { clientWs.close(); }
 });
