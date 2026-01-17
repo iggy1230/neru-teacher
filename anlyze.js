@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v151.0: 記憶フィルター強化 & 既存機能維持) ---
+// --- anlyze.js (完全版 v151.1: 記憶デバッグログ追加版) ---
 
 // グローバル変数の初期化
 window.transcribedProblems = []; 
@@ -73,44 +73,90 @@ function startMouthAnimation() {
 }
 startMouthAnimation();
 
-// --- 記憶システム (★修正: 断捨離フィルター強化) ---
+// --- 記憶システム (★修正: デバッグログ追加) ---
 async function saveToNellMemory(role, text) {
-    if (!currentUser || !currentUser.id) return;
+    if (!currentUser || !currentUser.id) {
+        console.warn("⚠️ ユーザー情報がないため記憶できません");
+        return;
+    }
     
     const trimmed = text.trim();
     
-    // 🐈 記憶の断捨離フィルターだにゃ！
-    // 2文字以下、または相槌リストに含まれるなら覚えない
+    // 断捨離フィルター
     const ignoreWords = ["あー", "えーと", "うーん", "はい", "ねえ", "ネル先生", "にゃー", "にゃ", "。", "ok", "OK"];
     
     if (trimmed.length <= 2 || ignoreWords.includes(trimmed)) {
-        // console.log("🤫 軽い相槌だから覚えないでおくにゃ:", trimmed);
+        console.log(`✂️ 記憶スキップ(短文/除外): "${trimmed}"`);
         return; 
     }
 
     const newItem = { role: role, text: trimmed, time: new Date().toISOString() };
-    
-    // 1. ローカルストレージ (IDごと)
+    console.log(`🧠 メモリ保存プロセス開始: [${role}] "${trimmed}"`);
+
+    // 1. ローカルストレージ (常に保存)
     try {
         const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
         let history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
-        if (history.length > 0 && history[history.length - 1].text === trimmed) return; // 直近重複回避
-        history.push(newItem);
-        if (history.length > 50) history.shift(); 
-        localStorage.setItem(memoryKey, JSON.stringify(history));
-    } catch(e) {}
+        
+        // 重複チェック
+        if (history.length > 0 && history[history.length - 1].text === trimmed) {
+            console.log("🔁 ローカル: 重複のためスキップ");
+        } else {
+            history.push(newItem);
+            if (history.length > 50) history.shift(); 
+            localStorage.setItem(memoryKey, JSON.stringify(history));
+            console.log(`📂 ローカル保存完了 (現在${history.length}件)`);
+        }
+    } catch(e) {
+        console.error("❌ ローカル保存エラー:", e);
+    }
 
     // 2. Firebase (Googleユーザーのみ)
-    if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) {
-        try {
-            const docRef = db.collection("memories").doc(currentUser.id);
-            const docSnap = await docRef.get();
-            let cloudHistory = docSnap.exists ? (docSnap.data().history || []) : [];
-            if (cloudHistory.length > 0 && cloudHistory[cloudHistory.length - 1].text === trimmed) return; // 直近重複回避
-            cloudHistory.push(newItem);
-            if (cloudHistory.length > 50) cloudHistory.shift();
-            await docRef.set({ history: cloudHistory, lastUpdated: new Date().toISOString() }, { merge: true });
-        } catch(e) { console.error("Memory sync failed:", e); }
+    if (currentUser.isGoogleUser) {
+        if (typeof db !== 'undefined' && db !== null) {
+            try {
+                console.log("☁️ Firestoreへアクセス中...");
+                const docRef = db.collection("memories").doc(currentUser.id);
+                const docSnap = await docRef.get();
+                
+                let cloudHistory = [];
+                if (docSnap.exists) {
+                    cloudHistory = docSnap.data().history || [];
+                    console.log(`☁️ 既存のクラウド記憶を取得: ${cloudHistory.length}件`);
+                } else {
+                    console.log("☁️ 新規クラウド記憶を作成します");
+                }
+
+                // 重複チェック
+                if (cloudHistory.length > 0 && cloudHistory[cloudHistory.length - 1].text === trimmed) {
+                    console.log("🔁 クラウド: 重複のためスキップ");
+                    return;
+                }
+
+                cloudHistory.push(newItem);
+                
+                // 50件制限
+                if (cloudHistory.length > 50) {
+                    cloudHistory.shift();
+                    console.log("🧹 クラウド記憶が50件を超えたため古いものを削除しました");
+                }
+
+                await docRef.set({ 
+                    history: cloudHistory, 
+                    lastUpdated: new Date().toISOString() 
+                }, { merge: true });
+
+                console.log(`✅ クラウド保存成功！ (現在${cloudHistory.length}件)`);
+                console.dir(cloudHistory); // 配列の中身をコンソールに表示
+
+            } catch(e) { 
+                console.error("❌ Firestore保存エラー:", e); 
+            }
+        } else {
+            console.warn("⚠️ dbオブジェクトが見つかりません。Firebase初期化エラーの可能性があります。");
+        }
+    } else {
+        console.log("👤 ゲストユーザーのためクラウド保存はスキップしました");
     }
 }
 
@@ -124,6 +170,7 @@ window.updateNellMessage = async function(t, mood = "normal") {
     if (t && t.includes("もぐもぐ")) { try { sfxBori.currentTime = 0; sfxBori.play(); } catch(e){} }
     if (!t || t.includes("ちょっと待ってて") || t.includes("もぐもぐ") || t.includes("接続中")) return;
     
+    // ネル先生の発言も記憶する
     saveToNellMemory('nell', t);
     
     if (typeof speakNell === 'function') {
@@ -303,6 +350,7 @@ window.startHint = function(id) {
     selectedProblem = transcribedProblems.find(p => p.id == id); 
     if (!selectedProblem) return updateNellMessage("データエラーだにゃ", "thinking");
     
+    // ヒント状態初期化
     if (!selectedProblem.currentHintLevel) selectedProblem.currentHintLevel = 1;
     if (selectedProblem.maxUnlockedHintLevel === undefined) selectedProblem.maxUnlockedHintLevel = 0;
 
