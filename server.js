@@ -1,4 +1,4 @@
-// --- server.js (完全版 v139.0: 全教科ハルシネーション防止 & Gemini 2.5 Pro 固定) ---
+// --- server.js (完全版 v140.0: 複数回答カンマ区切り & 演出強化 & Gemini 2.5 Pro 固定) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -85,7 +85,6 @@ app.post('/analyze', async (req, res) => {
             generationConfig: { responseMimeType: "application/json" }
         });
 
-        // ★修正: 全教科で「空欄なら絶対に埋めるな」ルールを徹底
         const ocrRules = {
             'さんすう': `
                 ・数式、筆算の配置を正確に読み取る。
@@ -96,6 +95,7 @@ app.post('/analyze', async (req, res) => {
                 ・漢字書き取りの枠（□）内に筆跡がない場合は、絶対に漢字を埋めないこと。必ず空文字""にする。`,
             'りか': `
                 ・図や表と設問の位置関係を把握。
+                ・「2つ選びなさい」等の問題で正解が複数の場合は、"ア,イ"のようにカンマ区切りで一つの文字列にすること。
                 ・解答欄に手書きの筆跡が確実に見えない場合は、正解が分かっても絶対に空欄（""）とすること。ハルシネーション厳禁。`,
             'しゃかい': `
                 ・地図や資料の近くにある設問をセットで認識。
@@ -128,6 +128,7 @@ app.post('/analyze', async (req, res) => {
              AIが気を利かせて答えを埋めることは「ハルシネーション（嘘）」として厳しく禁止します。
            ${ocrRules[subject] || ""}
         3. 正解を導き出し、手書きの答えと判定(is_correct)する。
+           - **【重要】複数回答の場合**: 「2つ選べ」などで正解が複数ある場合は、JSONを分けずに、**"ア,イ" や "A,C" のようにカンマ区切りの文字列**として correct_answer に入れてください。
         4. 3段階のヒントを作成する。
            ${hintRules[subject] || ""}
 
@@ -137,8 +138,8 @@ app.post('/analyze', async (req, res) => {
             "id": 1,
             "label": "①",
             "question": "問題文",
-            "correct_answer": "正解",
-            "student_answer": "手書きの答え（空欄なら空文字）",
+            "correct_answer": "正解 (複数はカンマ区切り)",
+            "student_answer": "手書きの答え (複数はカンマ区切り、空欄なら空文字)",
             "is_correct": true,
             "hints": ["ヒント1", "ヒント2", "ヒント3"]
           }
