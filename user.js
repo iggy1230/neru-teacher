@@ -1,4 +1,4 @@
-// --- user.js (完全修正版 v130.0: 猫耳バグ修正 & 入学フリーズ防止) ---
+// --- user.js (完全修正版 v131.0: スマホ容量オーバー対策 & JPEG軽量化) ---
 
 // Firebase初期化
 let app, auth, db;
@@ -186,7 +186,6 @@ async function resizeForAI(img, maxSize = 800) {
     });
 }
 
-// ★修正: プレビュー時の猫耳表示バグ修正 (変数名 photoImg -> img)
 async function updatePhotoPreview(file) {
     window.isEditingInitialized = false; window.isEditMode = true; resetPreviewForEditing(); enrollFile = file;
     const slot = document.getElementById('id-photo-slot'); if (!slot) return;
@@ -210,11 +209,8 @@ async function updatePhotoPreview(file) {
             if (detection) {
                 const landmarks = detection.landmarks;
                 const nose = landmarks.getNose()[3]; const leftEyeBrow = landmarks.getLeftEyeBrow()[2]; const rightEyeBrow = landmarks.getRightEyeBrow()[2];
-                
-                // ★修正: ここで photoImg (未定義) を使っていたバグを img に修正
                 const aiScale = img.width / aiImg.width; 
                 
-                // プレビュー用はシンプルに座標変換
                 const transX = (val) => val * aiScale;
                 const transY = (val) => val * aiScale;
                 const transS = (val) => val * aiScale;
@@ -259,7 +255,6 @@ async function startEnrollmentWebCamera(callback) {
 
 function closeEnrollCamera() { const modal = document.getElementById('camera-modal'); const video = document.getElementById('camera-video'); if (enrollStream) { enrollStream.getTracks().forEach(t => t.stop()); enrollStream = null; } if (video) video.srcObject = null; if (modal) modal.classList.add('hidden'); }
 
-// ★修正: 本番保存用の描画処理 (AIエラー時に止まらないようにtry-catch強化)
 async function renderForSave() {
     const img = new Image(); img.crossOrigin = "Anonymous"; 
     try { await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = 'student-id-base.png?' + new Date().getTime(); }); } catch (e) { return null; }
@@ -278,7 +273,6 @@ async function renderForSave() {
             ctx.save(); ctx.beginPath(); ctx.roundRect(destX, destY, destW, destH, 2 * rx); ctx.clip(); 
             ctx.drawImage(photoImg, cropX, cropY, cropW, cropH, destX, destY, destW, destH); ctx.restore();
             
-            // AI Decorations
             if (modelsLoaded) {
                 try {
                     const aiImg = await resizeForAI(photoImg); 
@@ -307,27 +301,25 @@ async function renderForSave() {
                             ctx.drawImage(decoEars, browX - earW/2, browY - earH + earOffset, earW, earH); 
                         }
                     }
-                } catch(aiErr) {
-                    console.error("AI Decoration Failed (Non-fatal):", aiErr);
-                    // AI失敗しても写真は貼れているので続行する
-                }
+                } catch(aiErr) { console.error("AI Decoration Failed (Non-fatal):", aiErr); }
             }
         } catch(e) { console.error(e); }
     } else if (window.isEditMode && currentUser) {
         try { const currentImg = new Image(); currentImg.src = currentUser.photo; await new Promise(r => currentImg.onload = r); const sX = currentImg.width * 0.055; const sY = currentImg.height * 0.3575; const sW = currentImg.width * 0.305; const sH = currentImg.height * 0.45; const dX = 35 * rx; const dY = 143 * ry; const dW = 195 * rx; const dH = 180 * ry; ctx.drawImage(currentImg, sX, sY, sW, sH, dX, dY, dW, dH); } catch(e) {}
     }
     const nameVal = document.getElementById('new-student-name').value; const gradeVal = document.getElementById('new-student-grade').value; ctx.fillStyle = "#333"; const fontSize = 32 * rx; ctx.font = `bold ${fontSize}px 'M PLUS Rounded 1c', sans-serif`; ctx.textAlign = "left"; ctx.textBaseline = "middle"; const textX = 346 * rx; if (gradeVal) ctx.fillText(gradeVal + "年生", textX, 168 * ry + 1); if (nameVal) ctx.fillText(nameVal, textX, 231 * ry + 3);
-    try { return canvas.toDataURL('image/png'); } catch (e) { return null; }
+    
+    // ★修正: 容量削減のため JPEG 0.8 で出力
+    try { return canvas.toDataURL('image/jpeg', 0.8); } catch (e) { return null; }
 }
 
 async function processAndCompleteEnrollment() {
     const name = document.getElementById('new-student-name').value; const grade = document.getElementById('new-student-grade').value; const btn = document.getElementById('complete-btn');
     if(!name || !grade) return alert("お名前と学年を入れてにゃ！");
     
-    // ★修正: ボタン連打防止とフリーズ防止の構造
     btn.disabled = true; 
     btn.innerText = window.isEditMode ? "更新中にゃ..." : "作成中にゃ..."; 
-    await new Promise(r => setTimeout(r, 100)); // UI更新用ウェイト
+    await new Promise(r => setTimeout(r, 100)); 
 
     try {
         let finalPhoto = await renderForSave(); 
@@ -350,10 +342,13 @@ async function processAndCompleteEnrollment() {
         }
         document.getElementById('new-student-name').value = ""; document.getElementById('new-student-grade').value = ""; enrollFile = null; updateIDPreviewText(); const slot = document.getElementById('id-photo-slot'); if(slot) slot.innerHTML = '';
     } catch (err) { 
-        alert("エラーが発生したにゃ……\n" + err.message); 
+        if (err.name === 'QuotaExceededError') {
+            alert("スマホの容量がいっぱいで保存できないにゃ…。\n古い学生証を削除するか、ブラウザのデータを整理してみてにゃ！");
+        } else {
+            alert("エラーが発生したにゃ……\n" + err.message); 
+        }
         console.error(err);
     } finally { 
-        // ★修正: エラーでも成功でも必ずボタンを戻す
         btn.disabled = false; 
         btn.innerText = window.isEditMode ? "更新する！" : "入学する！"; 
     }
