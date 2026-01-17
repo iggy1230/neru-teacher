@@ -1,4 +1,4 @@
-// --- server.js (完全版 v140.0: 複数回答カンマ区切り & 演出強化 & Gemini 2.5 Pro 固定) ---
+// --- server.js (完全版 v144.0: 柔軟な正解データ生成 & Gemini 2.5 Pro 固定) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -129,6 +129,7 @@ app.post('/analyze', async (req, res) => {
            ${ocrRules[subject] || ""}
         3. 正解を導き出し、手書きの答えと判定(is_correct)する。
            - **【重要】複数回答の場合**: 「2つ選べ」などで正解が複数ある場合は、JSONを分けずに、**"ア,イ" や "A,C" のようにカンマ区切りの文字列**として correct_answer に入れてください。
+           - **【重要】正解の表記**: 漢字で答える問題でも、ひらがな表記も許容される場合は、正解データに含めるか、判定を柔軟にしてください。
         4. 3段階のヒントを作成する。
            ${hintRules[subject] || ""}
 

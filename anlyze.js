@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v143.0: レイアウト統一 & 教えてモード採点機能) ---
+// --- anlyze.js (完全版 v144.0: レイアウト整列 & 柔軟採点) ---
 
 // グローバル変数の初期化
 window.transcribedProblems = []; 
@@ -381,7 +381,89 @@ window.revealAnswer = function() {
     updateNellMessage(`答えは「${selectedProblem.correct_answer}」だにゃ！`, "gentle"); 
 };
 
-// --- ★修正: 採点モード表示 (2列グリッド) ---
+// --- ★修正: 採点・教えて共通のリスト生成ロジック ---
+function createProblemItem(p, mode) {
+    const isGradeMode = (mode === 'grade');
+    
+    // 正誤マーク (採点モードのみ、最初は表示。教えてモードは空)
+    let markHtml = "";
+    let bgStyle = "background:white;";
+    
+    if (isGradeMode) {
+        let isCorrect = p.is_correct;
+        if (isCorrect === undefined) { 
+            const s = String(p.student_answer || "").trim(); 
+            const c = String(p.correct_answer || "").trim(); 
+            isCorrect = (s !== "" && s === c); 
+        }
+        const mark = isCorrect ? "⭕" : "❌"; 
+        const markColor = isCorrect ? "#ff5252" : "#4a90e2"; 
+        bgStyle = isCorrect ? "background:#fff5f5;" : "background:#f0f8ff;";
+        markHtml = `<div id="mark-${p.id}" style="font-weight:900; color:${markColor}; font-size:2rem; width:50px; text-align:center;">${mark}</div>`;
+    } else {
+        // 教えてモード：最初は問題番号
+        markHtml = `<div id="mark-${p.id}" style="font-weight:900; color:#4a90e2; font-size:1.5rem; width:50px; text-align:center;">${p.label || '問'}</div>`;
+    }
+
+    // 入力欄 (複数回答対応)
+    const correctAnswers = String(p.correct_answer || "").split(/,|、/).map(s => s.trim()).filter(s => s);
+    const studentAnswers = String(p.student_answer || "").split(/,|、/).map(s => s.trim()); 
+    let inputHtml = "";
+    
+    // どちらのモードでも、入力欄の構造は統一
+    if (correctAnswers.length > 1) {
+        inputHtml = `<div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px; width:100%;">`;
+        for (let i = 0; i < correctAnswers.length; i++) {
+            let val = studentAnswers[i] || "";
+            // 教えてモードの場合は、採点ボタンで判定するため自動チェックはOFF
+            const onInput = isGradeMode ? `oninput="checkMultiAnswer(${p.id})"` : "";
+            inputHtml += `<input type="text" value="${val}" class="multi-input-${p.id}" ${onInput} style="width:100%; padding:8px; border:2px solid #ddd; border-radius:8px; font-size:1rem; font-weight:bold; color:#333; min-width:0; box-sizing:border-box;">`;
+        }
+        inputHtml += `</div>`;
+    } else {
+        const onInput = isGradeMode ? `oninput="checkAnswerDynamically(${p.id}, this)"` : "";
+        // 教えてモードでは単一回答用IDを付与
+        const idAttr = isGradeMode ? "" : `id="single-input-${p.id}"`;
+        inputHtml += `<input type="text" ${idAttr} value="${p.student_answer || ""}" ${onInput} style="width:100%; padding:8px; border:2px solid #ddd; border-radius:8px; font-size:1rem; font-weight:bold; color:#333; box-sizing:border-box;">`;
+    }
+
+    // 右側のボタン群
+    let buttonsHtml = "";
+    if (isGradeMode) {
+        buttonsHtml = `<div style="width:80px; text-align:right; flex-shrink:0;">
+            <button class="mini-teach-btn" onclick="startHint(${p.id})">教えて</button>
+        </div>`;
+    } else {
+        // ★修正: 教えてモードに「採点」ボタン追加、縦並び
+        buttonsHtml = `<div style="display:flex; flex-direction:column; gap:5px; width:80px; flex-shrink:0;">
+            <button class="mini-teach-btn" onclick="checkOneProblem(${p.id})" style="background:#ff85a1; width:100%;">採点</button>
+            <button class="mini-teach-btn" onclick="startHint(${p.id})" style="width:100%;">教えて</button>
+        </div>`;
+    }
+
+    const div = document.createElement('div'); 
+    div.className = "grade-item"; 
+    div.id = `grade-item-${p.id}`; 
+    div.style.cssText = `border-bottom:1px solid #eee; padding:15px; margin-bottom:10px; border-radius:10px; ${bgStyle}`; 
+    
+    div.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            ${markHtml}
+            <div style="flex:1; margin-left:10px;">
+                <div style="font-size:0.9rem; color:#888; margin-bottom:4px;">${p.label || '問'}</div>
+                <div style="font-weight:bold; font-size:0.9rem; margin-bottom:8px;">${p.question}</div>
+                <div style="display:flex; gap:10px; font-size:0.9rem; align-items:center; width:100%;">
+                    <div style="flex:1;">
+                        <div style="font-size:0.7rem; color:#666;">キミの答え (直せるよ)</div>
+                        ${inputHtml}
+                    </div>
+                    ${buttonsHtml}
+                </div>
+            </div>
+        </div>`; 
+    return div;
+}
+
 window.showGradingView = function(silent = false) { 
     document.getElementById('problem-selection-view').classList.add('hidden'); 
     document.getElementById('final-view').classList.remove('hidden'); 
@@ -392,58 +474,8 @@ window.showGradingView = function(silent = false) {
     container.innerHTML = ""; 
     
     transcribedProblems.forEach(p => { 
-        let isCorrect = p.is_correct;
-        // サーバー判定がなければ比較して補完
-        if (isCorrect === undefined) { 
-            const s = String(p.student_answer || "").trim(); 
-            const c = String(p.correct_answer || "").trim(); 
-            isCorrect = (s !== "" && s === c); 
-        }
-        
-        const mark = isCorrect ? "⭕" : "❌"; 
-        const markColor = isCorrect ? "#ff5252" : "#4a90e2"; 
-        const bgStyle = isCorrect ? "background:#fff5f5;" : "background:#f0f8ff;"; 
-        
-        const correctAnswers = String(p.correct_answer || "").split(/,|、/).map(s => s.trim()).filter(s => s);
-        const studentAnswers = String(p.student_answer || "").split(/,|、/).map(s => s.trim()); 
-
-        let inputHtml = "";
-        
-        if (correctAnswers.length > 1) {
-            inputHtml = `<div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px; width:100%;">`;
-            for (let i = 0; i < correctAnswers.length; i++) {
-                let val = studentAnswers[i] || "";
-                inputHtml += `<input type="text" value="${val}" class="multi-input-${p.id}" oninput="checkMultiAnswer(${p.id})" style="width:100%; padding:8px; border:2px solid #ddd; border-radius:8px; font-size:1rem; font-weight:bold; color:#333; min-width:0; box-sizing:border-box;">`;
-            }
-            inputHtml += `</div>`;
-        } else {
-            inputHtml = `<input type="text" value="${p.student_answer || ""}" oninput="checkAnswerDynamically(${p.id}, this)" style="width:100%; padding:8px; border:2px solid #ddd; border-radius:8px; font-size:1rem; font-weight:bold; color:#333; box-sizing:border-box;">`;
-        }
-
-        const div = document.createElement('div'); 
-        div.className = "grade-item"; 
-        div.id = `grade-item-${p.id}`; 
-        div.style.cssText = `border-bottom:1px solid #eee; padding:15px; margin-bottom:10px; border-radius:10px; ${bgStyle}`; 
-        
-        div.innerHTML = `
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <div id="mark-${p.id}" style="font-weight:900; color:${markColor}; font-size:2rem; width:50px; text-align:center;">${mark}</div>
-                <div style="flex:1; margin-left:10px;">
-                    <div style="font-size:0.9rem; color:#888; margin-bottom:4px;">${p.label || '問'}</div>
-                    <div style="font-weight:bold; font-size:0.9rem; margin-bottom:8px;">${p.question}</div>
-                    <div style="display:flex; gap:10px; font-size:0.9rem; align-items:center; width:100%;">
-                        <div style="flex:1;">
-                            <div style="font-size:0.7rem; color:#666;">キミの答え (直せるよ)</div>
-                            ${inputHtml}
-                        </div>
-                        <div style="width:80px; text-align:right; flex-shrink:0;">
-                            <button class="mini-teach-btn" onclick="startHint(${p.id})">教えて</button>
-                        </div>
-                    </div>
-                </div>
-            </div>`; 
-        container.appendChild(div); 
-    }); 
+        container.appendChild(createProblemItem(p, 'grade'));
+    });
     
     const btnDiv = document.createElement('div'); 
     btnDiv.style.textAlign = "center"; 
@@ -454,81 +486,114 @@ window.showGradingView = function(silent = false) {
     if (!silent) { updateGradingMessage(); } 
 };
 
-// ★修正: 教えてモード表示 (採点モードと統一レイアウト & 個別採点ボタン)
 window.renderProblemSelection = function() { 
     document.getElementById('problem-selection-view').classList.remove('hidden'); 
     const l = document.getElementById('transcribed-problem-list'); l.innerHTML = ""; 
     
     transcribedProblems.forEach(p => { 
-        const div = document.createElement('div'); 
-        div.className = "grade-item"; 
-        div.id = `grade-item-${p.id}`; // 採点反映用にID付与
-        div.style.cssText = `border-bottom:1px solid #eee; padding:15px; margin-bottom:10px; border-radius:10px; background:white; box-shadow: 0 2px 5px rgba(0,0,0,0.05);`; 
-        
-        const correctAnswers = String(p.correct_answer || "").split(/,|、/);
-        const studentAnswers = String(p.student_answer || "").split(/,|、/);
-        let inputHtml = "";
-        
-        // 入力欄生成ロジックは採点モードと共通
-        if (correctAnswers.length > 1) {
-            inputHtml = `<div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px; width:100%;">`;
-            for (let i = 0; i < correctAnswers.length; i++) {
-                let val = studentAnswers[i] || "";
-                // 採点モードとは違い、oninputでの自動採点はしない（手動採点）
-                inputHtml += `<input type="text" value="${val}" class="multi-input-${p.id}" style="width:100%; padding:8px; border:2px solid #f0f0f0; border-radius:8px; font-size:0.9rem; color:#555; font-weight:bold; box-sizing:border-box; min-width:0;">`;
-            }
-            inputHtml += `</div>`;
-        } else {
-            inputHtml = `<input type="text" id="single-input-${p.id}" value="${p.student_answer || ""}" style="width:100%; padding:8px; border:2px solid #f0f0f0; border-radius:8px; font-size:0.9rem; color:#555; font-weight:bold; box-sizing:border-box;">`;
-        }
-
-        // 左側のマークエリア（最初は空、または問題番号）
-        const markAreaId = `mark-${p.id}`;
-        
-        div.innerHTML = `
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <div id="${markAreaId}" style="font-weight:900; color:#4a90e2; font-size:1.5rem; width:50px; text-align:center;">
-                    ${p.label || '問'}
-                </div>
-                <div style="flex:1; margin-left:10px;">
-                    <div style="font-weight:bold; font-size:0.9rem; margin-bottom:8px; color:#333;">${p.question}</div>
-                    <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px; width:100%;">
-                        <div style="flex:1;">
-                            <div style="font-size:0.7rem; color:#666;">読み取った答え (直せるよ)</div>
-                            ${inputHtml}
-                        </div>
-                        <div style="display:flex; flex-direction:column; gap:5px; width:80px; flex-shrink:0;">
-                            <button class="mini-teach-btn" onclick="checkOneProblem(${p.id})" style="background:#ff85a1; width:100%;">採点</button>
-                            <button class="mini-teach-btn" onclick="startHint(${p.id})" style="width:100%;">教えて</button>
-                        </div>
-                    </div>
-                </div>
-            </div>`; 
-        l.appendChild(div); 
-    }); 
+        l.appendChild(createProblemItem(p, 'explain'));
+    });
+    
     const btn = document.querySelector('#problem-selection-view button.orange-btn'); 
     if (btn) { btn.disabled = false; btn.innerText = "✨ ぜんぶわかったにゃ！"; } 
 };
 
-// ★追加: 教えてモードでの個別採点機能
+// --- 採点ロジック (柔軟対応版) ---
+
+// ひらがな/カタカナ/漢字を正規化して比較する関数
+function normalizeAnswer(str) {
+    if (!str) return "";
+    // カタカナをひらがなに変換
+    let normalized = str.trim().replace(/[\u30a1-\u30f6]/g, function(match) {
+        var chr = match.charCodeAt(0) - 0x60;
+        return String.fromCharCode(chr);
+    });
+    // ここに簡易的な漢字→ひらがな変換を入れるのは難しいので
+    // 「文字列が一致」または「ユーザー入力が正解データに含まれる（逆も然り）」
+    // などの緩い判定を行うか、サーバー側で柔軟に返すのが基本。
+    // 今回はカタカナ⇔ひらがな統一まで。
+    return normalized;
+}
+
+// 答え合わせのコアロジック
+function isAnswerCorrect(student, correct) {
+    const s = normalizeAnswer(student);
+    const c = normalizeAnswer(correct);
+    return s === c; // シンプル比較（将来的には漢字・ひらがな辞書が必要）
+}
+
+// ★修正: 複数回答チェック (順不同対応)
+window.checkMultiAnswer = function(id) {
+    const problem = transcribedProblems.find(p => p.id === id);
+    if (!problem) return;
+
+    const inputs = document.querySelectorAll(`.multi-input-${id}`);
+    const values = Array.from(inputs).map(input => normalizeAnswer(input.value));
+    
+    // 現在の入力値を保存
+    problem.student_answer = Array.from(inputs).map(i => i.value.trim()).join(",");
+    
+    // 正解データを配列化して正規化
+    const correctAnswers = String(problem.correct_answer || "").split(/,|、/).map(s => normalizeAnswer(s));
+    
+    // ソートして比較 (順不同対応)
+    values.sort();
+    correctAnswers.sort();
+    
+    let allCorrect = true;
+    if (values.length !== correctAnswers.length) {
+        allCorrect = false;
+    } else {
+        for(let i=0; i<correctAnswers.length; i++) {
+            if (values[i] !== correctAnswers[i]) {
+                allCorrect = false;
+                break;
+            }
+        }
+    }
+    
+    problem.is_correct = allCorrect;
+    updateMarkDisplay(id, allCorrect);
+    // モードによって全体の更新をするか決める
+    if (currentMode === 'grade') updateGradingMessage();
+};
+
+// 単一回答チェック
+window.checkAnswerDynamically = function(id, inputElem) { 
+    const newVal = inputElem.value; 
+    const problem = transcribedProblems.find(p => p.id === id); 
+    if (!problem) return; 
+    
+    problem.student_answer = String(newVal); 
+    const isCorrect = isAnswerCorrect(newVal, String(problem.correct_answer || ""));
+    
+    problem.is_correct = isCorrect; 
+    updateMarkDisplay(id, isCorrect);
+    if (currentMode === 'grade') updateGradingMessage(); 
+};
+
+// 教えてモードの個別採点ボタン
 window.checkOneProblem = function(id) {
     const problem = transcribedProblems.find(p => p.id === id);
     if (!problem) return;
 
+    // 正解データの準備
+    const correctRaw = String(problem.correct_answer || "");
+    const correctAnswers = correctRaw.split(/,|、/).map(s => normalizeAnswer(s));
+    correctAnswers.sort(); // 順不同対応のためソート
+
+    // ユーザー入力の取得
     let userValues = [];
-    const correctAnswers = String(problem.correct_answer || "").split(/,|、/).map(s => s.trim());
-
     if (correctAnswers.length > 1) {
-        // 複数回答
         const inputs = document.querySelectorAll(`.multi-input-${id}`);
-        userValues = Array.from(inputs).map(i => i.value.trim());
+        userValues = Array.from(inputs).map(i => normalizeAnswer(i.value));
     } else {
-        // 単一回答
         const input = document.getElementById(`single-input-${id}`);
-        if(input) userValues = [input.value.trim()];
+        if(input) userValues = [normalizeAnswer(input.value)];
     }
+    userValues.sort();
 
-    // 正誤判定
+    // 判定
     let isCorrect = true;
     if (userValues.length !== correctAnswers.length) {
         isCorrect = false;
@@ -541,7 +606,7 @@ window.checkOneProblem = function(id) {
         }
     }
 
-    // 結果表示の更新
+    // 表示更新
     const markElem = document.getElementById(`mark-${id}`);
     const container = document.getElementById(`grade-item-${id}`);
     
@@ -557,53 +622,8 @@ window.checkOneProblem = function(id) {
             container.style.backgroundColor = "#f0f8ff";
             updateNellMessage("おしい！もう一回考えてみて！", "gentle");
         }
-        markElem.style.fontSize = "2rem"; // マーク用に大きく
+        markElem.style.fontSize = "2rem"; 
     }
-};
-
-// 複数回答チェック (採点モード用・自動)
-window.checkMultiAnswer = function(id) {
-    const problem = transcribedProblems.find(p => p.id === id);
-    if (!problem) return;
-
-    const inputs = document.querySelectorAll(`.multi-input-${id}`);
-    const values = Array.from(inputs).map(input => input.value.trim());
-    const combinedStudent = values.join(",");
-    
-    problem.student_answer = combinedStudent;
-    
-    const correctAnswers = String(problem.correct_answer || "").split(/,|、/).map(s => s.trim());
-    
-    let allCorrect = true;
-    if (values.length !== correctAnswers.length) allCorrect = false;
-    else {
-        for(let i=0; i<correctAnswers.length; i++) {
-            if (values[i] !== correctAnswers[i]) {
-                allCorrect = false;
-                break;
-            }
-        }
-    }
-    
-    problem.is_correct = allCorrect;
-    updateMarkDisplay(id, allCorrect);
-    updateGradingMessage();
-};
-
-window.checkAnswerDynamically = function(id, inputElem) { 
-    const newVal = inputElem.value; 
-    const problem = transcribedProblems.find(p => p.id === id); 
-    if (!problem) return; 
-    
-    problem.student_answer = String(newVal); 
-    const normalizedStudent = String(newVal).trim(); 
-    const normalizedCorrect = String(problem.correct_answer || "").trim(); 
-    
-    const isCorrect = (normalizedStudent !== "") && (normalizedStudent === normalizedCorrect); 
-    problem.is_correct = isCorrect; 
-    
-    updateMarkDisplay(id, isCorrect);
-    updateGradingMessage(); 
 };
 
 function updateMarkDisplay(id, isCorrect) {
