@@ -1,4 +1,3 @@
-<!-- --- index.html --- -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -14,8 +13,7 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css" rel="stylesheet">
 
     <!-- Firebase SDK (Compat版) -->
-    <script src="firebase-config.js"></script>
-
+    <!-- 注意: firebase-config.js は bodyの最後で1回だけ読み込みます -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
@@ -35,7 +33,7 @@
             <div class="title-btn-container">
                 <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
             </div>
-            <div class="version-tag">Build: v92.1-SecurityFix</div>
+            <div class="version-tag">Build: v153.0-Stable</div>
         </section>
 
         <!-- 1. 校門 (ユーザー選択) -->
@@ -57,7 +55,7 @@
             <button onclick="backToTitle()" class="main-btn gray-btn">タイトルに戻る</button>
         </section>
 
-        <!-- 以下、他のセクションは変更なし -->
+        <!-- 2. 入学手続き / プロフィール編集 -->
         <section id="screen-enrollment" class="screen hidden">
             <h2 id="enroll-title" class="section-title">🎒 入学手続き</h2>
             <div class="id-card-wrap">
@@ -86,6 +84,7 @@
             <div id="loading-models" style="text-align:center; font-size:0.7rem; margin-top:5px;">AI準備中...</div>
         </section>
 
+        <!-- 3. ロビー -->
         <section id="screen-lobby" class="screen hidden">
             <div class="lobby-top">
                 <div class="id-card-wrap mini-id">
@@ -102,10 +101,15 @@
                 <button onclick="selectMode('chat')" class="main-btn green-btn">🎤 こじんめんだん</button>
                 <button onclick="selectMode('lunch')" class="main-btn pink-btn">🍽️ おいしい給食</button>
                 <button onclick="showAttendance()" class="main-btn purple-btn">📅 出席簿をみる</button>
+                
+                <!-- 記憶管理ボタン -->
+                <button onclick="openMemoryManager()" class="main-btn gray-btn" style="background:#607d8b; border:none; box-shadow:0 4px 0 #455a64;">🧠 記憶を整理する</button>
+                
                 <button onclick="backToTitle()" class="main-btn gray-btn">👋 帰宅する</button>
             </div>
         </section>
 
+        <!-- 4. メイン画面 (分析・結果・チャット・給食) -->
         <section id="screen-main" class="screen hidden">
             <header>
                 <button id="main-back-btn" onclick="backToLobby()" class="main-btn gray-btn" style="width:auto; padding:10px 20px;">←</button>
@@ -118,6 +122,8 @@
                     </div>
                     <div class="chat-bubble"><p id="nell-text"></p></div>
                 </div>
+                
+                <!-- 教科選択 -->
                 <div id="subject-selection-view" class="hidden">
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
                         <button onclick="setSubject('こくご')" class="main-btn pink-btn">こくご</button>
@@ -126,8 +132,11 @@
                         <button onclick="setSubject('しゃかい')" class="main-btn gray-btn">しゃかい</button>
                     </div>
                 </div>
+                
                 <div id="chalkboard" class="chalkboard hidden"></div>
+                
                 <div class="work-area">
+                    <!-- 写真アップロード -->
                     <div id="upload-controls" class="hidden">
                         <p style="text-align:center; margin-bottom:10px;">宿題をみせてね！</p>
                         <div style="display:flex; justify-content:center; gap:10px; margin-bottom:15px;">
@@ -142,11 +151,15 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- 思考中アニメーション -->
                     <div id="thinking-view" class="hidden">
                         <img src="nell-inspect.png" class="loader-inspect-img" onerror="this.src='nell-normal.png'">
                         <div class="progress-container"><div id="progress-bar" class="progress-bar"></div></div>
                         <p id="thinking-status">考え中... <span id="progress-percent">0</span>%</p>
                     </div>
+
+                    <!-- 問題選択 (教えてモード/復習モード) -->
                     <div id="problem-selection-view" class="hidden">
                         <div class="problem-selection-card">
                             <div class="problem-scroll-area" id="transcribed-problem-list"></div>
@@ -155,6 +168,8 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- 結果・ヒント表示 (採点モード/ヒント) -->
                     <div id="final-view" class="hidden">
                         <div id="grade-sheet-container" class="hidden">
                             <div class="glass-card" id="problem-list-grade" style="background:white; border-radius:15px; padding:10px;"></div>
@@ -170,6 +185,8 @@
                             <button onclick="backToProblemSelection()" class="main-btn gray-btn" style="margin-top: 10px;">他の問題を見る</button>
                         </div>
                     </div>
+
+                    <!-- チャットモード -->
                     <div id="chat-view" class="hidden">
                         <div class="glass-card" style="text-align:center; padding:20px;">
                             <p style="font-size:0.9rem; color:#666;">マイクを押して話しかけてね</p>
@@ -177,6 +194,8 @@
                             <p id="user-speech-text" style="margin-top:15px; font-weight:bold; min-height:1.5em;">...</p>
                         </div>
                     </div>
+
+                    <!-- 給食モード -->
                     <div id="lunch-view" class="hidden">
                         <div class="glass-card" style="text-align:center; padding:20px;">
                             <p style="font-size:1.2rem; font-weight:900;">ネル先生にお給食をあげる？</p>
@@ -189,6 +208,7 @@
             </div>
         </section>
         
+        <!-- 5. ゲーム画面 -->
         <section id="screen-game" class="screen hidden">
             <div class="nell-chat">
                 <div class="nell-avatar-wrap">
@@ -207,12 +227,13 @@
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">教室にもどる</button>
         </section>
 
+        <!-- 6. 出席簿画面 -->
         <section id="screen-attendance" class="screen hidden">
             <h2 class="section-title">📅 出席簿</h2>
             <div class="glass-card">
                 <div id="attendance-grid" class="attendance-grid"></div>
             </div>
-            <button onclick="backToLobby()" class="main-btn pink-btn mt-20">教室にもどる</button>
+            <button onclick="backToLobby()" class="main-btn pink-btn" style="margin-top:20px;">教室にもどる</button>
         </section>
     </div>
 
@@ -245,12 +266,10 @@
         </div>
     </div>
 
-    <!-- ★追加: 設定ファイルを読み込む -->
-    
-    
+    <!-- Firebase設定・ロジック読み込み -->
+    <script src="firebase-config.js"></script>
     <script src="audio.js"></script>
     <script src="ui.js"></script>
-    <script src="memory.js"></script>
     <script src="user.js"></script>
     <script src="anlyze.js"></script>
 </body>

@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v71.0: 鉛筆アイコン拡大・位置調整・タイトルボタン幅修正) --- */
+/* --- style.css (完全版 v153.0) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -72,6 +72,7 @@ button { font-family: inherit; }
     to { opacity: 1; transform: translateY(0); }
 }
 
+/* タイトル画面 */
 .title-screen {
     position: fixed;
     top: 0;
@@ -119,7 +120,6 @@ button { font-family: inherit; }
     border-radius: 50px;
     border: 4px solid #fff;
     box-shadow: 0 6px 0 #d32f2f, 0 10px 10px rgba(0, 0, 0, 0.3);
-    /* ★修正: 親クラス(.main-btn)のwidth:100%を打ち消して文字幅に合わせる */
     width: fit-content !important; 
     min-width: auto;
     animation: pulse 2s infinite;
@@ -142,6 +142,7 @@ button { font-family: inherit; }
     pointer-events: none;
 }
 
+/* ボタン共通 */
 .main-btn {
     display: block;
     width: 100%;
@@ -184,6 +185,7 @@ button { font-family: inherit; }
     box-shadow: 0 2px 0 #78909c;
 }
 
+/* 校門 */
 #screen-gate {
     position: fixed;
     top: 0;
@@ -282,6 +284,7 @@ button { font-family: inherit; }
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
+/* 学生証 */
 .id-card-wrap {
     position: relative;
     width: 100%;
@@ -361,24 +364,24 @@ button { font-family: inherit; }
     gap: 10px;
 }
 
+/* ロビー */
 .lobby-top { text-align: center; margin: 20px 0; }
 .mini-id { 
     transform: scale(0.8); 
     margin-bottom: 0; 
     transform-origin: top center;
-    box-shadow: none !important; /* 枠（影）を削除 */
-    background: transparent !important; /* 背景透明 */
+    box-shadow: none !important; 
+    background: transparent !important; 
 }
 
-/* 編集ボタンのスタイル（修正: 位置・画像サイズ） */
 .edit-profile-btn {
     position: absolute;
-    top: 85px; /* ★修正: 100px -> 85px (少し上へ) */
+    top: 85px; 
     right: 20px;
     width: 60px;
     height: 60px;
     border-radius: 50%;
-    background: var(--primary-pink); /* ピンク */
+    background: var(--primary-pink); 
     color: white;
     border: 3px solid white;
     font-size: 0;
@@ -390,14 +393,11 @@ button { font-family: inherit; }
     z-index: 100;
 }
 
-.edit-profile-btn:active {
-    transform: scale(0.9);
-}
+.edit-profile-btn:active { transform: scale(0.9); }
 
-/* 編集ボタン内の画像スタイル（修正: 1.5倍拡大） */
 .edit-profile-btn img {
-    width: 54px; /* ★修正: 36px * 1.5 */
-    height: 54px; /* ★修正: 36px * 1.5 */
+    width: 54px; 
+    height: 54px; 
     object-fit: contain;
     pointer-events: none;
 }
@@ -410,9 +410,9 @@ button { font-family: inherit; }
     background: #fff3e0;
     padding: 5px 15px;
     border-radius: 20px;
-    display: block; /* ブロックに変更して中央配置 */
-    width: fit-content; /* 幅をコンテンツに合わせる */
-    margin: -20px auto 15px auto; /* マイナスマージンで上に寄せる */
+    display: block; 
+    width: fit-content; 
+    margin: -20px auto 15px auto; 
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
@@ -423,6 +423,7 @@ button { font-family: inherit; }
     width: 100%;
 }
 
+/* メイン画面レイアウト */
 .operation-layout { margin-top: 50px; width: 100%; }
 .nell-chat { display: flex; align-items: flex-end; margin-bottom: 15px; }
 .nell-avatar-wrap { position: relative; width: 100px; height: 100px; flex-shrink: 0; }
@@ -507,6 +508,7 @@ button { font-family: inherit; }
     100% { transform: scale(1); opacity: 1; }
 }
 
+/* ゲーム */
 .game-container {
     display: flex;
     flex-direction: column;
@@ -529,6 +531,7 @@ button { font-family: inherit; }
 .game-ui { text-align: center; margin-top: 10px; }
 .game-ui p { font-size: 1.2rem; font-weight: bold; color: #d84315; }
 
+/* 問題リスト・採点結果 */
 .problem-selection-card {
     display: flex;
     flex-direction: column;
@@ -542,7 +545,7 @@ button { font-family: inherit; }
     padding: 5px;
 }
 
-.prob-card, .grade-item {
+.grade-item {
     background: white;
     border: 2px solid #eee;
     border-radius: 10px;
@@ -589,10 +592,10 @@ button { font-family: inherit; }
     width: 100%;
 }
 
-/* ★修正: 出席簿グリッド (カレンダー用) */
+/* 出席簿 */
 #attendance-grid {
     display: grid;
-    grid-template-columns: repeat(7, 1fr); /* 7列固定 */
+    grid-template-columns: repeat(7, 1fr); 
     gap: 4px;
     padding: 5px;
     background: #fff;
@@ -622,6 +625,7 @@ button { font-family: inherit; }
     border: 1px solid #eee;
 }
 
+/* ローディング */
 .loader-inspect-img {
     width: 200px;
     display: block;
@@ -646,6 +650,7 @@ button { font-family: inherit; }
     overflow: hidden;
 }
 
+/* カメラ・クロッパーモーダル */
 .camera-modal {
     position: fixed;
     top: 0;
@@ -769,4 +774,40 @@ button { font-family: inherit; }
     stroke: #ff4081;
     stroke-width: 3;
     stroke-dasharray: 5;
+}
+
+/* 記憶管理モーダル */
+.memory-modal-overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.6); z-index: 9999;
+    display: flex; align-items: center; justify-content: center;
+}
+.memory-modal-content {
+    background: #fff; width: 90%; max-width: 500px; max-height: 80vh;
+    border-radius: 15px; padding: 20px;
+    display: flex; flex-direction: column;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+}
+.memory-list {
+    flex: 1; overflow-y: auto; margin: 15px 0;
+    border: 1px solid #eee; border-radius: 8px; padding: 10px;
+    background: #fafafa;
+}
+.memory-item {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    background: white; padding: 10px; margin-bottom: 8px;
+    border-radius: 8px; border-bottom: 2px solid #eee;
+}
+.memory-meta {
+    font-size: 0.7rem; color: #888; margin-bottom: 4px;
+}
+.memory-text {
+    font-weight: bold; font-size: 0.9rem; color: #333; word-break: break-all;
+}
+.memory-role-user { color: #2196f3; }
+.memory-role-nell { color: #ff85a1; }
+.delete-mem-btn {
+    background: #ff5252; color: white; border: none;
+    border-radius: 5px; padding: 5px 10px; cursor: pointer;
+    font-size: 0.8rem; flex-shrink: 0; margin-left: 10px;
 }

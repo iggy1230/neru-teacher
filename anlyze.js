@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v149.0: 採点効果音追加 & レイアウト維持) ---
+// --- anlyze.js (完全版 v153.0: 記憶管理マネージャー搭載) ---
 
 // グローバル変数の初期化
 window.transcribedProblems = []; 
@@ -32,7 +32,6 @@ let activeHandle = -1;
 
 let analysisTimers = [];
 
-// 効果音リソース
 const sfxBori = new Audio('boribori.mp3');
 const sfxHit = new Audio('cat1c.mp3');
 const sfxPaddle = new Audio('poka02.mp3'); 
@@ -40,8 +39,6 @@ const sfxOver = new Audio('gameover.mp3');
 const sfxBunseki = new Audio('bunseki.mp3'); 
 sfxBunseki.volume = 0.05; 
 const sfxHirameku = new Audio('hirameku.mp3'); 
-
-// ★追加: 採点用効果音
 const sfxMaru = new Audio('maru.mp3');
 const sfxBatu = new Audio('batu.mp3');
 
@@ -82,10 +79,13 @@ startMouthAnimation();
 async function saveToNellMemory(role, text) {
     if (!currentUser || !currentUser.id) return;
     const trimmed = text.trim();
-    const ignoreWords = ["あー", "えーと", "うーん", "はい", "ねえ", "ネル先生", "にゃー", "にゃ"];
+    const ignoreWords = ["あー", "えーと", "うーん", "はい", "ねえ", "ネル先生", "にゃー", "にゃ", "。", "ok", "OK"];
     if (trimmed.length <= 2 || ignoreWords.includes(trimmed)) return;
 
     const newItem = { role: role, text: trimmed, time: new Date().toISOString() };
+    console.log(`🧠 メモリ保存: [${role}] "${trimmed}"`);
+
+    // 1. ローカル
     try {
         const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
         let history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
@@ -95,6 +95,7 @@ async function saveToNellMemory(role, text) {
         localStorage.setItem(memoryKey, JSON.stringify(history));
     } catch(e) {}
 
+    // 2. Firebase
     if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) {
         try {
             const docRef = db.collection("memories").doc(currentUser.id);
@@ -107,6 +108,132 @@ async function saveToNellMemory(role, text) {
         } catch(e) {}
     }
 }
+
+// --- ★新機能: 記憶管理マネージャー ---
+window.openMemoryManager = async function() {
+    if (!currentUser) return alert("まずはログインしてにゃ！");
+
+    // モーダル生成
+    let modal = document.getElementById('memory-manager-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'memory-manager-modal';
+        modal.className = 'memory-modal-overlay';
+        modal.innerHTML = `
+            <div class="memory-modal-content">
+                <h3 style="margin:0 0 10px 0; text-align:center;">🧠 ネル先生の脳内（記憶）</h3>
+                <div style="font-size:0.8rem; color:#666; text-align:center;">最新の50件まで覚えているにゃ。<br>いらない記憶は削除できるにゃ。</div>
+                <div id="memory-list-container" class="memory-list">読み込み中...</div>
+                <div style="display:flex; gap:10px; justify-content:center;">
+                    <button onclick="clearAllMemories()" class="main-btn red-btn" style="flex:1; font-size:0.9rem;">🗑️ 全部忘れる</button>
+                    <button onclick="closeMemoryManager()" class="main-btn gray-btn" style="flex:1; font-size:0.9rem;">閉じる</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex';
+    
+    await renderMemoryList();
+};
+
+window.closeMemoryManager = function() {
+    const modal = document.getElementById('memory-manager-modal');
+    if (modal) modal.style.display = 'none';
+};
+
+window.renderMemoryList = async function() {
+    const container = document.getElementById('memory-list-container');
+    container.innerHTML = "読み込み中にゃ...";
+    
+    let history = [];
+    
+    // データ取得 (Cloud優先)
+    if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) {
+        try {
+            const doc = await db.collection("memories").doc(currentUser.id).get();
+            if (doc.exists) history = doc.data().history || [];
+        } catch(e) { console.error(e); }
+    } else {
+        const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
+        history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
+    }
+
+    if (history.length === 0) {
+        container.innerHTML = "<p style='text-align:center; padding:20px; color:#888;'>まだ何もお話ししてないにゃ。</p>";
+        return;
+    }
+
+    // 新しい順に表示
+    container.innerHTML = "";
+    [...history].reverse().forEach((item, index) => {
+        // reverseしているので、元のインデックスを計算 (history.length - 1 - index)
+        const originalIndex = history.length - 1 - index;
+        
+        const div = document.createElement('div');
+        div.className = "memory-item";
+        const dateStr = new Date(item.time).toLocaleString('ja-JP');
+        const roleLabel = item.role === 'user' ? '👤 キミ' : '🐱 ネル';
+        const roleClass = item.role === 'user' ? 'memory-role-user' : 'memory-role-nell';
+        
+        div.innerHTML = `
+            <div style="flex:1;">
+                <div class="memory-meta ${roleClass}">${roleLabel} <span style="color:#ccc; font-size:0.6rem;">(${dateStr})</span></div>
+                <div class="memory-text">${item.text}</div>
+            </div>
+            <button class="delete-mem-btn" onclick="deleteMemory(${originalIndex})">削除</button>
+        `;
+        container.appendChild(div);
+    });
+};
+
+window.deleteMemory = async function(index) {
+    if (!confirm("この記憶を消してもいいにゃ？")) return;
+    
+    let history = [];
+    const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
+
+    // 1. データ取得して削除
+    if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) {
+        const docRef = db.collection("memories").doc(currentUser.id);
+        const docSnap = await docRef.get();
+        if (docSnap.exists) history = docSnap.data().history || [];
+        
+        history.splice(index, 1);
+        
+        await docRef.set({ history: history }, { merge: true });
+    }
+    
+    // ローカルも同期して削除
+    let localHistory = JSON.parse(localStorage.getItem(memoryKey) || '[]');
+    // ローカルとクラウドがズレている可能性もあるが、ローカルストレージも同じロジックで削除試行
+    if (localHistory.length > index) { // インデックスが存在すれば
+         // 簡易的な同期: クラウドを正として上書きするか、個別に消すか。
+         // ここでは個別に消す（同じ内容と仮定）
+         localHistory.splice(index, 1);
+         localStorage.setItem(memoryKey, JSON.stringify(localHistory));
+    }
+    
+    await renderMemoryList();
+};
+
+window.clearAllMemories = async function() {
+    if (!confirm("本当に全ての記憶を消去するにゃ！？\nネル先生はキミとの会話を全部忘れてしまうにゃ...")) return;
+    
+    // 1. Cloud
+    if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) {
+        await db.collection("memories").doc(currentUser.id).delete();
+    }
+    
+    // 2. Local
+    const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
+    localStorage.removeItem(memoryKey);
+    
+    alert("さっぱり忘れたにゃ！はじめましてだにゃ！");
+    await renderMemoryList();
+};
+
 
 // --- メッセージ更新 ---
 window.updateNellMessage = async function(t, mood = "normal") {
@@ -385,7 +512,7 @@ window.revealAnswer = function() {
     updateNellMessage(`答えは「${selectedProblem.correct_answer}」だにゃ！`, "gentle"); 
 };
 
-// --- リスト生成 (右端固定 & 幅統一 & 初期空白対応) ---
+// --- リスト生成 (右端固定 & 幅統一) ---
 function createProblemItem(p, mode) {
     const isGradeMode = (mode === 'grade');
     
@@ -524,7 +651,6 @@ window.checkMultiAnswer = function(id) {
     
     const correctList = String(problem.correct_answer || "").split(/,|、/);
     
-    // ★修正: 採点効果音ロジック
     let allCorrect = false;
     if (userValues.length === correctList.length) {
         const usedIndices = new Set();
@@ -547,11 +673,9 @@ window.checkMultiAnswer = function(id) {
     updateMarkDisplay(id, allCorrect);
     if (currentMode === 'grade') updateGradingMessage();
 
-    // 音声: 正解時のみ鳴らす (入力中うるさいため)
     if (allCorrect) { 
         try { sfxMaru.currentTime = 0; sfxMaru.play(); } catch(e){} 
     } else if (problem.student_answer.trim().length > 0) {
-        // 不正解時は、空でなければバツ音
         try { sfxBatu.currentTime = 0; sfxBatu.play(); } catch(e){} 
     }
 };
@@ -568,7 +692,6 @@ window.checkAnswerDynamically = function(id, inputElem) {
     updateMarkDisplay(id, isCorrect);
     if (currentMode === 'grade') updateGradingMessage(); 
 
-    // 音声:
     if (isCorrect) { 
         try { sfxMaru.currentTime = 0; sfxMaru.play(); } catch(e){} 
     } else if (newVal.trim().length > 0) {
@@ -612,7 +735,6 @@ window.checkOneProblem = function(id) {
     const markElem = document.getElementById(`mark-${id}`);
     const container = document.getElementById(`grade-item-${id}`);
     
-    // ★修正: ボタン採点時は必ず音を鳴らす
     if (isCorrect) {
         try { sfxMaru.currentTime = 0; sfxMaru.play(); } catch(e){} 
     } else {
@@ -676,7 +798,7 @@ function touchPaddle(e) { e.preventDefault(); const rect = gameCanvas.getBoundin
 function drawGame() { if (!gameRunning) return; ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height); ctx.font = "20px serif"; bricks.forEach(b => { if(b.status === 1) ctx.fillText("🍖", b.x + 10, b.y + 20); }); ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2); ctx.fillStyle = "#ff85a1"; ctx.fill(); ctx.closePath(); ctx.fillStyle = "#4a90e2"; ctx.fillRect(paddle.x, gameCanvas.height - paddle.h - 10, paddle.w, paddle.h); bricks.forEach(b => { if(b.status === 1 && ball.x>b.x && ball.x<b.x+40 && ball.y>b.y && ball.y<b.y+30){ ball.dy*=-1; b.status=0; score++; document.getElementById('game-score').innerText=score; try { sfxHit.currentTime=0; sfxHit.play(); } catch(e){} if (Math.random() > 0.7 && !window.isNellSpeaking) { updateNellMessage(gameHitComments[Math.floor(Math.random() * gameHitComments.length)], "excited"); } if(score===bricks.length) { endGame(true); return; } } }); if(ball.x+ball.dx > gameCanvas.width-ball.r || ball.x+ball.dx < ball.r) ball.dx *= -1; if(ball.y+ball.dy < ball.r) ball.dy *= -1; else if(ball.y+ball.dy > gameCanvas.height - ball.r - 20) { if(ball.x > paddle.x && ball.x < paddle.x + paddle.w) { ball.dy *= -1; ball.dx = (ball.x - (paddle.x+paddle.w/2)) * 0.15; try { sfxPaddle.currentTime = 0; sfxPaddle.play(); } catch(e){} } else if(ball.y+ball.dy > gameCanvas.height-ball.r) { try { sfxOver.currentTime=0; sfxOver.play(); } catch(e){} endGame(false); return; } } ball.x += ball.dx; ball.y += ball.dy; gameAnimId = requestAnimationFrame(drawGame); }
 function endGame(c) { gameRunning = false; if(gameAnimId)cancelAnimationFrame(gameAnimId); fetchGameComment("end", score); const s=document.getElementById('start-game-btn'); if(s){s.disabled=false;s.innerText="もう一回！";} setTimeout(()=>{ alert(c?`すごい！全クリだにゃ！\nカリカリ ${score} 個ゲット！`:`おしい！\nカリカリ ${score} 個ゲット！`); if(currentUser&&score>0){currentUser.karikari+=score;if(typeof saveAndSync==='function')saveAndSync();updateMiniKarikari();showKarikariEffect(score);} }, 500); }
 async function startLiveChat() { const btn = document.getElementById('mic-btn'); if (liveSocket) { stopLiveChat(); return; } try { updateNellMessage("ネル先生を呼んでるにゃ…", "thinking"); if(btn) btn.disabled = true; chatTranscript = ""; if (window.initAudioContext) await window.initAudioContext(); audioContext = new (window.AudioContext || window.webkitAudioContext)(); await audioContext.resume(); nextStartTime = audioContext.currentTime; const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:'; let savedHistory = []; if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) { try { const doc = await db.collection("memories").doc(currentUser.id).get(); if (doc.exists) savedHistory = doc.data().history || []; } catch(e) {} } if (savedHistory.length === 0) { const memoryKey = `nell_raw_chat_log_${currentUser.id}`; savedHistory = JSON.parse(localStorage.getItem(memoryKey) || '[]'); } const historySummary = savedHistory.slice(-15).map(m => `- ${m.role === 'user' ? 'キミ' : 'ネル'}: ${m.text}`).join('\n'); let statusSummary = `${currentUser.name}さんは今、お話しにきたにゃ。カリカリは${currentUser.karikari}個持ってるにゃ。`; if (historySummary) { statusSummary += `\n【直近の思い出】\n${historySummary}`; } const url = `${wsProto}//${location.host}?grade=${currentUser.grade}&name=${encodeURIComponent(currentUser.name)}&context=${encodeURIComponent(statusSummary)}`; liveSocket = new WebSocket(url); liveSocket.binaryType = "blob"; connectionTimeout = setTimeout(() => { if (liveSocket && liveSocket.readyState !== WebSocket.OPEN) { updateNellMessage("なかなかつながらないにゃ…", "thinking"); stopLiveChat(); } }, 10000); liveSocket.onopen = () => { clearTimeout(connectionTimeout); if(btn) { btn.innerText = "📞 つながった！(終了)"; btn.style.background = "#ff5252"; btn.disabled = false; } updateNellMessage("お待たせ！なんでも話してにゃ！", "happy"); isRecognitionActive = true; startMicrophone(); }; liveSocket.onmessage = async (event) => { try { let data = event.data instanceof Blob ? JSON.parse(await event.data.text()) : JSON.parse(event.data); if (data.serverContent?.modelTurn?.parts) { data.serverContent.modelTurn.parts.forEach(p => { if (p.inlineData) playLivePcmAudio(p.inlineData.data); if (p.text) { saveToNellMemory('nell', p.text); const el = document.getElementById('nell-text'); if(el) el.innerText = p.text; } }); } } catch (e) {} }; liveSocket.onclose = () => stopLiveChat(); liveSocket.onerror = () => stopLiveChat(); } catch (e) { stopLiveChat(); } }
-function stopLiveChat() { isRecognitionActive = false; if (connectionTimeout) clearTimeout(connectionTimeout); if (recognition) try{recognition.stop()}catch(e){} if (mediaStream) mediaStream.getTracks().forEach(t=>t.stop()); if (workletNode) { workletNode.port.postMessage('stop'); workletNode.disconnect(); } if (liveSocket) liveSocket.close(); if (audioContext) audioContext.close(); window.isNellSpeaking = false; if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer); if(speakingStartTimer) clearTimeout(speakingStartTimer); const btn = document.getElementById('mic-btn'); if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; } liveSocket = null; }
+function stopLiveChat() { isRecognitionActive = false; if (connectionTimeout) clearTimeout(connectionTimeout); if (recognition) try{recognition.stop()}catch(e){} if (mediaStream) mediaStream.getTracks().forEach(t=>t.stop()); if (workletNode) { workletNode.port.postMessage('stop'); workletNode.disconnect(); } if (liveSocket) liveSocket.close(); if (audioContext && audioContext.state !== 'closed') audioContext.close(); window.isNellSpeaking = false; if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer); if(speakingStartTimer) clearTimeout(speakingStartTimer); const btn = document.getElementById('mic-btn'); if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; } liveSocket = null; }
 async function startMicrophone() { try { if ('webkitSpeechRecognition' in window) { recognition = new webkitSpeechRecognition(); recognition.continuous = true; recognition.interimResults = true; recognition.lang = 'ja-JP'; recognition.onresult = (event) => { let interim = ''; for (let i = event.resultIndex; i < event.results.length; ++i) { if (event.results[i].isFinal) { saveToNellMemory('user', event.results[i][0].transcript); const el = document.getElementById('user-speech-text'); if(el) el.innerText = event.results[i][0].transcript; } else interim += event.results[i][0].transcript; } }; recognition.onend = () => { if (isRecognitionActive && liveSocket && liveSocket.readyState === WebSocket.OPEN) try{recognition.start()}catch(e){} }; recognition.start(); } mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1 } }); const processorCode = `class PcmProcessor extends AudioWorkletProcessor { constructor() { super(); this.bufferSize = 2048; this.buffer = new Float32Array(this.bufferSize); this.index = 0; } process(inputs, outputs, parameters) { const input = inputs[0]; if (input.length > 0) { const channel = input[0]; for (let i = 0; i < channel.length; i++) { this.buffer[this.index++] = channel[i]; if (this.index >= this.bufferSize) { this.port.postMessage(this.buffer); this.index = 0; } } } return true; } } registerProcessor('pcm-processor', PcmProcessor);`; const blob = new Blob([processorCode], { type: 'application/javascript' }); await audioContext.audioWorklet.addModule(URL.createObjectURL(blob)); const source = audioContext.createMediaStreamSource(mediaStream); workletNode = new AudioWorkletNode(audioContext, 'pcm-processor'); source.connect(workletNode); workletNode.port.onmessage = (event) => { if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return; const downsampled = downsampleBuffer(event.data, audioContext.sampleRate, 16000); liveSocket.send(JSON.stringify({ base64Audio: arrayBufferToBase64(floatTo16BitPCM(downsampled)) })); }; } catch(e){} }
 function playLivePcmAudio(base64) { if (!audioContext) return; const binary = window.atob(base64); const bytes = new Uint8Array(binary.length); for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i); const float32 = new Float32Array(bytes.length / 2); const view = new DataView(bytes.buffer); for (let i = 0; i < float32.length; i++) float32[i] = view.getInt16(i * 2, true) / 32768.0; const buffer = audioContext.createBuffer(1, float32.length, 24000); buffer.copyToChannel(float32, 0); const source = audioContext.createBufferSource(); source.buffer = buffer; source.connect(audioContext.destination); const now = audioContext.currentTime; if (nextStartTime < now) nextStartTime = now; source.start(nextStartTime); const startDelay = (nextStartTime - now) * 1000; const duration = buffer.duration * 1000; if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer); speakingStartTimer = setTimeout(() => { window.isNellSpeaking = true; }, startDelay); stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, startDelay + duration + 100); nextStartTime += buffer.duration; }
 function floatTo16BitPCM(float32Array) { const buffer = new ArrayBuffer(float32Array.length * 2); const view = new DataView(buffer); let offset = 0; for (let i = 0; i < float32Array.length; i++, offset += 2) { let s = Math.max(-1, Math.min(1, float32Array[i])); view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true); } return buffer; }
