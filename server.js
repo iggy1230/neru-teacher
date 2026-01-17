@@ -1,4 +1,4 @@
-// --- server.js (完全版 v129.0: チャット人格強化 & Gemini 2.5 Pro 固定) ---
+// --- server.js (完全版 v135.0: 国語縦書き強化 & Gemini 2.5 Pro 固定) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -80,15 +80,18 @@ app.post('/analyze', async (req, res) => {
         const { image, mode, grade, subject, name } = req.body;
         console.log(`[Analyze] Subject: ${subject}, Grade: ${grade}, Name: ${name}, Mode: ${mode} (Model: Gemini 2.5 Pro)`);
 
-        // ★ユーザー指定: Gemini 2.5 Pro で固定
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.5-pro",
             generationConfig: { responseMimeType: "application/json" }
         });
 
+        // ★修正: 国語のルールを大幅強化（縦書き・列認識）
         const ocrRules = {
             'さんすう': `・数式、筆算の配置を正確に読み取る。隣の問題の数字を混同しないこと。`,
-            'こくご': `・縦書き問題は右から左へ。漢字書き取りの枠（□）を正確に認識。`,
+            'こくご': `
+                ・【原則縦書き】この画像は縦書きです。「右の列」から「左の列」へ順に読み進めてください。
+                ・隣り合う列（問題）との境界線を意識し、1列隣の選択肢（ア、イ、ウ等）を現在の問題の答えとして誤認しないこと。
+                ・漢字書き取りの枠（□）がある場合、その枠内の文字だけを読み取ること。`,
             'りか': `・図や表と設問の位置関係を把握。選択問題の記号（ア、イ）を見落とさない。`,
             'しゃかい': `・地図や資料の近くにある設問をセットで認識。`
         };
@@ -105,8 +108,11 @@ app.post('/analyze', async (req, res) => {
         画像を解析し、正確なJSONデータを生成してください。
 
         【読み取りの注意点（誤読防止）】
-        1. **レイアウト認識**: 段組がある場合、左の列の上から下、次に右の列の上から下の順。
-        2. **回答の紐付け**: 手書き文字は幾何学的にもっとも近い設問に紐付ける。隣の問題の答えを混同しない。
+        1. **レイアウト認識**: 
+           - 国語は「縦書き」として処理し、右の列から左の列へ視線を移動させてください。
+           - 算数などは段組を確認し、隣の問題と混同しないようにしてください。
+        2. **回答の紐付け**: 
+           - 手書き文字は幾何学的にもっとも近い設問に紐付けてください。
 
         【タスク】
         1. 問題文を書き起こす。
@@ -205,7 +211,6 @@ wss.on('connection', async (clientWs, req) => {
     try {
         geminiWs = new WebSocket(GEMINI_URL);
         geminiWs.on('open', () => {
-            // ★指定された詳細なシステムインストラクション
             const systemInstructionText = `
             あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。相手は小学${grade}年生の${name}さん。
             【話し方のルール】
