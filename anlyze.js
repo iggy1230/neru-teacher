@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v149.0: v148.0と同じ内容) ---
+// --- anlyze.js (完全版 v150.0: 記憶システム完全復元 & ユーザーID管理) ---
 
 // グローバル変数の初期化
 window.transcribedProblems = []; 
@@ -73,7 +73,7 @@ function startMouthAnimation() {
 }
 startMouthAnimation();
 
-// --- 記憶システム ---
+// --- ★修正: 記憶システム (ユーザーIDベース) ---
 async function saveToNellMemory(role, text) {
     if (!currentUser || !currentUser.id) return;
     const trimmed = text.trim();
@@ -81,15 +81,18 @@ async function saveToNellMemory(role, text) {
     if (trimmed.length <= 2 || ignoreWords.includes(trimmed)) return;
 
     const newItem = { role: role, text: trimmed, time: new Date().toISOString() };
+    
+    // 1. ローカルストレージ (IDごと)
     try {
         const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
         let history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
-        if (history.length > 0 && history[history.length - 1].text === trimmed) return;
+        if (history.length > 0 && history[history.length - 1].text === trimmed) return; // 重複回避
         history.push(newItem);
         if (history.length > 50) history.shift(); 
         localStorage.setItem(memoryKey, JSON.stringify(history));
     } catch(e) {}
 
+    // 2. Firebase (Googleユーザーのみ)
     if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) {
         try {
             const docRef = db.collection("memories").doc(currentUser.id);
@@ -99,7 +102,7 @@ async function saveToNellMemory(role, text) {
             cloudHistory.push(newItem);
             if (cloudHistory.length > 50) cloudHistory.shift();
             await docRef.set({ history: cloudHistory, lastUpdated: new Date().toISOString() }, { merge: true });
-        } catch(e) {}
+        } catch(e) { console.error("Memory sync failed:", e); }
     }
 }
 
@@ -292,7 +295,6 @@ window.startHint = function(id) {
     selectedProblem = transcribedProblems.find(p => p.id == id); 
     if (!selectedProblem) return updateNellMessage("データエラーだにゃ", "thinking");
     
-    // ヒント状態初期化
     if (!selectedProblem.currentHintLevel) selectedProblem.currentHintLevel = 1;
     if (selectedProblem.maxUnlockedHintLevel === undefined) selectedProblem.maxUnlockedHintLevel = 0;
 
@@ -381,7 +383,7 @@ window.revealAnswer = function() {
     updateNellMessage(`答えは「${selectedProblem.correct_answer}」だにゃ！`, "gentle"); 
 };
 
-// --- リスト生成 (右端固定 & 幅統一 & 初期空白対応) ---
+// --- リスト生成 (共通) ---
 function createProblemItem(p, mode) {
     const isGradeMode = (mode === 'grade');
     

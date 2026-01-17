@@ -1,4 +1,4 @@
-// --- server.js (完全版 v149.0: レイアウト分離 & 空欄厳守強化 & Gemini 2.5 Pro 固定) ---
+// --- server.js (完全版 v150.0: さん付け徹底 & 記憶対応 & Gemini 2.5 Pro 固定) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -74,7 +74,7 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- Analyze (Gemini 2.5 Pro - Fixed Stable Version) ---
+// --- Analyze (Gemini 2.5 Pro) ---
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, name } = req.body;
@@ -85,22 +85,11 @@ app.post('/analyze', async (req, res) => {
             generationConfig: { responseMimeType: "application/json" }
         });
 
-        // ★修正: レイアウト認識と空欄判定を強化したルール
         const ocrRules = {
-            'さんすう': `
-                ・数式、筆算の配置を正確に読み取る。
-                ・解答欄に数字が書かれていない場合は、計算して答えが分かったとしても絶対に書き込まないこと。必ず空文字""にする。`,
-            'こくご': `
-                ・【レイアウト厳守】縦書きです。「右の列」から「左の列」へ読み進めますが、**問題ごとの境界線（余白）**を強く意識してください。
-                ・隣り合う列の文章が混ざらないように、**1つの問題のブロック（矩形範囲）を特定し、その範囲内の文字だけ**を抽出してください。
-                ・選択肢（ア、イ）の内容も問題文に含めますが、隣の問題の選択肢を巻き込まないこと。
-                ・【空欄厳守】漢字書き取りの枠（□）内に筆跡がない場合は、絶対に漢字を埋めないこと。必ず空文字""にする。`,
-            'りか': `
-                ・図表と設問の対応を確認。選択肢の内容も問題文に含める。
-                ・解答欄に手書きの筆跡が確実に見えない場合は、正解が分かっても絶対に空欄（""）とすること。ハルシネーション厳禁。`,
-            'しゃかい': `
-                ・地図・資料と設問の対応。
-                ・用語の記入欄が空欄の場合は、歴史用語などを勝手に補完しないこと。必ず空文字""にする。`
+            'さんすう': `・数式、筆算の配置を正確に読み取る。解答欄が空欄なら絶対に書き込まない。`,
+            'こくご': `・縦書きは右から左へ。選択肢（ア、イ）の内容も問題文に含める。空欄は空文字。`,
+            'りか': `・図表と設問の対応を確認。選択肢の内容も問題文に含める。空欄は空文字。`,
+            'しゃかい': `・地図・資料と設問の対応。空欄は空文字。`
         };
 
         const hintRules = {
@@ -173,32 +162,55 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
-// --- 4. 給食反応 ---
+// --- 4. 給食反応 (さん付け徹底) ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
         const { count, name } = req.body;
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
         const isSpecial = (count % 10 === 0);
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+        
+        // ★修正: 「さん付け」を徹底
         let prompt = isSpecial 
-            ? `あなたは猫の「ネル先生」。生徒「${name}」さんから${count}個目の給食をもらいました！感謝感激して、50文字以内で熱く語ってください。語尾は「にゃ」。`
-            : `あなたは猫の「ネル先生」。生徒「${name}」さんから${count}回目の給食をもらいました。20文字以内で面白くリアクションして。語尾は「にゃ」。`;
+            ? `あなたは猫の「ネル先生」。生徒「${name}さん」から記念すべき${count}個目の給食をもらいました！
+               必ず「${name}さん」と呼んでください。呼び捨て禁止。
+               感謝感激して、50文字以内で熱く語ってください。語尾は「にゃ」。`
+            : `あなたは猫の「ネル先生」。生徒「${name}さん」から${count}回目の給食をもらいました。
+               必ず「${name}さん」と呼んでください。呼び捨て禁止。
+               20文字以内で面白くリアクションして。語尾は「にゃ」。`;
+            
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text().trim(), isSpecial });
     } catch { res.json({ reply: "おいしいにゃ！", isSpecial: false }); }
 });
 
-// --- 3. ゲーム反応 ---
+// --- 3. ゲーム反応 (さん付け徹底) ---
 app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         let prompt = "";
-        if (type === 'start') prompt = `ネル先生として${name}のゲーム開始を短く応援して。`;
-        else if (type === 'end') prompt = `ネル先生としてゲーム終了後の${name}（スコア${score}/20）に20文字以内でコメントして。語尾は「にゃ」。`;
-        else return res.json({ reply: "ナイスにゃ！", mood: "excited" });
+        let mood = "excited";
+
+        // ★修正: 「さん付け」を徹底
+        if (type === 'start') {
+            prompt = `あなたはネル先生。「${name}さん」がゲーム開始。必ず「${name}さん」と呼んで短く応援して。呼び捨て禁止。語尾は「にゃ」。`;
+        } else if (type === 'end') {
+            prompt = `
+            あなたはネル先生。ゲーム終了。「${name}さん」のスコアは${score}点（満点20点）。
+            必ず「${name}さん」と呼んでください。呼び捨て禁止。
+            スコアに応じて20文字以内でコメントして。
+            ・0-5点: 笑って励ます。
+            ・6-15点: 褒める。
+            ・16点以上: 大絶賛。
+            語尾は「にゃ」。
+            `;
+        } else {
+            return res.json({ reply: "ナイスにゃ！", mood: "excited" });
+        }
+
         const result = await model.generateContent(prompt);
-        res.json({ reply: result.response.text().trim(), mood: "excited" });
+        res.json({ reply: result.response.text().trim(), mood });
     } catch { res.json({ reply: "おつかれさまにゃ！", mood: "happy" }); }
 });
 
@@ -238,8 +250,9 @@ wss.on('connection', async (clientWs, req) => {
             【NGなこと】
             ・ロボットみたいに不自然に区切るのではなく、繋がりのある滑らかな日本語でお願いにゃ。
             ・早口になりすぎて、言葉の一部が消えてしまうのはダメだにゃ。
+            ・生徒を呼び捨てにすることは禁止だにゃ。必ず「さん」をつけるにゃ。
             
-            【現在の状況】${statusContext}
+            【現在の状況・記憶】${statusContext}
             `;
 
             geminiWs.send(JSON.stringify({
