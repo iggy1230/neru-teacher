@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v135.0: プログレスバー速度調整 & 口パク修正) ---
+// --- anlyze.js (完全版 v136.0: セリフ被り解消 & バリエーション追加) ---
 
 // グローバル変数の初期化
 window.transcribedProblems = []; 
@@ -29,9 +29,6 @@ let gameCanvas, ctx, ball, paddle, bricks, score, gameRunning = false, gameAnimI
 let cropImg = new Image();
 let cropPoints = [];
 let activeHandle = -1;
-
-// 分析演出用タイマー
-let analysisTimers = [];
 
 const sfxBori = new Audio('boribori.mp3');
 const sfxHit = new Audio('cat1c.mp3');
@@ -115,6 +112,7 @@ window.updateNellMessage = async function(t, mood = "normal") {
     saveToNellMemory('nell', t);
     if (typeof speakNell === 'function') {
         const textForSpeech = t.replace(/🐾/g, "");
+        // 前の発話が終わるまで待つ(await)
         await speakNell(textForSpeech, mood);
     }
 };
@@ -172,7 +170,7 @@ window.setSubject = function(s) {
 
 window.setAnalyzeMode = function(type) { analysisType = 'precision'; };
 
-// --- 分析ロジック (プログレスバー改善版) ---
+// --- 分析ロジック (セリフ被り防止 & 待機時間改善版) ---
 window.startAnalysis = async function(b64) {
     if (isAnalyzing) return;
     isAnalyzing = true; 
@@ -183,28 +181,38 @@ window.startAnalysis = async function(b64) {
     const backBtn = document.getElementById('main-back-btn'); if(backBtn) backBtn.classList.add('hidden');
     
     try { sfxBunseki.currentTime = 0; sfxBunseki.play(); sfxBunseki.loop = true; } catch(e){}
-    updateNellMessage(`ふむふむ…\n${currentUser.grade}年生の${currentSubject}の問題だにゃ…`, "thinking"); 
-    updateProgress(0); 
-
-    analysisTimers.forEach(t => clearTimeout(t));
-    analysisTimers = [];
-    const analyzeMessages = ["じーっと見て、問題を書き写してるにゃ...", "一生懸命書いた文字だにゃ...よく見えるにゃ...", "よしよし、だいたい分かってきたにゃ..."];
-    analyzeMessages.forEach((text, i) => {
-        analysisTimers.push(setTimeout(() => { if (isAnalyzing) updateNellMessage(text, "thinking"); }, (i + 1) * 3000));
-    });
-
-    // ★修正: 90秒程度で95%に到達するように調整
-    // 0-30%: 早め (約9秒)
-    // 30-80%: 普通 (約37秒)
-    // 80-95%: ゆっくり (約45秒) -> 計91秒
+    
+    // プログレスバー制御 (90秒ペース)
     let p = 0; 
     const timer = setInterval(() => { 
+        if (!isAnalyzing) { clearInterval(timer); return; }
         if (p < 30) p += 1;
         else if (p < 80) p += 0.4;
         else if (p < 95) p += 0.1;
-        
         updateProgress(p); 
-    }, 300); // 0.3秒ごとに更新
+    }, 300);
+
+    // ★修正: セリフ順次再生のための非同期ループ処理
+    const performAnalysisNarration = async () => {
+        const msgs = [
+            "じーっと見て、問題を書き写してるにゃ...", 
+            "一生懸命書いた文字だにゃ...よく見えるにゃ...", 
+            "この問題、どこかで見たことあるにゃ...えーっと...",
+            "今、ネル先生の天才的な頭脳で解いてるからにゃね…にゃるほど！",
+            "よしよし、だいたい分かってきたにゃ..."
+        ];
+        
+        for (const msg of msgs) {
+            if (!isAnalyzing) return; // 分析が終わっていたら中断
+            await updateNellMessage(msg, "thinking"); // 喋り終わるまで待つ
+            
+            if (!isAnalyzing) return;
+            await new Promise(r => setTimeout(r, 1500)); // 間隔をあける
+        }
+    };
+    
+    // ナレーション開始（awaitせずバックグラウンドで走らせる）
+    performAnalysisNarration();
     
     try {
         const res = await fetch('/analyze', { 
@@ -232,7 +240,9 @@ window.startAnalysis = async function(b64) {
             currentHintLevel: 1 
         }));
         
-        clearInterval(timer); updateProgress(100); 
+        isAnalyzing = false; // ループを止めるフラグ
+        clearInterval(timer); 
+        updateProgress(100); 
         cleanupAnalysis();
 
         setTimeout(() => { 
@@ -248,6 +258,7 @@ window.startAnalysis = async function(b64) {
         }, 800);
 
     } catch (err) { 
+        isAnalyzing = false; // ループ停止
         cleanupAnalysis();
         clearInterval(timer); 
         document.getElementById('thinking-view').classList.add('hidden'); 
@@ -260,6 +271,7 @@ window.startAnalysis = async function(b64) {
 function cleanupAnalysis() {
     isAnalyzing = false;
     sfxBunseki.pause();
+    // analysisTimers は使用しなくなったのでクリア不要だが、念のため
     analysisTimers.forEach(t => clearTimeout(t));
     analysisTimers = [];
 }
