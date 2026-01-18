@@ -1,4 +1,4 @@
-// --- server.js (完全版 v150.0: さん付け徹底 & 記憶対応 & Gemini 2.5 Pro 固定) ---
+// --- server.js (完全版 v156.0: 検索機能搭載 & 既存機能維持) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -103,21 +103,18 @@ app.post('/analyze', async (req, res) => {
         あなたは小学${grade}年生の${name}さんの${subject}担当の教育AI「ネル先生」です。
         画像を解析し、正確なJSONデータを生成してください。
 
-        【タスク1: 問題文の書き起こし (レイアウト分離)】
+        【タスク1: 問題文の書き起こし】
         - 設問文だけでなく、選択肢の記号と内容（ア：〜、イ：〜）も全て省略せずに書き起こしてください。
-        - **【重要】** 隣り合う問題の文章が混ざらないように、問題ごとの「区切り線」や「余白」を認識し、その問題エリア内の文字だけを抽出してください。
 
-        【タスク2: 手書き答えの読み取り (OCR & 空欄判定)】
+        【タスク2: 手書き答えの読み取り (OCR)】
         - ${name}さんが書いた「手書きの答え」を読み取ってください。
-        - **【最重要・絶対厳守】空欄判定**: 
-          解答欄（括弧や枠）の中に**手書きのストローク（筆跡）**が確認できない場合は、絶対に正解を推測して埋めず、**必ず空文字 ""** にしてください。
-          「文脈からしてこれが入るはず」という推測による入力は、ハルシネーション（嘘）として厳しく禁止します。
-          ${ocrRules[subject] || ""}
+        - **【絶対厳守】空欄判定**: 解答欄に**手書きの筆跡がない場合**は、正解が分かっていても**絶対に空文字 ""** にしてください。
 
         【タスク3: 正解データの作成】
-        - その問題の正しい答えを導き出してください。
-        - **【表記ゆれ】**: 漢字の答えでひらがなも正解とする場合は、**縦棒 "|" で区切って**併記 (例: "高い|たかい")。
-        - **【複数回答】**: 「2つ選べ」などで正解が複数の場合は、**カンマ "," で区切って**記述 (例: "ア,イ")。
+        - **【重要】表記ゆれ（別解）**: 漢字の答えでひらがなも正解とする場合などは、**縦棒 "|" で区切って**併記してください。
+          (例: "高い|たかい")
+        - **【重要】複数回答**: 「2つ選べ」などで正解が複数ある場合は、**カンマ "," で区切って**記述してください。
+          (例: "ア,イ")
 
         【タスク4: 採点 & ヒント】
         - 手書きの答えと正解を比較し、判定(is_correct)してください。
@@ -128,9 +125,9 @@ app.post('/analyze', async (req, res) => {
           {
             "id": 1,
             "label": "①",
-            "question": "問題文 (選択肢含む)",
+            "question": "問題文",
             "correct_answer": "正解 (別解は|、複数は,)",
-            "student_answer": "手書きの答え (筆跡がなければ必ず空文字)",
+            "student_answer": "手書きの答え (空欄なら空文字)",
             "is_correct": true,
             "hints": ["ヒント1", "ヒント2", "ヒント3"]
           }
@@ -162,15 +159,13 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
-// --- 4. 給食反応 (さん付け徹底) ---
+// --- 4. 給食反応 ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
         const { count, name } = req.body;
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
         const isSpecial = (count % 10 === 0);
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
-        
-        // ★修正: 「さん付け」を徹底
         let prompt = isSpecial 
             ? `あなたは猫の「ネル先生」。生徒「${name}さん」から記念すべき${count}個目の給食をもらいました！
                必ず「${name}さん」と呼んでください。呼び捨て禁止。
@@ -178,13 +173,12 @@ app.post('/lunch-reaction', async (req, res) => {
             : `あなたは猫の「ネル先生」。生徒「${name}さん」から${count}回目の給食をもらいました。
                必ず「${name}さん」と呼んでください。呼び捨て禁止。
                20文字以内で面白くリアクションして。語尾は「にゃ」。`;
-            
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text().trim(), isSpecial });
     } catch { res.json({ reply: "おいしいにゃ！", isSpecial: false }); }
 });
 
-// --- 3. ゲーム反応 (さん付け徹底) ---
+// --- 3. ゲーム反応 ---
 app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;
@@ -192,7 +186,6 @@ app.post('/game-reaction', async (req, res) => {
         let prompt = "";
         let mood = "excited";
 
-        // ★修正: 「さん付け」を徹底
         if (type === 'start') {
             prompt = `あなたはネル先生。「${name}さん」がゲーム開始。必ず「${name}さん」と呼んで短く応援して。呼び捨て禁止。語尾は「にゃ」。`;
         } else if (type === 'end') {
@@ -241,7 +234,7 @@ wss.on('connection', async (clientWs, req) => {
             3. 特に最初や最後の音を、一文字抜かしたり消したりせずに、最初から最後までしっかり声に出して喋るのがコツだにゃ。
             4. 落ち着いた日本語のリズムを大切にして、親しみやすく話してにゃ。
             5. 給食(餌)のカリカリが大好物にゃ。
-            6. とにかく何でも知っているにゃ。
+            6. とにかく何でも知っているにゃ。もしマニアックな質問や知らないことを聞かれたら、Google検索ツールを使って調べて答えてにゃ。
             7. まれに「○○さんは宿題は終わったかにゃ？」や「そろそろ宿題始めようかにゃ？」と宿題を促してくる
             8. 句読点で自然な間をとる
             9. 日本語をとても上手にしゃべる猫だにゃ
@@ -265,6 +258,10 @@ wss.on('connection', async (clientWs, req) => {
                             language_code: "ja-JP" 
                         } 
                     }, 
+                    // ★追加: 検索機能 (Grounding with Google Search)
+                    tools: [
+                        { google_search: {} }
+                    ],
                     systemInstruction: {
                         parts: [{ text: systemInstructionText }]
                     }
