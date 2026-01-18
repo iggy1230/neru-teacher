@@ -1,4 +1,4 @@
-// --- server.js (完全版 v173.0: 空欄ハルシネーション完全封殺 & 知識封印) ---
+// --- server.js (修正版 v173.1: 構文エラー修正 & 空欄ハルシネーション封殺) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -84,11 +84,10 @@ app.post('/analyze', async (req, res) => {
             model: "gemini-2.5-pro",
             generationConfig: { 
                 responseMimeType: "application/json",
-                temperature: 0.0 // 創造性をゼロにしてハルシネーションを抑制
+                temperature: 0.0 
             }
         });
 
-        // ★修正: 「筆跡」「インク」という言葉で物理的な存在確認を強調
         const ocrRules = {
             'さんすう': `
                 ・数式、筆算の配置を正確に読み取る。
@@ -116,6 +115,7 @@ app.post('/analyze', async (req, res) => {
             'しゃかい': `ヒント1(資料のどこを見るか)、ヒント2(言葉の意味)、ヒント3(頭文字や漢字)`
         };
 
+        // ★修正: student_answer などの変数名を囲っていたバッククォートを削除
         const prompt = `
         あなたは小学${grade}年生の${name}さんの${subject}担当の教育AI「ネル先生」です。
         画像（鮮明化処理済み）を解析し、正確なJSONデータを生成してください。
@@ -127,7 +127,7 @@ app.post('/analyze', async (req, res) => {
         【タスク2: 手書き答えの読み取り (物理的な筆跡確認)】
         - ${name}さんが書いた「手書きの答え」を読み取ってください。
         - **【超・絶対厳守】空欄判定**: 
-          解答欄の枠内に**「手書きの筆跡（インクの黒い線）」**が視認できない場合は、正解が100%分かっていても、**絶対に `student_answer` を空文字 `""` にしてください。**
+          解答欄の枠内に**「手書きの筆跡（インクの黒い線）」**が視認できない場合は、正解が100%分かっていても、**絶対に student_answer を空文字 "" にしてください。**
           AIが気を利かせて正解を入力することは「不正解」とみなされます。
         - **【位置関係の厳守】**: 設問番号と解答欄の距離が最も近いものをペアにしてください。
 
