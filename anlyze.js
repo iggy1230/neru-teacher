@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v168.0: 判定ロジック修正 & 算数単位無視) ---
+// --- anlyze.js (完全版 v169.0: IME完全対応 & 音・表示同期版) ---
 
 // グローバル変数の初期化
 window.transcribedProblems = []; 
@@ -10,7 +10,9 @@ window.currentMode = '';
 window.lunchCount = 0; 
 window.analysisType = 'precision';
 
+// ★追加: 採点遅延用タイマー & IME入力中フラグ
 window.gradingTimer = null; 
+window.isComposing = false;
 
 // 音声・Socket関連
 let liveSocket = null;
@@ -46,6 +48,7 @@ const sfxBatu = new Audio('batu.mp3');
 
 const gameHitComments = ["うまいにゃ！", "すごいにゃ！", "さすがにゃ！", "がんばれにゃ！"];
 
+// 画像リソース
 const subjectImages = {
     'こくご': { base: 'nell-kokugo.png', talk: 'nell-kokugo-talk.png' },
     'さんすう': { base: 'nell-sansu.png', talk: 'nell-sansu-talk.png' },
@@ -267,7 +270,8 @@ window.showNextHint = function() {
     let targetLevel = p.currentHintLevel; 
     if (targetLevel > p.maxUnlockedHintLevel) {
         let cost = 5; if (currentUser.karikari < cost) return updateNellMessage(`カリカリが足りないにゃ…あと${cost}個！`, "thinking", false);
-        currentUser.karikari -= cost; saveAndSync(); updateMiniKarikari(); showKarikariEffect(-cost); p.maxUnlockedHintLevel = targetLevel;
+        currentUser.karikari -= cost; saveAndSync(); updateMiniKarikari(); showKarikariEffect(-cost);
+        p.maxUnlockedHintLevel = targetLevel;
     }
     let hints = p.hints || []; let text = "";
     if (targetLevel === 1) text = `【ヒント1：まずはここを見てにゃ】\n${hints[0] || "ヒントが見つからないにゃ..."}`;
@@ -279,8 +283,8 @@ window.showNextHint = function() {
     if (nextBtn) { if (p.currentHintLevel > p.maxUnlockedHintLevel) nextBtn.innerText = "🍖 さらに5個あげてヒント！"; else nextBtn.innerText = `ヒント${p.currentHintLevel}を見る (済)`; }
     const revealBtn = document.getElementById('reveal-answer-btn');
     if (p.maxUnlockedHintLevel >= 3 && revealBtn) { revealBtn.classList.remove('hidden'); revealBtn.innerText = "答えを見る"; revealBtn.onclick = window.revealAnswer; }
-    // 次のレベルへ進める（ループ）
-    p.currentHintLevel++; if (p.currentHintLevel > 3) p.currentHintLevel = 1;
+    // ループ処理のためインクリメント（表示は今回のレベル）
+    p.currentHintLevel = (p.currentHintLevel % 3) + 1;
 };
 window.revealAnswer = function() {
     const ansArea = document.getElementById('answer-display-area'); const finalTxt = document.getElementById('final-answer-text'); const revealBtn = document.getElementById('reveal-answer-btn');
@@ -291,7 +295,7 @@ window.revealAnswer = function() {
     updateNellMessage(`答えは「${displayAnswer}」だにゃ！`, "gentle", false); 
 };
 
-// --- リスト生成 ---
+// --- リスト生成 (★修正: IMEイベント追加) ---
 function createProblemItem(p, mode) {
     const isGradeMode = (mode === 'grade');
     let markHtml = "", bgStyle = "background:white;";
@@ -307,24 +311,27 @@ function createProblemItem(p, mode) {
     const studentAnswers = String(p.student_answer || "").split(/,|、/);
     let inputHtml = "";
     
-    // ★修正: 常にGrid表示にして幅を安定させる
+    // ★修正: IME検知属性 (compositionstart/end) を付与
     if (correctAnswers.length > 1) {
         inputHtml = `<div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px; width:100%;">`;
         for (let i = 0; i < correctAnswers.length; i++) {
             let val = studentAnswers[i] || "";
-            // oninputで遅延実行
             const onInput = isGradeMode ? `oninput="checkMultiAnswer(${p.id})"` : "";
-            inputHtml += `<input type="text" value="${val}" class="multi-input-${p.id}" ${onInput} style="width:100%; padding:8px; border:2px solid #ddd; border-radius:8px; font-size:1rem; font-weight:bold; color:#333; min-width:0; box-sizing:border-box;">`;
+            const onCompStart = isGradeMode ? `oncompositionstart="window.isComposing=true"` : "";
+            const onCompEnd = isGradeMode ? `oncompositionend="window.isComposing=false; checkMultiAnswer(${p.id})"` : "";
+            inputHtml += `<input type="text" value="${val}" class="multi-input-${p.id}" ${onInput} ${onCompStart} ${onCompEnd} style="width:100%; padding:8px; border:2px solid #ddd; border-radius:8px; font-size:1rem; font-weight:bold; color:#333; min-width:0; box-sizing:border-box;">`;
         }
         inputHtml += `</div>`;
     } else {
         const onInput = isGradeMode ? `oninput="checkAnswerDynamically(${p.id}, this)"` : "";
+        const onCompStart = isGradeMode ? `oncompositionstart="window.isComposing=true"` : "";
+        const onCompEnd = isGradeMode ? `oncompositionend="window.isComposing=false; checkAnswerDynamically(${p.id}, this)"` : "";
         const idAttr = isGradeMode ? "" : `id="single-input-${p.id}"`;
-        inputHtml = `<div style="width:100%;"><input type="text" ${idAttr} value="${p.student_answer || ""}" ${onInput} style="width:100%; padding:8px; border:2px solid #ddd; border-radius:8px; font-size:1rem; font-weight:bold; color:#333; box-sizing:border-box;"></div>`;
+        inputHtml = `<div style="width:100%;"><input type="text" ${idAttr} value="${p.student_answer || ""}" ${onInput} ${onCompStart} ${onCompEnd} style="width:100%; padding:8px; border:2px solid #ddd; border-radius:8px; font-size:1rem; font-weight:bold; color:#333; box-sizing:border-box;"></div>`;
     }
     let buttonsHtml = "";
     if (isGradeMode) {
-        buttonsHtml = `<div style="display:flex; flex-direction:column; gap:5px; width:80px; flex-shrink:0; margin-left:auto;"><button class="mini-teach-btn" onclick="startHint(${p.id})" style="width:100%;">教えて</button></div>`;
+        buttonsHtml = `<div style="display:flex; flex-direction:column; gap:5px; width:80px; flex-shrink:0; justify-content:center; margin-left:auto;"><button class="mini-teach-btn" onclick="startHint(${p.id})" style="width:100%;">教えて</button></div>`;
     } else {
         buttonsHtml = `<div style="display:flex; flex-direction:column; gap:5px; width:80px; flex-shrink:0; margin-left:auto;"><button class="mini-teach-btn" onclick="checkOneProblem(${p.id})" style="background:#ff85a1; width:100%;">採点</button><button class="mini-teach-btn" onclick="startHint(${p.id})" style="width:100%;">教えて</button></div>`;
     }
@@ -332,27 +339,19 @@ function createProblemItem(p, mode) {
     div.innerHTML = `<div style="display:flex; align-items:center; width:100%;">${markHtml}<div style="flex:1; margin-left:10px; display:flex; flex-direction:column; min-width:0;"><div style="font-size:0.9rem; color:#888; margin-bottom:4px;">${p.label || '問'}</div><div style="font-weight:bold; font-size:0.9rem; margin-bottom:8px; width:100%; word-break:break-all;">${p.question}</div><div style="display:flex; gap:10px; align-items:flex-start; width:100%; justify-content:space-between;"><div style="flex:1; min-width:0; margin-right:5px;">${inputHtml}<div style="font-size:0.7rem; color:#666; margin-top:4px;">キミの答え (直せるよ)</div></div>${buttonsHtml}</div></div></div>`; 
     return div;
 }
+
 window.showGradingView = function(silent = false) { document.getElementById('problem-selection-view').classList.add('hidden'); document.getElementById('final-view').classList.remove('hidden'); document.getElementById('grade-sheet-container').classList.remove('hidden'); document.getElementById('hint-detail-container').classList.add('hidden'); const container = document.getElementById('problem-list-grade'); container.innerHTML = ""; transcribedProblems.forEach(p => { container.appendChild(createProblemItem(p, 'grade')); }); const btnDiv = document.createElement('div'); btnDiv.style.textAlign = "center"; btnDiv.style.marginTop = "20px"; btnDiv.innerHTML = `<button onclick="finishGrading(this)" class="main-btn orange-btn">💯 採点おわり！</button>`; container.appendChild(btnDiv); if (!silent) { updateGradingMessage(); } };
 window.renderProblemSelection = function() { document.getElementById('problem-selection-view').classList.remove('hidden'); const l = document.getElementById('transcribed-problem-list'); l.innerHTML = ""; transcribedProblems.forEach(p => { l.appendChild(createProblemItem(p, 'explain')); }); const btn = document.querySelector('#problem-selection-view button.orange-btn'); if (btn) { btn.disabled = false; btn.innerText = "✨ ぜんぶわかったにゃ！"; } };
 
 // --- ★修正: 採点ロジック ---
-function normalizeAnswer(str) { 
-    if (!str) return ""; 
-    let normalized = str.trim().replace(/[\u30a1-\u30f6]/g, m => String.fromCharCode(m.charCodeAt(0) - 0x60));
-    return normalized; 
-}
-// ★修正: 算数なら単位・記号を無視して数字だけで比較する
+function normalizeAnswer(str) { if (!str) return ""; let normalized = str.trim().replace(/[\u30a1-\u30f6]/g, m => String.fromCharCode(m.charCodeAt(0) - 0x60)); return normalized; }
 function isMatch(student, correctString) { 
     const s = normalizeAnswer(student); 
     const options = normalizeAnswer(correctString).split('|'); 
-    
-    // 通常の一致チェック
     let matched = options.some(opt => opt === s);
     if (matched) return true;
-
-    // 算数の特例: 数字のみ抽出して比較
     if (currentSubject === 'さんすう') {
-        const sNum = s.replace(/[^0-9.]/g, ''); // "300cm" -> "300"
+        const sNum = s.replace(/[^0-9.]/g, ''); 
         return options.some(opt => {
             const optNum = opt.replace(/[^0-9.]/g, '');
             return sNum !== "" && sNum === optNum;
@@ -361,6 +360,7 @@ function isMatch(student, correctString) {
     return false;
 }
 
+// ★修正: 複数回答チェック (1秒デバウンス + IME + 即時保存 + 音声)
 window.checkMultiAnswer = function(id) {
     // 即時保存
     const problem = transcribedProblems.find(p => p.id === id);
@@ -369,9 +369,12 @@ window.checkMultiAnswer = function(id) {
         const userValues = Array.from(inputs).map(input => input.value);
         problem.student_answer = userValues.join(",");
     }
-    // 1秒後に判定
+
+    if (window.isComposing) return; // IME入力中は無視
     if(window.gradingTimer) clearTimeout(window.gradingTimer);
-    window.gradingTimer = setTimeout(() => { _performCheckMultiAnswer(id); }, 1000);
+    window.gradingTimer = setTimeout(() => {
+        _performCheckMultiAnswer(id);
+    }, 1000); // 1秒後に判定
 };
 
 function _performCheckMultiAnswer(id) {
@@ -399,10 +402,14 @@ window.checkAnswerDynamically = function(id, inputElem) {
     // 即時保存
     const problem = transcribedProblems.find(p => p.id === id);
     if(problem) problem.student_answer = inputElem.value;
-    // 1秒後に判定
+
+    if (window.isComposing) return; // IME入力中は無視
     const val = inputElem.value;
+    
     if(window.gradingTimer) clearTimeout(window.gradingTimer);
-    window.gradingTimer = setTimeout(() => { _performCheckAnswerDynamically(id, val); }, 1000);
+    window.gradingTimer = setTimeout(() => {
+        _performCheckAnswerDynamically(id, val);
+    }, 1000);
 };
 
 function _performCheckAnswerDynamically(id, val) {
@@ -414,8 +421,10 @@ function _performCheckAnswerDynamically(id, val) {
     if (isCorrect) { try { sfxMaru.currentTime = 0; sfxMaru.play(); } catch(e){} } 
     else if (val.trim().length > 0) { try { sfxBatu.currentTime = 0; sfxBatu.play(); } catch(e){} }
 }
-// ... (以下略、変更なし) ...
-window.checkOneProblem = function(id) { const problem = transcribedProblems.find(p => p.id === id); if (!problem) return; const correctList = String(problem.correct_answer || "").split(/,|、/); let userValues = []; if (correctList.length > 1) { const inputs = document.querySelectorAll(`.multi-input-${id}`); userValues = Array.from(inputs).map(i => i.value); } else { const input = document.getElementById(`single-input-${id}`); if(input) userValues = [input.value]; } let isCorrect = false; if (userValues.length === correctList.length) { const usedIndices = new Set(); let matchCount = 0; for (const uVal of userValues) { for (let i = 0; i < correctList.length; i++) { if (!usedIndices.has(i)) { if (isMatch(uVal, correctList[i])) { usedIndices.add(i); matchCount++; break; } } } } isCorrect = (matchCount === correctList.length); } const markElem = document.getElementById(`mark-${id}`); const container = document.getElementById(`grade-item-${id}`); if (isCorrect) { try { sfxMaru.currentTime = 0; sfxMaru.play(); } catch(e){} } else { try { sfxBatu.currentTime = 0; sfxBatu.play(); } catch(e){} } if (markElem && container) { if (isCorrect) { markElem.innerText = "⭕"; markElem.style.color = "#ff5252"; container.style.backgroundColor = "#fff5f5"; updateNellMessage("正解だにゃ！すごいにゃ！", "excited", false); } else { markElem.innerText = "❌"; markElem.style.color = "#4a90e2"; container.style.backgroundColor = "#f0f8ff"; updateNellMessage("おしい！もう一回考えてみて！", "gentle", false); } } };
+
+// ... (checkOneProblem, updateMarkDisplay等は変更なし)
+window.checkOneProblem = function(id) { const problem = transcribedProblems.find(p => p.id === id); if (!problem) return; const correctList = String(problem.correct_answer || "").split(/,|、/); let userValues = []; if (correctList.length > 1) { const inputs = document.querySelectorAll(`.multi-input-${id}`); userValues = Array.from(inputs).map(i => i.value); } else { const input = document.getElementById(`single-input-${id}`); if(input) userValues = [input.value]; } let isCorrect = false; if (userValues.length === correctList.length) { const usedIndices = new Set(); let matchCount = 0; for (const uVal of userValues) { for (let i = 0; i < correctList.length; i++) { if (!usedIndices.has(i)) { if (isMatch(uVal, correctList[i])) { usedIndices.add(i); matchCount++; break; } } } } isCorrect = (matchCount === correctList.length); } if (isCorrect) { try { sfxMaru.currentTime = 0; sfxMaru.play(); } catch(e){} } else { try { sfxBatu.currentTime = 0; sfxBatu.play(); } catch(e){} } const markElem = document.getElementById(`mark-${id}`); const container = document.getElementById(`grade-item-${id}`); if (markElem && container) { if (isCorrect) { markElem.innerText = "⭕"; markElem.style.color = "#ff5252"; container.style.backgroundColor = "#fff5f5"; updateNellMessage("正解だにゃ！すごいにゃ！", "excited", false); } else { markElem.innerText = "❌"; markElem.style.color = "#4a90e2"; container.style.backgroundColor = "#f0f8ff"; updateNellMessage("おしい！もう一回考えてみて！", "gentle", false); } } };
+// ★修正: 判定結果の表示更新
 function updateMarkDisplay(id, isCorrect) { const container = document.getElementById(`grade-item-${id}`); const markElem = document.getElementById(`mark-${id}`); if (container && markElem) { if (isCorrect) { markElem.innerText = "⭕"; markElem.style.color = "#ff5252"; container.style.backgroundColor = "#fff5f5"; } else { markElem.innerText = "❌"; markElem.style.color = "#4a90e2"; container.style.backgroundColor = "#f0f8ff"; } } }
 window.updateGradingMessage = function() { let correctCount = 0; transcribedProblems.forEach(p => { if (p.is_correct) correctCount++; }); const scoreRate = correctCount / (transcribedProblems.length || 1); if (scoreRate === 1.0) updateNellMessage(`全問正解だにゃ！天才だにゃ〜！！`, "excited", false); else if (scoreRate >= 0.5) updateNellMessage(`あと${transcribedProblems.length - correctCount}問！直してみるにゃ！`, "happy", false); else updateNellMessage(`間違ってても大丈夫！入力し直してみて！`, "gentle", false); };
 window.backToProblemSelection = function() { document.getElementById('final-view').classList.add('hidden'); document.getElementById('hint-detail-container').classList.add('hidden'); document.getElementById('chalkboard').classList.add('hidden'); document.getElementById('answer-display-area').classList.add('hidden'); if (currentMode === 'grade') showGradingView(); else { renderProblemSelection(); updateNellMessage("他も見るにゃ？", "normal", false); } const backBtn = document.getElementById('main-back-btn'); if(backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = backToLobby; } };
@@ -535,7 +544,4 @@ window.addEventListener('DOMContentLoaded', () => { const camIn = document.getEl
 window.handleFileUpload = async (file) => { if (isAnalyzing || !file) return; document.getElementById('upload-controls').classList.add('hidden'); document.getElementById('cropper-modal').classList.remove('hidden'); const canvas = document.getElementById('crop-canvas'); canvas.style.opacity = '0'; const reader = new FileReader(); reader.onload = async (e) => { cropImg = new Image(); cropImg.onload = async () => { const w = cropImg.width; const h = cropImg.height; cropPoints = [ { x: w * 0.1, y: h * 0.1 }, { x: w * 0.9, y: h * 0.1 }, { x: w * 0.9, y: h * 0.9 }, { x: w * 0.1, y: h * 0.9 } ]; canvas.style.opacity = '1'; updateNellMessage("ここを読み取るにゃ？", "normal"); initCustomCropper(); }; cropImg.src = e.target.result; }; reader.readAsDataURL(file); };
 function initCustomCropper() { const modal = document.getElementById('cropper-modal'); modal.classList.remove('hidden'); const canvas = document.getElementById('crop-canvas'); const MAX_CANVAS_SIZE = 2500; let w = cropImg.width; let h = cropImg.height; if (w > MAX_CANVAS_SIZE || h > MAX_CANVAS_SIZE) { const scale = Math.min(MAX_CANVAS_SIZE / w, MAX_CANVAS_SIZE / h); w *= scale; h *= scale; cropPoints = cropPoints.map(p => ({ x: p.x * scale, y: p.y * scale })); } canvas.width = w; canvas.height = h; canvas.style.width = '100%'; canvas.style.height = '100%'; canvas.style.objectFit = 'contain'; const ctx = canvas.getContext('2d'); ctx.drawImage(cropImg, 0, 0, w, h); updateCropUI(canvas); const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl']; handles.forEach((id, idx) => { const el = document.getElementById(id); const startDrag = (e) => { e.preventDefault(); activeHandle = idx; }; el.onmousedown = startDrag; el.ontouchstart = startDrag; }); const move = (e) => { if (activeHandle === -1) return; e.preventDefault(); const rect = canvas.getBoundingClientRect(); const imgRatio = canvas.width / canvas.height; const rectRatio = rect.width / rect.height; let drawX, drawY, drawW, drawH; if (imgRatio > rectRatio) { drawW = rect.width; drawH = rect.width / imgRatio; drawX = 0; drawY = (rect.height - drawH) / 2; } else { drawH = rect.height; drawW = rect.height * imgRatio; drawY = 0; drawX = (rect.width - drawW) / 2; } const clientX = e.touches ? e.touches[0].clientX : e.clientX; const clientY = e.touches ? e.touches[0].clientY : e.clientY; let relX = (clientX - rect.left - drawX) / drawW; let relY = (clientY - rect.top - drawY) / drawH; relX = Math.max(0, Math.min(1, relX)); relY = Math.max(0, Math.min(1, relY)); cropPoints[activeHandle] = { x: relX * canvas.width, y: relY * canvas.height }; updateCropUI(canvas); }; const end = () => { activeHandle = -1; }; window.onmousemove = move; window.ontouchmove = move; window.onmouseup = end; window.ontouchend = end; document.getElementById('cropper-cancel-btn').onclick = () => { modal.classList.add('hidden'); window.onmousemove = null; window.ontouchmove = null; document.getElementById('upload-controls').classList.remove('hidden'); }; document.getElementById('cropper-ok-btn').onclick = () => { modal.classList.add('hidden'); window.onmousemove = null; window.ontouchmove = null; const croppedBase64 = performPerspectiveCrop(canvas, cropPoints); startAnalysis(croppedBase64); }; }
 function updateCropUI(canvas) { const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl']; const rect = canvas.getBoundingClientRect(); const imgRatio = canvas.width / canvas.height; const rectRatio = rect.width / rect.height; let drawX, drawY, drawW, drawH; if (imgRatio > rectRatio) { drawW = rect.width; drawH = rect.width / imgRatio; drawX = 0; drawY = (rect.height - drawH) / 2; } else { drawH = rect.height; drawW = rect.height * imgRatio; drawY = 0; drawX = (rect.width - drawW) / 2; } const toScreen = (p) => ({ x: (p.x / canvas.width) * drawW + drawX + canvas.offsetLeft, y: (p.y / canvas.height) * drawH + drawY + canvas.offsetTop }); const screenPoints = cropPoints.map(toScreen); handles.forEach((id, i) => { const el = document.getElementById(id); el.style.left = screenPoints[i].x + 'px'; el.style.top = screenPoints[i].y + 'px'; }); const svg = document.getElementById('crop-lines'); svg.style.left = canvas.offsetLeft + 'px'; svg.style.top = canvas.offsetTop + 'px'; svg.style.width = canvas.offsetWidth + 'px'; svg.style.height = canvas.offsetHeight + 'px'; const toSvg = (p) => ({ x: (p.x / canvas.width) * drawW + drawX, y: (p.y / canvas.height) * drawH + drawY }); const svgPts = cropPoints.map(toSvg); const ptsStr = svgPts.map(p => `${p.x},${p.y}`).join(' '); svg.innerHTML = `<polyline points="${ptsStr} ${svgPts[0].x},${svgPts[0].y}" style="fill:rgba(255,255,255,0.2);stroke:#ff4081;stroke-width:2;stroke-dasharray:5" />`; }
-function performPerspectiveCrop(sourceCanvas, points) { const minX = Math.min(...points.map(p => p.x)), maxX = Math.max(...points.map(p => p.x)); const minY = Math.min(...points.map(p => p.y)), maxY = Math.max(...points.map(p => p.y)); let w = maxX - minX, h = maxY - minY; if (w < 1) w = 1; if (h < 1) h = 1; const tempCv = document.createElement('canvas'); const MAX_OUT = 1536; let outW = w, outH = h; if (outW > MAX_OUT || outH > MAX_OUT) { const s = Math.min(MAX_OUT/outW, MAX_OUT/outH); outW *= s; outH *= s; } tempCv.width = outW; tempCv.height = outH; const ctx = tempCv.getContext('2d'); ctx.drawImage(sourceCanvas, minX, minY, w, h, 0, 0, outW, outH); 
-    // ★追加: 鮮明化処理を再実装（前回削除したがやっぱり必要だった場合）
-    enhanceImage(ctx, outW, outH);
-    return tempCv.toDataURL('image/jpeg', 0.85).split(',')[1]; }
+function performPerspectiveCrop(sourceCanvas, points) { const minX = Math.min(...points.map(p => p.x)), maxX = Math.max(...points.map(p => p.x)); const minY = Math.min(...points.map(p => p.y)), maxY = Math.max(...points.map(p => p.y)); let w = maxX - minX, h = maxY - minY; if (w < 1) w = 1; if (h < 1) h = 1; const tempCv = document.createElement('canvas'); const MAX_OUT = 1536; let outW = w, outH = h; if (outW > MAX_OUT || outH > MAX_OUT) { const s = Math.min(MAX_OUT/outW, MAX_OUT/outH); outW *= s; outH *= s; } tempCv.width = outW; tempCv.height = outH; const ctx = tempCv.getContext('2d'); ctx.drawImage(sourceCanvas, minX, minY, w, h, 0, 0, outW, outH); enhanceImage(ctx, outW, outH); return tempCv.toDataURL('image/jpeg', 0.85).split(',')[1]; }
