@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v157.0: 音声再生対策 & 全機能統合版) ---
+// --- anlyze.js (完全版 v158.0: 答え表示の整形 & 採点ロジック) ---
 
 // グローバル変数の初期化
 window.transcribedProblems = []; 
@@ -39,8 +39,6 @@ const sfxOver = new Audio('gameover.mp3');
 const sfxBunseki = new Audio('bunseki.mp3'); 
 sfxBunseki.volume = 0.05; 
 const sfxHirameku = new Audio('hirameku.mp3'); 
-const sfxMaru = new Audio('maru.mp3');
-const sfxBatu = new Audio('batu.mp3');
 
 const gameHitComments = ["うまいにゃ！", "すごいにゃ！", "さすがにゃ！", "がんばれにゃ！"];
 
@@ -79,7 +77,6 @@ startMouthAnimation();
 async function saveToNellMemory(role, text) {
     if (!currentUser || !currentUser.id) return;
     const trimmed = text.trim();
-    // 意味のない言葉やシステム的な短文は除外
     const ignoreWords = ["あー", "えーと", "うーん", "はい", "ねえ", "ネル先生", "にゃー", "にゃ", "。", "ok", "OK", "接続中...", "読み込み中..."];
     
     if (trimmed.length <= 1 || ignoreWords.includes(trimmed)) {
@@ -87,9 +84,6 @@ async function saveToNellMemory(role, text) {
     }
 
     const newItem = { role: role, text: trimmed, time: new Date().toISOString() };
-    console.log(`🧠 メモリ保存: [${role}] "${trimmed}"`);
-
-    // 1. ローカルストレージ
     try {
         const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
         let history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
@@ -99,127 +93,18 @@ async function saveToNellMemory(role, text) {
         localStorage.setItem(memoryKey, JSON.stringify(history));
     } catch(e) {}
 
-    // 2. Firebase
     if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) {
         try {
             const docRef = db.collection("memories").doc(currentUser.id);
             const docSnap = await docRef.get();
             let cloudHistory = docSnap.exists ? (docSnap.data().history || []) : [];
             if (cloudHistory.length > 0 && cloudHistory[cloudHistory.length - 1].text === trimmed) return;
-            
             cloudHistory.push(newItem);
             if (cloudHistory.length > 50) cloudHistory.shift();
-            
             await docRef.set({ history: cloudHistory, lastUpdated: new Date().toISOString() }, { merge: true });
         } catch(e) { console.error("Memory sync failed:", e); }
     }
 }
-
-// --- 記憶管理マネージャー ---
-window.openMemoryManager = async function() {
-    if (!currentUser) return alert("まずはログインしてにゃ！");
-
-    let modal = document.getElementById('memory-manager-modal');
-    if (!modal) {
-        modal = document.createElement('div');
-        modal.id = 'memory-manager-modal';
-        modal.className = 'memory-modal-overlay';
-        modal.innerHTML = `
-            <div class="memory-modal-content">
-                <h3 style="margin:0 0 10px 0; text-align:center;">🧠 ネル先生の脳内（記憶）</h3>
-                <div style="font-size:0.8rem; color:#666; text-align:center;">最新の50件まで覚えているにゃ。<br>いらない記憶は削除できるにゃ。</div>
-                <div id="memory-list-container" class="memory-list">読み込み中...</div>
-                <div style="display:flex; gap:10px; justify-content:center;">
-                    <button onclick="clearAllMemories()" class="main-btn red-btn" style="flex:1; font-size:0.9rem;">🗑️ 全部忘れる</button>
-                    <button onclick="closeMemoryManager()" class="main-btn gray-btn" style="flex:1; font-size:0.9rem;">閉じる</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(modal);
-    }
-    modal.classList.remove('hidden');
-    modal.style.display = 'flex';
-    
-    await renderMemoryList();
-};
-
-window.closeMemoryManager = function() {
-    const modal = document.getElementById('memory-manager-modal');
-    if (modal) modal.style.display = 'none';
-};
-
-window.renderMemoryList = async function() {
-    const container = document.getElementById('memory-list-container');
-    container.innerHTML = "読み込み中にゃ...";
-    
-    let history = [];
-    if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) {
-        try {
-            const doc = await db.collection("memories").doc(currentUser.id).get();
-            if (doc.exists) history = doc.data().history || [];
-        } catch(e) { console.error(e); }
-    } else {
-        const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
-        history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
-    }
-
-    if (history.length === 0) {
-        container.innerHTML = "<p style='text-align:center; padding:20px; color:#888;'>まだ何もお話ししてないにゃ。</p>";
-        return;
-    }
-
-    container.innerHTML = "";
-    [...history].reverse().forEach((item, index) => {
-        const originalIndex = history.length - 1 - index;
-        const div = document.createElement('div');
-        div.className = "memory-item";
-        const dateStr = new Date(item.time).toLocaleString('ja-JP');
-        const roleLabel = item.role === 'user' ? '👤 キミ' : '🐱 ネル';
-        const roleClass = item.role === 'user' ? 'memory-role-user' : 'memory-role-nell';
-        
-        div.innerHTML = `
-            <div style="flex:1;">
-                <div class="memory-meta ${roleClass}">${roleLabel} <span style="color:#ccc; font-size:0.6rem;">(${dateStr})</span></div>
-                <div class="memory-text">${item.text}</div>
-            </div>
-            <button class="delete-mem-btn" onclick="deleteMemory(${originalIndex})">削除</button>
-        `;
-        container.appendChild(div);
-    });
-};
-
-window.deleteMemory = async function(index) {
-    if (!confirm("この記憶を消してもいいにゃ？")) return;
-    
-    let history = [];
-    const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
-
-    if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) {
-        const docRef = db.collection("memories").doc(currentUser.id);
-        const docSnap = await docRef.get();
-        if (docSnap.exists) history = docSnap.data().history || [];
-        history.splice(index, 1);
-        await docRef.set({ history: history }, { merge: true });
-    }
-    
-    let localHistory = JSON.parse(localStorage.getItem(memoryKey) || '[]');
-    if (localHistory.length > index) {
-         localHistory.splice(index, 1);
-         localStorage.setItem(memoryKey, JSON.stringify(localHistory));
-    }
-    await renderMemoryList();
-};
-
-window.clearAllMemories = async function() {
-    if (!confirm("本当に全ての記憶を消去するにゃ！？")) return;
-    if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) {
-        await db.collection("memories").doc(currentUser.id).delete();
-    }
-    const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
-    localStorage.removeItem(memoryKey);
-    alert("さっぱり忘れたにゃ！はじめましてだにゃ！");
-    await renderMemoryList();
-};
 
 // --- メッセージ更新 ---
 window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false) {
@@ -294,7 +179,7 @@ window.setSubject = function(s) {
 
 window.setAnalyzeMode = function(type) { analysisType = 'precision'; };
 
-// --- 分析ロジック (音声再生対策版) ---
+// --- 分析ロジック ---
 window.startAnalysis = async function(b64) {
     if (isAnalyzing) return;
     isAnalyzing = true; 
@@ -304,19 +189,7 @@ window.startAnalysis = async function(b64) {
     document.getElementById('upload-controls').classList.add('hidden'); 
     const backBtn = document.getElementById('main-back-btn'); if(backBtn) backBtn.classList.add('hidden');
     
-    // ★修正: 分析開始時に音声をアンロック（無音再生）しておく
-    try { 
-        sfxHirameku.volume = 0; // 一旦ミュート
-        sfxHirameku.play().then(() => {
-            sfxHirameku.pause();
-            sfxHirameku.currentTime = 0;
-            sfxHirameku.volume = 1; // 音量を戻す
-        }).catch(e => console.log("Audio unlock failed:", e));
-
-        sfxBunseki.currentTime = 0; 
-        sfxBunseki.play(); 
-        sfxBunseki.loop = true; 
-    } catch(e){}
+    try { sfxBunseki.currentTime = 0; sfxBunseki.play(); sfxBunseki.loop = true; } catch(e){}
     
     let p = 0; 
     const timer = setInterval(() => { 
@@ -383,10 +256,10 @@ window.startAnalysis = async function(b64) {
         updateProgress(100); 
         cleanupAnalysis();
 
-        // ★修正: 確実に鳴らす
+        // 確実な再生
         try { 
             sfxHirameku.currentTime = 0; 
-            sfxHirameku.play().catch(e => console.error("Hirameku play failed:", e)); 
+            sfxHirameku.play().catch(e => console.error(e)); 
         } catch(e){}
 
         setTimeout(() => { 
@@ -437,7 +310,6 @@ window.startHint = function(id) {
     document.getElementById('main-back-btn').classList.add('hidden');
     
     updateNellMessage("ヒントを見るにゃ？", "thinking", false);
-    
     const nextBtn = document.getElementById('next-hint-btn'); const revealBtn = document.getElementById('reveal-answer-btn');
     
     if(nextBtn) { 
@@ -511,9 +383,22 @@ window.showNextHint = function() {
 window.revealAnswer = function() {
     const ansArea = document.getElementById('answer-display-area'); const finalTxt = document.getElementById('final-answer-text');
     const revealBtn = document.getElementById('reveal-answer-btn');
-    if (ansArea && finalTxt) { finalTxt.innerText = selectedProblem.correct_answer; ansArea.classList.remove('hidden'); ansArea.style.display = "block"; }
+    
+    // ★修正: パイプで区切られている場合は先頭のみ表示
+    const correctRaw = selectedProblem.correct_answer || "";
+    // 複数回答(カンマ)も考慮しつつ、まずはパイプ区切り(別解)を処理
+    // 表示用には、シンプルに「高い」だけ出せば良い場合が多いが、
+    // 複数回答 "ア,イ" の場合はそのまま出す。
+    // "高い|たかい" -> "高い"
+    let displayAnswer = correctRaw.split(',').map(part => part.split('|')[0]).join(', ');
+
+    if (ansArea && finalTxt) { 
+        finalTxt.innerText = displayAnswer; 
+        ansArea.classList.remove('hidden'); 
+        ansArea.style.display = "block"; 
+    }
     if (revealBtn) { revealBtn.classList.add('hidden'); }
-    updateNellMessage(`答えは「${selectedProblem.correct_answer}」だにゃ！`, "gentle", false); 
+    updateNellMessage(`答えは「${displayAnswer}」だにゃ！`, "gentle", false); 
 };
 
 // --- リスト生成 (右端固定 & 幅統一 & 初期空白) ---
