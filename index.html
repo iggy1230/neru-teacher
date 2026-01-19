@@ -18,6 +18,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     
     <style>
+        /* タイマー */
         .timer-box {
             background: #fff; border: 3px solid #ff85a1; border-radius: 15px;
             padding: 10px; margin: 10px 0; text-align: center;
@@ -28,6 +29,8 @@
             background: #ffb74d; color: white; border: none; padding: 8px 12px;
             border-radius: 20px; font-weight: bold; cursor: pointer; font-size: 0.9rem;
         }
+        
+        /* カメラボタン & プレビュー */
         .mini-cam-btn {
             background: #4a90e2; color: white; border: none; padding: 12px 15px;
             border-radius: 20px; font-weight: bold; cursor: pointer; width: 100%;
@@ -37,26 +40,43 @@
         .mini-cam-btn:active { transform: translateY(2px); box-shadow: 0 2px 0 #2a609e; }
         
         #live-chat-video-container {
-            width: 100px; height: 100px; border-radius: 10px; overflow: hidden;
-            border: 2px solid #ccc; margin: 10px auto; background: #000;
+            width: 100%; max-width: 320px; aspect-ratio: 4/3; /* 大きく表示 */
+            border-radius: 10px; overflow: hidden;
+            border: 4px solid #4a90e2; margin: 10px auto; background: #000;
             display: none;
         }
         #live-chat-video {
             width: 100%; height: 100%; object-fit: cover;
         }
 
-        #nell-board {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.8); z-index: 9999;
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        /* 埋め込みホワイトボード */
+        #inline-whiteboard {
+            background: white; 
+            border: 6px solid #a1887f; 
+            border-radius: 10px;
+            padding: 15px;
+            margin: 15px 0;
+            min-height: 120px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            position: relative;
         }
-        #board-content {
-            background: white; width: 90%; max-width: 400px; aspect-ratio: 4/3;
-            border-radius: 10px; border: 8px solid #a1887f;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 5rem; font-weight: 900; color: #333;
-            box-shadow: 0 0 20px rgba(255,255,255,0.2);
+        #whiteboard-content {
             font-family: 'Kiwi Maru', serif;
+            font-size: 3rem; 
+            font-weight: 900; 
+            color: #333;
+            text-align: center;
+            word-break: break-all;
+            line-height: 1.2;
+        }
+        .wb-label {
+            position: absolute; top: -12px; left: 10px;
+            background: #a1887f; color: white; 
+            font-size: 0.8rem; padding: 2px 10px; border-radius: 10px;
         }
     </style>
 </head>
@@ -68,12 +88,6 @@
         <span>🍖</span><span id="mini-karikari-count">0</span>
     </div>
 
-    <!-- ネル先生のホワイトボード -->
-    <div id="nell-board" class="hidden">
-        <div id="board-content"></div>
-        <button onclick="document.getElementById('nell-board').classList.add('hidden')" class="main-btn pink-btn" style="width:150px; margin-top:20px;">閉じる</button>
-    </div>
-
     <div id="app-container">
         <!-- 0. タイトル画面 -->
         <section id="screen-title" class="screen title-screen">
@@ -81,7 +95,7 @@
             <div class="title-btn-container">
                 <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
             </div>
-            <div class="version-tag">Build: v186.0-Stable</div>
+            <div class="version-tag">Build: v187.0-Stable</div>
         </section>
 
         <!-- 1. 校門 (ユーザー選択) -->
@@ -141,13 +155,8 @@
                 <button onclick="selectMode('grade')" class="main-btn red-btn">💯 採点ネル先生</button>
                 <button onclick="selectMode('review')" class="main-btn orange-btn">🔥 復習ノート</button>
                 <button onclick="showGame()" class="main-btn yellow-btn">🎮 カリカリ・キャッチ</button>
-                
-                <!-- 新: こじんめんだん（シンプル会話） -->
                 <button onclick="selectMode('simple-chat')" class="main-btn green-btn">🎤 こじんめんだん</button>
-                
-                <!-- 新: 個別指導（多機能） -->
                 <button onclick="selectMode('chat')" class="main-btn" style="background:#5c6bc0; box-shadow: 0 4px 0 #3949ab;">👩‍🏫 ネル先生の個別指導</button>
-                
                 <button onclick="selectMode('lunch')" class="main-btn pink-btn">🍽️ おいしい給食</button>
                 <button onclick="showAttendance()" class="main-btn purple-btn">📅 出席簿をみる</button>
                 <button onclick="openMemoryManager()" class="main-btn gray-btn" style="background:#607d8b; border:none; box-shadow:0 4px 0 #455a64;">🧠 記憶を整理する</button>
@@ -243,6 +252,13 @@
                                     <button onclick="resetTimer()" class="timer-btn" style="background:#b0bec5;">リセット</button>
                                 </div>
                                 <button id="timer-toggle-btn" onclick="toggleTimer()" class="main-btn pink-btn" style="margin-top:10px; width:100%;">スタート！</button>
+                            </div>
+
+                            <!-- ホワイトボード（普段は隠れている） -->
+                            <div id="inline-whiteboard" class="hidden">
+                                <div class="wb-label">ネル先生のボード</div>
+                                <div id="whiteboard-content"></div>
+                                <button onclick="document.getElementById('inline-whiteboard').classList.add('hidden')" style="margin-top:10px; font-size:0.8rem; background:none; border:none; color:#888; text-decoration:underline;">閉じる</button>
                             </div>
 
                             <button id="mic-btn" class="camera-btn-large" style="background:#ff85a1; box-shadow:none; margin-top:15px;" onclick="startLiveChat()">🎤 おはなしする</button>

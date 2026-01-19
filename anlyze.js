@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v186.0: こじんめんだん復元 & モード分岐) ---
+// --- anlyze.js (完全版 v187.0: 音声被り防止 & インラインホワイトボード) ---
 
 // グローバル変数の初期化
 window.transcribedProblems = []; 
@@ -166,8 +166,9 @@ async function saveToNellMemory(role, text) {
     }
 }
 
-// --- メッセージ更新 ---
-window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false) {
+// --- メッセージ更新（修正版） ---
+// ★修正: speak引数を追加して、音声再生を制御
+window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false, speak = true) {
     const gameScreen = document.getElementById('screen-game');
     const isGameHidden = gameScreen ? gameScreen.classList.contains('hidden') : true;
     const targetId = isGameHidden ? 'nell-text' : 'nell-text-game';
@@ -175,7 +176,9 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     if (el) el.innerText = t;
     if (t && t.includes("もぐもぐ")) { try { sfxBori.currentTime = 0; sfxBori.play(); } catch(e){} }
     if (saveToMemory) { saveToNellMemory('nell', t); }
-    if (typeof speakNell === 'function') {
+    
+    // speakフラグがtrueの時だけ喋る
+    if (speak && typeof speakNell === 'function') {
         let textForSpeech = t.replace(/【.*?】/g, "").trim();
         textForSpeech = textForSpeech.replace(/\[DISPLAY:.*?\]/g, ""); 
         textForSpeech = textForSpeech.replace(/🐾/g, "");
@@ -336,7 +339,8 @@ window.captureAndSendLiveImage = function() {
     
     const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
     
-    updateNellMessage("どれどれ…見てみるにゃ…", "thinking", false);
+    // ★修正: speak=false を指定して、音声再生を抑制
+    updateNellMessage("どれどれ…見てみるにゃ…", "thinking", false, false);
     liveSocket.send(JSON.stringify({ base64Image: base64Data }));
     
     setTimeout(() => {
@@ -527,7 +531,7 @@ async function startLiveChat() {
         liveSocket.onopen = () => { 
             clearTimeout(connectionTimeout); 
             if(btn) { btn.innerText = "📞 つながった！(終了)"; btn.style.background = "#ff5252"; btn.disabled = false; } 
-            updateNellMessage("お待たせ！なんでも話してにゃ！", "happy", false); 
+            updateNellMessage("お待たせ！なんでも話してにゃ！", "happy", false, false); // ★ここもfalse推奨
             isRecognitionActive = true; 
             startMicrophone(); 
         }; 
@@ -539,11 +543,12 @@ async function startLiveChat() {
                     data.serverContent.modelTurn.parts.forEach(p => { 
                         if (p.inlineData) playLivePcmAudio(p.inlineData.data); 
                         if (p.text) { 
+                            // ★ホワイトボード処理（インライン）
                             const match = p.text.match(/\[DISPLAY:\s*(.+?)\]/);
                             if (match) {
                                 const content = match[1];
-                                document.getElementById('nell-board').classList.remove('hidden');
-                                document.getElementById('board-content').innerText = content;
+                                document.getElementById('inline-whiteboard').classList.remove('hidden');
+                                document.getElementById('whiteboard-content').innerText = content;
                             }
                             saveToNellMemory('nell', p.text); 
                             const el = document.getElementById('nell-text'); 
