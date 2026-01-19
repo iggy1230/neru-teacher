@@ -1,4 +1,4 @@
-// --- user.js (完全版 v199.0: スマホ対応リダイレクトログイン修正) ---
+// --- user.js (完全修正版 v133.0: PNG形式復帰 & 軽量サイズ版) ---
 
 // Firebase初期化
 let app, auth, db;
@@ -38,44 +38,14 @@ document.addEventListener('DOMContentLoaded', () => {
     updateIDPreviewText();
     
     if (auth) {
-        // 1. 通常のセッション復帰チェック
         auth.onAuthStateChanged(async (user) => {
             if (user && !currentUser) {
-                // すでに登録済みのユーザーかチェック
                 const doc = await db.collection("users").doc(user.uid).get();
                 if (doc.exists) {
                     currentUser = doc.data();
                     if (currentUser.isGoogleUser === undefined) currentUser.isGoogleUser = true;
                     login(currentUser, true); 
                 }
-                // ※新規ユーザーの場合は getRedirectResult 側で処理する
-            }
-        });
-
-        // 2. 【重要】スマホ対応: Googleログイン（リダイレクト）から戻ってきた時の処理
-        auth.getRedirectResult().then(async (result) => {
-            if (result.user) {
-                const user = result.user;
-                const doc = await db.collection("users").doc(user.uid).get();
-                
-                if (doc.exists) {
-                    // 既存ユーザーならログイン処理（onAuthStateChangedでも動くが念のため）
-                    currentUser = doc.data();
-                    currentUser.isGoogleUser = true; 
-                    login(currentUser, true);
-                } else {
-                    // 新規ユーザーなら入学手続きへ
-                    currentUser = { id: user.uid, isGoogleUser: true };
-                    window.isGoogleEnrollment = true;
-                    alert("はじめましてだにゃ！\nGoogleアカウントで入学手続きをするにゃ！");
-                    showEnrollment();
-                }
-            }
-        }).catch((error) => {
-            console.error("Redirect Login Error:", error);
-            // ポップアップブロック以外のエラーなら表示
-            if (error.code !== 'auth/popup-blocked') {
-                alert("ログインに失敗したにゃ...\n" + error.message);
             }
         });
     }
@@ -88,13 +58,25 @@ window.logoutProcess = async function() {
     currentUser = null;
 };
 
-// ★修正: ポップアップではなくリダイレクトを使用
 window.startGoogleLogin = function() {
     if (!auth) return alert("Firebaseの設定ファイル(firebase-config.js)が見つからないにゃ！");
     const provider = new firebase.auth.GoogleAuthProvider();
-    
-    // スマホ対応のため redirect を使用
-    auth.signInWithRedirect(provider);
+    auth.signInWithPopup(provider)
+        .then(async (result) => {
+            const user = result.user;
+            const doc = await db.collection("users").doc(user.uid).get();
+            if (doc.exists) {
+                currentUser = doc.data();
+                currentUser.isGoogleUser = true; 
+                login(currentUser, true);
+            } else {
+                currentUser = { id: user.uid, isGoogleUser: true };
+                window.isGoogleEnrollment = true;
+                alert("はじめましてだにゃ！\nGoogleアカウントで入学手続きをするにゃ！");
+                showEnrollment();
+            }
+        })
+        .catch((error) => { alert("ログインに失敗したにゃ...\n" + error.message); });
 };
 
 function setupTextInputEvents() {
@@ -277,7 +259,7 @@ async function renderForSave() {
     const img = new Image(); img.crossOrigin = "Anonymous"; 
     try { await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = 'student-id-base.png?' + new Date().getTime(); }); } catch (e) { return null; }
     
-    // 容量削減のため幅を300pxに縮小
+    // ★修正: 容量削減のため幅を300pxに縮小
     const BASE_W = 300; 
     const scaleFactor = BASE_W / img.width; 
     const canvas = document.createElement('canvas');
@@ -335,6 +317,7 @@ async function renderForSave() {
     }
     const nameVal = document.getElementById('new-student-name').value; const gradeVal = document.getElementById('new-student-grade').value; ctx.fillStyle = "#333"; const fontSize = 32 * rx; ctx.font = `bold ${fontSize}px 'M PLUS Rounded 1c', sans-serif`; ctx.textAlign = "left"; ctx.textBaseline = "middle"; const textX = 346 * rx; if (gradeVal) ctx.fillText(gradeVal + "年生", textX, 168 * ry + 1); if (nameVal) ctx.fillText(nameVal, textX, 231 * ry + 3);
     
+    // ★修正: PNG形式に戻す (サイズ縮小により容量対策済み)
     try { return canvas.toDataURL('image/png'); } catch (e) { return null; }
 }
 
