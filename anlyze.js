@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v180.0: 分割ロジック修正) ---
+// --- anlyze.js (完全版 v181.0: 配列データ構造対応) ---
 
 // グローバル変数の初期化
 window.transcribedProblems = []; 
@@ -237,7 +237,23 @@ window.startAnalysis = async function(b64) {
         if (!res.ok) throw new Error("Server Error"); 
         const data = await res.json();
         if (!data || data.length === 0) throw new Error("No Data");
-        transcribedProblems = data.map((prob, index) => ({ ...prob, id: index + 1, student_answer: prob.student_answer || "", status: prob.student_answer ? "answered" : "unanswered", currentHintLevel: 1, maxUnlockedHintLevel: 0 }));
+        
+        // 配列かどうかチェックして整形
+        transcribedProblems = data.map((prob, index) => {
+            // ここで配列チェック。もし文字列なら配列化（後方互換）
+            let studentArr = Array.isArray(prob.student_answer) ? prob.student_answer : (prob.student_answer ? [prob.student_answer] : []);
+            // サーバー側で空配列でも、アプリ側で操作するために最低1つの空要素が必要な場合があるが、
+            // 採点前ならそのまま。
+            return { 
+                ...prob, 
+                id: index + 1, 
+                student_answer: studentArr, 
+                status: (studentArr.length > 0 && studentArr[0] !== "") ? "answered" : "unanswered", 
+                currentHintLevel: 1, 
+                maxUnlockedHintLevel: 0 
+            };
+        });
+
         isAnalyzing = false; clearInterval(timer); updateProgress(100); cleanupAnalysis();
         try { sfxHirameku.currentTime = 0; sfxHirameku.play().catch(e=>{}); } catch(e){}
         setTimeout(() => { document.getElementById('thinking-view').classList.add('hidden'); const doneMsg = "読めたにゃ！"; if (currentMode === 'grade') { showGradingView(true); updateNellMessage(doneMsg, "happy", false).then(() => setTimeout(updateGradingMessage, 1500)); } else { renderProblemSelection(); updateNellMessage(doneMsg, "happy", false); } }, 1500); 
@@ -333,8 +349,10 @@ window.showHintText = function(level) {
 
 window.revealAnswer = function() {
     const ansArea = document.getElementById('answer-display-area'); const finalTxt = document.getElementById('final-answer-text');
-    const correctRaw = selectedProblem.correct_answer || "";
-    let displayAnswer = correctRaw.split(',').map(part => part.split('|')[0]).join(', ');
+    // 配列対応：複数回答の場合は「、」でつなぐ
+    const correctArr = Array.isArray(selectedProblem.correct_answer) ? selectedProblem.correct_answer : [selectedProblem.correct_answer];
+    let displayAnswer = correctArr.map(part => part.split('|')[0]).join(', ');
+    
     if (ansArea && finalTxt) { finalTxt.innerText = displayAnswer; ansArea.classList.remove('hidden'); ansArea.style.display = "block"; }
     const btns = document.querySelectorAll('.hint-btns button.orange-btn'); btns.forEach(b => b.classList.add('hidden'));
     updateNellMessage(`答えは「${displayAnswer}」だにゃ！`, "gentle", false); 
@@ -344,32 +362,51 @@ window.revealAnswer = function() {
 function createProblemItem(p, mode) {
     const isGradeMode = (mode === 'grade');
     let markHtml = "", bgStyle = "background:white;";
+    
+    // 配列データの正規化（空文字除去もここで行う）
+    let correctList = Array.isArray(p.correct_answer) ? p.correct_answer : [String(p.correct_answer)];
+    correctList = correctList.map(s => String(s).trim()).filter(s => s !== ""); // 空要素を除去
+
+    let studentList = Array.isArray(p.student_answer) ? p.student_answer : [String(p.student_answer)];
+    // 生徒の答えは「未回答」の状態もあり得るので、無理にfilterしないが、
+    // 配列長を正解に合わせるために調整
+    
     if (isGradeMode) {
         let isCorrect = p.is_correct;
-        if (isCorrect === undefined) { const s = String(p.student_answer || "").trim(); const c = String(p.correct_answer || "").trim(); isCorrect = (s !== "" && s === c); }
+        // サーバーが判定していない場合のクライアント判定
+        if (isCorrect === undefined) { 
+            // 簡易判定（全要素一致）
+            if (correctList.length !== studentList.length) isCorrect = false;
+            else {
+                isCorrect = true;
+                for(let i=0; i<correctList.length; i++) {
+                    if (!isMatch(studentList[i] || "", correctList[i])) { isCorrect = false; break; }
+                }
+            }
+        }
         const mark = isCorrect ? "⭕" : "❌"; const markColor = isCorrect ? "#ff5252" : "#4a90e2"; bgStyle = isCorrect ? "background:#fff5f5;" : "background:#f0f8ff;";
         markHtml = `<div id="mark-${p.id}" style="font-weight:900; color:${markColor}; font-size:2rem; width:50px; text-align:center; flex-shrink:0;">${mark}</div>`;
     } else {
         markHtml = `<div id="mark-${p.id}" style="font-weight:900; color:#4a90e2; font-size:2rem; width:50px; text-align:center; flex-shrink:0;"></div>`;
     }
     
-    // ★修正: split(',') に変更し、読点での分割を阻止
-    const correctAnswers = String(p.correct_answer || "").split(',').map(s => s.trim()).filter(s => s);
-    const studentAnswers = String(p.student_answer || "").split(',').map(s => s.trim()); 
     let inputHtml = "";
     
-    if (correctAnswers.length > 1) {
+    // 入力欄の数は「正解の数」に合わせる（これが最も安全）
+    if (correctList.length > 1) {
         inputHtml = `<div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px; width:100%;">`;
-        for (let i = 0; i < correctAnswers.length; i++) {
-            let val = studentAnswers[i] || "";
+        for (let i = 0; i < correctList.length; i++) {
+            let val = studentList[i] || "";
             const onInput = isGradeMode ? `oninput="checkMultiAnswer(${p.id}, event)"` : "";
             inputHtml += `<input type="text" value="${val}" class="multi-input-${p.id}" ${onInput} style="width:100%; padding:8px; border:2px solid #ddd; border-radius:8px; font-size:1rem; font-weight:bold; color:#333; min-width:0; box-sizing:border-box;">`;
         }
         inputHtml += `</div>`;
     } else {
+        // 正解が1つの場合（記述含む）
+        const val = studentList[0] || "";
         const onInput = isGradeMode ? `oninput="checkAnswerDynamically(${p.id}, this, event)"` : "";
         const idAttr = isGradeMode ? "" : `id="single-input-${p.id}"`;
-        inputHtml = `<div style="width:100%;"><input type="text" ${idAttr} value="${p.student_answer || ""}" ${onInput} style="width:100%; padding:8px; border:2px solid #ddd; border-radius:8px; font-size:1rem; font-weight:bold; color:#333; box-sizing:border-box;"></div>`;
+        inputHtml = `<div style="width:100%;"><input type="text" ${idAttr} value="${val}" ${onInput} style="width:100%; padding:8px; border:2px solid #ddd; border-radius:8px; font-size:1rem; font-weight:bold; color:#333; box-sizing:border-box;"></div>`;
     }
 
     let buttonsHtml = "";
@@ -405,14 +442,15 @@ window.renderProblemSelection = function() {
 function normalizeAnswer(str) { if (!str) return ""; let normalized = str.trim().replace(/[\u30a1-\u30f6]/g, m => String.fromCharCode(m.charCodeAt(0) - 0x60)); return normalized; }
 function isMatch(student, correctString) { const s = normalizeAnswer(student); const options = normalizeAnswer(correctString).split('|'); return options.some(opt => opt === s); }
 
-// ★修正: split(',') に変更
+// 配列対応版チェック
 window.checkMultiAnswer = function(id, event) {
     if (window.isComposing) return;
     const problem = transcribedProblems.find(p => p.id === id);
     if (problem) {
         const inputs = document.querySelectorAll(`.multi-input-${id}`);
+        // 配列として保存
         const userValues = Array.from(inputs).map(input => input.value);
-        problem.student_answer = userValues.join(",");
+        problem.student_answer = userValues;
     }
     if(window.gradingTimer) clearTimeout(window.gradingTimer);
     window.gradingTimer = setTimeout(() => { _performCheckMultiAnswer(id); }, 1000);
@@ -420,10 +458,9 @@ window.checkMultiAnswer = function(id, event) {
 
 function _performCheckMultiAnswer(id) {
     const problem = transcribedProblems.find(p => p.id === id); if (!problem) return;
-    const userValues = problem.student_answer.split(',');
+    const userValues = problem.student_answer; // 配列
+    const correctList = Array.isArray(problem.correct_answer) ? problem.correct_answer : [problem.correct_answer];
     
-    // ★修正: split(',') に変更
-    const correctList = String(problem.correct_answer || "").split(',').map(s => s.trim()).filter(s => s);
     let allCorrect = false;
     if (userValues.length === correctList.length) {
         const usedIndices = new Set(); let matchCount = 0;
@@ -438,13 +475,13 @@ function _performCheckMultiAnswer(id) {
     updateMarkDisplay(id, allCorrect);
     if (currentMode === 'grade') updateGradingMessage();
     if (allCorrect) { try { sfxMaru.currentTime = 0; sfxMaru.play(); } catch(e){} } 
-    else if (problem.student_answer.trim().length > 0) { try { sfxBatu.currentTime = 0; sfxBatu.play(); } catch(e){} }
+    else if (userValues.some(v => v.trim().length > 0)) { try { sfxBatu.currentTime = 0; sfxBatu.play(); } catch(e){} }
 }
 
 window.checkAnswerDynamically = function(id, inputElem, event) { 
     if (window.isComposing) return;
     const problem = transcribedProblems.find(p => p.id === id);
-    if(problem) problem.student_answer = inputElem.value;
+    if(problem) problem.student_answer = [inputElem.value]; // 配列として保存
     const val = inputElem.value;
     if(window.gradingTimer) clearTimeout(window.gradingTimer);
     window.gradingTimer = setTimeout(() => { _performCheckAnswerDynamically(id, val); }, 1000);
@@ -452,7 +489,9 @@ window.checkAnswerDynamically = function(id, inputElem, event) {
 
 function _performCheckAnswerDynamically(id, val) {
     const problem = transcribedProblems.find(p => p.id === id); if (!problem) return;
-    const isCorrect = isMatch(val, String(problem.correct_answer || ""));
+    // 配列の0番目と比較（単一回答前提）
+    const correctVal = Array.isArray(problem.correct_answer) ? problem.correct_answer[0] : problem.correct_answer;
+    const isCorrect = isMatch(val, String(correctVal));
     problem.is_correct = isCorrect; 
     updateMarkDisplay(id, isCorrect);
     if (currentMode === 'grade') updateGradingMessage(); 
@@ -460,13 +499,13 @@ function _performCheckAnswerDynamically(id, val) {
     else if (val.trim().length > 0) { try { sfxBatu.currentTime = 0; sfxBatu.play(); } catch(e){} }
 }
 
-// ★修正: split(',') に変更
+// 配列対応版チェック
 window.checkOneProblem = function(id) { 
     const problem = transcribedProblems.find(p => p.id === id); if (!problem) return; 
     
-    // ★修正: split(',') に変更
-    const correctList = String(problem.correct_answer || "").split(',').map(s => s.trim()).filter(s => s);
+    const correctList = Array.isArray(problem.correct_answer) ? problem.correct_answer : [problem.correct_answer];
     let userValues = []; 
+    
     if (correctList.length > 1) { 
         const inputs = document.querySelectorAll(`.multi-input-${id}`); 
         userValues = Array.from(inputs).map(i => i.value); 
@@ -474,6 +513,7 @@ window.checkOneProblem = function(id) {
         const input = document.getElementById(`single-input-${id}`); 
         if(input) userValues = [input.value]; 
     } 
+    
     let isCorrect = false; 
     if (userValues.length === correctList.length) { 
         const usedIndices = new Set(); let matchCount = 0; 
