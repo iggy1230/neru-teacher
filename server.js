@@ -1,4 +1,4 @@
-// --- server.js (完全版 v190.0: 漢字表示の二重安全装置) ---
+// --- server.js (完全復元版 v193.0: 宿題分析プロンプト & ネル先生人格完全版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -75,6 +75,7 @@ app.post('/synthesize', async (req, res) => {
 });
 
 // --- Analyze (Gemini 2.5 Pro) ---
+// ★ここが宿題読み取りの心臓部です。プロンプトを完全復元しました。
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, name } = req.body;
@@ -90,40 +91,53 @@ app.post('/analyze', async (req, res) => {
         画像（鮮明化処理済み）を解析し、正確なJSONデータを生成してください。
 
         【タスク1: 問題文の書き起こし】
-        - 設問文、選択肢（ア：〜、イ：〜）を含めて書き起こす。
+        - 設問文だけでなく、選択肢の記号と内容（ア：〜、イ：〜）も全て省略せずに書き起こしてください。
+        - 手書きのメモは「問題の条件」として読み取ってください。
+        - **教科別の注意点**:
+          - **さんすう**: 数式、筆算の配置、図形の数値を正確に読み取る。
+          - **こくご**: 縦書きの文章は右から左へ正しくつなげる。
+          - **しゃかい/りか**: 地図やグラフの中にある用語も正解の根拠にする。
 
-        【タスク2: 手書き答えの読み取り】
-        - ${name}さんの手書きの答えを読み取る。
-        - 解答欄が空欄（筆跡なし）の場合は、必ず空文字 "" とする。
+        【タスク2: 手書き答えの読み取り (物理的な筆跡確認)】
+        - ${name}さんが書いた「手書きの答え」を読み取ってください。
+        - **【超・絶対厳守】空欄判定**: 
+          解答欄の枠内に**「手書きの筆跡（インクの黒い線）」**が視認できない場合は、正解が100%分かっていても、**絶対に student_answer を空文字 "" にしてください。**
+          （AIが勝手に答えを埋めることはカンニングになります。厳禁です。）
 
         【タスク3: 正解データの作成 (配列形式)】
-        - **【重要】答えは必ず「文字列のリスト（配列）」にすること**。
+        - **【最重要】答えは必ず「文字列のリスト（配列）」にすること**。
         - **記述問題（1つの文章）の場合**:
            - たとえ長い文章でも、読点「、」が含まれていても、**必ず要素数1の配列**にすること。
-           - 例: ["ごみを減らし、資源を有効にするため。"]
-           - **絶対に ["ごみを減らし", "資源を有効にするため。"] のように分割してはいけない。**
+           - 例（正）: ["ごみを減らし、資源を有効にするため。"]
+           - 例（誤）: ["ごみを減らし", "資源を有効にするため。"] （勝手に分割禁止！）
         - **複数回答の場合**:
-           - 解答欄が明確に分かれている場合のみ、複数の要素にする。
+           - 「2つ選びなさい」や「xとyを答えなさい」など、明確に解答欄が分かれている場合のみ、複数の要素にする。
            - 例: ["ア", "イ"]
         - **表記ゆれ**:
            - 漢字/ひらがなの許容は、文字列の中で **縦棒 "|"** を使う。
            - 例: ["高い|たかい"]
 
         【タスク4: 採点 & ヒント】
-        - 判定(is_correct)と、3段階のヒントを作成。
+        - 手書きの答えと正解を比較し、判定(is_correct)してください。
+        - 3段階のヒントを作成してください。
+          - ヒント1: 方針や着眼点
+          - ヒント2: 少し具体的な考え方
+          - ヒント3: 答えにかなり近いヒント
 
         【出力JSONフォーマット】
+        必ず以下のJSON形式のリストで出力してください。Markdownのコードブロックは不要です。
         [
           {
             "id": 1,
             "label": "①",
-            "question": "問題文",
+            "question": "問題文 (選択肢含む)",
             "correct_answer": ["正解1"], 
             "student_answer": ["生徒の答え"],
             "is_correct": true,
             "hints": ["ヒント1", "ヒント2", "ヒント3"]
           }
         ]
+        ※ correct_answer と student_answer は必ず配列 [] であること。
         `;
 
         const result = await model.generateContent([
@@ -135,9 +149,13 @@ app.post('/analyze', async (req, res) => {
         
         let problems = [];
         try {
+            // Markdownのコードブロック ```json ... ``` が含まれている場合への対策
             const jsonMatch = responseText.match(/\[[\s\S]*\]/);
-            if (jsonMatch) problems = JSON.parse(jsonMatch[0]);
-            else problems = JSON.parse(responseText);
+            if (jsonMatch) {
+                problems = JSON.parse(jsonMatch[0]);
+            } else {
+                problems = JSON.parse(responseText);
+            }
         } catch (e) {
             console.error("JSON Parse Error:", responseText);
             throw new Error("AIの応答が正しいJSON形式ではありませんでした。");
@@ -205,6 +223,7 @@ const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
 // --- WebSocket (Chat) ---
+// ★ネル先生の人格設定（System Instruction）を完全版にしました。
 const wss = new WebSocketServer({ server });
 wss.on('connection', async (clientWs, req) => {
     const params = parse(req.url, true).query;
@@ -223,7 +242,9 @@ wss.on('connection', async (clientWs, req) => {
             
             【話し方のルール】
             1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
-            2. 生徒を呼び捨て禁止。必ず「さん」をつけるにゃ。
+            2. 親しみやすい日本の小学校の先生として、一文字一文字をはっきりと、丁寧に発音してにゃ。
+            3. 生徒を呼び捨て禁止。必ず「さん」をつけるにゃ。
+            4. 子供が相手なので、難しい言葉は使わず、わかりやすく説明してにゃ。
             
             【特殊機能: 漢字・式ボード (最重要)】
             生徒から「この漢字どう書くの？」や「〇〇という字を見せて」、「この式を書いて」と頼まれた場合は、
@@ -236,19 +257,23 @@ wss.on('connection', async (clientWs, req) => {
             生徒「バラってどう書くの？」
             ネル「バラはこう書くにゃ！」 (ここで show_kanji("薔薇") を実行、または [DISPLAY: 薔薇] と出力)
 
+            【画像認識について】
+            ユーザーから画像が送られてきた場合、それは「宿題の問題」や「見てほしいもの」だにゃ。
+            その画像の内容について、詳しく解説したり、褒めたりしてにゃ。
+
             【現在の状況・記憶】${statusContext}
             `;
 
-            // ★ツール定義
+            // ★ツール定義 (show_kanji)
             const tools = [{ 
                 google_search: {},
                 function_declarations: [{
                     name: "show_kanji",
-                    description: "Display a Kanji, word, or math formula on the whiteboard.",
+                    description: "Display a Kanji, word, or math formula on the whiteboard for the student.",
                     parameters: {
                         type: "OBJECT",
                         properties: {
-                            content: { type: "STRING", description: "The text to display." }
+                            content: { type: "STRING", description: "The text, kanji, or formula to display." }
                         },
                         required: ["content"]
                     }
@@ -275,20 +300,23 @@ wss.on('connection', async (clientWs, req) => {
         clientWs.on('message', (data) => {
             const msg = JSON.parse(data);
             
-            // ツール実行結果の返信
+            // ツール実行結果の返信 (Client -> Gemini)
             if (msg.toolResponse && geminiWs.readyState === WebSocket.OPEN) {
                 geminiWs.send(JSON.stringify({ clientContent: msg.toolResponse }));
                 return;
             }
 
+            // テキスト送信（タイマー応援など）
             if (msg.clientContent && geminiWs.readyState === WebSocket.OPEN) {
                 geminiWs.send(JSON.stringify({ client_content: msg.clientContent }));
             }
             
+            // 音声ストリーム送信
             if (msg.base64Audio && geminiWs.readyState === WebSocket.OPEN) {
                 geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: msg.base64Audio }] } }));
             }
             
+            // 画像送信（「これ見て！」機能）
             if (msg.base64Image && geminiWs.readyState === WebSocket.OPEN) {
                 geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "image/jpeg", data: msg.base64Image }] } }));
             }
