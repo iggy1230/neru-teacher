@@ -1,4 +1,4 @@
-// --- server.js (完全版 v180.0: 記述問題の保護強化 & 知識封印) ---
+// --- server.js (完全版 v178.0: カンマ・読点の区別徹底 & 既存機能維持) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -82,10 +82,7 @@ app.post('/analyze', async (req, res) => {
 
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.5-pro",
-            generationConfig: { 
-                responseMimeType: "application/json",
-                temperature: 0.0 
-            }
+            generationConfig: { responseMimeType: "application/json", temperature: 0.0 }
         });
 
         const ocrRules = {
@@ -127,20 +124,20 @@ app.post('/analyze', async (req, res) => {
         - ${name}さんが書いた「手書きの答え」を読み取ってください。
         - **【超・絶対厳守】空欄判定**: 
           解答欄の枠内に**「手書きの筆跡（インクの黒い線）」**が視認できない場合は、正解が100%分かっていても、**絶対に student_answer を空文字 "" にしてください。**
-        - **【記述問題】**: 複数行にわたって書かれている文章は、1つの文字列として結合して読み取ってください。
 
         【タスク3: 正解データの作成】
-        - **【重要】表記ゆれ（別解）**: 漢字の答えでひらがなも正解とする場合などは、**縦棒 "|" で区切って**併記してください。(例: "高い|たかい")
-        
-        - **【重要】区切り文字の使い分け (読点「、」で区切るな！)**: 
+        - **【重要】区切り文字のルール**:
            1. **記述問題（文章）**: 
-              - 文章中の「、」は区切り文字ではありません！
-              - **絶対に半角カンマ "," で区切らないでください。**
+              - 1つの解答欄に書くべき文章は、**絶対にカンマ "," で区切らないでください。**
+              - 日本語の読点 "、" はそのまま使用してください。読点は区切り文字ではありません。
               - 例（正）: "ごみを減らし、資源を有効にするため。"
               - 例（誤）: "ごみを減らし,資源を有効にするため。"
            2. **複数回答**: 
-              - 「2つ選びなさい」など、答えが独立している場合のみ **半角カンマ ","** で区切ってください。
+              - 「2つ選びなさい」など、明確に解答欄が分かれている場合のみ **半角カンマ ","** で区切ってください。
               - 例: "ア,イ"
+           3. **表記ゆれ**: 
+              - 漢字/ひらがな の許容は **縦棒 "|"** で区切ってください。
+              - 例: "高い|たかい"
 
         【タスク4: 採点 & ヒント】
         - 手書きの答えと正解を比較し、判定(is_correct)してください。
@@ -185,13 +182,11 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
-// --- 4. 給食反応 (記憶OFF) ---
+// --- 4. 給食反応 ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
         const { count, name } = req.body;
-        // 給食ログはサーバーに残すが、ネル先生の短期記憶には入れない
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
-        
         const isSpecial = (count % 10 === 0);
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         let prompt = isSpecial 
