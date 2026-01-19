@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v188.0: タグ検知強化 & 揺らぎ吸収) ---
+// --- anlyze.js (完全版 v189.0: ツール呼び出しによるボード表示) ---
 
 // グローバル変数の初期化
 window.transcribedProblems = []; 
@@ -167,18 +167,14 @@ async function saveToNellMemory(role, text) {
 }
 
 // --- メッセージ更新 ---
-// ★修正: DISPLAYタグ除去ロジックを強化
 window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false, speak = true) {
     const gameScreen = document.getElementById('screen-game');
     const isGameHidden = gameScreen ? gameScreen.classList.contains('hidden') : true;
     const targetId = isGameHidden ? 'nell-text' : 'nell-text-game';
     const el = document.getElementById(targetId);
     
-    // タグ除去（表示用）
-    // 大文字小文字無視、角括弧があってもなくても「DISPLAY:」以降を除去するイメージだが、
-    // ここでは単純にタグ部分だけを消す
-    const displayRegex = /(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi;
-    const displayText = t.replace(displayRegex, "");
+    // タグ除去（念のため）
+    const displayText = t.replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "");
     
     if (el) el.innerText = displayText;
     
@@ -544,20 +540,32 @@ async function startLiveChat() {
         liveSocket.onmessage = async (event) => { 
             try { 
                 let data = event.data instanceof Blob ? JSON.parse(await event.data.text()) : JSON.parse(event.data); 
+                
                 if (data.serverContent?.modelTurn?.parts) { 
                     data.serverContent.modelTurn.parts.forEach(p => { 
-                        if (p.inlineData) playLivePcmAudio(p.inlineData.data); 
-                        if (p.text) { 
-                            // ★修正: 柔軟なタグ検知
-                            // AIがカッコを忘れたり全角にしたりするパターンを網羅
-                            const match = p.text.match(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/i);
-                            if (match) {
-                                const content = match[1].trim();
+                        
+                        // ★ツール実行 (Function Call) の検知
+                        if (p.functionCall) {
+                            if (p.functionCall.name === "show_kanji") {
+                                const content = p.functionCall.args.content;
                                 document.getElementById('inline-whiteboard').classList.remove('hidden');
                                 document.getElementById('whiteboard-content').innerText = content;
+                                
+                                // ツール実行完了をAIに通知 (必須)
+                                liveSocket.send(JSON.stringify({
+                                    toolResponse: {
+                                        functionResponses: [{
+                                            name: "show_kanji",
+                                            response: { result: "displayed" },
+                                            id: p.functionCall.id || "call_id" // IDは本来必須だがv1alphaは緩い場合も
+                                        }]
+                                    }
+                                }));
                             }
-                            
-                            // テキストの保存と表示（タグ除去は updateNellMessage 内で行う）
+                        }
+
+                        if (p.inlineData) playLivePcmAudio(p.inlineData.data); 
+                        if (p.text) { 
                             saveToNellMemory('nell', p.text); 
                             updateNellMessage(p.text, "normal", false, true);
                         } 

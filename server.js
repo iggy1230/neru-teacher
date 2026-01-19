@@ -1,4 +1,4 @@
-// --- server.js (完全版 v188.0: 漢字表示タグの指示強化) ---
+// --- server.js (完全版 v189.0: 漢字表示ツール導入) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -223,17 +223,34 @@ wss.on('connection', async (clientWs, req) => {
             
             【話し方のルール】
             1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
-            2. 親しみやすい日本の小学校の先生として、一文字一文字をはっきりと、丁寧に発音してにゃ。
-            3. 生徒を呼び捨て禁止。必ず「さん」をつけるにゃ。
+            2. 生徒を呼び捨て禁止。必ず「さん」をつけるにゃ。
             
-            【特殊機能: 漢字ボード】
-            生徒から「この漢字どう書くの？」や「〇〇という字を見せて」と頼まれた場合、
-            回答の最後に必ず **[DISPLAY: 漢字]** というタグをつけてにゃ。
-            ※重要: 必ず半角の角カッコ [ ] で囲むこと！ () や <> はダメだにゃ。
-            例: 「薔薇という字はこう書くにゃ。[DISPLAY: 薔薇]」
+            【特殊機能: 漢字・式ボード (重要)】
+            生徒から「この漢字どう書くの？」や「〇〇という字を見せて」、「この式を書いて」と頼まれた場合は、
+            言葉で説明するだけでなく、必ず **show_kanji ツール** を使って、その文字や式を画面に表示してにゃ。
+            
+            例:
+            生徒「バラってどう書くの？」
+            ネル「バラはこう書くにゃ！」 -> show_kanji("薔薇") を実行
 
             【現在の状況・記憶】${statusContext}
             `;
+
+            // ★ツール定義の追加
+            const tools = [{ 
+                google_search: {},
+                function_declarations: [{
+                    name: "show_kanji",
+                    description: "Display a Kanji, word, or math formula on the whiteboard for the student to see.",
+                    parameters: {
+                        type: "OBJECT",
+                        properties: {
+                            content: { type: "STRING", description: "The text, kanji, or formula to display." }
+                        },
+                        required: ["content"]
+                    }
+                }]
+            }];
 
             geminiWs.send(JSON.stringify({
                 setup: {
@@ -245,7 +262,7 @@ wss.on('connection', async (clientWs, req) => {
                             language_code: "ja-JP" 
                         } 
                     }, 
-                    tools: [{ google_search: {} }],
+                    tools: tools,
                     systemInstruction: { parts: [{ text: systemInstructionText }] }
                 }
             }));
@@ -255,6 +272,12 @@ wss.on('connection', async (clientWs, req) => {
         clientWs.on('message', (data) => {
             const msg = JSON.parse(data);
             
+            // ツール実行結果の返信 (client -> Gemini)
+            if (msg.toolResponse && geminiWs.readyState === WebSocket.OPEN) {
+                geminiWs.send(JSON.stringify({ clientContent: msg.toolResponse }));
+                return;
+            }
+
             if (msg.clientContent && geminiWs.readyState === WebSocket.OPEN) {
                 geminiWs.send(JSON.stringify({ client_content: msg.clientContent }));
             }
