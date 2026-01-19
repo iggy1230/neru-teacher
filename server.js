@@ -1,4 +1,4 @@
-// --- server.js (完全版 v195.0: 記憶形成の安定化修正) ---
+// --- server.js (完全版 v197.0: 誕生日記憶 & 宿題分析強化) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -74,13 +74,12 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- Memory Update (強化版) ---
+// --- Memory Update (誕生日対応版) ---
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
         console.log("[Memory] Updating profile...");
 
-        // 高速なFlashモデルを使用
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash", 
             generationConfig: { responseMimeType: "application/json" }
@@ -97,16 +96,17 @@ app.post('/update-memory', async (req, res) => {
         ${chatLog}
 
         【更新ルール】
-        1. **likes (好きなもの)**: 新しく判明した好きなものがあれば追加。
-        2. **weaknesses (苦手なこと)**: 勉強でつまづいた箇所や苦手と言ったことがあれば追加。
-        3. **achievements (頑張ったこと)**: 宿題をやった、正解した、褒められた内容を具体的に記録。
-        4. **last_topic (最後の話題)**: 会話の最後に何を話していたかを短く記録。
-        5. 古い情報と矛盾する場合は、新しい情報を優先して上書きしてください。
-        6. **必ず純粋なJSON形式**で出力してください（Markdown記法は不要）。
+        1. **birthday (誕生日)**: 会話の中で誕生日や年齢が出てきたら必ず記録・更新してください（例: "5月5日", "10歳"）。
+        2. **likes (好きなもの)**: 新しく判明した好きなものがあれば追加。
+        3. **weaknesses (苦手なこと)**: 勉強でつまづいた箇所や苦手と言ったことがあれば追加。
+        4. **achievements (頑張ったこと)**: 宿題をやった、正解した、褒められた内容を具体的に記録。
+        5. **last_topic (最後の話題)**: 会話の最後に何を話していたかを短く記録。
+        6. **必ず純粋なJSON形式**で出力してください。
 
         【出力フォーマット】
         {
             "nickname": "あだ名(あれば)",
+            "birthday": "誕生日または年齢(不明なら空文字)",
             "likes": ["..."],
             "weaknesses": ["..."],
             "achievements": ["..."],
@@ -116,12 +116,9 @@ app.post('/update-memory', async (req, res) => {
 
         const result = await model.generateContent(prompt);
         let text = result.response.text();
-
-        // ★修正: Markdownのコードブロック記号を除去してJSONパースを確実にする
         text = text.replace(/```json/g, '').replace(/```/g, '').trim();
         
         const newProfile = JSON.parse(text);
-        
         console.log("[Memory] Updated:", newProfile);
         res.json(newProfile);
 
@@ -144,28 +141,20 @@ app.post('/analyze', async (req, res) => {
 
         const prompt = `
         あなたは小学${grade}年生の${name}さんの${subject}担当の教育AI「ネル先生」です。
-        画像（鮮明化処理済み）を解析し、正確なJSONデータを生成してください。
+        画像（鮮明化処理済み）を解析し、以下の厳格なJSONフォーマットでデータを出力してください。
+        Markdownのコードブロックは不要です。純粋なJSON配列のみを返してください。
 
         【タスク1: 問題文の書き起こし】
         - 設問文、選択肢（ア：〜、イ：〜）を含めて書き起こす。
-        - 手書きのメモは「問題の条件」として読み取ってください。
 
         【タスク2: 手書き答えの読み取り】
         - ${name}さんの手書きの答えを読み取る。
-        - **【超・絶対厳守】空欄判定**: 
-          解答欄の枠内に**「手書きの筆跡」**が視認できない場合は、正解が分かっていても**絶対に student_answer を空文字 "" にしてください。**
+        - **空欄判定**: 解答欄に**「手書きの筆跡」**がない場合は、正解が分かっていても**絶対に student_answer を空文字 "" にしてください。**
 
         【タスク3: 正解データの作成 (配列形式)】
-        - **【最重要】答えは必ず「文字列のリスト（配列）」にすること**。
-        - **記述問題（1つの文章）の場合**:
-           - たとえ長い文章でも、読点「、」が含まれていても、**必ず要素数1の配列**にすること。
-           - 例: ["ごみを減らし、資源を有効にするため。"]
-        - **複数回答の場合**:
-           - 解答欄が明確に分かれている場合のみ、複数の要素にする。
-           - 例: ["ア", "イ"]
-        - **表記ゆれ**:
-           - 漢字/ひらがなの許容は、文字列の中で **縦棒 "|"** を使う。
-           - 例: ["高い|たかい"]
+        - **答えは必ず「文字列のリスト（配列）」にする**。
+        - 記述問題（文章）の場合も、["文章"] という形式にする。
+        - 複数回答（アとイなど）の場合のみ、["ア", "イ"] とする。
 
         【タスク4: 採点 & ヒント】
         - 判定(is_correct)と、3段階のヒントを作成。
@@ -176,8 +165,8 @@ app.post('/analyze', async (req, res) => {
             "id": 1,
             "label": "①",
             "question": "問題文",
-            "correct_answer": ["正解1"], 
-            "student_answer": ["生徒の答え"],
+            "correct_answer": ["正解"], 
+            "student_answer": ["手書きの答え"],
             "is_correct": true,
             "hints": ["ヒント1", "ヒント2", "ヒント3"]
           }
@@ -193,12 +182,19 @@ app.post('/analyze', async (req, res) => {
         
         let problems = [];
         try {
-            const jsonMatch = responseText.match(/\[[\s\S]*\]/);
-            if (jsonMatch) problems = JSON.parse(jsonMatch[0]);
-            else problems = JSON.parse(responseText);
+            // Markdown除去とパースをより頑丈に
+            const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+            // 配列の開始 [ を探してそこからパースする
+            const jsonStart = cleanText.indexOf('[');
+            const jsonEnd = cleanText.lastIndexOf(']');
+            if (jsonStart !== -1 && jsonEnd !== -1) {
+                problems = JSON.parse(cleanText.substring(jsonStart, jsonEnd + 1));
+            } else {
+                throw new Error("Valid JSON array not found");
+            }
         } catch (e) {
             console.error("JSON Parse Error:", responseText);
-            throw new Error("AIの応答が正しいJSON形式ではありませんでした。");
+            throw new Error("AIからの応答を読み取れませんでした。もう一度試してにゃ。");
         }
 
         res.json(problems);
@@ -264,7 +260,6 @@ const wss = new WebSocketServer({ server });
 wss.on('connection', async (clientWs, req) => {
     const params = parse(req.url, true).query;
     const grade = params.grade || "1";
-    // ★修正: 日本語の名前が文字化けしないようにデコードを確実に
     const name = decodeURIComponent(params.name || "生徒");
     const statusContext = decodeURIComponent(params.context || "特になし");
 
@@ -280,7 +275,7 @@ wss.on('connection', async (clientWs, req) => {
             【話し方のルール】
             1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
             2. 親しみやすく、子供にも分かりやすい言葉で話してにゃ。
-            3. 生徒を呼び捨て禁止。必ず「${name}さん」と名前を呼んでにゃ。
+            3. 生徒を呼び捨て禁止。必ず「さん」をつけるにゃ。
             
             【特殊機能】
             1. **show_kanji ツール**: 「漢字の書き方」「式」などを聞かれたら必ず使って表示してにゃ。
@@ -289,10 +284,9 @@ wss.on('connection', async (clientWs, req) => {
 
             【生徒についての記憶】
             ${statusContext}
-            ※この記憶を元に、「そういえば〜」や「この前の〜はどうだった？」と自然に話題を振ってあげてにゃ。
+            ※もし誕生日の情報があれば、「そういえばもうすぐ誕生日だにゃ？」などと話題にしてにゃ。
             `;
 
-            // ツール定義
             const tools = [{ 
                 google_search: {},
                 function_declarations: [{

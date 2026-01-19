@@ -1,4 +1,4 @@
-// --- memory.js (v5.0: 保存条件緩和版) ---
+// --- memory.js (v6.0: 誕生日対応版) ---
 
 (function(global) {
     const Memory = {};
@@ -6,6 +6,8 @@
     // 空のプロフィールを作成
     Memory.createEmptyProfile = function() {
         return {
+            nickname: "",
+            birthday: "", // 追加
             likes: [],
             weaknesses: [],
             achievements: [],
@@ -51,7 +53,6 @@
 
     // サーバーに要約を依頼して更新する
     Memory.updateProfileFromChat = async function(userId, chatLog) {
-        // ★修正: 10文字あれば記憶するように条件を緩和（テスト用）
         if (!chatLog || chatLog.length < 10) {
             console.log("会話が短すぎるので記憶しないにゃ。");
             return;
@@ -85,6 +86,8 @@
         const p = await Memory.getUserProfile(userId);
         
         let context = "";
+        if (p.nickname) context += `・あだ名: ${p.nickname}\n`;
+        if (p.birthday) context += `・誕生日: ${p.birthday}\n`; // 追加
         if (p.likes && p.likes.length > 0) context += `・好きなもの: ${p.likes.join(", ")}\n`;
         if (p.weaknesses && p.weaknesses.length > 0) context += `・苦手なこと: ${p.weaknesses.join(", ")} (励まして！)\n`;
         if (p.achievements && p.achievements.length > 0) context += `・最近の頑張り: ${p.achievements.join(", ")} (褒めて！)\n`;
