@@ -1,105 +1,94 @@
-// --- memory.js (記憶システム v3.0: キーワード完全網羅版) ---
+// --- memory.js (v4.0: 記憶管理マネージャー) ---
 
 (function(global) {
     const Memory = {};
 
-    Memory.createEmptyMemory = function() {
+    // 空のプロフィールを作成
+    Memory.createEmptyProfile = function() {
         return {
-            profile: { nickname: null },
-            studyHabits: {},    
-            personalLikes: {},  
-            episodes: []        
+            likes: [],
+            weaknesses: [],
+            achievements: [],
+            last_topic: ""
         };
     };
 
-    Memory.loadMemory = function(studentId) {
-        const key = `neruMemory_${studentId}`;
-        const raw = localStorage.getItem(key);
-        if (!raw) return Memory.createEmptyMemory();
-        try { return JSON.parse(raw); } catch { return Memory.createEmptyMemory(); }
+    // プロフィールを取得 (Firestore優先、なければLocalStorage)
+    Memory.getUserProfile = async function(userId) {
+        let profile = null;
+
+        // 1. GoogleユーザーならFirestoreから取得
+        if (typeof db !== 'undefined' && db !== null) {
+            try {
+                const doc = await db.collection("users").doc(userId).get();
+                if (doc.exists && doc.data().profile) {
+                    profile = doc.data().profile;
+                }
+            } catch(e) { console.error("Firestore Profile Load Error:", e); }
+        }
+
+        // 2. なければLocalStorage
+        if (!profile) {
+            const key = `nell_profile_${userId}`;
+            try {
+                profile = JSON.parse(localStorage.getItem(key));
+            } catch {}
+        }
+
+        return profile || Memory.createEmptyProfile();
     };
 
-    Memory.saveMemory = function(studentId, memory) {
-        localStorage.setItem(`neruMemory_${studentId}`, JSON.stringify(memory));
-        console.log("💾 記憶保存:", memory);
+    // プロフィールを保存
+    Memory.saveUserProfile = async function(userId, profile) {
+        // LocalStorageに保存
+        localStorage.setItem(`nell_profile_${userId}`, JSON.stringify(profile));
+
+        // Firestoreに保存
+        if (typeof db !== 'undefined' && db !== null) {
+            try {
+                await db.collection("users").doc(userId).set({ profile: profile }, { merge: true });
+            } catch(e) { console.error("Firestore Profile Save Error:", e); }
+        }
     };
 
-    Memory.applySummarizedNotes = function(studentId, summarizedLines) {
-        console.log("🧠 受信メモ:", summarizedLines);
-        const memory = Memory.loadMemory(studentId);
-        let updated = false;
+    // サーバーに要約を依頼して更新する
+    Memory.updateProfileFromChat = async function(userId, chatLog) {
+        if (!chatLog || chatLog.length < 50) return; // 短すぎる会話は無視
 
-        summarizedLines.forEach(line => {
-            if (line && typeof line === 'string') {
-                applySingleLine(memory, line);
-                updated = true;
+        const currentProfile = await Memory.getUserProfile(userId);
+
+        try {
+            console.log("🧠 記憶の更新を開始するにゃ...");
+            const res = await fetch('/update-memory', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    currentProfile: currentProfile,
+                    chatLog: chatLog
+                })
+            });
+
+            if (res.ok) {
+                const newProfile = await res.json();
+                await Memory.saveUserProfile(userId, newProfile);
+                console.log("✨ 記憶が更新されたにゃ！", newProfile);
             }
-        });
-
-        if (updated) {
-            // エピソードは最新10件まで
-            if (memory.episodes.length > 10) memory.episodes = memory.episodes.slice(-10);
-            Memory.saveMemory(studentId, memory);
+        } catch(e) {
+            console.error("Memory Update Failed:", e);
         }
     };
 
-    function applySingleLine(memory, text) {
-        // プロフィール
-        if (text.match(/呼んで|あだ名|呼び方|名前/)) {
-            const match = text.match(/「(.+?)」/);
-            if (match) { memory.profile.nickname = match[1]; return; }
-        }
-
-        // 学習傾向
-        if (contains(text, ["算数", "数学", "計算"])) { increase(memory.studyHabits, "math_weak"); addEpisode(memory, text); return; }
-        if (contains(text, ["国語", "漢字", "本", "読書"])) { increase(memory.studyHabits, "japanese_interest"); addEpisode(memory, text); return; }
-        if (contains(text, ["理科", "実験", "観察"])) { increase(memory.studyHabits, "science_interest"); addEpisode(memory, text); return; }
-        if (contains(text, ["社会", "地図", "歴史"])) { increase(memory.studyHabits, "social_interest"); addEpisode(memory, text); return; }
-
-        // 趣味・好き (★ここを最大限強化)
-        if (contains(text, ["サッカー", "野球", "バスケ", "テニス", "水泳", "ダンス", "スポーツ", "運動"])) {
-            increase(memory.personalLikes, "sports");
-            console.log("✅ スポーツ好き記録");
-            return;
-        }
-        if (contains(text, ["ポケモン", "ピカチュウ"])) { increase(memory.personalLikes, "pokemon"); return; }
-        if (contains(text, ["マリオ", "ゲーム", "スイッチ", "Switch", "マイクラ", "スプラ"])) { increase(memory.personalLikes, "game"); return; }
-        if (contains(text, ["猫", "ねこ", "ネコ", "犬", "いぬ", "動物"])) { increase(memory.personalLikes, "animal"); return; }
-        if (contains(text, ["絵", "お絵かき", "図工", "工作"])) { increase(memory.personalLikes, "art"); return; }
-        if (contains(text, ["YouTube", "動画", "アニメ", "テレビ"])) { increase(memory.personalLikes, "media"); return; }
-        if (contains(text, ["ハンバーグ", "カレー", "寿司", "お肉", "給食", "食べ物"])) { increase(memory.personalLikes, "food"); return; }
-
-        // その他
-        addEpisode(memory, text);
-    }
-
-    function increase(obj, key) { obj[key] = (obj[key] || 0) + 1; }
-    function addEpisode(memory, text) { if (!memory.episodes.includes(text)) memory.episodes.push(text); }
-    function contains(text, keywords) { return keywords.some(k => text.includes(k)); }
-
-    Memory.pickMemoryForContext = function(studentId, scene) {
-        const memory = Memory.loadMemory(studentId);
-        const candidates = [];
-
-        if (scene === "chat") {
-            if (memory.profile.nickname) candidates.push(`呼び方は「${memory.profile.nickname}」だにゃ。`);
-            
-            // 好きカテゴリー
-            if ((memory.personalLikes.sports || 0) >= 1) candidates.push("この子はスポーツが好きだにゃ。サッカーや野球の話を振ってみて。");
-            if ((memory.personalLikes.pokemon || 0) >= 1) candidates.push("この子はポケモンが好きだにゃ。");
-            if ((memory.personalLikes.game || 0) >= 1) candidates.push("この子はゲームが好きだにゃ。");
-            if ((memory.personalLikes.animal || 0) >= 1) candidates.push("この子は動物が好きだにゃ。");
-            if ((memory.personalLikes.art || 0) >= 1) candidates.push("この子は絵を描くのが好きだにゃ。");
-            
-            // エピソード
-            if (memory.episodes.length > 0) {
-                const latest = memory.episodes[memory.episodes.length - 1];
-                candidates.push(`前回の話：「${latest}」。`);
-            }
-        }
+    // ネル先生に渡す「コンテキスト文字列」を作る
+    Memory.generateContextString = async function(userId) {
+        const p = await Memory.getUserProfile(userId);
         
-        if (candidates.length === 0) return null;
-        return candidates[Math.floor(Math.random() * candidates.length)];
+        let context = "";
+        if (p.likes && p.likes.length > 0) context += `・好きなもの: ${p.likes.join(", ")}\n`;
+        if (p.weaknesses && p.weaknesses.length > 0) context += `・苦手なこと: ${p.weaknesses.join(", ")} (励まして！)\n`;
+        if (p.achievements && p.achievements.length > 0) context += `・最近の頑張り: ${p.achievements.join(", ")} (褒めて！)\n`;
+        if (p.last_topic) context += `・前の話題: ${p.last_topic}\n`;
+        
+        return context;
     };
 
     global.NellMemory = Memory;

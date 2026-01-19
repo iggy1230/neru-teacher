@@ -1,4 +1,4 @@
-// --- server.js (完全復元版 v193.0: 宿題分析プロンプト & ネル先生人格完全版) ---
+// --- server.js (完全版 v194.0: 記憶形成システム搭載) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -74,8 +74,60 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
+// --- Memory Update (New!) ---
+// 会話ログから生徒プロフィールを更新するAI
+app.post('/update-memory', async (req, res) => {
+    try {
+        const { currentProfile, chatLog } = req.body;
+        console.log("[Memory] Updating profile based on chat...");
+
+        // 高速なFlashモデルを使用
+        const model = genAI.getGenerativeModel({ 
+            model: "gemini-2.0-flash",
+            generationConfig: { responseMimeType: "application/json" }
+        });
+
+        const prompt = `
+        あなたは生徒の長期記憶を管理するAIです。
+        以下の「現在のプロフィール」と「直近の会話ログ」をもとに、プロフィールを更新・拡張してください。
+
+        【現在のプロフィール】
+        ${JSON.stringify(currentProfile)}
+
+        【直近の会話ログ】
+        ${chatLog}
+
+        【更新ルール】
+        1. **likes (好きなもの)**: 新しく判明した好きなものがあれば追加。
+        2. **weaknesses (苦手なこと)**: 勉強でつまづいた箇所や苦手と言ったことがあれば追加。
+        3. **achievements (頑張ったこと)**: 宿題をやった、正解した、褒められた内容を具体的に記録。
+        4. **last_topic (最後の話題)**: 会話の最後に何を話していたかを短く記録。
+        5. 古い情報と矛盾する場合は、新しい情報を優先して上書きしてください。
+        6. **JSON形式**で出力してください。
+
+        【出力フォーマット】
+        {
+            "nickname": "あだ名(あれば)",
+            "likes": ["..."],
+            "weaknesses": ["..."],
+            "achievements": ["..."],
+            "last_topic": "..."
+        }
+        `;
+
+        const result = await model.generateContent(prompt);
+        const newProfile = JSON.parse(result.response.text());
+        
+        console.log("[Memory] Updated:", newProfile);
+        res.json(newProfile);
+
+    } catch (error) {
+        console.error("Memory Update Error:", error);
+        res.status(500).json({ error: "Memory update failed" });
+    }
+});
+
 // --- Analyze (Gemini 2.5 Pro) ---
-// ★ここが宿題読み取りの心臓部です。プロンプトを完全復元しました。
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, name } = req.body;
@@ -91,53 +143,45 @@ app.post('/analyze', async (req, res) => {
         画像（鮮明化処理済み）を解析し、正確なJSONデータを生成してください。
 
         【タスク1: 問題文の書き起こし】
-        - 設問文だけでなく、選択肢の記号と内容（ア：〜、イ：〜）も全て省略せずに書き起こしてください。
+        - 設問文、選択肢（ア：〜、イ：〜）を含めて書き起こす。
         - 手書きのメモは「問題の条件」として読み取ってください。
         - **教科別の注意点**:
           - **さんすう**: 数式、筆算の配置、図形の数値を正確に読み取る。
           - **こくご**: 縦書きの文章は右から左へ正しくつなげる。
           - **しゃかい/りか**: 地図やグラフの中にある用語も正解の根拠にする。
 
-        【タスク2: 手書き答えの読み取り (物理的な筆跡確認)】
-        - ${name}さんが書いた「手書きの答え」を読み取ってください。
+        【タスク2: 手書き答えの読み取り】
+        - ${name}さんの手書きの答えを読み取る。
         - **【超・絶対厳守】空欄判定**: 
-          解答欄の枠内に**「手書きの筆跡（インクの黒い線）」**が視認できない場合は、正解が100%分かっていても、**絶対に student_answer を空文字 "" にしてください。**
-          （AIが勝手に答えを埋めることはカンニングになります。厳禁です。）
+          解答欄の枠内に**「手書きの筆跡」**が視認できない場合は、正解が分かっていても**絶対に student_answer を空文字 "" にしてください。**
 
         【タスク3: 正解データの作成 (配列形式)】
         - **【最重要】答えは必ず「文字列のリスト（配列）」にすること**。
         - **記述問題（1つの文章）の場合**:
            - たとえ長い文章でも、読点「、」が含まれていても、**必ず要素数1の配列**にすること。
-           - 例（正）: ["ごみを減らし、資源を有効にするため。"]
-           - 例（誤）: ["ごみを減らし", "資源を有効にするため。"] （勝手に分割禁止！）
+           - 例: ["ごみを減らし、資源を有効にするため。"]
         - **複数回答の場合**:
-           - 「2つ選びなさい」や「xとyを答えなさい」など、明確に解答欄が分かれている場合のみ、複数の要素にする。
+           - 解答欄が明確に分かれている場合のみ、複数の要素にする。
            - 例: ["ア", "イ"]
         - **表記ゆれ**:
            - 漢字/ひらがなの許容は、文字列の中で **縦棒 "|"** を使う。
            - 例: ["高い|たかい"]
 
         【タスク4: 採点 & ヒント】
-        - 手書きの答えと正解を比較し、判定(is_correct)してください。
-        - 3段階のヒントを作成してください。
-          - ヒント1: 方針や着眼点
-          - ヒント2: 少し具体的な考え方
-          - ヒント3: 答えにかなり近いヒント
+        - 判定(is_correct)と、3段階のヒントを作成。
 
         【出力JSONフォーマット】
-        必ず以下のJSON形式のリストで出力してください。Markdownのコードブロックは不要です。
         [
           {
             "id": 1,
             "label": "①",
-            "question": "問題文 (選択肢含む)",
+            "question": "問題文",
             "correct_answer": ["正解1"], 
             "student_answer": ["生徒の答え"],
             "is_correct": true,
             "hints": ["ヒント1", "ヒント2", "ヒント3"]
           }
         ]
-        ※ correct_answer と student_answer は必ず配列 [] であること。
         `;
 
         const result = await model.generateContent([
@@ -149,13 +193,9 @@ app.post('/analyze', async (req, res) => {
         
         let problems = [];
         try {
-            // Markdownのコードブロック ```json ... ``` が含まれている場合への対策
             const jsonMatch = responseText.match(/\[[\s\S]*\]/);
-            if (jsonMatch) {
-                problems = JSON.parse(jsonMatch[0]);
-            } else {
-                problems = JSON.parse(responseText);
-            }
+            if (jsonMatch) problems = JSON.parse(jsonMatch[0]);
+            else problems = JSON.parse(responseText);
         } catch (e) {
             console.error("JSON Parse Error:", responseText);
             throw new Error("AIの応答が正しいJSON形式ではありませんでした。");
@@ -203,9 +243,6 @@ app.post('/game-reaction', async (req, res) => {
             あなたはネル先生。ゲーム終了。「${name}さん」のスコアは${score}点（満点20点）。
             必ず「${name}さん」と呼んでください。呼び捨て禁止。
             スコアに応じて20文字以内でコメントして。
-            ・0-5点: 笑って励ます。
-            ・6-15点: 褒める。
-            ・16点以上: 大絶賛。
             語尾は「にゃ」。
             `;
         } else {
@@ -223,12 +260,12 @@ const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
 // --- WebSocket (Chat) ---
-// ★ネル先生の人格設定（System Instruction）を完全版にしました。
 const wss = new WebSocketServer({ server });
 wss.on('connection', async (clientWs, req) => {
     const params = parse(req.url, true).query;
     const grade = params.grade || "1";
     const name = decodeURIComponent(params.name || "生徒");
+    // クライアントが作った「プロフィールの要約」を受け取る
     const statusContext = decodeURIComponent(params.context || "特になし");
 
     const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${process.env.GEMINI_API_KEY}`;
@@ -242,38 +279,29 @@ wss.on('connection', async (clientWs, req) => {
             
             【話し方のルール】
             1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
-            2. 親しみやすい日本の小学校の先生として、一文字一文字をはっきりと、丁寧に発音してにゃ。
+            2. 親しみやすく、子供にも分かりやすい言葉で話してにゃ。
             3. 生徒を呼び捨て禁止。必ず「さん」をつけるにゃ。
-            4. 子供が相手なので、難しい言葉は使わず、わかりやすく説明してにゃ。
             
-            【特殊機能: 漢字・式ボード (最重要)】
-            生徒から「この漢字どう書くの？」や「〇〇という字を見せて」、「この式を書いて」と頼まれた場合は、
-            **show_kanji ツール** を使って、その文字や式を画面に表示してにゃ。
-            
-            もしツールがうまく動かない場合や、つい喋ってしまう場合は、
-            言葉の最後に必ず **[DISPLAY: 表示したい文字]** と書いてにゃ。
-            
-            例:
-            生徒「バラってどう書くの？」
-            ネル「バラはこう書くにゃ！」 (ここで show_kanji("薔薇") を実行、または [DISPLAY: 薔薇] と出力)
+            【特殊機能】
+            1. **show_kanji ツール**: 生徒が「漢字の書き方」「式」などを聞いたら、必ずこのツールを使って画面に表示してにゃ。
+               （もしツールが使えなければ [DISPLAY: 文字] タグを使ってにゃ）
+            2. **画像認識**: 画像が送られてきたら、その内容を詳しく解説してにゃ。
 
-            【画像認識について】
-            ユーザーから画像が送られてきた場合、それは「宿題の問題」や「見てほしいもの」だにゃ。
-            その画像の内容について、詳しく解説したり、褒めたりしてにゃ。
-
-            【現在の状況・記憶】${statusContext}
+            【生徒についての記憶】
+            ${statusContext}
+            ※この記憶を元に、「そういえば〜」や「この前の〜はどうだった？」と自然に話題を振ってあげてにゃ。
             `;
 
-            // ★ツール定義 (show_kanji)
+            // ツール定義
             const tools = [{ 
                 google_search: {},
                 function_declarations: [{
                     name: "show_kanji",
-                    description: "Display a Kanji, word, or math formula on the whiteboard for the student.",
+                    description: "Display a Kanji, word, or math formula on the whiteboard.",
                     parameters: {
                         type: "OBJECT",
                         properties: {
-                            content: { type: "STRING", description: "The text, kanji, or formula to display." }
+                            content: { type: "STRING", description: "The text to display." }
                         },
                         required: ["content"]
                     }
@@ -300,23 +328,16 @@ wss.on('connection', async (clientWs, req) => {
         clientWs.on('message', (data) => {
             const msg = JSON.parse(data);
             
-            // ツール実行結果の返信 (Client -> Gemini)
             if (msg.toolResponse && geminiWs.readyState === WebSocket.OPEN) {
                 geminiWs.send(JSON.stringify({ clientContent: msg.toolResponse }));
                 return;
             }
-
-            // テキスト送信（タイマー応援など）
             if (msg.clientContent && geminiWs.readyState === WebSocket.OPEN) {
                 geminiWs.send(JSON.stringify({ client_content: msg.clientContent }));
             }
-            
-            // 音声ストリーム送信
             if (msg.base64Audio && geminiWs.readyState === WebSocket.OPEN) {
                 geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: msg.base64Audio }] } }));
             }
-            
-            // 画像送信（「これ見て！」機能）
             if (msg.base64Image && geminiWs.readyState === WebSocket.OPEN) {
                 geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "image/jpeg", data: msg.base64Image }] } }));
             }
