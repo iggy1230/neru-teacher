@@ -1,4 +1,4 @@
-// --- server.js (完全版 v183.0: 漢字表示 & リアルタイム画像解説対応) ---
+// --- server.js (完全版 v188.0: 漢字表示タグの指示強化) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -225,11 +225,11 @@ wss.on('connection', async (clientWs, req) => {
             1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
             2. 親しみやすい日本の小学校の先生として、一文字一文字をはっきりと、丁寧に発音してにゃ。
             3. 生徒を呼び捨て禁止。必ず「さん」をつけるにゃ。
-            4. **画像が送られてきた場合**: その画像について、その場で解説してにゃ。例えば「この問題は〜」や「これは〜だにゃ」と答えて。
             
             【特殊機能: 漢字ボード】
             生徒から「この漢字どう書くの？」や「〇〇という字を見せて」と頼まれた場合、
             回答の最後に必ず **[DISPLAY: 漢字]** というタグをつけてにゃ。
+            ※重要: 必ず半角の角カッコ [ ] で囲むこと！ () や <> はダメだにゃ。
             例: 「薔薇という字はこう書くにゃ。[DISPLAY: 薔薇]」
 
             【現在の状況・記憶】${statusContext}
@@ -255,17 +255,14 @@ wss.on('connection', async (clientWs, req) => {
         clientWs.on('message', (data) => {
             const msg = JSON.parse(data);
             
-            // テキスト送信（タイマー応援メッセージなど）
             if (msg.clientContent && geminiWs.readyState === WebSocket.OPEN) {
                 geminiWs.send(JSON.stringify({ client_content: msg.clientContent }));
             }
             
-            // 音声ストリーム送信
             if (msg.base64Audio && geminiWs.readyState === WebSocket.OPEN) {
                 geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: msg.base64Audio }] } }));
             }
             
-            // 画像送信（「これ見て」機能）
             if (msg.base64Image && geminiWs.readyState === WebSocket.OPEN) {
                 geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "image/jpeg", data: msg.base64Image }] } }));
             }

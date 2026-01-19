@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v187.0: 音声被り防止 & インラインホワイトボード) ---
+// --- anlyze.js (完全版 v188.0: タグ検知強化 & 揺らぎ吸収) ---
 
 // グローバル変数の初期化
 window.transcribedProblems = []; 
@@ -166,21 +166,27 @@ async function saveToNellMemory(role, text) {
     }
 }
 
-// --- メッセージ更新（修正版） ---
-// ★修正: speak引数を追加して、音声再生を制御
+// --- メッセージ更新 ---
+// ★修正: DISPLAYタグ除去ロジックを強化
 window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false, speak = true) {
     const gameScreen = document.getElementById('screen-game');
     const isGameHidden = gameScreen ? gameScreen.classList.contains('hidden') : true;
     const targetId = isGameHidden ? 'nell-text' : 'nell-text-game';
     const el = document.getElementById(targetId);
-    if (el) el.innerText = t;
+    
+    // タグ除去（表示用）
+    // 大文字小文字無視、角括弧があってもなくても「DISPLAY:」以降を除去するイメージだが、
+    // ここでは単純にタグ部分だけを消す
+    const displayRegex = /(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi;
+    const displayText = t.replace(displayRegex, "");
+    
+    if (el) el.innerText = displayText;
+    
     if (t && t.includes("もぐもぐ")) { try { sfxBori.currentTime = 0; sfxBori.play(); } catch(e){} }
     if (saveToMemory) { saveToNellMemory('nell', t); }
     
-    // speakフラグがtrueの時だけ喋る
     if (speak && typeof speakNell === 'function') {
-        let textForSpeech = t.replace(/【.*?】/g, "").trim();
-        textForSpeech = textForSpeech.replace(/\[DISPLAY:.*?\]/g, ""); 
+        let textForSpeech = displayText.replace(/【.*?】/g, "").trim();
         textForSpeech = textForSpeech.replace(/🐾/g, "");
         if (textForSpeech.length > 0) await speakNell(textForSpeech, mood);
     }
@@ -339,7 +345,6 @@ window.captureAndSendLiveImage = function() {
     
     const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
     
-    // ★修正: speak=false を指定して、音声再生を抑制
     updateNellMessage("どれどれ…見てみるにゃ…", "thinking", false, false);
     liveSocket.send(JSON.stringify({ base64Image: base64Data }));
     
@@ -531,7 +536,7 @@ async function startLiveChat() {
         liveSocket.onopen = () => { 
             clearTimeout(connectionTimeout); 
             if(btn) { btn.innerText = "📞 つながった！(終了)"; btn.style.background = "#ff5252"; btn.disabled = false; } 
-            updateNellMessage("お待たせ！なんでも話してにゃ！", "happy", false, false); // ★ここもfalse推奨
+            updateNellMessage("お待たせ！なんでも話してにゃ！", "happy", false, false); 
             isRecognitionActive = true; 
             startMicrophone(); 
         }; 
@@ -543,16 +548,18 @@ async function startLiveChat() {
                     data.serverContent.modelTurn.parts.forEach(p => { 
                         if (p.inlineData) playLivePcmAudio(p.inlineData.data); 
                         if (p.text) { 
-                            // ★ホワイトボード処理（インライン）
-                            const match = p.text.match(/\[DISPLAY:\s*(.+?)\]/);
+                            // ★修正: 柔軟なタグ検知
+                            // AIがカッコを忘れたり全角にしたりするパターンを網羅
+                            const match = p.text.match(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/i);
                             if (match) {
-                                const content = match[1];
+                                const content = match[1].trim();
                                 document.getElementById('inline-whiteboard').classList.remove('hidden');
                                 document.getElementById('whiteboard-content').innerText = content;
                             }
+                            
+                            // テキストの保存と表示（タグ除去は updateNellMessage 内で行う）
                             saveToNellMemory('nell', p.text); 
-                            const el = document.getElementById('nell-text'); 
-                            if(el) el.innerText = p.text.replace(/\[DISPLAY:.*?\]/g, "");
+                            updateNellMessage(p.text, "normal", false, true);
                         } 
                     }); 
                 } 
