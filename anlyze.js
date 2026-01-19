@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v179.0: 採点ロジックの不整合修正) ---
+// --- anlyze.js (完全版 v180.0: 分割ロジック修正) ---
 
 // グローバル変数の初期化
 window.transcribedProblems = []; 
@@ -353,9 +353,9 @@ function createProblemItem(p, mode) {
         markHtml = `<div id="mark-${p.id}" style="font-weight:900; color:#4a90e2; font-size:2rem; width:50px; text-align:center; flex-shrink:0;"></div>`;
     }
     
-    // ★修正: 空文字を除去して、ゴミデータによる不正な2列化を防ぐ
-    const correctAnswers = String(p.correct_answer || "").split(/,|、/).map(s => s.trim()).filter(s => s);
-    const studentAnswers = String(p.student_answer || "").split(/,|、/).map(s => s.trim()); 
+    // ★修正: split(',') に変更し、読点での分割を阻止
+    const correctAnswers = String(p.correct_answer || "").split(',').map(s => s.trim()).filter(s => s);
+    const studentAnswers = String(p.student_answer || "").split(',').map(s => s.trim()); 
     let inputHtml = "";
     
     if (correctAnswers.length > 1) {
@@ -405,7 +405,7 @@ window.renderProblemSelection = function() {
 function normalizeAnswer(str) { if (!str) return ""; let normalized = str.trim().replace(/[\u30a1-\u30f6]/g, m => String.fromCharCode(m.charCodeAt(0) - 0x60)); return normalized; }
 function isMatch(student, correctString) { const s = normalizeAnswer(student); const options = normalizeAnswer(correctString).split('|'); return options.some(opt => opt === s); }
 
-// ★修正: 採点ロジックも空文字除去で統一
+// ★修正: split(',') に変更
 window.checkMultiAnswer = function(id, event) {
     if (window.isComposing) return;
     const problem = transcribedProblems.find(p => p.id === id);
@@ -421,8 +421,9 @@ window.checkMultiAnswer = function(id, event) {
 function _performCheckMultiAnswer(id) {
     const problem = transcribedProblems.find(p => p.id === id); if (!problem) return;
     const userValues = problem.student_answer.split(',');
-    // ここでも空文字除去
-    const correctList = String(problem.correct_answer || "").split(/,|、/).map(s => s.trim()).filter(s => s);
+    
+    // ★修正: split(',') に変更
+    const correctList = String(problem.correct_answer || "").split(',').map(s => s.trim()).filter(s => s);
     let allCorrect = false;
     if (userValues.length === correctList.length) {
         const usedIndices = new Set(); let matchCount = 0;
@@ -459,11 +460,12 @@ function _performCheckAnswerDynamically(id, val) {
     else if (val.trim().length > 0) { try { sfxBatu.currentTime = 0; sfxBatu.play(); } catch(e){} }
 }
 
-// ★修正: 教えてモードの採点ボタンも統一
+// ★修正: split(',') に変更
 window.checkOneProblem = function(id) { 
     const problem = transcribedProblems.find(p => p.id === id); if (!problem) return; 
-    // ここでも空文字除去
-    const correctList = String(problem.correct_answer || "").split(/,|、/).map(s => s.trim()).filter(s => s);
+    
+    // ★修正: split(',') に変更
+    const correctList = String(problem.correct_answer || "").split(',').map(s => s.trim()).filter(s => s);
     let userValues = []; 
     if (correctList.length > 1) { 
         const inputs = document.querySelectorAll(`.multi-input-${id}`); 
