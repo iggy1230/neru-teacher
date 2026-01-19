@@ -18,7 +18,6 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     
     <style>
-        /* 追加スタイル: タイマー & ホワイトボード */
         .timer-box {
             background: #fff; border: 3px solid #ff85a1; border-radius: 15px;
             padding: 10px; margin: 10px 0; text-align: center;
@@ -30,12 +29,23 @@
             border-radius: 20px; font-weight: bold; cursor: pointer;
         }
         .mini-cam-btn {
-            background: #4a90e2; color: white; border: none; padding: 8px 15px;
+            background: #4a90e2; color: white; border: none; padding: 12px 15px;
             border-radius: 20px; font-weight: bold; cursor: pointer; width: 100%;
-            margin-top: 10px; box-shadow: 0 4px 0 #2a609e;
+            margin-top: 10px; box-shadow: 0 4px 0 #2a609e; display: flex;
+            align-items: center; justify-content: center; gap: 8px;
         }
         .mini-cam-btn:active { transform: translateY(2px); box-shadow: 0 2px 0 #2a609e; }
         
+        /* カメラプレビュー用スタイル（小さく表示） */
+        #live-chat-video-container {
+            width: 100px; height: 100px; border-radius: 10px; overflow: hidden;
+            border: 2px solid #ccc; margin: 10px auto; background: #000;
+            display: none; /* 初期状態は非表示 */
+        }
+        #live-chat-video {
+            width: 100%; height: 100%; object-fit: cover;
+        }
+
         #nell-board {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.8); z-index: 9999;
@@ -59,7 +69,7 @@
         <span>🍖</span><span id="mini-karikari-count">0</span>
     </div>
 
-    <!-- ネル先生のホワイトボード (漢字表示用) -->
+    <!-- ネル先生のホワイトボード -->
     <div id="nell-board" class="hidden">
         <div id="board-content"></div>
         <button onclick="document.getElementById('nell-board').classList.add('hidden')" class="main-btn pink-btn" style="width:150px; margin-top:20px;">閉じる</button>
@@ -72,7 +82,7 @@
             <div class="title-btn-container">
                 <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
             </div>
-            <div class="version-tag">Build: v183.0-Stable</div>
+            <div class="version-tag">Build: v184.0-Stable</div>
         </section>
 
         <!-- 1. 校門 (ユーザー選択) -->
@@ -132,7 +142,6 @@
                 <button onclick="selectMode('grade')" class="main-btn red-btn">💯 採点ネル先生</button>
                 <button onclick="selectMode('review')" class="main-btn orange-btn">🔥 復習ノート</button>
                 <button onclick="showGame()" class="main-btn yellow-btn">🎮 カリカリ・キャッチ</button>
-                <!-- 名称変更 -->
                 <button onclick="selectMode('chat')" class="main-btn green-btn">👩‍🏫 ネル先生の個別指導</button>
                 <button onclick="selectMode('lunch')" class="main-btn pink-btn">🍽️ おいしい給食</button>
                 <button onclick="showAttendance()" class="main-btn purple-btn">📅 出席簿をみる</button>
@@ -233,8 +242,14 @@
                             <button id="mic-btn" class="camera-btn-large" style="background:#ff85a1; box-shadow:none;">🎤 おはなしする</button>
                             
                             <!-- 「これ見て！」カメラボタン -->
-                            <button id="live-camera-btn" class="mini-cam-btn" onclick="captureAndSendLiveImage()">📷 これ教えて！（カメラで見せる）</button>
-                            <video id="live-chat-video" style="display:none;" autoplay playsinline muted></video>
+                            <button id="live-camera-btn" class="mini-cam-btn" onclick="captureAndSendLiveImage()">
+                                <span>📷</span> これ教えて！（カメラで見せる）
+                            </button>
+                            
+                            <!-- カメラプレビュー -->
+                            <div id="live-chat-video-container">
+                                <video id="live-chat-video" autoplay playsinline muted></video>
+                            </div>
                             
                             <p id="user-speech-text" style="margin-top:15px; font-weight:bold; min-height:1.5em;">...</p>
                         </div>

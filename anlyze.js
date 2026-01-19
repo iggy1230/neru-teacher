@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v183.0: ネル先生タイマー & これ見てカメラ & 漢字ボード) ---
+// --- anlyze.js (完全版 v184.0: カメラ起動強化 & タイマー連動チェック) ---
 
 // グローバル変数の初期化
 window.transcribedProblems = []; 
@@ -40,7 +40,7 @@ let homeworkStream = null;
 let studyTimerValue = 0;
 let studyTimerInterval = null;
 let studyTimerRunning = false;
-let studyTimerCheck = 0; // 5分チェック用
+let studyTimerCheck = 0; 
 
 const sfxBori = new Audio('boribori.mp3');
 const sfxHit = new Audio('cat1c.mp3');
@@ -177,7 +177,7 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     if (saveToMemory) { saveToNellMemory('nell', t); }
     if (typeof speakNell === 'function') {
         let textForSpeech = t.replace(/【.*?】/g, "").trim();
-        textForSpeech = textForSpeech.replace(/\[DISPLAY:.*?\]/g, ""); // 表示タグは読み上げない
+        textForSpeech = textForSpeech.replace(/\[DISPLAY:.*?\]/g, ""); 
         textForSpeech = textForSpeech.replace(/🐾/g, "");
         if (textForSpeech.length > 0) await speakNell(textForSpeech, mood);
     }
@@ -197,7 +197,6 @@ window.selectMode = function(m) {
     if (m === 'chat') { 
         document.getElementById('chat-view').classList.remove('hidden'); 
         updateNellMessage("「おはなしする」を押してね！", "gentle", false); 
-        // タイマー表示リセット
         updateTimerDisplay();
     } 
     else if (m === 'lunch') { document.getElementById('lunch-view').classList.remove('hidden'); updateNellMessage("お腹ペコペコだにゃ……", "thinking", false); } 
@@ -242,6 +241,12 @@ window.resetTimer = function() {
 };
 
 window.toggleTimer = function() {
+    // ★修正: 接続チェックを追加
+    if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) {
+        alert("タイマーの応援を聞くには、先に「🎤 おはなしする」ボタンを押してネル先生とつながってにゃ！");
+        return;
+    }
+
     if (studyTimerRunning) {
         // ストップ
         clearInterval(studyTimerInterval);
@@ -256,7 +261,6 @@ window.toggleTimer = function() {
         document.getElementById('timer-toggle-btn').innerText = "一時停止";
         document.getElementById('timer-toggle-btn').className = "main-btn gray-btn";
         
-        // 最初の応援
         if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
             sendSilentPrompt("勉強タイマーをスタートしたよ。短く応援して。");
         }
@@ -267,7 +271,6 @@ window.toggleTimer = function() {
                 studyTimerCheck++;
                 updateTimerDisplay();
                 
-                // 5分(300秒)おきに応援
                 if (studyTimerCheck >= 300) {
                     studyTimerCheck = 0;
                     if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
@@ -275,7 +278,6 @@ window.toggleTimer = function() {
                     }
                 }
             } else {
-                // 終了
                 clearInterval(studyTimerInterval);
                 studyTimerRunning = false;
                 document.getElementById('timer-toggle-btn').innerText = "スタート！";
@@ -298,7 +300,6 @@ function updateTimerDisplay() {
     if(el) el.innerText = `${m}:${s}`;
 }
 
-// Geminiに喋らせるための隠しコマンド送信
 function sendSilentPrompt(text) {
     if (!liveSocket) return;
     liveSocket.send(JSON.stringify({ 
@@ -318,30 +319,26 @@ window.captureAndSendLiveImage = function() {
         return alert("まずは「おはなしする」でネル先生とつながってにゃ！");
     }
     
-    // 映像ストリームがあるか確認
+    // ★修正: カメラが動いているか厳密チェック
     const video = document.getElementById('live-chat-video');
-    if (!video || !mediaStream) {
-        return alert("カメラが動いてないにゃ...。もう一度「おはなしする」を押してみてにゃ。");
+    if (!video || !video.srcObject || !video.srcObject.active) {
+        return alert("カメラが動いてないにゃ...。一度「おはなしする」を終了して、もう一度つなぎ直してみてにゃ。");
     }
 
-    // キャプチャ
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     
-    // JPEG Base64変換 (data:image/jpeg;base64,...)
     const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
     
-    // 送信
     updateNellMessage("どれどれ…見てみるにゃ…", "thinking", false);
     liveSocket.send(JSON.stringify({ base64Image: base64Data }));
 };
 
 
 // --- 分析ロジック (既存) ---
-// (省略せずそのまま記載します)
 window.startAnalysis = async function(b64) {
     if (isAnalyzing) return;
     isAnalyzing = true; 
@@ -531,17 +528,15 @@ async function startLiveChat() {
                     data.serverContent.modelTurn.parts.forEach(p => { 
                         if (p.inlineData) playLivePcmAudio(p.inlineData.data); 
                         if (p.text) { 
-                            // ★漢字表示タグの検知
                             const match = p.text.match(/\[DISPLAY:\s*(.+?)\]/);
                             if (match) {
                                 const content = match[1];
                                 document.getElementById('nell-board').classList.remove('hidden');
                                 document.getElementById('board-content').innerText = content;
                             }
-                            
                             saveToNellMemory('nell', p.text); 
                             const el = document.getElementById('nell-text'); 
-                            if(el) el.innerText = p.text.replace(/\[DISPLAY:.*?\]/g, ""); // 表示用テキストからはタグ削除
+                            if(el) el.innerText = p.text.replace(/\[DISPLAY:.*?\]/g, "");
                         } 
                     }); 
                 } 
@@ -568,9 +563,9 @@ function stopLiveChat() {
     if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; } 
     liveSocket = null; 
     
-    // 映像プレビュー停止
     const video = document.getElementById('live-chat-video');
     if(video) video.srcObject = null;
+    document.getElementById('live-chat-video-container').style.display = 'none';
 }
 
 async function startMicrophone() { 
@@ -594,14 +589,18 @@ async function startMicrophone() {
             recognition.start(); 
         } 
         
-        // ★修正: カメラ機能のために video: true を追加
-        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1 }, video: true }); 
+        // ★修正: カメラを環境（背面）優先で起動
+        mediaStream = await navigator.mediaDevices.getUserMedia({ 
+            audio: { sampleRate: 16000, channelCount: 1 }, 
+            video: { facingMode: "environment" } 
+        }); 
         
-        // 映像ストリームを裏のvideo要素に流す（キャプチャ用）
         const video = document.getElementById('live-chat-video');
         if (video) {
             video.srcObject = mediaStream;
             video.play();
+            // プレビュー表示
+            document.getElementById('live-chat-video-container').style.display = 'block';
         }
 
         const processorCode = `class PcmProcessor extends AudioWorkletProcessor { constructor() { super(); this.bufferSize = 2048; this.buffer = new Float32Array(this.bufferSize); this.index = 0; } process(inputs, outputs, parameters) { const input = inputs[0]; if (input.length > 0) { const channel = input[0]; for (let i = 0; i < channel.length; i++) { this.buffer[this.index++] = channel[i]; if (this.index >= this.bufferSize) { this.port.postMessage(this.buffer); this.index = 0; } } } return true; } } registerProcessor('pcm-processor', PcmProcessor);`; 
@@ -616,11 +615,22 @@ async function startMicrophone() {
             liveSocket.send(JSON.stringify({ base64Audio: arrayBufferToBase64(floatTo16BitPCM(downsampled)) })); 
         }; 
     } catch(e) {
-        // カメラが使えなくても音声だけで続行
+        console.warn("Camera failed, trying audio only:", e);
         try {
             mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1 } });
-            // ... (音声のみの場合の処理は省略、基本同じフロー)
-        } catch(ex) {}
+            // 音声のみの場合の処理（以下略、カメラエラー時のフォールバック）
+            const processorCode = `class PcmProcessor extends AudioWorkletProcessor { constructor() { super(); this.bufferSize = 2048; this.buffer = new Float32Array(this.bufferSize); this.index = 0; } process(inputs, outputs, parameters) { const input = inputs[0]; if (input.length > 0) { const channel = input[0]; for (let i = 0; i < channel.length; i++) { this.buffer[this.index++] = channel[i]; if (this.index >= this.bufferSize) { this.port.postMessage(this.buffer); this.index = 0; } } } return true; } } registerProcessor('pcm-processor', PcmProcessor);`; 
+            const blob = new Blob([processorCode], { type: 'application/javascript' }); 
+            await audioContext.audioWorklet.addModule(URL.createObjectURL(blob)); 
+            const source = audioContext.createMediaStreamSource(mediaStream); 
+            workletNode = new AudioWorkletNode(audioContext, 'pcm-processor'); 
+            source.connect(workletNode); 
+            workletNode.port.onmessage = (event) => { 
+                if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return; 
+                const downsampled = downsampleBuffer(event.data, audioContext.sampleRate, 16000); 
+                liveSocket.send(JSON.stringify({ base64Audio: arrayBufferToBase64(floatTo16BitPCM(downsampled)) })); 
+            };
+        } catch(ex) { alert("マイクも使えないみたいだにゃ..."); }
     } 
 }
 function playLivePcmAudio(base64) { if (!audioContext) return; const binary = window.atob(base64); const bytes = new Uint8Array(binary.length); for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i); const float32 = new Float32Array(bytes.length / 2); const view = new DataView(bytes.buffer); for (let i = 0; i < float32.length; i++) float32[i] = view.getInt16(i * 2, true) / 32768.0; const buffer = audioContext.createBuffer(1, float32.length, 24000); buffer.copyToChannel(float32, 0); const source = audioContext.createBufferSource(); source.buffer = buffer; source.connect(audioContext.destination); const now = audioContext.currentTime; if (nextStartTime < now) nextStartTime = now; source.start(nextStartTime); const startDelay = (nextStartTime - now) * 1000; const duration = buffer.duration * 1000; if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer); speakingStartTimer = setTimeout(() => { window.isNellSpeaking = true; }, startDelay); stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, startDelay + duration + 100); nextStartTime += buffer.duration; }
