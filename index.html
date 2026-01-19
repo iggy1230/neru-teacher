@@ -16,6 +16,40 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    
+    <style>
+        /* 追加スタイル: タイマー & ホワイトボード */
+        .timer-box {
+            background: #fff; border: 3px solid #ff85a1; border-radius: 15px;
+            padding: 10px; margin: 10px 0; text-align: center;
+        }
+        .timer-display { font-size: 2rem; font-weight: 900; color: #333; font-family: monospace; }
+        .timer-controls { display: flex; justify-content: center; gap: 10px; margin-top: 5px; }
+        .timer-btn {
+            background: #ffb74d; color: white; border: none; padding: 5px 15px;
+            border-radius: 20px; font-weight: bold; cursor: pointer;
+        }
+        .mini-cam-btn {
+            background: #4a90e2; color: white; border: none; padding: 8px 15px;
+            border-radius: 20px; font-weight: bold; cursor: pointer; width: 100%;
+            margin-top: 10px; box-shadow: 0 4px 0 #2a609e;
+        }
+        .mini-cam-btn:active { transform: translateY(2px); box-shadow: 0 2px 0 #2a609e; }
+        
+        #nell-board {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8); z-index: 9999;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+        #board-content {
+            background: white; width: 90%; max-width: 400px; aspect-ratio: 4/3;
+            border-radius: 10px; border: 8px solid #a1887f;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 5rem; font-weight: 900; color: #333;
+            box-shadow: 0 0 20px rgba(255,255,255,0.2);
+            font-family: 'Kiwi Maru', serif;
+        }
+    </style>
 </head>
 <body>
     <canvas id="hanamaru-canvas"></canvas>
@@ -25,6 +59,12 @@
         <span>🍖</span><span id="mini-karikari-count">0</span>
     </div>
 
+    <!-- ネル先生のホワイトボード (漢字表示用) -->
+    <div id="nell-board" class="hidden">
+        <div id="board-content"></div>
+        <button onclick="document.getElementById('nell-board').classList.add('hidden')" class="main-btn pink-btn" style="width:150px; margin-top:20px;">閉じる</button>
+    </div>
+
     <div id="app-container">
         <!-- 0. タイトル画面 -->
         <section id="screen-title" class="screen title-screen">
@@ -32,25 +72,20 @@
             <div class="title-btn-container">
                 <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
             </div>
-            <div class="version-tag">Build: v181.0-Stable</div>
+            <div class="version-tag">Build: v183.0-Stable</div>
         </section>
 
         <!-- 1. 校門 (ユーザー選択) -->
         <section id="screen-gate" class="screen hidden">
             <h2 class="section-title">登校する生徒を選んでにゃ</h2>
-            
             <div class="gate-layout"><div id="user-list" class="right-user-list"></div></div>
-            
             <button onclick="showEnrollment()" class="main-btn pink-btn">🐾 新しく入学するにゃ(ゲスト)</button>
-            
-            <!-- Googleログインボタン -->
             <div style="width:100%; margin: 0 0 12px 0;">
                 <button onclick="startGoogleLogin()" class="main-btn" style="background:#fff; color:#555; display:flex; align-items:center; justify-content:center; gap:10px; box-shadow:0 2px 5px rgba(0,0,0,0.2);">
                     <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" width="24">
                     Googleアカウントで登校
                 </button>
             </div>
-
             <button onclick="backToTitle()" class="main-btn gray-btn">タイトルに戻る</button>
         </section>
 
@@ -97,18 +132,16 @@
                 <button onclick="selectMode('grade')" class="main-btn red-btn">💯 採点ネル先生</button>
                 <button onclick="selectMode('review')" class="main-btn orange-btn">🔥 復習ノート</button>
                 <button onclick="showGame()" class="main-btn yellow-btn">🎮 カリカリ・キャッチ</button>
-                <button onclick="selectMode('chat')" class="main-btn green-btn">🎤 こじんめんだん</button>
+                <!-- 名称変更 -->
+                <button onclick="selectMode('chat')" class="main-btn green-btn">👩‍🏫 ネル先生の個別指導</button>
                 <button onclick="selectMode('lunch')" class="main-btn pink-btn">🍽️ おいしい給食</button>
                 <button onclick="showAttendance()" class="main-btn purple-btn">📅 出席簿をみる</button>
-                
-                <!-- 記憶管理ボタン -->
                 <button onclick="openMemoryManager()" class="main-btn gray-btn" style="background:#607d8b; border:none; box-shadow:0 4px 0 #455a64;">🧠 記憶を整理する</button>
-                
                 <button onclick="backToTitle()" class="main-btn gray-btn">👋 帰宅する</button>
             </div>
         </section>
 
-        <!-- 4. メイン画面 (分析・結果・チャット・給食) -->
+        <!-- 4. メイン画面 -->
         <section id="screen-main" class="screen hidden">
             <header>
                 <button id="main-back-btn" onclick="backToLobby()" class="main-btn gray-btn" style="width:auto; padding:10px 20px;">←</button>
@@ -122,7 +155,6 @@
                     <div class="chat-bubble"><p id="nell-text"></p></div>
                 </div>
                 
-                <!-- 教科選択 -->
                 <div id="subject-selection-view" class="hidden">
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
                         <button onclick="setSubject('こくご')" class="main-btn pink-btn">こくご</button>
@@ -135,7 +167,6 @@
                 <div id="chalkboard" class="chalkboard hidden"></div>
                 
                 <div class="work-area">
-                    <!-- 写真アップロード -->
                     <div id="upload-controls" class="hidden">
                         <p style="text-align:center; margin-bottom:10px;">宿題をみせてね！</p>
                         <div style="display:flex; justify-content:center; gap:10px; margin-bottom:15px;">
@@ -151,14 +182,12 @@
                         </div>
                     </div>
 
-                    <!-- 思考中アニメーション -->
                     <div id="thinking-view" class="hidden">
                         <img src="nell-inspect.png" class="loader-inspect-img" onerror="this.src='nell-normal.png'">
                         <div class="progress-container"><div id="progress-bar" class="progress-bar"></div></div>
                         <p id="thinking-status">考え中... <span id="progress-percent">0</span>%</p>
                     </div>
 
-                    <!-- 問題選択 (教えてモード/復習モード) -->
                     <div id="problem-selection-view" class="hidden">
                         <div class="problem-selection-card">
                             <div class="problem-scroll-area" id="transcribed-problem-list"></div>
@@ -168,7 +197,6 @@
                         </div>
                     </div>
 
-                    <!-- 結果・ヒント表示 (採点モード/ヒント) -->
                     <div id="final-view" class="hidden">
                         <div id="grade-sheet-container" class="hidden">
                             <div class="glass-card" id="problem-list-grade" style="background:white; border-radius:15px; padding:10px;"></div>
@@ -185,16 +213,33 @@
                         </div>
                     </div>
 
-                    <!-- チャットモード -->
+                    <!-- チャットモード（個別指導） -->
                     <div id="chat-view" class="hidden">
-                        <div class="glass-card" style="text-align:center; padding:20px;">
-                            <p style="font-size:0.9rem; color:#666;">マイクを押して話しかけてね</p>
+                        <div class="glass-card" style="text-align:center; padding:15px;">
+                            <p style="font-size:0.9rem; color:#666;">ネル先生とお話ししながら勉強するにゃ！</p>
+                            
+                            <!-- ネル先生タイマー -->
+                            <div class="timer-box">
+                                <div style="font-size:0.8rem; margin-bottom:5px;">⏱️ ネル先生タイマー</div>
+                                <div id="study-timer" class="timer-display">00:00</div>
+                                <div class="timer-controls">
+                                    <button onclick="setTimer(10)" class="timer-btn">+10分</button>
+                                    <button onclick="setTimer(30)" class="timer-btn">+30分</button>
+                                    <button onclick="resetTimer()" class="timer-btn" style="background:#b0bec5;">リセット</button>
+                                </div>
+                                <button id="timer-toggle-btn" onclick="toggleTimer()" class="main-btn pink-btn" style="margin-top:10px; width:100%;">スタート！</button>
+                            </div>
+
                             <button id="mic-btn" class="camera-btn-large" style="background:#ff85a1; box-shadow:none;">🎤 おはなしする</button>
+                            
+                            <!-- 「これ見て！」カメラボタン -->
+                            <button id="live-camera-btn" class="mini-cam-btn" onclick="captureAndSendLiveImage()">📷 これ教えて！（カメラで見せる）</button>
+                            <video id="live-chat-video" style="display:none;" autoplay playsinline muted></video>
+                            
                             <p id="user-speech-text" style="margin-top:15px; font-weight:bold; min-height:1.5em;">...</p>
                         </div>
                     </div>
 
-                    <!-- 給食モード -->
                     <div id="lunch-view" class="hidden">
                         <div class="glass-card" style="text-align:center; padding:20px;">
                             <p style="font-size:1.2rem; font-weight:900;">ネル先生にお給食をあげる？</p>
@@ -280,7 +325,7 @@
 
     <!-- Firebase設定・ロジック読み込み -->
     <script src="firebase-config.js"></script>
-    <script src="memory.js"></script> <!-- memory.jsを読み込む場合 -->
+    <script src="memory.js"></script>
     <script src="audio.js"></script>
     <script src="ui.js"></script>
     <script src="user.js"></script>

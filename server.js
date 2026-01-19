@@ -1,4 +1,4 @@
-// --- server.js (完全版 v181.0: データ構造の根本修正) ---
+// --- server.js (完全版 v183.0: 漢字表示 & リアルタイム画像解説対応) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -85,7 +85,6 @@ app.post('/analyze', async (req, res) => {
             generationConfig: { responseMimeType: "application/json", temperature: 0.0 }
         });
 
-        // プロンプトを根本的に変更：文字列ではなく「配列」で返却させる
         const prompt = `
         あなたは小学${grade}年生の${name}さんの${subject}担当の教育AI「ネル先生」です。
         画像（鮮明化処理済み）を解析し、正確なJSONデータを生成してください。
@@ -125,7 +124,6 @@ app.post('/analyze', async (req, res) => {
             "hints": ["ヒント1", "ヒント2", "ヒント3"]
           }
         ]
-        ※ correct_answer と student_answer は必ず配列 [] であること。
         `;
 
         const result = await model.generateContent([
@@ -222,23 +220,18 @@ wss.on('connection', async (clientWs, req) => {
         geminiWs.on('open', () => {
             const systemInstructionText = `
             あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。相手は小学${grade}年生の${name}さん。
+            
             【話し方のルール】
             1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
             2. 親しみやすい日本の小学校の先生として、一文字一文字をはっきりと、丁寧に発音してにゃ。
-            3. 特に最初や最後の音を、一文字抜かしたり消したりせずに、最初から最後までしっかり声に出して喋るのがコツだにゃ。
-            4. 落ち着いた日本語のリズムを大切にして、親しみやすく話してにゃ。
-            5. 給食(餌)のカリカリが大好物にゃ。
-            6. とにかく何でも知っているにゃ。もしマニアックな質問や知らないことを聞かれたら、Google検索ツールを使って調べて答えてにゃ。
-            7. まれに「○○さんは宿題は終わったかにゃ？」や「そろそろ宿題始めようかにゃ？」と宿題を促してくる
-            8. 句読点で自然な間をとる
-            9. 日本語をとても上手にしゃべる猫だにゃ
-            10. いつも高いトーンで話してにゃ
-
-            【NGなこと】
-            ・ロボットみたいに不自然に区切るのではなく、繋がりのある滑らかな日本語でお願いにゃ。
-            ・早口になりすぎて、言葉の一部が消えてしまうのはダメだにゃ。
-            ・生徒を呼び捨てにすることは禁止だにゃ。必ず「さん」をつけるにゃ。
+            3. 生徒を呼び捨て禁止。必ず「さん」をつけるにゃ。
+            4. **画像が送られてきた場合**: その画像について、その場で解説してにゃ。例えば「この問題は〜」や「これは〜だにゃ」と答えて。
             
+            【特殊機能: 漢字ボード】
+            生徒から「この漢字どう書くの？」や「〇〇という字を見せて」と頼まれた場合、
+            回答の最後に必ず **[DISPLAY: 漢字]** というタグをつけてにゃ。
+            例: 「薔薇という字はこう書くにゃ。[DISPLAY: 薔薇]」
+
             【現在の状況・記憶】${statusContext}
             `;
 
@@ -261,8 +254,20 @@ wss.on('connection', async (clientWs, req) => {
 
         clientWs.on('message', (data) => {
             const msg = JSON.parse(data);
+            
+            // テキスト送信（タイマー応援メッセージなど）
+            if (msg.clientContent && geminiWs.readyState === WebSocket.OPEN) {
+                geminiWs.send(JSON.stringify({ client_content: msg.clientContent }));
+            }
+            
+            // 音声ストリーム送信
             if (msg.base64Audio && geminiWs.readyState === WebSocket.OPEN) {
                 geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: msg.base64Audio }] } }));
+            }
+            
+            // 画像送信（「これ見て」機能）
+            if (msg.base64Image && geminiWs.readyState === WebSocket.OPEN) {
+                geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "image/jpeg", data: msg.base64Image }] } }));
             }
         });
 
