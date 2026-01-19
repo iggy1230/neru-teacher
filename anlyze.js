@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v181.0: 配列データ構造対応) ---
+// --- anlyze.js (完全版 v181.1: 配列対応 & 記憶管理) ---
 
 // グローバル変数の初期化
 window.transcribedProblems = []; 
@@ -238,12 +238,9 @@ window.startAnalysis = async function(b64) {
         const data = await res.json();
         if (!data || data.length === 0) throw new Error("No Data");
         
-        // 配列かどうかチェックして整形
+        // 配列かどうかチェックして整形 (v181.0対応)
         transcribedProblems = data.map((prob, index) => {
-            // ここで配列チェック。もし文字列なら配列化（後方互換）
             let studentArr = Array.isArray(prob.student_answer) ? prob.student_answer : (prob.student_answer ? [prob.student_answer] : []);
-            // サーバー側で空配列でも、アプリ側で操作するために最低1つの空要素が必要な場合があるが、
-            // 採点前ならそのまま。
             return { 
                 ...prob, 
                 id: index + 1, 
@@ -273,8 +270,6 @@ window.startHint = function(id) {
     const board = document.getElementById('chalkboard'); if(board) { board.innerText = selectedProblem.question; board.classList.remove('hidden'); }
     document.getElementById('main-back-btn').classList.add('hidden');
     updateNellMessage("ヒントを見るにゃ？", "thinking", false);
-    
-    // UI初期化
     renderHintUI();
 };
 
@@ -284,7 +279,6 @@ function renderHintUI() {
     const hintBtnsContainer = document.querySelector('.hint-btns');
     hintBtnsContainer.innerHTML = `<div class="hint-step-badge" id="hint-step-label">考え方</div>`;
 
-    // 解放ボタン
     let nextCost = 0, nextLabel = "";
     let nextLevel = maxUnlocked + 1;
     if (nextLevel === 1) { nextCost = 5; nextLabel = "カリカリ(×5)でヒントをもらう"; }
@@ -305,7 +299,6 @@ function renderHintUI() {
         hintBtnsContainer.appendChild(revealBtn);
     }
     
-    // 既読ボタン
     if (maxUnlocked > 0) {
         const reviewContainer = document.createElement('div');
         reviewContainer.style.display = "flex";
@@ -349,33 +342,27 @@ window.showHintText = function(level) {
 
 window.revealAnswer = function() {
     const ansArea = document.getElementById('answer-display-area'); const finalTxt = document.getElementById('final-answer-text');
-    // 配列対応：複数回答の場合は「、」でつなぐ
+    // 配列対応
     const correctArr = Array.isArray(selectedProblem.correct_answer) ? selectedProblem.correct_answer : [selectedProblem.correct_answer];
     let displayAnswer = correctArr.map(part => part.split('|')[0]).join(', ');
-    
     if (ansArea && finalTxt) { finalTxt.innerText = displayAnswer; ansArea.classList.remove('hidden'); ansArea.style.display = "block"; }
     const btns = document.querySelectorAll('.hint-btns button.orange-btn'); btns.forEach(b => b.classList.add('hidden'));
     updateNellMessage(`答えは「${displayAnswer}」だにゃ！`, "gentle", false); 
 };
 
-// --- リスト生成 ---
+// --- リスト生成 (配列対応版) ---
 function createProblemItem(p, mode) {
     const isGradeMode = (mode === 'grade');
     let markHtml = "", bgStyle = "background:white;";
     
-    // 配列データの正規化（空文字除去もここで行う）
     let correctList = Array.isArray(p.correct_answer) ? p.correct_answer : [String(p.correct_answer)];
-    correctList = correctList.map(s => String(s).trim()).filter(s => s !== ""); // 空要素を除去
+    correctList = correctList.map(s => String(s).trim()).filter(s => s !== ""); 
 
     let studentList = Array.isArray(p.student_answer) ? p.student_answer : [String(p.student_answer)];
-    // 生徒の答えは「未回答」の状態もあり得るので、無理にfilterしないが、
-    // 配列長を正解に合わせるために調整
     
     if (isGradeMode) {
         let isCorrect = p.is_correct;
-        // サーバーが判定していない場合のクライアント判定
         if (isCorrect === undefined) { 
-            // 簡易判定（全要素一致）
             if (correctList.length !== studentList.length) isCorrect = false;
             else {
                 isCorrect = true;
@@ -392,7 +379,6 @@ function createProblemItem(p, mode) {
     
     let inputHtml = "";
     
-    // 入力欄の数は「正解の数」に合わせる（これが最も安全）
     if (correctList.length > 1) {
         inputHtml = `<div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px; width:100%;">`;
         for (let i = 0; i < correctList.length; i++) {
@@ -402,7 +388,6 @@ function createProblemItem(p, mode) {
         }
         inputHtml += `</div>`;
     } else {
-        // 正解が1つの場合（記述含む）
         const val = studentList[0] || "";
         const onInput = isGradeMode ? `oninput="checkAnswerDynamically(${p.id}, this, event)"` : "";
         const idAttr = isGradeMode ? "" : `id="single-input-${p.id}"`;
@@ -438,17 +423,15 @@ window.renderProblemSelection = function() {
     const btn = document.querySelector('#problem-selection-view button.orange-btn'); if (btn) { btn.disabled = false; btn.innerText = "✨ ぜんぶわかったにゃ！"; } 
 };
 
-// --- 採点ロジック ---
+// --- 採点ロジック (配列対応) ---
 function normalizeAnswer(str) { if (!str) return ""; let normalized = str.trim().replace(/[\u30a1-\u30f6]/g, m => String.fromCharCode(m.charCodeAt(0) - 0x60)); return normalized; }
 function isMatch(student, correctString) { const s = normalizeAnswer(student); const options = normalizeAnswer(correctString).split('|'); return options.some(opt => opt === s); }
 
-// 配列対応版チェック
 window.checkMultiAnswer = function(id, event) {
     if (window.isComposing) return;
     const problem = transcribedProblems.find(p => p.id === id);
     if (problem) {
         const inputs = document.querySelectorAll(`.multi-input-${id}`);
-        // 配列として保存
         const userValues = Array.from(inputs).map(input => input.value);
         problem.student_answer = userValues;
     }
@@ -458,7 +441,7 @@ window.checkMultiAnswer = function(id, event) {
 
 function _performCheckMultiAnswer(id) {
     const problem = transcribedProblems.find(p => p.id === id); if (!problem) return;
-    const userValues = problem.student_answer; // 配列
+    const userValues = problem.student_answer; 
     const correctList = Array.isArray(problem.correct_answer) ? problem.correct_answer : [problem.correct_answer];
     
     let allCorrect = false;
@@ -481,7 +464,7 @@ function _performCheckMultiAnswer(id) {
 window.checkAnswerDynamically = function(id, inputElem, event) { 
     if (window.isComposing) return;
     const problem = transcribedProblems.find(p => p.id === id);
-    if(problem) problem.student_answer = [inputElem.value]; // 配列として保存
+    if(problem) problem.student_answer = [inputElem.value];
     const val = inputElem.value;
     if(window.gradingTimer) clearTimeout(window.gradingTimer);
     window.gradingTimer = setTimeout(() => { _performCheckAnswerDynamically(id, val); }, 1000);
@@ -489,7 +472,6 @@ window.checkAnswerDynamically = function(id, inputElem, event) {
 
 function _performCheckAnswerDynamically(id, val) {
     const problem = transcribedProblems.find(p => p.id === id); if (!problem) return;
-    // 配列の0番目と比較（単一回答前提）
     const correctVal = Array.isArray(problem.correct_answer) ? problem.correct_answer[0] : problem.correct_answer;
     const isCorrect = isMatch(val, String(correctVal));
     problem.is_correct = isCorrect; 
@@ -499,7 +481,6 @@ function _performCheckAnswerDynamically(id, val) {
     else if (val.trim().length > 0) { try { sfxBatu.currentTime = 0; sfxBatu.play(); } catch(e){} }
 }
 
-// 配列対応版チェック
 window.checkOneProblem = function(id) { 
     const problem = transcribedProblems.find(p => p.id === id); if (!problem) return; 
     
@@ -562,3 +543,101 @@ window.handleFileUpload = async (file) => { if (isAnalyzing || !file) return; do
 function initCustomCropper() { const modal = document.getElementById('cropper-modal'); modal.classList.remove('hidden'); const canvas = document.getElementById('crop-canvas'); const MAX_CANVAS_SIZE = 2500; let w = cropImg.width; let h = cropImg.height; if (w > MAX_CANVAS_SIZE || h > MAX_CANVAS_SIZE) { const scale = Math.min(MAX_CANVAS_SIZE / w, MAX_CANVAS_SIZE / h); w *= scale; h *= scale; cropPoints = cropPoints.map(p => ({ x: p.x * scale, y: p.y * scale })); } canvas.width = w; canvas.height = h; canvas.style.width = '100%'; canvas.style.height = '100%'; canvas.style.objectFit = 'contain'; const ctx = canvas.getContext('2d'); ctx.drawImage(cropImg, 0, 0, w, h); updateCropUI(canvas); const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl']; handles.forEach((id, idx) => { const el = document.getElementById(id); const startDrag = (e) => { e.preventDefault(); activeHandle = idx; }; el.onmousedown = startDrag; el.ontouchstart = startDrag; }); const move = (e) => { if (activeHandle === -1) return; e.preventDefault(); const rect = canvas.getBoundingClientRect(); const imgRatio = canvas.width / canvas.height; const rectRatio = rect.width / rect.height; let drawX, drawY, drawW, drawH; if (imgRatio > rectRatio) { drawW = rect.width; drawH = rect.width / imgRatio; drawX = 0; drawY = (rect.height - drawH) / 2; } else { drawH = rect.height; drawW = rect.height * imgRatio; drawY = 0; drawX = (rect.width - drawW) / 2; } const clientX = e.touches ? e.touches[0].clientX : e.clientX; const clientY = e.touches ? e.touches[0].clientY : e.clientY; let relX = (clientX - rect.left - drawX) / drawW; let relY = (clientY - rect.top - drawY) / drawH; relX = Math.max(0, Math.min(1, relX)); relY = Math.max(0, Math.min(1, relY)); cropPoints[activeHandle] = { x: relX * canvas.width, y: relY * canvas.height }; updateCropUI(canvas); }; const end = () => { activeHandle = -1; }; window.onmousemove = move; window.ontouchmove = move; window.onmouseup = end; window.ontouchend = end; document.getElementById('cropper-cancel-btn').onclick = () => { modal.classList.add('hidden'); window.onmousemove = null; window.ontouchmove = null; document.getElementById('upload-controls').classList.remove('hidden'); }; document.getElementById('cropper-ok-btn').onclick = () => { modal.classList.add('hidden'); window.onmousemove = null; window.ontouchmove = null; const croppedBase64 = performPerspectiveCrop(canvas, cropPoints); startAnalysis(croppedBase64); }; }
 function updateCropUI(canvas) { const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl']; const rect = canvas.getBoundingClientRect(); const imgRatio = canvas.width / canvas.height; const rectRatio = rect.width / rect.height; let drawX, drawY, drawW, drawH; if (imgRatio > rectRatio) { drawW = rect.width; drawH = rect.width / imgRatio; drawX = 0; drawY = (rect.height - drawH) / 2; } else { drawH = rect.height; drawW = rect.height * imgRatio; drawY = 0; drawX = (rect.width - drawW) / 2; } const toScreen = (p) => ({ x: (p.x / canvas.width) * drawW + drawX + canvas.offsetLeft, y: (p.y / canvas.height) * drawH + drawY + canvas.offsetTop }); const screenPoints = cropPoints.map(toScreen); handles.forEach((id, i) => { const el = document.getElementById(id); el.style.left = screenPoints[i].x + 'px'; el.style.top = screenPoints[i].y + 'px'; }); const svg = document.getElementById('crop-lines'); svg.style.left = canvas.offsetLeft + 'px'; svg.style.top = canvas.offsetTop + 'px'; svg.style.width = canvas.offsetWidth + 'px'; svg.style.height = canvas.offsetHeight + 'px'; const toSvg = (p) => ({ x: (p.x / canvas.width) * drawW + drawX, y: (p.y / canvas.height) * drawH + drawY }); const svgPts = cropPoints.map(toSvg); const ptsStr = svgPts.map(p => `${p.x},${p.y}`).join(' '); svg.innerHTML = `<polyline points="${ptsStr} ${svgPts[0].x},${svgPts[0].y}" style="fill:rgba(255,255,255,0.2);stroke:#ff4081;stroke-width:2;stroke-dasharray:5" />`; }
 function performPerspectiveCrop(sourceCanvas, points) { const minX = Math.min(...points.map(p => p.x)), maxX = Math.max(...points.map(p => p.x)); const minY = Math.min(...points.map(p => p.y)), maxY = Math.max(...points.map(p => p.y)); let w = maxX - minX, h = maxY - minY; if (w < 1) w = 1; if (h < 1) h = 1; const tempCv = document.createElement('canvas'); const MAX_OUT = 1536; let outW = w, outH = h; if (outW > MAX_OUT || outH > MAX_OUT) { const s = Math.min(MAX_OUT/outW, MAX_OUT/outH); outW *= s; outH *= s; } tempCv.width = outW; tempCv.height = outH; const ctx = tempCv.getContext('2d'); ctx.drawImage(sourceCanvas, minX, minY, w, h, 0, 0, outW, outH); return tempCv.toDataURL('image/jpeg', 0.85).split(',')[1]; }
+
+// ==========================================
+// 記憶管理 (Memory Manager) 機能
+// ==========================================
+
+window.openMemoryManager = async function() {
+    if (!currentUser) return;
+    const modal = document.getElementById('memory-manager-modal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        await renderMemoryList();
+    }
+};
+
+window.closeMemoryManager = function() {
+    const modal = document.getElementById('memory-manager-modal');
+    if (modal) modal.classList.add('hidden');
+};
+
+window.renderMemoryList = async function() {
+    const container = document.getElementById('memory-list-container');
+    if (!container) return;
+    container.innerHTML = '<p style="text-align:center;">読み込み中にゃ...</p>';
+
+    // データの取得
+    let history = [];
+    const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
+    
+    // 1. まずローカルストレージから取得
+    try {
+        history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
+    } catch(e) {}
+
+    // 2. GoogleユーザーならFirestoreからも取得して結合（最新状態にする）
+    if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) {
+        try {
+            const doc = await db.collection("memories").doc(currentUser.id).get();
+            if (doc.exists) {
+                history = doc.data().history || [];
+                // ローカルも更新しておく
+                localStorage.setItem(memoryKey, JSON.stringify(history));
+            }
+        } catch(e) { console.error("Memory Fetch Error:", e); }
+    }
+
+    // 表示生成
+    container.innerHTML = '';
+    if (history.length === 0) {
+        container.innerHTML = '<p style="text-align:center; color:#999;">まだ記憶がないにゃ</p>';
+        return;
+    }
+
+    // 新しい順に表示（配列の後ろが最新なので逆順ループ）
+    for (let i = history.length - 1; i >= 0; i--) {
+        const item = history[i];
+        const div = document.createElement('div');
+        div.className = 'memory-item';
+        
+        const roleLabel = item.role === 'user' ? 'キミ' : 'ネル先生';
+        const roleClass = item.role === 'user' ? 'memory-role-user' : 'memory-role-nell';
+        
+        div.innerHTML = `
+            <div style="flex:1;">
+                <div class="memory-meta ${roleClass}">${roleLabel} (${new Date(item.time).toLocaleTimeString()})</div>
+                <div class="memory-text">${item.text}</div>
+            </div>
+            <button onclick="deleteMemoryItem(${i})" class="delete-mem-btn">削除</button>
+        `;
+        container.appendChild(div);
+    }
+};
+
+window.deleteMemoryItem = async function(index) {
+    if (!confirm("この記憶を忘れさせるにゃ？")) return;
+    
+    const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
+    let history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
+    
+    // 削除実行
+    if (index >= 0 && index < history.length) {
+        history.splice(index, 1); // 指定インデックスを削除
+    }
+    
+    // 保存
+    localStorage.setItem(memoryKey, JSON.stringify(history));
+    
+    if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) {
+        try {
+            await db.collection("memories").doc(currentUser.id).set({
+                history: history,
+                lastUpdated: new Date().toISOString()
+            }, { merge: true });
+        } catch(e) { console.error("Memory Delete Sync Error:", e); }
+    }
+
+    // 再描画
+    renderMemoryList();
+};

@@ -13,7 +13,6 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css" rel="stylesheet">
 
     <!-- Firebase SDK (Compat版) -->
-    <!-- 注意: firebase-config.js は bodyの最後で1回だけ読み込みます -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
@@ -33,7 +32,7 @@
             <div class="title-btn-container">
                 <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
             </div>
-            <div class="version-tag">Build: v153.0-Stable</div>
+            <div class="version-tag">Build: v181.0-Stable</div>
         </section>
 
         <!-- 1. 校門 (ユーザー選択) -->
@@ -266,8 +265,22 @@
         </div>
     </div>
 
+    <!-- 記憶管理モーダル -->
+    <div id="memory-manager-modal" class="memory-modal-overlay hidden">
+        <div class="memory-modal-content">
+            <h3 style="text-align:center; margin:0 0 10px 0;">🧠 記憶の整理</h3>
+            <p style="font-size:0.8rem; color:#666; margin-bottom:10px;">
+                ネル先生が覚えている直近の会話だにゃ。<br>
+                勘違いしていることは削除してあげてにゃ。
+            </p>
+            <div id="memory-list-container" class="memory-list"></div>
+            <button onclick="closeMemoryManager()" class="main-btn gray-btn">閉じる</button>
+        </div>
+    </div>
+
     <!-- Firebase設定・ロジック読み込み -->
     <script src="firebase-config.js"></script>
+    <script src="memory.js"></script> <!-- memory.jsを読み込む場合 -->
     <script src="audio.js"></script>
     <script src="ui.js"></script>
     <script src="user.js"></script>
