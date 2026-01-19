@@ -1,4 +1,4 @@
-// --- audio.js (完全版) ---
+// --- audio.js (完全版 v198.0) ---
 
 let audioCtx = null;
 let currentSource = null;
