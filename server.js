@@ -1,4 +1,4 @@
-// --- server.js (完全版 v194.0: 記憶形成システム搭載) ---
+// --- server.js (完全版 v195.0: 記憶形成の安定化修正) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -74,22 +74,21 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- Memory Update (New!) ---
-// 会話ログから生徒プロフィールを更新するAI
+// --- Memory Update (強化版) ---
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
-        console.log("[Memory] Updating profile based on chat...");
+        console.log("[Memory] Updating profile...");
 
         // 高速なFlashモデルを使用
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.0-flash",
+            model: "gemini-2.0-flash", 
             generationConfig: { responseMimeType: "application/json" }
         });
 
         const prompt = `
         あなたは生徒の長期記憶を管理するAIです。
-        以下の「現在のプロフィール」と「直近の会話ログ」をもとに、プロフィールを更新・拡張してください。
+        以下の「現在のプロフィール」と「直近の会話ログ」をもとに、プロフィールを更新してください。
 
         【現在のプロフィール】
         ${JSON.stringify(currentProfile)}
@@ -103,7 +102,7 @@ app.post('/update-memory', async (req, res) => {
         3. **achievements (頑張ったこと)**: 宿題をやった、正解した、褒められた内容を具体的に記録。
         4. **last_topic (最後の話題)**: 会話の最後に何を話していたかを短く記録。
         5. 古い情報と矛盾する場合は、新しい情報を優先して上書きしてください。
-        6. **JSON形式**で出力してください。
+        6. **必ず純粋なJSON形式**で出力してください（Markdown記法は不要）。
 
         【出力フォーマット】
         {
@@ -116,7 +115,12 @@ app.post('/update-memory', async (req, res) => {
         `;
 
         const result = await model.generateContent(prompt);
-        const newProfile = JSON.parse(result.response.text());
+        let text = result.response.text();
+
+        // ★修正: Markdownのコードブロック記号を除去してJSONパースを確実にする
+        text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+        
+        const newProfile = JSON.parse(text);
         
         console.log("[Memory] Updated:", newProfile);
         res.json(newProfile);
@@ -145,10 +149,6 @@ app.post('/analyze', async (req, res) => {
         【タスク1: 問題文の書き起こし】
         - 設問文、選択肢（ア：〜、イ：〜）を含めて書き起こす。
         - 手書きのメモは「問題の条件」として読み取ってください。
-        - **教科別の注意点**:
-          - **さんすう**: 数式、筆算の配置、図形の数値を正確に読み取る。
-          - **こくご**: 縦書きの文章は右から左へ正しくつなげる。
-          - **しゃかい/りか**: 地図やグラフの中にある用語も正解の根拠にする。
 
         【タスク2: 手書き答えの読み取り】
         - ${name}さんの手書きの答えを読み取る。
@@ -264,8 +264,8 @@ const wss = new WebSocketServer({ server });
 wss.on('connection', async (clientWs, req) => {
     const params = parse(req.url, true).query;
     const grade = params.grade || "1";
+    // ★修正: 日本語の名前が文字化けしないようにデコードを確実に
     const name = decodeURIComponent(params.name || "生徒");
-    // クライアントが作った「プロフィールの要約」を受け取る
     const statusContext = decodeURIComponent(params.context || "特になし");
 
     const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${process.env.GEMINI_API_KEY}`;
@@ -280,12 +280,12 @@ wss.on('connection', async (clientWs, req) => {
             【話し方のルール】
             1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
             2. 親しみやすく、子供にも分かりやすい言葉で話してにゃ。
-            3. 生徒を呼び捨て禁止。必ず「さん」をつけるにゃ。
+            3. 生徒を呼び捨て禁止。必ず「${name}さん」と名前を呼んでにゃ。
             
             【特殊機能】
-            1. **show_kanji ツール**: 生徒が「漢字の書き方」「式」などを聞いたら、必ずこのツールを使って画面に表示してにゃ。
-               （もしツールが使えなければ [DISPLAY: 文字] タグを使ってにゃ）
-            2. **画像認識**: 画像が送られてきたら、その内容を詳しく解説してにゃ。
+            1. **show_kanji ツール**: 「漢字の書き方」「式」などを聞かれたら必ず使って表示してにゃ。
+               （ツールが使えない場合は [DISPLAY: 文字] タグを使ってにゃ）
+            2. **画像認識**: 画像が来たら、その内容を詳しく解説してにゃ。
 
             【生徒についての記憶】
             ${statusContext}

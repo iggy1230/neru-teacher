@@ -1,4 +1,4 @@
-// --- memory.js (v4.0: 記憶管理マネージャー) ---
+// --- memory.js (v5.0: 保存条件緩和版) ---
 
 (function(global) {
     const Memory = {};
@@ -13,11 +13,11 @@
         };
     };
 
-    // プロフィールを取得 (Firestore優先、なければLocalStorage)
+    // プロフィールを取得
     Memory.getUserProfile = async function(userId) {
         let profile = null;
 
-        // 1. GoogleユーザーならFirestoreから取得
+        // 1. Firestoreから取得
         if (typeof db !== 'undefined' && db !== null) {
             try {
                 const doc = await db.collection("users").doc(userId).get();
@@ -40,10 +40,8 @@
 
     // プロフィールを保存
     Memory.saveUserProfile = async function(userId, profile) {
-        // LocalStorageに保存
         localStorage.setItem(`nell_profile_${userId}`, JSON.stringify(profile));
 
-        // Firestoreに保存
         if (typeof db !== 'undefined' && db !== null) {
             try {
                 await db.collection("users").doc(userId).set({ profile: profile }, { merge: true });
@@ -53,7 +51,11 @@
 
     // サーバーに要約を依頼して更新する
     Memory.updateProfileFromChat = async function(userId, chatLog) {
-        if (!chatLog || chatLog.length < 50) return; // 短すぎる会話は無視
+        // ★修正: 10文字あれば記憶するように条件を緩和（テスト用）
+        if (!chatLog || chatLog.length < 10) {
+            console.log("会話が短すぎるので記憶しないにゃ。");
+            return;
+        }
 
         const currentProfile = await Memory.getUserProfile(userId);
 

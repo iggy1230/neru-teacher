@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v191.0) --- */
+/* --- style.css (完全版 v196.0) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -942,4 +942,59 @@ button { font-family: inherit; }
 .close-board-btn:active {
     transform: translateY(2px);
     box-shadow: 0 2px 0 #d32f2f;
+}
+
+/* --- 記憶管理タブ (v196.0) --- */
+.memory-tab {
+    flex: 1;
+    background: none;
+    border: none;
+    padding: 8px;
+    font-weight: bold;
+    color: #888;
+    border-bottom: 3px solid transparent;
+    cursor: pointer;
+}
+.memory-tab.active {
+    color: #ff85a1;
+    border-bottom: 3px solid #ff85a1;
+}
+
+/* プロフィールタグ */
+.profile-section {
+    margin-bottom: 15px;
+}
+.profile-title {
+    font-size: 0.9rem;
+    color: #555;
+    font-weight: bold;
+    margin-bottom: 5px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+.profile-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+.profile-tag {
+    background: #e3f2fd;
+    color: #1565c0;
+    padding: 4px 10px;
+    border-radius: 15px;
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+.profile-tag-delete {
+    background: none;
+    border: none;
+    color: #ef5350;
+    font-weight: bold;
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0;
 }

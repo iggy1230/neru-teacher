@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v194.0: 記憶システム統合) ---
+// --- anlyze.js (完全版 v196.0) ---
 
 // グローバル変数の初期化
 window.transcribedProblems = []; 
@@ -22,7 +22,7 @@ let workletNode = null;
 let stopSpeakingTimer = null;
 let speakingStartTimer = null;
 let currentTtsSource = null;
-let chatTranscript = ""; // ★ここが重要！会話ログを貯める変数
+let chatTranscript = ""; 
 let nextStartTime = 0;
 let connectionTimeout = null;
 let recognition = null;
@@ -145,7 +145,7 @@ async function saveToNellMemory(role, text) {
     ];
     if (trimmed.length <= 1 || ignoreWords.includes(trimmed)) return;
     
-    // ★重要: 会話ログ変数に追記（あとで要約するため）
+    // 会話ログ変数に追記
     chatTranscript += `${role === 'user' ? '生徒' : 'ネル'}: ${trimmed}\n`;
 
     const newItem = { role: role, text: trimmed, time: new Date().toISOString() };
@@ -177,6 +177,7 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     const targetId = isGameHidden ? 'nell-text' : 'nell-text-game';
     const el = document.getElementById(targetId);
     
+    // 表示用: タグを消す
     const displayText = t.replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "");
     if (el) el.innerText = displayText;
     
@@ -517,7 +518,7 @@ async function startLiveChat() {
             memoryContext = await window.NellMemory.generateContextString(currentUser.id);
         }
         
-        chatTranscript = ""; 
+        chatTranscript = ""; // ログ初期化
         
         if (window.initAudioContext) await window.initAudioContext(); 
         audioContext = new (window.AudioContext || window.webkitAudioContext)(); 
@@ -547,7 +548,7 @@ async function startLiveChat() {
                 if (data.serverContent?.modelTurn?.parts) { 
                     data.serverContent.modelTurn.parts.forEach(p => { 
                         
-                        // ★ツール実行 (Function Call) の検知
+                        // ★1. ツール実行 (Function Call) の検知
                         if (p.functionCall) {
                             if (p.functionCall.name === "show_kanji") {
                                 const content = p.functionCall.args.content;
@@ -566,7 +567,7 @@ async function startLiveChat() {
                             }
                         }
 
-                        // ★テキスト内タグの検知（フォールバック）
+                        // ★2. テキスト内タグの検知（フォールバック）
                         if (p.text) { 
                             const match = p.text.match(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/i);
                             if (match) {
@@ -575,6 +576,9 @@ async function startLiveChat() {
                                 document.getElementById('whiteboard-content').innerText = content;
                             }
                             
+                            // ★重要: ネル先生の発言をログに追加
+                            chatTranscript += `Nell: ${p.text}\n`;
+
                             saveToNellMemory('nell', p.text); 
                             updateNellMessage(p.text, "normal", false, true);
                         } 
@@ -592,7 +596,8 @@ async function startLiveChat() {
 
 function stopLiveChat() { 
     // ★重要: 会話終了時に記憶を更新する
-    if (chatTranscript && chatTranscript.length > 50 && window.NellMemory) {
+    if (chatTranscript && chatTranscript.length > 10 && window.NellMemory) {
+        console.log("Saving memory...", chatTranscript.length);
         window.NellMemory.updateProfileFromChat(currentUser.id, chatTranscript);
     }
 
@@ -630,11 +635,15 @@ async function startMicrophone() {
                 let interim = ''; 
                 for (let i = event.resultIndex; i < event.results.length; ++i) { 
                     if (event.results[i].isFinal) { 
-                        saveToNellMemory('user', event.results[i][0].transcript); 
-                        // ★修正: テキスト表示先も分岐
+                        const userText = event.results[i][0].transcript;
+                        // ★重要: 生徒の発言をログに追加
+                        chatTranscript += `Student: ${userText}\n`;
+
+                        saveToNellMemory('user', userText); 
+                        
                         const txtId = currentMode === 'simple-chat' ? 'user-speech-text-simple' : 'user-speech-text';
                         const el = document.getElementById(txtId); 
-                        if(el) el.innerText = event.results[i][0].transcript; 
+                        if(el) el.innerText = userText; 
                     } else interim += event.results[i][0].transcript; 
                 } 
             }; 
@@ -701,7 +710,7 @@ function updateCropUI(canvas) { const handles = ['handle-tl', 'handle-tr', 'hand
 function performPerspectiveCrop(sourceCanvas, points) { const minX = Math.min(...points.map(p => p.x)), maxX = Math.max(...points.map(p => p.x)); const minY = Math.min(...points.map(p => p.y)), maxY = Math.max(...points.map(p => p.y)); let w = maxX - minX, h = maxY - minY; if (w < 1) w = 1; if (h < 1) h = 1; const tempCv = document.createElement('canvas'); const MAX_OUT = 1536; let outW = w, outH = h; if (outW > MAX_OUT || outH > MAX_OUT) { const s = Math.min(MAX_OUT/outW, MAX_OUT/outH); outW *= s; outH *= s; } tempCv.width = outW; tempCv.height = outH; const ctx = tempCv.getContext('2d'); ctx.drawImage(sourceCanvas, minX, minY, w, h, 0, 0, outW, outH); return tempCv.toDataURL('image/jpeg', 0.85).split(',')[1]; }
 
 // ==========================================
-// 記憶管理 (Memory Manager) 機能
+// 記憶管理 (Memory Manager) 機能 (強化版)
 // ==========================================
 
 window.openMemoryManager = async function() {
@@ -709,13 +718,92 @@ window.openMemoryManager = async function() {
     const modal = document.getElementById('memory-manager-modal');
     if (modal) {
         modal.classList.remove('hidden');
-        await renderMemoryList();
+        switchMemoryTab('profile'); // デフォルトはプロフィール
     }
 };
 
 window.closeMemoryManager = function() {
     const modal = document.getElementById('memory-manager-modal');
     if (modal) modal.classList.add('hidden');
+};
+
+window.switchMemoryTab = async function(tab) {
+    const tabProfile = document.getElementById('tab-profile');
+    const tabLogs = document.getElementById('tab-logs');
+    const viewProfile = document.getElementById('memory-view-profile');
+    const viewLogs = document.getElementById('memory-view-logs');
+
+    if (tab === 'profile') {
+        tabProfile.classList.add('active');
+        tabLogs.classList.remove('active');
+        viewProfile.classList.remove('hidden');
+        viewLogs.classList.add('hidden');
+        await renderProfile();
+    } else {
+        tabProfile.classList.remove('active');
+        tabLogs.classList.add('active');
+        viewProfile.classList.add('hidden');
+        viewLogs.classList.remove('hidden');
+        await renderMemoryList();
+    }
+};
+
+// プロフィール描画
+window.renderProfile = async function() {
+    const container = document.getElementById('profile-container');
+    if (!container || !window.NellMemory) return;
+    container.innerHTML = '<p style="text-align:center;">読み込み中にゃ...</p>';
+
+    const profile = await window.NellMemory.getUserProfile(currentUser.id);
+    container.innerHTML = '';
+
+    if (!profile) {
+        container.innerHTML = '<p>まだデータがないにゃ。</p>';
+        return;
+    }
+
+    const createSection = (title, icon, items, key) => {
+        if (!items || items.length === 0) return '';
+        let tagsHtml = items.map((item, idx) => `
+            <div class="profile-tag">
+                ${item}
+                <button class="profile-tag-delete" onclick="deleteProfileItem('${key}', ${idx})">×</button>
+            </div>
+        `).join('');
+        return `
+            <div class="profile-section">
+                <div class="profile-title">${icon} ${title}</div>
+                <div class="profile-tags">${tagsHtml}</div>
+            </div>
+        `;
+    };
+
+    let html = "";
+    html += createSection("好きなもの", "💖", profile.likes, "likes");
+    html += createSection("苦手なこと", "💦", profile.weaknesses, "weaknesses");
+    html += createSection("頑張ったこと", "🏆", profile.achievements, "achievements");
+    
+    if (profile.last_topic) {
+        html += `<div class="profile-section"><div class="profile-title">💬 前回の話題</div><div style="font-size:0.9rem; padding:5px; background:#f5f5f5; border-radius:5px;">${profile.last_topic}</div></div>`;
+    }
+
+    if (html === "") {
+        html = '<p style="text-align:center; color:#999;">まだ真っ白だにゃ。</p>';
+    }
+
+    container.innerHTML = html;
+};
+
+// プロフィール項目削除
+window.deleteProfileItem = async function(key, index) {
+    if (!confirm("この情報を削除するにゃ？")) return;
+    
+    const profile = await window.NellMemory.getUserProfile(currentUser.id);
+    if (profile[key] && Array.isArray(profile[key])) {
+        profile[key].splice(index, 1);
+        await window.NellMemory.saveUserProfile(currentUser.id, profile);
+        renderProfile(); // 再描画
+    }
 };
 
 window.renderMemoryList = async function() {
@@ -747,7 +835,7 @@ window.renderMemoryList = async function() {
     // 表示生成
     container.innerHTML = '';
     if (history.length === 0) {
-        container.innerHTML = '<p style="text-align:center; color:#999;">まだ記憶がないにゃ</p>';
+        container.innerHTML = '<p style="text-align:center; color:#999;">まだ会話ログがないにゃ</p>';
         return;
     }
 
@@ -772,7 +860,7 @@ window.renderMemoryList = async function() {
 };
 
 window.deleteMemoryItem = async function(index) {
-    if (!confirm("この記憶を忘れさせるにゃ？")) return;
+    if (!confirm("このログを削除するにゃ？")) return;
     
     const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
     let history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
