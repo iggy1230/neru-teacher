@@ -81,7 +81,7 @@
             <div class="title-btn-container">
                 <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
             </div>
-            <div class="version-tag">Build: v185.0-Stable</div>
+            <div class="version-tag">Build: v186.0-Stable</div>
         </section>
 
         <!-- 1. 校門 (ユーザー選択) -->
@@ -141,7 +141,13 @@
                 <button onclick="selectMode('grade')" class="main-btn red-btn">💯 採点ネル先生</button>
                 <button onclick="selectMode('review')" class="main-btn orange-btn">🔥 復習ノート</button>
                 <button onclick="showGame()" class="main-btn yellow-btn">🎮 カリカリ・キャッチ</button>
-                <button onclick="selectMode('chat')" class="main-btn green-btn">👩‍🏫 ネル先生の個別指導</button>
+                
+                <!-- 新: こじんめんだん（シンプル会話） -->
+                <button onclick="selectMode('simple-chat')" class="main-btn green-btn">🎤 こじんめんだん</button>
+                
+                <!-- 新: 個別指導（多機能） -->
+                <button onclick="selectMode('chat')" class="main-btn" style="background:#5c6bc0; box-shadow: 0 4px 0 #3949ab;">👩‍🏫 ネル先生の個別指導</button>
+                
                 <button onclick="selectMode('lunch')" class="main-btn pink-btn">🍽️ おいしい給食</button>
                 <button onclick="showAttendance()" class="main-btn purple-btn">📅 出席簿をみる</button>
                 <button onclick="openMemoryManager()" class="main-btn gray-btn" style="background:#607d8b; border:none; box-shadow:0 4px 0 #455a64;">🧠 記憶を整理する</button>
@@ -221,7 +227,7 @@
                         </div>
                     </div>
 
-                    <!-- チャットモード（個別指導） -->
+                    <!-- チャットモード（個別指導：多機能版） -->
                     <div id="chat-view" class="hidden">
                         <div class="glass-card" style="text-align:center; padding:15px;">
                             <p style="font-size:0.9rem; color:#666;">ネル先生とお話ししながら勉強するにゃ！</p>
@@ -239,7 +245,7 @@
                                 <button id="timer-toggle-btn" onclick="toggleTimer()" class="main-btn pink-btn" style="margin-top:10px; width:100%;">スタート！</button>
                             </div>
 
-                            <button id="mic-btn" class="camera-btn-large" style="background:#ff85a1; box-shadow:none;">🎤 おはなしする</button>
+                            <button id="mic-btn" class="camera-btn-large" style="background:#ff85a1; box-shadow:none; margin-top:15px;" onclick="startLiveChat()">🎤 おはなしする</button>
                             
                             <!-- 「これ見て！」カメラボタン -->
                             <button id="live-camera-btn" class="mini-cam-btn" onclick="captureAndSendLiveImage()">
@@ -252,6 +258,15 @@
                             </div>
                             
                             <p id="user-speech-text" style="margin-top:15px; font-weight:bold; min-height:1.5em;">...</p>
+                        </div>
+                    </div>
+
+                    <!-- チャットモード（こじんめんだん：シンプル版） -->
+                    <div id="simple-chat-view" class="hidden">
+                        <div class="glass-card" style="text-align:center; padding:20px;">
+                            <p style="font-size:0.9rem; color:#666;">マイクを押して話しかけてね</p>
+                            <button id="mic-btn-simple" class="camera-btn-large" style="background:#66bb6a; box-shadow:none;" onclick="startLiveChat()">🎤 おはなしする</button>
+                            <p id="user-speech-text-simple" style="margin-top:15px; font-weight:bold; min-height:1.5em;">...</p>
                         </div>
                     </div>
 
