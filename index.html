@@ -62,7 +62,7 @@
             <div class="title-btn-container">
                 <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
             </div>
-            <div class="version-tag">Build: v191.0-Stable</div>
+            <div class="version-tag">Build: v192.0-Stable</div>
         </section>
 
         <!-- 1. 校門 (ユーザー選択) -->
@@ -235,15 +235,6 @@
                             
                             <p id="user-speech-text" style="margin-top:15px; font-weight:bold; min-height:1.5em;">...</p>
                         </div>
-
-                        <!-- ★重要★ ネル先生のホワイトボード（ポップアップ） -->
-                        <div id="inline-whiteboard" class="hidden whiteboard-overlay">
-                            <div class="whiteboard-board">
-                                <p style="margin:0 0 10px 0; color:#8d6e63; font-weight:bold;">ネル先生のメモ</p>
-                                <div id="whiteboard-content" class="whiteboard-text"></div>
-                                <button onclick="document.getElementById('inline-whiteboard').classList.add('hidden')" class="close-board-btn">✖ 閉じる</button>
-                            </div>
-                        </div>
                     </div>
 
                     <!-- チャットモード（こじんめんだん：シンプル版） -->
@@ -294,6 +285,16 @@
             </div>
             <button onclick="backToLobby()" class="main-btn pink-btn" style="margin-top:20px;">教室にもどる</button>
         </section>
+    </div>
+
+    <!-- ★重要★ ネル先生のホワイトボード（ポップアップ） -->
+    <!-- すべてのScreenの外側（共通エリア）に配置！ -->
+    <div id="inline-whiteboard" class="hidden whiteboard-overlay">
+        <div class="whiteboard-board">
+            <p style="margin:0 0 10px 0; color:#8d6e63; font-weight:bold;">ネル先生のメモ</p>
+            <div id="whiteboard-content" class="whiteboard-text"></div>
+            <button onclick="document.getElementById('inline-whiteboard').classList.add('hidden')" class="close-board-btn">✖ 閉じる</button>
+        </div>
     </div>
 
     <!-- モーダル類 -->
