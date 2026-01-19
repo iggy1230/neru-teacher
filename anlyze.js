@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v189.0: ツール呼び出しによるボード表示) ---
+// --- anlyze.js (完全版 v190.0: 二段構えの表示ロジック) ---
 
 // グローバル変数の初期化
 window.transcribedProblems = []; 
@@ -166,16 +166,15 @@ async function saveToNellMemory(role, text) {
     }
 }
 
-// --- メッセージ更新 ---
+// --- メッセージ更新（タグ除去強化） ---
 window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false, speak = true) {
     const gameScreen = document.getElementById('screen-game');
     const isGameHidden = gameScreen ? gameScreen.classList.contains('hidden') : true;
     const targetId = isGameHidden ? 'nell-text' : 'nell-text-game';
     const el = document.getElementById(targetId);
     
-    // タグ除去（念のため）
+    // 表示用: タグを消す
     const displayText = t.replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "");
-    
     if (el) el.innerText = displayText;
     
     if (t && t.includes("もぐもぐ")) { try { sfxBori.currentTime = 0; sfxBori.play(); } catch(e){} }
@@ -544,31 +543,41 @@ async function startLiveChat() {
                 if (data.serverContent?.modelTurn?.parts) { 
                     data.serverContent.modelTurn.parts.forEach(p => { 
                         
-                        // ★ツール実行 (Function Call) の検知
+                        // ★1. ツール実行 (Function Call) の検知
                         if (p.functionCall) {
                             if (p.functionCall.name === "show_kanji") {
                                 const content = p.functionCall.args.content;
                                 document.getElementById('inline-whiteboard').classList.remove('hidden');
                                 document.getElementById('whiteboard-content').innerText = content;
                                 
-                                // ツール実行完了をAIに通知 (必須)
                                 liveSocket.send(JSON.stringify({
                                     toolResponse: {
                                         functionResponses: [{
                                             name: "show_kanji",
                                             response: { result: "displayed" },
-                                            id: p.functionCall.id || "call_id" // IDは本来必須だがv1alphaは緩い場合も
+                                            id: p.functionCall.id || "call_id"
                                         }]
                                     }
                                 }));
                             }
                         }
 
-                        if (p.inlineData) playLivePcmAudio(p.inlineData.data); 
+                        // ★2. テキスト内タグの検知（フォールバック）
                         if (p.text) { 
+                            // AIがツールを使わずテキストでタグを送ってきた場合もキャッチ
+                            const match = p.text.match(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/i);
+                            if (match) {
+                                const content = match[1].trim();
+                                document.getElementById('inline-whiteboard').classList.remove('hidden');
+                                document.getElementById('whiteboard-content').innerText = content;
+                            }
+                            
                             saveToNellMemory('nell', p.text); 
+                            // updateNellMessage内でタグ除去＆音声再生
                             updateNellMessage(p.text, "normal", false, true);
                         } 
+
+                        if (p.inlineData) playLivePcmAudio(p.inlineData.data); 
                     }); 
                 } 
             } catch (e) {} 

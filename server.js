@@ -1,4 +1,4 @@
-// --- server.js (完全版 v189.0: 漢字表示ツール導入) ---
+// --- server.js (完全版 v190.0: 漢字表示の二重安全装置) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -225,27 +225,30 @@ wss.on('connection', async (clientWs, req) => {
             1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
             2. 生徒を呼び捨て禁止。必ず「さん」をつけるにゃ。
             
-            【特殊機能: 漢字・式ボード (重要)】
+            【特殊機能: 漢字・式ボード (最重要)】
             生徒から「この漢字どう書くの？」や「〇〇という字を見せて」、「この式を書いて」と頼まれた場合は、
-            言葉で説明するだけでなく、必ず **show_kanji ツール** を使って、その文字や式を画面に表示してにゃ。
+            **show_kanji ツール** を使って、その文字や式を画面に表示してにゃ。
+            
+            もしツールがうまく動かない場合や、つい喋ってしまう場合は、
+            言葉の最後に必ず **[DISPLAY: 表示したい文字]** と書いてにゃ。
             
             例:
             生徒「バラってどう書くの？」
-            ネル「バラはこう書くにゃ！」 -> show_kanji("薔薇") を実行
+            ネル「バラはこう書くにゃ！」 (ここで show_kanji("薔薇") を実行、または [DISPLAY: 薔薇] と出力)
 
             【現在の状況・記憶】${statusContext}
             `;
 
-            // ★ツール定義の追加
+            // ★ツール定義
             const tools = [{ 
                 google_search: {},
                 function_declarations: [{
                     name: "show_kanji",
-                    description: "Display a Kanji, word, or math formula on the whiteboard for the student to see.",
+                    description: "Display a Kanji, word, or math formula on the whiteboard.",
                     parameters: {
                         type: "OBJECT",
                         properties: {
-                            content: { type: "STRING", description: "The text, kanji, or formula to display." }
+                            content: { type: "STRING", description: "The text to display." }
                         },
                         required: ["content"]
                     }
@@ -272,7 +275,7 @@ wss.on('connection', async (clientWs, req) => {
         clientWs.on('message', (data) => {
             const msg = JSON.parse(data);
             
-            // ツール実行結果の返信 (client -> Gemini)
+            // ツール実行結果の返信
             if (msg.toolResponse && geminiWs.readyState === WebSocket.OPEN) {
                 geminiWs.send(JSON.stringify({ clientContent: msg.toolResponse }));
                 return;
