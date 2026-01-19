@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v197.0: 全機能統合 & 記憶・ホワイトボード・タイマー・カメラ完備) ---
+// --- anlyze.js (完全版 v199.0: 重複定義エラー修正版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -45,6 +45,7 @@ let studyTimerInterval = null;
 let studyTimerRunning = false;
 let studyTimerCheck = 0; 
 
+// 効果音定義
 const sfxBori = new Audio('boribori.mp3');
 const sfxHit = new Audio('cat1c.mp3');
 const sfxPaddle = new Audio('poka02.mp3'); 
@@ -54,7 +55,7 @@ sfxBunseki.volume = 0.05;
 const sfxHirameku = new Audio('hirameku.mp3'); 
 const sfxMaru = new Audio('maru.mp3');
 const sfxBatu = new Audio('batu.mp3');
-const sfxChime = new Audio('Jpn_sch_chime.mp3'); // タイマー終了用
+// ★削除: const sfxChime = ... (ui.jsで定義済みのため削除)
 
 const gameHitComments = ["うまいにゃ！", "すごいにゃ！", "さすがにゃ！", "がんばれにゃ！"];
 
@@ -357,7 +358,6 @@ window.captureAndSendLiveImage = function() {
     
     const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
     
-    // 画像送信時は speak=false で音声を抑止
     updateNellMessage("どれどれ…見てみるにゃ…", "thinking", false, false);
     liveSocket.send(JSON.stringify({ base64Image: base64Data }));
     
@@ -404,7 +404,6 @@ window.startAnalysis = async function(b64) {
         
         const data = await res.json();
         
-        // データチェック
         if (!data || !Array.isArray(data) || data.length === 0) {
             throw new Error("データが空か、正しい形式ではありませんでした。");
         }
@@ -526,6 +525,7 @@ window.showHintText = function(level) {
 
 window.revealAnswer = function() {
     const ansArea = document.getElementById('answer-display-area'); const finalTxt = document.getElementById('final-answer-text');
+    // 配列対応
     const correctArr = Array.isArray(selectedProblem.correct_answer) ? selectedProblem.correct_answer : [selectedProblem.correct_answer];
     let displayAnswer = correctArr.map(part => part.split('|')[0]).join(', ');
     if (ansArea && finalTxt) { finalTxt.innerText = displayAnswer; ansArea.classList.remove('hidden'); ansArea.style.display = "block"; }
@@ -533,6 +533,7 @@ window.revealAnswer = function() {
     updateNellMessage(`答えは「${displayAnswer}」だにゃ！`, "gentle", false); 
 };
 
+// --- リスト生成 (配列対応版) ---
 function createProblemItem(p, mode) {
     const isGradeMode = (mode === 'grade');
     let markHtml = "", bgStyle = "background:white;";
@@ -605,10 +606,7 @@ window.renderProblemSelection = function() {
     const btn = document.querySelector('#problem-selection-view button.orange-btn'); if (btn) { btn.disabled = false; btn.innerText = "✨ ぜんぶわかったにゃ！"; } 
 };
 
-// ==========================================
-// 9. 採点処理
-// ==========================================
-
+// --- 採点ロジック (配列対応) ---
 function normalizeAnswer(str) { if (!str) return ""; let normalized = str.trim().replace(/[\u30a1-\u30f6]/g, m => String.fromCharCode(m.charCodeAt(0) - 0x60)); return normalized; }
 function isMatch(student, correctString) { const s = normalizeAnswer(student); const options = normalizeAnswer(correctString).split('|'); return options.some(opt => opt === s); }
 
@@ -715,7 +713,7 @@ function drawGame() { if (!gameRunning) return; ctx.clearRect(0, 0, gameCanvas.w
 function endGame(c) { gameRunning = false; if(gameAnimId)cancelAnimationFrame(gameAnimId); fetchGameComment("end", score); const s=document.getElementById('start-game-btn'); if(s){s.disabled=false;s.innerText="もう一回！";} setTimeout(()=>{ alert(c?`すごい！全クリだにゃ！\nカリカリ ${score} 個ゲット！`:`おしい！\nカリカリ ${score} 個ゲット！`); if(currentUser&&score>0){currentUser.karikari+=score;if(typeof saveAndSync==='function')saveAndSync();updateMiniKarikari();showKarikariEffect(score);} }, 500); }
 
 // ==========================================
-// 10. WebSocket (Live Chat) - ツール/タグ制御強化版
+// 10. WebSocket (Live Chat)
 // ==========================================
 
 async function startLiveChat() { 
