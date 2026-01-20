@@ -1,4 +1,4 @@
-// --- server.js (完全版 v214.0: 宿題催促の頻度調整版) ---
+// --- server.js (完全版 v218.0: 記憶システム再構築版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -55,7 +55,6 @@ try {
 // Helper Functions
 // ==========================================
 
-// ★教科ごとの詳細な解析指示を生成する関数
 function getSubjectInstructions(subject) {
     switch (subject) {
         case 'さんすう':
@@ -112,12 +111,14 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- Memory Update ---
+// --- Memory Update (誕生日対応版) ---
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
+        console.log("[Memory] Updating profile...");
+
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.0-flash-exp", 
+            model: "gemini-2.0-flash", 
             generationConfig: { responseMimeType: "application/json" }
         });
 
@@ -132,16 +133,17 @@ app.post('/update-memory', async (req, res) => {
         ${chatLog}
 
         【更新ルール】
-        1. **birthday (誕生日)**: 会話の中で誕生日や年齢が出てきたら必ず記録・更新してください。
+        1. **birthday (誕生日)**: 会話の中で誕生日や年齢が出てきたら必ず記録・更新してください（例: "5月5日", "10歳"）。
         2. **likes (好きなもの)**: 新しく判明した好きなものがあれば追加。
         3. **weaknesses (苦手なこと)**: 勉強でつまづいた箇所や苦手と言ったことがあれば追加。
         4. **achievements (頑張ったこと)**: 宿題をやった、正解した、褒められた内容を具体的に記録。
         5. **last_topic (最後の話題)**: 会話の最後に何を話していたかを短く記録。
+        6. **必ず純粋なJSON形式**で出力してください。
 
         【出力フォーマット】
         {
-            "nickname": "...",
-            "birthday": "...",
+            "nickname": "あだ名(あれば)",
+            "birthday": "誕生日または年齢(不明なら空文字)",
             "likes": ["..."],
             "weaknesses": ["..."],
             "achievements": ["..."],
@@ -152,7 +154,9 @@ app.post('/update-memory', async (req, res) => {
         const result = await model.generateContent(prompt);
         let text = result.response.text();
         text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+        
         const newProfile = JSON.parse(text);
+        console.log("[Memory] Updated:", newProfile);
         res.json(newProfile);
 
     } catch (error) {
@@ -161,7 +165,7 @@ app.post('/update-memory', async (req, res) => {
     }
 });
 
-// --- Analyze (宿題分析: gemini-2.5-pro) ---
+// --- Analyze (宿題分析) ---
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, name } = req.body;
@@ -310,7 +314,7 @@ wss.on('connection', async (clientWs, req) => {
         geminiWs.on('open', () => {
             const systemInstructionText = `
             あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。相手は小学${grade}年生の${name}さん。
-
+            
             【話し方のルール】
             1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
             2. 親しみやすい日本の小学校の先生として、一文字一文字をはっきりと、丁寧に発音してにゃ。
@@ -349,6 +353,7 @@ wss.on('connection', async (clientWs, req) => {
 
             【生徒についての記憶】
             ${statusContext}
+            ※もし誕生日の情報があれば、「そういえばもうすぐ誕生日だにゃ？」などと話題にしてにゃ。
             `;
 
             const tools = [{ 
@@ -358,7 +363,9 @@ wss.on('connection', async (clientWs, req) => {
                     description: "Display a Kanji, word, or math formula on the whiteboard.",
                     parameters: {
                         type: "OBJECT",
-                        properties: { content: { type: "STRING" } },
+                        properties: {
+                            content: { type: "STRING", description: "The text to display." }
+                        },
                         required: ["content"]
                     }
                 }]
@@ -383,6 +390,7 @@ wss.on('connection', async (clientWs, req) => {
 
         clientWs.on('message', (data) => {
             const msg = JSON.parse(data);
+            
             if (msg.toolResponse && geminiWs.readyState === WebSocket.OPEN) {
                 geminiWs.send(JSON.stringify({ clientContent: msg.toolResponse }));
                 return;
