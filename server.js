@@ -1,4 +1,4 @@
-// --- server.js (完全版 v197.0: 誕生日記憶 & 宿題分析強化) ---
+// --- server.js (完全版 v203.0: データ抽出ロジック強化) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -74,54 +74,34 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- Memory Update (誕生日対応版) ---
+// --- Memory Update ---
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
         console.log("[Memory] Updating profile...");
-
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash", 
             generationConfig: { responseMimeType: "application/json" }
         });
-
         const prompt = `
         あなたは生徒の長期記憶を管理するAIです。
         以下の「現在のプロフィール」と「直近の会話ログ」をもとに、プロフィールを更新してください。
-
-        【現在のプロフィール】
-        ${JSON.stringify(currentProfile)}
-
-        【直近の会話ログ】
-        ${chatLog}
-
+        【現在のプロフィール】${JSON.stringify(currentProfile)}
+        【直近の会話ログ】${chatLog}
         【更新ルール】
-        1. **birthday (誕生日)**: 会話の中で誕生日や年齢が出てきたら必ず記録・更新してください（例: "5月5日", "10歳"）。
-        2. **likes (好きなもの)**: 新しく判明した好きなものがあれば追加。
-        3. **weaknesses (苦手なこと)**: 勉強でつまづいた箇所や苦手と言ったことがあれば追加。
-        4. **achievements (頑張ったこと)**: 宿題をやった、正解した、褒められた内容を具体的に記録。
-        5. **last_topic (最後の話題)**: 会話の最後に何を話していたかを短く記録。
-        6. **必ず純粋なJSON形式**で出力してください。
-
-        【出力フォーマット】
-        {
-            "nickname": "あだ名(あれば)",
-            "birthday": "誕生日または年齢(不明なら空文字)",
-            "likes": ["..."],
-            "weaknesses": ["..."],
-            "achievements": ["..."],
-            "last_topic": "..."
-        }
+        1. **birthday**: 誕生日や年齢があれば記録。
+        2. **likes**: 好きなものを追加。
+        3. **weaknesses**: 苦手なことを追加。
+        4. **achievements**: 頑張ったことを記録。
+        5. **last_topic**: 最後の話題を記録。
+        6. JSON形式で出力。
         `;
-
         const result = await model.generateContent(prompt);
         let text = result.response.text();
         text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-        
         const newProfile = JSON.parse(text);
         console.log("[Memory] Updated:", newProfile);
         res.json(newProfile);
-
     } catch (error) {
         console.error("Memory Update Error:", error);
         res.status(500).json({ error: "Memory update failed" });
@@ -132,17 +112,16 @@ app.post('/update-memory', async (req, res) => {
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, name } = req.body;
-        console.log(`[Analyze] Subject: ${subject}, Grade: ${grade}, Name: ${name}, Mode: ${mode} (Model: Gemini 2.5 Pro)`);
+        console.log(`[Analyze] Subject: ${subject}, Grade: ${grade}, Name: ${name}, Mode: ${mode}`);
 
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.5-pro",
-            generationConfig: { responseMimeType: "application/json", temperature: 0.0 }
+            model: "gemini-2.0-pro-exp-02-05", // 最新の高性能モデルを使用
+            generationConfig: { temperature: 0.0 } // 創造性をゼロにして正確性重視
         });
 
         const prompt = `
         あなたは小学${grade}年生の${name}さんの${subject}担当の教育AI「ネル先生」です。
         画像（鮮明化処理済み）を解析し、以下の厳格なJSONフォーマットでデータを出力してください。
-        Markdownのコードブロックは不要です。純粋なJSON配列のみを返してください。
 
         【タスク1: 問題文の書き起こし】
         - 設問文、選択肢（ア：〜、イ：〜）を含めて書き起こす。
@@ -179,22 +158,23 @@ app.post('/analyze', async (req, res) => {
         ]);
 
         const responseText = result.response.text();
+        console.log("[Analyze] Raw Response Length:", responseText.length);
         
         let problems = [];
         try {
-            // Markdown除去とパースをより頑丈に
-            const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            // 配列の開始 [ を探してそこからパースする
-            const jsonStart = cleanText.indexOf('[');
-            const jsonEnd = cleanText.lastIndexOf(']');
+            // ★最強の抽出ロジック: 最初の大カッコ [ から 最後の大カッコ ] までを抜き出す
+            const jsonStart = responseText.indexOf('[');
+            const jsonEnd = responseText.lastIndexOf(']');
+            
             if (jsonStart !== -1 && jsonEnd !== -1) {
-                problems = JSON.parse(cleanText.substring(jsonStart, jsonEnd + 1));
+                const jsonString = responseText.substring(jsonStart, jsonEnd + 1);
+                problems = JSON.parse(jsonString);
             } else {
-                throw new Error("Valid JSON array not found");
+                throw new Error("JSONの配列が見つかりませんでした。");
             }
         } catch (e) {
             console.error("JSON Parse Error:", responseText);
-            throw new Error("AIからの応答を読み取れませんでした。もう一度試してにゃ。");
+            throw new Error("AIからの応答が正しく読み取れませんでした。");
         }
 
         res.json(problems);
@@ -214,10 +194,8 @@ app.post('/lunch-reaction', async (req, res) => {
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         let prompt = isSpecial 
             ? `あなたは猫の「ネル先生」。生徒「${name}さん」から記念すべき${count}個目の給食をもらいました！
-               必ず「${name}さん」と呼んでください。呼び捨て禁止。
-               感謝感激して、50文字以内で熱く語ってください。語尾は「にゃ」。`
+               50文字以内で熱く語って。語尾は「にゃ」。`
             : `あなたは猫の「ネル先生」。生徒「${name}さん」から${count}回目の給食をもらいました。
-               必ず「${name}さん」と呼んでください。呼び捨て禁止。
                20文字以内で面白くリアクションして。語尾は「にゃ」。`;
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text().trim(), isSpecial });
@@ -233,13 +211,11 @@ app.post('/game-reaction', async (req, res) => {
         let mood = "excited";
 
         if (type === 'start') {
-            prompt = `あなたはネル先生。「${name}さん」がゲーム開始。必ず「${name}さん」と呼んで短く応援して。呼び捨て禁止。語尾は「にゃ」。`;
+            prompt = `あなたはネル先生。「${name}さん」がゲーム開始。短く応援して。語尾は「にゃ」。`;
         } else if (type === 'end') {
             prompt = `
             あなたはネル先生。ゲーム終了。「${name}さん」のスコアは${score}点（満点20点）。
-            必ず「${name}さん」と呼んでください。呼び捨て禁止。
-            スコアに応じて20文字以内でコメントして。
-            語尾は「にゃ」。
+            スコアに応じて20文字以内でコメントして。語尾は「にゃ」。
             `;
         } else {
             return res.json({ reply: "ナイスにゃ！", mood: "excited" });

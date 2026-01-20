@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v202.0: 分析セリフ更新 & 全機能統合) ---
+// --- anlyze.js (完全版 v203.0: 安定化 & 統合版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -9,7 +9,7 @@ window.selectedProblem = null;
 window.hintIndex = 0; 
 window.isAnalyzing = false; 
 window.currentSubject = '';
-window.currentMode = ''; 
+window.currentMode = ''; // 初期化
 window.lunchCount = 0; 
 window.analysisType = 'precision';
 
@@ -54,7 +54,7 @@ sfxBunseki.volume = 0.05;
 const sfxHirameku = new Audio('hirameku.mp3'); 
 const sfxMaru = new Audio('maru.mp3');
 const sfxBatu = new Audio('batu.mp3');
-// sfxChimeはui.js
+// sfxChimeはui.jsで定義
 
 const gameHitComments = ["うまいにゃ！", "すごいにゃ！", "さすがにゃ！", "がんばれにゃ！"];
 
@@ -360,6 +360,7 @@ window.captureAndSendLiveImage = function() {
     }, 500);
 };
 
+
 // ==========================================
 // 7. 宿題分析ロジック
 // ==========================================
@@ -380,25 +381,23 @@ window.startAnalysis = async function(b64) {
     let p = 0; 
     const timer = setInterval(() => { if (!isAnalyzing) { clearInterval(timer); return; } if (p < 30) p += 1; else if (p < 80) p += 0.4; else if (p < 95) p += 0.1; updateProgress(p); }, 300);
     
-    // ★更新: 分析中のセリフを新しいリストに変更
     const performAnalysisNarration = async () => {
         const msgs = [
-            { text: "じーっと見て、問題を書き写してるにゃ…", mood: "thinking" },
+            { text: "じーっと見て、問題を書き写してるにゃ...", mood: "thinking" },
             { text: "肉球がちょっとじゃまだにゃ…", mood: "thinking" },
-            { text: "ふむふむ…この問題、なかなか手強いにゃ…", mood: "thinking" },
+            { text: "ふむふむ…この問題、なかなか手強いにゃ。", mood: "thinking" },
             { text: "今、ネル先生の天才的な頭脳で解いてるからにゃね…", mood: "thinking" },
-            { text: "この問題、どこかで見たことあるにゃ…えーっと…", mood: "thinking" },
-            { text: "しっぽの先まで集中して考え中だにゃ…", mood: "thinking" },
-            { text: "この問題は手強いにゃ…。でも大丈夫、ネル先生のピピピッ！と光るヒゲが、正解をバッチリ受信してるにゃ！", mood: "thinking" },
-            { text: "にゃるほど…だいたい分かってきたにゃ…", mood: "thinking" },
-            { text: "あとちょっとで、ネル先生の脳みそが『ピコーン！』って鳴るにゃ！", mood: "thinking" }
+            { text: "この問題、どこかで見たことあるにゃ...えーっと...", mood: "thinking" }
         ];
         for (const item of msgs) { if (!isAnalyzing) return; await updateNellMessage(item.text, item.mood, false); if (!isAnalyzing) return; await new Promise(r => setTimeout(r, 1500)); }
     };
     performAnalysisNarration();
 
     try {
-        const res = await fetch('/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: b64, mode: currentMode, grade: currentUser.grade, subject: currentSubject, name: currentUser.name }) });
+        // ★修正: modeが未設定の場合のフォールバック
+        const apiMode = currentMode || 'explain';
+
+        const res = await fetch('/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: b64, mode: apiMode, grade: currentUser.grade, subject: currentSubject, name: currentUser.name }) });
         if (!res.ok) throw new Error("Server Error"); 
         
         const data = await res.json();
@@ -424,7 +423,17 @@ window.startAnalysis = async function(b64) {
 
         isAnalyzing = false; clearInterval(timer); updateProgress(100); cleanupAnalysis();
         try { sfxHirameku.currentTime = 0; sfxHirameku.play().catch(e=>{}); } catch(e){}
-        setTimeout(() => { document.getElementById('thinking-view').classList.add('hidden'); const doneMsg = "読めたにゃ！"; if (currentMode === 'grade') { showGradingView(true); updateNellMessage(doneMsg, "happy", false).then(() => setTimeout(updateGradingMessage, 1500)); } else { renderProblemSelection(); updateNellMessage(doneMsg, "happy", false); } }, 1500); 
+        setTimeout(() => { 
+            document.getElementById('thinking-view').classList.add('hidden'); 
+            const doneMsg = "読めたにゃ！"; 
+            if (currentMode === 'grade') { 
+                showGradingView(true); 
+                updateNellMessage(doneMsg, "happy", false).then(() => setTimeout(updateGradingMessage, 1500)); 
+            } else { 
+                renderProblemSelection(); 
+                updateNellMessage(doneMsg, "happy", false); 
+            } 
+        }, 1500); 
     } catch (err) { 
         console.error("Analysis Error:", err);
         isAnalyzing = false; cleanupAnalysis(); clearInterval(timer); 
@@ -788,7 +797,6 @@ async function startLiveChat() {
 function stopLiveChat() { 
     // 会話終了時に記憶を更新する
     if (chatTranscript && chatTranscript.length > 10 && window.NellMemory) {
-        console.log("Saving memory...", chatTranscript.length);
         window.NellMemory.updateProfileFromChat(currentUser.id, chatTranscript);
     }
 
@@ -802,10 +810,8 @@ function stopLiveChat() {
     if (liveSocket) liveSocket.close(); 
     if (audioContext && audioContext.state !== 'closed') audioContext.close(); 
     window.isNellSpeaking = false; 
-    if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer); 
-    if(speakingStartTimer) clearTimeout(speakingStartTimer); 
     
-    // モードに応じてボタンを復帰
+    // ボタン復帰
     const btnId = currentMode === 'simple-chat' ? 'mic-btn-simple' : 'mic-btn';
     const btn = document.getElementById(btnId);
     
@@ -817,7 +823,7 @@ function stopLiveChat() {
     document.getElementById('live-chat-video-container').style.display = 'none';
 }
 
-// ★割り込み用: 再生中の音声を即座に止める関数
+// 割り込み用: 再生中の音声を即座に止める関数
 function stopLiveAudio() {
     activeLiveAudioNodes.forEach(node => {
         try { node.stop(); } catch(e) {}
@@ -825,7 +831,7 @@ function stopLiveAudio() {
     activeLiveAudioNodes = [];
     
     if (audioContext) {
-        nextStartTime = audioContext.currentTime; // 次の再生位置をリセット
+        nextStartTime = audioContext.currentTime; 
     }
     
     window.isNellSpeaking = false;
@@ -847,12 +853,9 @@ async function startMicrophone() {
                 for (let i = event.resultIndex; i < event.results.length; ++i) { 
                     if (!event.results[i].isFinal) {
                         interim += event.results[i][0].transcript;
-                        // 途中経過でも何か喋っていたら止める
                         if (interim.length > 0 && window.isNellSpeaking) stopLiveAudio();
                     } else { 
-                        // 確定したタイミングでも確実に止める
                         stopLiveAudio();
-
                         const userText = event.results[i][0].transcript;
                         chatTranscript += `Student: ${userText}\n`;
                         saveToNellMemory('user', userText); 
@@ -867,9 +870,7 @@ async function startMicrophone() {
             recognition.start(); 
         } 
         
-        // カメラは個別指導モードのときだけON
         const useVideo = (currentMode === 'chat');
-        
         mediaStream = await navigator.mediaDevices.getUserMedia({ 
             audio: { sampleRate: 16000, channelCount: 1 }, 
             video: useVideo ? { facingMode: "environment" } : false 
@@ -893,7 +894,7 @@ async function startMicrophone() {
         workletNode.port.onmessage = (event) => { 
             if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return; 
             
-            // ★エコーキャンセル: ネル先生が喋っている間はマイク音声を送らない
+            // エコーキャンセル
             if (window.isNellSpeaking) return;
 
             const downsampled = downsampleBuffer(event.data, audioContext.sampleRate, 16000); 
@@ -922,10 +923,8 @@ async function startMicrophone() {
 
 function playLivePcmAudio(base64) { if (!audioContext) return; const binary = window.atob(base64); const bytes = new Uint8Array(binary.length); for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i); const float32 = new Float32Array(bytes.length / 2); const view = new DataView(bytes.buffer); for (let i = 0; i < float32.length; i++) float32[i] = view.getInt16(i * 2, true) / 32768.0; const buffer = audioContext.createBuffer(1, float32.length, 24000); buffer.copyToChannel(float32, 0); const source = audioContext.createBufferSource(); source.buffer = buffer; source.connect(audioContext.destination); const now = audioContext.currentTime; if (nextStartTime < now) nextStartTime = now; source.start(nextStartTime); 
     
-    // ★ノードを管理リストに追加
     activeLiveAudioNodes.push(source);
     source.onended = () => {
-        // 終わったらリストから削除
         activeLiveAudioNodes = activeLiveAudioNodes.filter(n => n !== source);
     };
 
