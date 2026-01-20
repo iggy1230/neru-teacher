@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v203.0: セリフ更新版) ---
+// --- anlyze.js (完全版 v204.0: 画像補正・高速化エンジン搭載) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -55,7 +55,6 @@ sfxBunseki.volume = 0.05;
 const sfxHirameku = new Audio('hirameku.mp3'); 
 const sfxMaru = new Audio('maru.mp3');
 const sfxBatu = new Audio('batu.mp3');
-// ★削除: const sfxChime = ... (ui.jsで定義済みのため削除)
 
 const gameHitComments = ["うまいにゃ！", "すごいにゃ！", "さすがにゃ！", "がんばれにゃ！"];
 
@@ -157,7 +156,6 @@ async function saveToNellMemory(role, text) {
     ];
     if (trimmed.length <= 1 || ignoreWords.includes(trimmed)) return;
     
-    // 会話ログ変数に追記（あとで要約するため）
     chatTranscript += `${role === 'user' ? '生徒' : 'ネル'}: ${trimmed}\n`;
 
     const newItem = { role: role, text: trimmed, time: new Date().toISOString() };
@@ -189,7 +187,6 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     const targetId = isGameHidden ? 'nell-text' : 'nell-text-game';
     const el = document.getElementById(targetId);
     
-    // 表示用: タグを消す
     const displayText = t.replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "");
     if (el) el.innerText = displayText;
     
@@ -387,7 +384,6 @@ window.startAnalysis = async function(b64) {
     const timer = setInterval(() => { if (!isAnalyzing) { clearInterval(timer); return; } if (p < 30) p += 1; else if (p < 80) p += 0.4; else if (p < 95) p += 0.1; updateProgress(p); }, 300);
     
     const performAnalysisNarration = async () => {
-        // ★更新: ユーザー指定のセリフリスト (mood: "thinking"に統一)
         const msgs = [
             { text: "じーっと見て、問題を書き写してるにゃ…", mood: "thinking" },
             { text: "肉球がちょっとじゃまだにゃ…", mood: "thinking" },
@@ -399,7 +395,6 @@ window.startAnalysis = async function(b64) {
             { text: "にゃるほど…だいたい分かってきたにゃ…", mood: "thinking" },
             { text: "あとちょっとで、ネル先生の脳みそが『ピコーン！』って鳴るにゃ！", mood: "thinking" }
         ];
-
         for (const item of msgs) { 
             if (!isAnalyzing) return; 
             await updateNellMessage(item.text, item.mood, false); 
@@ -933,7 +928,80 @@ window.addEventListener('DOMContentLoaded', () => { const camIn = document.getEl
 window.handleFileUpload = async (file) => { if (isAnalyzing || !file) return; document.getElementById('upload-controls').classList.add('hidden'); document.getElementById('cropper-modal').classList.remove('hidden'); const canvas = document.getElementById('crop-canvas'); canvas.style.opacity = '0'; const reader = new FileReader(); reader.onload = async (e) => { cropImg = new Image(); cropImg.onload = async () => { const w = cropImg.width; const h = cropImg.height; cropPoints = [ { x: w * 0.1, y: h * 0.1 }, { x: w * 0.9, y: h * 0.1 }, { x: w * 0.9, y: h * 0.9 }, { x: w * 0.1, y: h * 0.9 } ]; canvas.style.opacity = '1'; updateNellMessage("ここを読み取るにゃ？", "normal"); initCustomCropper(); }; cropImg.src = e.target.result; }; reader.readAsDataURL(file); };
 function initCustomCropper() { const modal = document.getElementById('cropper-modal'); modal.classList.remove('hidden'); const canvas = document.getElementById('crop-canvas'); const MAX_CANVAS_SIZE = 2500; let w = cropImg.width; let h = cropImg.height; if (w > MAX_CANVAS_SIZE || h > MAX_CANVAS_SIZE) { const scale = Math.min(MAX_CANVAS_SIZE / w, MAX_CANVAS_SIZE / h); w *= scale; h *= scale; cropPoints = cropPoints.map(p => ({ x: p.x * scale, y: p.y * scale })); } canvas.width = w; canvas.height = h; canvas.style.width = '100%'; canvas.style.height = '100%'; canvas.style.objectFit = 'contain'; const ctx = canvas.getContext('2d'); ctx.drawImage(cropImg, 0, 0, w, h); updateCropUI(canvas); const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl']; handles.forEach((id, idx) => { const el = document.getElementById(id); const startDrag = (e) => { e.preventDefault(); activeHandle = idx; }; el.onmousedown = startDrag; el.ontouchstart = startDrag; }); const move = (e) => { if (activeHandle === -1) return; e.preventDefault(); const rect = canvas.getBoundingClientRect(); const imgRatio = canvas.width / canvas.height; const rectRatio = rect.width / rect.height; let drawX, drawY, drawW, drawH; if (imgRatio > rectRatio) { drawW = rect.width; drawH = rect.width / imgRatio; drawX = 0; drawY = (rect.height - drawH) / 2; } else { drawH = rect.height; drawW = rect.height * imgRatio; drawY = 0; drawX = (rect.width - drawW) / 2; } const clientX = e.touches ? e.touches[0].clientX : e.clientX; const clientY = e.touches ? e.touches[0].clientY : e.clientY; let relX = (clientX - rect.left - drawX) / drawW; let relY = (clientY - rect.top - drawY) / drawH; relX = Math.max(0, Math.min(1, relX)); relY = Math.max(0, Math.min(1, relY)); cropPoints[activeHandle] = { x: relX * canvas.width, y: relY * canvas.height }; updateCropUI(canvas); }; const end = () => { activeHandle = -1; }; window.onmousemove = move; window.ontouchmove = move; window.onmouseup = end; window.ontouchend = end; document.getElementById('cropper-cancel-btn').onclick = () => { modal.classList.add('hidden'); window.onmousemove = null; window.ontouchmove = null; document.getElementById('upload-controls').classList.remove('hidden'); }; document.getElementById('cropper-ok-btn').onclick = () => { modal.classList.add('hidden'); window.onmousemove = null; window.ontouchmove = null; const croppedBase64 = performPerspectiveCrop(canvas, cropPoints); startAnalysis(croppedBase64); }; }
 function updateCropUI(canvas) { const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl']; const rect = canvas.getBoundingClientRect(); const imgRatio = canvas.width / canvas.height; const rectRatio = rect.width / rect.height; let drawX, drawY, drawW, drawH; if (imgRatio > rectRatio) { drawW = rect.width; drawH = rect.width / imgRatio; drawX = 0; drawY = (rect.height - drawH) / 2; } else { drawH = rect.height; drawW = rect.height * imgRatio; drawY = 0; drawX = (rect.width - drawW) / 2; } const toScreen = (p) => ({ x: (p.x / canvas.width) * drawW + drawX + canvas.offsetLeft, y: (p.y / canvas.height) * drawH + drawY + canvas.offsetTop }); const screenPoints = cropPoints.map(toScreen); handles.forEach((id, i) => { const el = document.getElementById(id); el.style.left = screenPoints[i].x + 'px'; el.style.top = screenPoints[i].y + 'px'; }); const svg = document.getElementById('crop-lines'); svg.style.left = canvas.offsetLeft + 'px'; svg.style.top = canvas.offsetTop + 'px'; svg.style.width = canvas.offsetWidth + 'px'; svg.style.height = canvas.offsetHeight + 'px'; const toSvg = (p) => ({ x: (p.x / canvas.width) * drawW + drawX, y: (p.y / canvas.height) * drawH + drawY }); const svgPts = cropPoints.map(toSvg); const ptsStr = svgPts.map(p => `${p.x},${p.y}`).join(' '); svg.innerHTML = `<polyline points="${ptsStr} ${svgPts[0].x},${svgPts[0].y}" style="fill:rgba(255,255,255,0.2);stroke:#ff4081;stroke-width:2;stroke-dasharray:5" />`; }
-function performPerspectiveCrop(sourceCanvas, points) { const minX = Math.min(...points.map(p => p.x)), maxX = Math.max(...points.map(p => p.x)); const minY = Math.min(...points.map(p => p.y)), maxY = Math.max(...points.map(p => p.y)); let w = maxX - minX, h = maxY - minY; if (w < 1) w = 1; if (h < 1) h = 1; const tempCv = document.createElement('canvas'); const MAX_OUT = 1536; let outW = w, outH = h; if (outW > MAX_OUT || outH > MAX_OUT) { const s = Math.min(MAX_OUT/outW, MAX_OUT/outH); outW *= s; outH *= s; } tempCv.width = outW; tempCv.height = outH; const ctx = tempCv.getContext('2d'); ctx.drawImage(sourceCanvas, minX, minY, w, h, 0, 0, outW, outH); return tempCv.toDataURL('image/jpeg', 0.85).split(',')[1]; }
+
+// ★画像補正・リサイズ処理 (ここがポイント)
+function processImageForAI(sourceCanvas) {
+    const MAX_WIDTH = 1024; // Geminiに最適なサイズ
+    let w = sourceCanvas.width;
+    let h = sourceCanvas.height;
+    
+    // リサイズ計算
+    if (w > MAX_WIDTH || h > MAX_WIDTH) {
+        if (w > h) {
+            h *= MAX_WIDTH / w;
+            w = MAX_WIDTH;
+        } else {
+            w *= MAX_WIDTH / h;
+            h = MAX_WIDTH;
+        }
+    }
+    
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    
+    // 1. リサイズして描画
+    ctx.drawImage(sourceCanvas, 0, 0, w, h);
+    
+    // 2. ピクセル操作によるコントラスト強化 (簡易2値化に近い処理)
+    try {
+        const imageData = ctx.getImageData(0, 0, w, h);
+        const data = imageData.data;
+        
+        for (let i = 0; i < data.length; i += 4) {
+            // グレースケール化
+            const avg = (data[i] + data[i+1] + data[i+2]) / 3;
+            
+            // ハイコントラスト化: 薄いグレーは黒く、明るいグレーは白く飛ばす
+            let newVal = avg;
+            if (avg > 200) {
+                newVal = 255; // 背景を飛ばす
+            } else if (avg < 150) {
+                newVal = 0; // 薄い鉛筆も黒くする
+            } else {
+                newVal = (avg - 150) * 5; // 中間色を強調
+            }
+            
+            data[i] = newVal;     // R
+            data[i+1] = newVal;   // G
+            data[i+2] = newVal;   // B
+            // Alphaはそのまま
+        }
+        ctx.putImageData(imageData, 0, 0);
+    } catch(e) {
+        console.warn("Image processing skipped due to CORS or error", e);
+    }
+    
+    return canvas.toDataURL('image/jpeg', 0.9);
+}
+
+// クロップ処理の最後に補正を入れる
+function performPerspectiveCrop(sourceCanvas, points) { 
+    const minX = Math.min(...points.map(p => p.x)), maxX = Math.max(...points.map(p => p.x)); 
+    const minY = Math.min(...points.map(p => p.y)), maxY = Math.max(...points.map(p => p.y)); 
+    let w = maxX - minX, h = maxY - minY; 
+    if (w < 1) w = 1; if (h < 1) h = 1; 
+    
+    const tempCv = document.createElement('canvas'); 
+    tempCv.width = w; 
+    tempCv.height = h; 
+    const ctx = tempCv.getContext('2d'); 
+    ctx.drawImage(sourceCanvas, minX, minY, w, h, 0, 0, w, h); 
+    
+    // ★ここで画像補正・圧縮関数を呼ぶ
+    return processImageForAI(tempCv).split(',')[1];
+}
 
 // ==========================================
 // 11. 記憶管理 (Memory Manager) UI
