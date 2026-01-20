@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v208.0: 強制リセット強化版) ---
+// --- anlyze.js (完全版 v210.0: 指示の具体化版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -335,7 +335,7 @@ function sendSilentPrompt(text) {
 }
 
 // ==========================================
-// 6. 「これ見て！」カメラ機能 (v208.0: 割り込み強化)
+// 6. 「これ見て！」カメラ機能 (v210.0: 判断指示最適化)
 // ==========================================
 
 window.captureAndSendLiveImage = function() {
@@ -348,18 +348,15 @@ window.captureAndSendLiveImage = function() {
         return alert("カメラが動いてないにゃ...。一度「おはなしする」を終了して、もう一度つなぎ直してみてにゃ。");
     }
 
-    // 1. 強制的に発話を停止する
     window.isNellSpeaking = false;
     if (currentLiveAudioSource) {
         try { currentLiveAudioSource.stop(); } catch(e){}
         currentLiveAudioSource = null;
     }
     if (audioContext && audioContext.state === 'running') {
-        // コンテキスト時間をジャンプさせてキューを無効化
         nextStartTime = audioContext.currentTime + 0.1;
     }
     
-    // 2. 画像キャプチャ
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
@@ -367,13 +364,11 @@ window.captureAndSendLiveImage = function() {
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
     
-    // 3. 視覚エフェクト: フラッシュ
     const flash = document.createElement('div');
     flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;";
     document.body.appendChild(flash);
     setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
 
-    // 4. 視覚エフェクト: プレビュー静止画オーバーレイ
     const videoContainer = document.getElementById('live-chat-video-container');
     if (videoContainer) {
         const oldPreview = document.getElementById('snapshot-preview-overlay');
@@ -393,12 +388,11 @@ window.captureAndSendLiveImage = function() {
 
     updateNellMessage("ん？どれどれ…", "thinking", false, false);
     
-    // 5. 送信 (強い中断命令を入れる)
     liveSocket.send(JSON.stringify({ base64Image: base64Data }));
     
     setTimeout(() => {
-        // ★修正: 強い指示
-        sendSilentPrompt("【緊急指示】今までの会話はすべて忘れて中断して！たった今送った新しい画像だけを見て！これが何の画像か判断して（イラスト？勉強？）、それに合った反応をして！");
+        // ★修正: 勉強以外のものも詳しく答えるよう指示
+        sendSilentPrompt("【緊急指示】今までの会話は中断して、たった今送った画像をよく見て！\n・もし文字や数式があれば「勉強の質問」として解説して！\n・もしお菓子やぬいぐるみ、キャラなどの「モノ」であれば、それが具体的に何か（商品名やキャラ名）を答えて！名前がわからなければGoogle検索してでも答えて！");
     }, 500);
 };
 
@@ -957,38 +951,7 @@ async function startMicrophone() {
         } catch(ex) { alert("マイクも使えないみたいだにゃ..."); }
     } 
 }
-function playLivePcmAudio(base64) { 
-    if (!audioContext) return; 
-    const binary = window.atob(base64); 
-    const bytes = new Uint8Array(binary.length); 
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i); 
-    const float32 = new Float32Array(bytes.length / 2); 
-    const view = new DataView(bytes.buffer); 
-    for (let i = 0; i < float32.length; i++) float32[i] = view.getInt16(i * 2, true) / 32768.0; 
-    
-    const buffer = audioContext.createBuffer(1, float32.length, 24000); 
-    buffer.copyToChannel(float32, 0); 
-    
-    const source = audioContext.createBufferSource(); 
-    source.buffer = buffer; 
-    source.connect(audioContext.destination); 
-    
-    // ★追加: ソースを追跡
-    currentLiveAudioSource = source;
-    
-    const now = audioContext.currentTime; 
-    if (nextStartTime < now) nextStartTime = now; 
-    source.start(nextStartTime); 
-    
-    const startDelay = (nextStartTime - now) * 1000; 
-    const duration = buffer.duration * 1000; 
-    
-    if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer); 
-    speakingStartTimer = setTimeout(() => { window.isNellSpeaking = true; }, startDelay); 
-    stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, startDelay + duration + 100); 
-    
-    nextStartTime += buffer.duration; 
-}
+function playLivePcmAudio(base64) { if (!audioContext) return; const binary = window.atob(base64); const bytes = new Uint8Array(binary.length); for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i); const float32 = new Float32Array(bytes.length / 2); const view = new DataView(bytes.buffer); for (let i = 0; i < float32.length; i++) float32[i] = view.getInt16(i * 2, true) / 32768.0; const buffer = audioContext.createBuffer(1, float32.length, 24000); buffer.copyToChannel(float32, 0); const source = audioContext.createBufferSource(); source.buffer = buffer; source.connect(audioContext.destination); const now = audioContext.currentTime; if (nextStartTime < now) nextStartTime = now; source.start(nextStartTime); const startDelay = (nextStartTime - now) * 1000; const duration = buffer.duration * 1000; if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer); speakingStartTimer = setTimeout(() => { window.isNellSpeaking = true; }, startDelay); stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, startDelay + duration + 100); nextStartTime += buffer.duration; }
 function floatTo16BitPCM(float32Array) { const buffer = new ArrayBuffer(float32Array.length * 2); const view = new DataView(buffer); let offset = 0; for (let i = 0; i < float32Array.length; i++, offset += 2) { let s = Math.max(-1, Math.min(1, float32Array[i])); view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true); } return buffer; }
 function downsampleBuffer(buffer, sampleRate, outSampleRate) { if (outSampleRate >= sampleRate) return buffer; const ratio = sampleRate / outSampleRate; const newLength = Math.round(buffer.length / ratio); const result = new Float32Array(newLength); let offsetResult = 0, offsetBuffer = 0; while (offsetResult < result.length) { const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio); let accum = 0, count = 0; for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) { accum += buffer[i]; count++; } result[offsetResult] = accum / count; offsetResult++; offsetBuffer = nextOffsetBuffer; } return result; }
 function arrayBufferToBase64(buffer) { let binary = ''; const bytes = new Uint8Array(buffer); for (let i = 0; i < bytes.byteLength; i++) { binary += String.fromCharCode(bytes[i]); } return window.btoa(binary); }
