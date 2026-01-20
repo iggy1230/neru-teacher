@@ -1,7 +1,9 @@
-// --- server.js (完全版 v203.0: データ抽出ロジック強化) ---
+// --- server.js (完全版 v206.0: モデル構成最適化版) ---
+// 宿題分析: gemini-2.5-pro
+// その他全般: gemini-2.0-flash-exp
 
 import textToSpeech from '@google-cloud/text-to-speech';
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
@@ -79,8 +81,10 @@ app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
         console.log("[Memory] Updating profile...");
+        
+        // ★統一: gemini-2.0-flash-exp (高速処理)
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.0-flash", 
+            model: "gemini-2.0-flash-exp", 
             generationConfig: { responseMimeType: "application/json" }
         });
         const prompt = `
@@ -108,15 +112,23 @@ app.post('/update-memory', async (req, res) => {
     }
 });
 
-// --- Analyze (Gemini 2.5 Pro) ---
+// --- Analyze (Gemini 2.5 Pro - Absolute) ---
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, name } = req.body;
-        console.log(`[Analyze] Subject: ${subject}, Grade: ${grade}, Name: ${name}, Mode: ${mode}`);
+        console.log(`[Analyze] Subject: ${subject}, Grade: ${grade}, Name: ${name}, Mode: ${mode} (Model: gemini-2.5-pro)`);
 
+        // ★絶対遵守: gemini-2.5-pro (高精度解析)
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.0-pro-exp-02-05", // 最新の高性能モデルを使用
-            generationConfig: { temperature: 0.0 } // 創造性をゼロにして正確性重視
+            model: "gemini-2.5-pro",
+            generationConfig: { temperature: 0.0 }, // 正確性重視
+            // 誤判定防止のため安全設定を緩和
+            safetySettings: [
+                { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+                { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+                { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+                { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE }
+            ]
         });
 
         const prompt = `
@@ -125,6 +137,7 @@ app.post('/analyze', async (req, res) => {
 
         【タスク1: 問題文の書き起こし】
         - 設問文、選択肢（ア：〜、イ：〜）を含めて書き起こす。
+        - 手書きメモは「問題の条件」として読む。
 
         【タスク2: 手書き答えの読み取り】
         - ${name}さんの手書きの答えを読み取る。
@@ -134,6 +147,7 @@ app.post('/analyze', async (req, res) => {
         - **答えは必ず「文字列のリスト（配列）」にする**。
         - 記述問題（文章）の場合も、["文章"] という形式にする。
         - 複数回答（アとイなど）の場合のみ、["ア", "イ"] とする。
+        - 表記ゆれ（漢字/ひらがな）は "|" で区切る (例: ["高い|たかい"])。
 
         【タスク4: 採点 & ヒント】
         - 判定(is_correct)と、3段階のヒントを作成。
@@ -158,11 +172,10 @@ app.post('/analyze', async (req, res) => {
         ]);
 
         const responseText = result.response.text();
-        console.log("[Analyze] Raw Response Length:", responseText.length);
         
         let problems = [];
         try {
-            // ★最強の抽出ロジック: 最初の大カッコ [ から 最後の大カッコ ] までを抜き出す
+            // 頑丈なJSON抽出ロジック
             const jsonStart = responseText.indexOf('[');
             const jsonEnd = responseText.lastIndexOf(']');
             
@@ -191,6 +204,8 @@ app.post('/lunch-reaction', async (req, res) => {
         const { count, name } = req.body;
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
         const isSpecial = (count % 10 === 0);
+        
+        // ★統一: gemini-2.0-flash-exp
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         let prompt = isSpecial 
             ? `あなたは猫の「ネル先生」。生徒「${name}さん」から記念すべき${count}個目の給食をもらいました！
@@ -206,6 +221,8 @@ app.post('/lunch-reaction', async (req, res) => {
 app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;
+        
+        // ★統一: gemini-2.0-flash-exp
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         let prompt = "";
         let mood = "excited";
@@ -280,6 +297,7 @@ wss.on('connection', async (clientWs, req) => {
 
             geminiWs.send(JSON.stringify({
                 setup: {
+                    // ★統一: models/gemini-2.0-flash-exp (会話用)
                     model: "models/gemini-2.0-flash-exp",
                     generationConfig: { 
                         responseModalities: ["AUDIO"], 
