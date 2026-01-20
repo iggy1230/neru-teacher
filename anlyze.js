@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v200.0: 会話割り込み & エコー防止対応) ---
+// --- anlyze.js (完全版 v202.0: 分析セリフ更新 & 全機能統合) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -13,7 +13,6 @@ window.currentMode = '';
 window.lunchCount = 0; 
 window.analysisType = 'precision';
 
-// 採点・入力制御用
 window.gradingTimer = null; 
 window.isComposing = false;
 
@@ -30,7 +29,7 @@ let nextStartTime = 0;
 let connectionTimeout = null;
 let recognition = null;
 let isRecognitionActive = false;
-let activeLiveAudioNodes = []; // ★追加: 再生中の音声ノード管理用
+let activeLiveAudioNodes = []; 
 
 // ゲーム・Cropper関連
 let gameCanvas, ctx, ball, paddle, bricks, score, gameRunning = false, gameAnimId = null;
@@ -55,7 +54,7 @@ sfxBunseki.volume = 0.05;
 const sfxHirameku = new Audio('hirameku.mp3'); 
 const sfxMaru = new Audio('maru.mp3');
 const sfxBatu = new Audio('batu.mp3');
-// sfxChime は ui.js にあるので削除
+// sfxChimeはui.js
 
 const gameHitComments = ["うまいにゃ！", "すごいにゃ！", "さすがにゃ！", "がんばれにゃ！"];
 
@@ -90,7 +89,6 @@ function startMouthAnimation() {
 }
 startMouthAnimation();
 
-// 初期化イベント
 window.addEventListener('DOMContentLoaded', () => {
     const camIn = document.getElementById('hw-input-camera'); 
     const albIn = document.getElementById('hw-input-album'); 
@@ -373,17 +371,27 @@ window.startAnalysis = async function(b64) {
     document.getElementById('thinking-view').classList.remove('hidden'); 
     document.getElementById('upload-controls').classList.add('hidden'); 
     const backBtn = document.getElementById('main-back-btn'); if(backBtn) backBtn.classList.add('hidden');
-    try { sfxHirameku.volume = 0; sfxHirameku.play().catch(e=>{}); sfxBunseki.currentTime = 0; sfxBunseki.play(); sfxBunseki.loop = true; } catch(e){}
+    
+    try { 
+        sfxHirameku.volume = 0; sfxHirameku.play().then(() => { sfxHirameku.pause(); sfxHirameku.currentTime = 0; sfxHirameku.volume = 1; }).catch(e => {});
+        sfxBunseki.currentTime = 0; sfxBunseki.play(); sfxBunseki.loop = true; 
+    } catch(e){}
     
     let p = 0; 
     const timer = setInterval(() => { if (!isAnalyzing) { clearInterval(timer); return; } if (p < 30) p += 1; else if (p < 80) p += 0.4; else if (p < 95) p += 0.1; updateProgress(p); }, 300);
+    
+    // ★更新: 分析中のセリフを新しいリストに変更
     const performAnalysisNarration = async () => {
         const msgs = [
-            { text: "じーっと見て、問題を書き写してるにゃ...", mood: "thinking" },
+            { text: "じーっと見て、問題を書き写してるにゃ…", mood: "thinking" },
             { text: "肉球がちょっとじゃまだにゃ…", mood: "thinking" },
-            { text: "ふむふむ…この問題、なかなか手強いにゃ。", mood: "thinking" },
+            { text: "ふむふむ…この問題、なかなか手強いにゃ…", mood: "thinking" },
             { text: "今、ネル先生の天才的な頭脳で解いてるからにゃね…", mood: "thinking" },
-            { text: "この問題、どこかで見たことあるにゃ...えーっと...", mood: "thinking" }
+            { text: "この問題、どこかで見たことあるにゃ…えーっと…", mood: "thinking" },
+            { text: "しっぽの先まで集中して考え中だにゃ…", mood: "thinking" },
+            { text: "この問題は手強いにゃ…。でも大丈夫、ネル先生のピピピッ！と光るヒゲが、正解をバッチリ受信してるにゃ！", mood: "thinking" },
+            { text: "にゃるほど…だいたい分かってきたにゃ…", mood: "thinking" },
+            { text: "あとちょっとで、ネル先生の脳みそが『ピコーン！』って鳴るにゃ！", mood: "thinking" }
         ];
         for (const item of msgs) { if (!isAnalyzing) return; await updateNellMessage(item.text, item.mood, false); if (!isAnalyzing) return; await new Promise(r => setTimeout(r, 1500)); }
     };
@@ -680,7 +688,7 @@ function drawGame() { if (!gameRunning) return; ctx.clearRect(0, 0, gameCanvas.w
 function endGame(c) { gameRunning = false; if(gameAnimId)cancelAnimationFrame(gameAnimId); fetchGameComment("end", score); const s=document.getElementById('start-game-btn'); if(s){s.disabled=false;s.innerText="もう一回！";} setTimeout(()=>{ alert(c?`すごい！全クリだにゃ！\nカリカリ ${score} 個ゲット！`:`おしい！\nカリカリ ${score} 個ゲット！`); if(currentUser&&score>0){currentUser.karikari+=score;if(typeof saveAndSync==='function')saveAndSync();updateMiniKarikari();showKarikariEffect(score);} }, 500); }
 
 // ==========================================
-// 10. WebSocket (Live Chat: 会話割り込み & エコー防止対応)
+// 10. WebSocket (Live Chat)
 // ==========================================
 
 async function startLiveChat() { 
@@ -694,6 +702,7 @@ async function startLiveChat() {
         updateNellMessage("ネル先生を呼んでるにゃ…", "thinking", false); 
         if(btn) btn.disabled = true; 
         
+        // 記憶コンテキストを読み込んでURLに埋め込む
         let memoryContext = "";
         if (window.NellMemory) {
             memoryContext = await window.NellMemory.generateContextString(currentUser.id);
@@ -730,6 +739,7 @@ async function startLiveChat() {
                 if (data.serverContent?.modelTurn?.parts) { 
                     data.serverContent.modelTurn.parts.forEach(p => { 
                         
+                        // 1. ツール実行 (Function Call) の検知
                         if (p.functionCall) {
                             if (p.functionCall.name === "show_kanji") {
                                 const content = p.functionCall.args.content;
@@ -748,6 +758,7 @@ async function startLiveChat() {
                             }
                         }
 
+                        // 2. テキスト内タグの検知（フォールバック）
                         if (p.text) { 
                             const match = p.text.match(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/i);
                             if (match) {
@@ -756,7 +767,9 @@ async function startLiveChat() {
                                 document.getElementById('whiteboard-content').innerText = content;
                             }
                             
+                            // ネル先生の発言をログに追加
                             chatTranscript += `Nell: ${p.text}\n`;
+
                             saveToNellMemory('nell', p.text); 
                             updateNellMessage(p.text, "normal", false, true);
                         } 
@@ -773,7 +786,9 @@ async function startLiveChat() {
 }
 
 function stopLiveChat() { 
+    // 会話終了時に記憶を更新する
     if (chatTranscript && chatTranscript.length > 10 && window.NellMemory) {
+        console.log("Saving memory...", chatTranscript.length);
         window.NellMemory.updateProfileFromChat(currentUser.id, chatTranscript);
     }
 
@@ -787,13 +802,16 @@ function stopLiveChat() {
     if (liveSocket) liveSocket.close(); 
     if (audioContext && audioContext.state !== 'closed') audioContext.close(); 
     window.isNellSpeaking = false; 
+    if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer); 
+    if(speakingStartTimer) clearTimeout(speakingStartTimer); 
     
-    // ボタン復帰
+    // モードに応じてボタンを復帰
     const btnId = currentMode === 'simple-chat' ? 'mic-btn-simple' : 'mic-btn';
     const btn = document.getElementById(btnId);
-    if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = currentMode === 'simple-chat' ? "#66bb6a" : "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; } 
     
+    if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = currentMode === 'simple-chat' ? "#66bb6a" : "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; } 
     liveSocket = null; 
+    
     const video = document.getElementById('live-chat-video');
     if(video) video.srcObject = null;
     document.getElementById('live-chat-video-container').style.display = 'none';
@@ -823,15 +841,15 @@ async function startMicrophone() {
             recognition.interimResults = true; 
             recognition.lang = 'ja-JP'; 
             
-            // 話し始めを検知したら、ネル先生を黙らせる（割り込み）
-            recognition.onsoundstart = () => {
-                 if (window.isNellSpeaking) stopLiveAudio();
-            };
-
+            // 割り込み対応: 音声を検知した瞬間にネル先生を止める
             recognition.onresult = (event) => { 
                 let interim = ''; 
                 for (let i = event.resultIndex; i < event.results.length; ++i) { 
-                    if (event.results[i].isFinal) { 
+                    if (!event.results[i].isFinal) {
+                        interim += event.results[i][0].transcript;
+                        // 途中経過でも何か喋っていたら止める
+                        if (interim.length > 0 && window.isNellSpeaking) stopLiveAudio();
+                    } else { 
                         // 確定したタイミングでも確実に止める
                         stopLiveAudio();
 
@@ -842,10 +860,6 @@ async function startMicrophone() {
                         const txtId = currentMode === 'simple-chat' ? 'user-speech-text-simple' : 'user-speech-text';
                         const el = document.getElementById(txtId); 
                         if(el) el.innerText = userText; 
-                    } else {
-                        interim += event.results[i][0].transcript;
-                        // 途中経過でも何か喋っていたら止める
-                        if (interim.length > 0 && window.isNellSpeaking) stopLiveAudio();
                     }
                 } 
             }; 
@@ -853,7 +867,9 @@ async function startMicrophone() {
             recognition.start(); 
         } 
         
+        // カメラは個別指導モードのときだけON
         const useVideo = (currentMode === 'chat');
+        
         mediaStream = await navigator.mediaDevices.getUserMedia({ 
             audio: { sampleRate: 16000, channelCount: 1 }, 
             video: useVideo ? { facingMode: "environment" } : false 
