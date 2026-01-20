@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v209.0: 解析データ受け取り強化 & 全機能統合) ---
+// --- anlyze.js (完全版 v200.0: 会話割り込み & エコー防止対応) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -13,6 +13,7 @@ window.currentMode = '';
 window.lunchCount = 0; 
 window.analysisType = 'precision';
 
+// 採点・入力制御用
 window.gradingTimer = null; 
 window.isComposing = false;
 
@@ -29,7 +30,7 @@ let nextStartTime = 0;
 let connectionTimeout = null;
 let recognition = null;
 let isRecognitionActive = false;
-let activeLiveAudioNodes = []; 
+let activeLiveAudioNodes = []; // ★追加: 再生中の音声ノード管理用
 
 // ゲーム・Cropper関連
 let gameCanvas, ctx, ball, paddle, bricks, score, gameRunning = false, gameAnimId = null;
@@ -45,7 +46,6 @@ let studyTimerInterval = null;
 let studyTimerRunning = false;
 let studyTimerCheck = 0; 
 
-// 効果音 (sfxChimeはui.jsで定義済みのため除外)
 const sfxBori = new Audio('boribori.mp3');
 const sfxHit = new Audio('cat1c.mp3');
 const sfxPaddle = new Audio('poka02.mp3'); 
@@ -55,6 +55,7 @@ sfxBunseki.volume = 0.05;
 const sfxHirameku = new Audio('hirameku.mp3'); 
 const sfxMaru = new Audio('maru.mp3');
 const sfxBatu = new Audio('batu.mp3');
+// sfxChime は ui.js にあるので削除
 
 const gameHitComments = ["うまいにゃ！", "すごいにゃ！", "さすがにゃ！", "がんばれにゃ！"];
 
@@ -89,6 +90,7 @@ function startMouthAnimation() {
 }
 startMouthAnimation();
 
+// 初期化イベント
 window.addEventListener('DOMContentLoaded', () => {
     const camIn = document.getElementById('hw-input-camera'); 
     const albIn = document.getElementById('hw-input-album'); 
@@ -185,7 +187,6 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     const targetId = isGameHidden ? 'nell-text' : 'nell-text-game';
     const el = document.getElementById(targetId);
     
-    // 表示用: タグを消す
     const displayText = t.replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "");
     if (el) el.innerText = displayText;
     
@@ -303,7 +304,7 @@ window.toggleTimer = function() {
                 studyTimerRunning = false;
                 document.getElementById('timer-toggle-btn').innerText = "スタート！";
                 document.getElementById('timer-toggle-btn').className = "main-btn pink-btn";
-                try { if(window.sfxChime) window.sfxChime.play(); } catch(e){}
+                try { sfxChime.play(); } catch(e){}
                 if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
                     sendSilentPrompt("タイマー終了！たくさん褒めて！");
                 } else {
@@ -367,26 +368,15 @@ window.captureAndSendLiveImage = function() {
 
 window.startAnalysis = async function(b64) {
     if (isAnalyzing) return;
-    
-    if (!b64 || b64.length < 100) {
-        alert("画像が正しく読み込めなかったにゃ。もう一度撮影してみてにゃ！");
-        return;
-    }
-
     isAnalyzing = true; 
     document.getElementById('cropper-modal').classList.add('hidden'); 
     document.getElementById('thinking-view').classList.remove('hidden'); 
     document.getElementById('upload-controls').classList.add('hidden'); 
     const backBtn = document.getElementById('main-back-btn'); if(backBtn) backBtn.classList.add('hidden');
-    
-    try { 
-        sfxHirameku.volume = 0; sfxHirameku.play().then(() => { sfxHirameku.pause(); sfxHirameku.currentTime = 0; sfxHirameku.volume = 1; }).catch(e => {});
-        sfxBunseki.currentTime = 0; sfxBunseki.play(); sfxBunseki.loop = true; 
-    } catch(e){}
+    try { sfxHirameku.volume = 0; sfxHirameku.play().catch(e=>{}); sfxBunseki.currentTime = 0; sfxBunseki.play(); sfxBunseki.loop = true; } catch(e){}
     
     let p = 0; 
     const timer = setInterval(() => { if (!isAnalyzing) { clearInterval(timer); return; } if (p < 30) p += 1; else if (p < 80) p += 0.4; else if (p < 95) p += 0.1; updateProgress(p); }, 300);
-    
     const performAnalysisNarration = async () => {
         const msgs = [
             { text: "じーっと見て、問題を書き写してるにゃ...", mood: "thinking" },
@@ -395,47 +385,17 @@ window.startAnalysis = async function(b64) {
             { text: "今、ネル先生の天才的な頭脳で解いてるからにゃね…", mood: "thinking" },
             { text: "この問題、どこかで見たことあるにゃ...えーっと...", mood: "thinking" }
         ];
-        let i = 0;
-        while(isAnalyzing) {
-            const item = msgs[i % msgs.length];
-            await updateNellMessage(item.text, item.mood, false);
-            for(let w=0; w<20; w++) {
-                if(!isAnalyzing) return;
-                await new Promise(r=>setTimeout(r, 100));
-            }
-            i++;
-        }
+        for (const item of msgs) { if (!isAnalyzing) return; await updateNellMessage(item.text, item.mood, false); if (!isAnalyzing) return; await new Promise(r => setTimeout(r, 1500)); }
     };
     performAnalysisNarration();
 
     try {
-        const apiMode = currentMode || 'explain';
-
-        const res = await fetch('/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: b64, mode: apiMode, grade: currentUser.grade, subject: currentSubject, name: currentUser.name }) });
+        const res = await fetch('/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: b64, mode: currentMode, grade: currentUser.grade, subject: currentSubject, name: currentUser.name }) });
+        if (!res.ok) throw new Error("Server Error"); 
         
-        if (!res.ok) {
-            const errText = await res.text();
-            throw new Error(`Server Error: ${res.status} ${errText}`);
-        }
+        const data = await res.json();
         
-        const rawData = await res.json();
-        let data = [];
-
-        // データ構造の柔軟な受け取り
-        if (Array.isArray(rawData)) {
-            data = rawData;
-        } else if (rawData && typeof rawData === 'object') {
-            const possibleArray = Object.values(rawData).find(val => Array.isArray(val));
-            if (possibleArray) {
-                data = possibleArray;
-            } else if (rawData.problems) {
-                data = rawData.problems;
-            } else if (rawData.questions) {
-                data = rawData.questions;
-            }
-        }
-
-        if (!Array.isArray(data) || data.length === 0) {
+        if (!data || !Array.isArray(data) || data.length === 0) {
             throw new Error("データが空か、正しい形式ではありませんでした。");
         }
         
@@ -456,17 +416,7 @@ window.startAnalysis = async function(b64) {
 
         isAnalyzing = false; clearInterval(timer); updateProgress(100); cleanupAnalysis();
         try { sfxHirameku.currentTime = 0; sfxHirameku.play().catch(e=>{}); } catch(e){}
-        setTimeout(() => { 
-            document.getElementById('thinking-view').classList.add('hidden'); 
-            const doneMsg = "読めたにゃ！"; 
-            if (currentMode === 'grade') { 
-                showGradingView(true); 
-                updateNellMessage(doneMsg, "happy", false).then(() => setTimeout(updateGradingMessage, 1500)); 
-            } else { 
-                renderProblemSelection(); 
-                updateNellMessage(doneMsg, "happy", false); 
-            } 
-        }, 1500); 
+        setTimeout(() => { document.getElementById('thinking-view').classList.add('hidden'); const doneMsg = "読めたにゃ！"; if (currentMode === 'grade') { showGradingView(true); updateNellMessage(doneMsg, "happy", false).then(() => setTimeout(updateGradingMessage, 1500)); } else { renderProblemSelection(); updateNellMessage(doneMsg, "happy", false); } }, 1500); 
     } catch (err) { 
         console.error("Analysis Error:", err);
         isAnalyzing = false; cleanupAnalysis(); clearInterval(timer); 
@@ -744,7 +694,6 @@ async function startLiveChat() {
         updateNellMessage("ネル先生を呼んでるにゃ…", "thinking", false); 
         if(btn) btn.disabled = true; 
         
-        // 記憶コンテキストを読み込んでURLに埋め込む
         let memoryContext = "";
         if (window.NellMemory) {
             memoryContext = await window.NellMemory.generateContextString(currentUser.id);
@@ -781,7 +730,6 @@ async function startLiveChat() {
                 if (data.serverContent?.modelTurn?.parts) { 
                     data.serverContent.modelTurn.parts.forEach(p => { 
                         
-                        // 1. ツール実行 (Function Call) の検知
                         if (p.functionCall) {
                             if (p.functionCall.name === "show_kanji") {
                                 const content = p.functionCall.args.content;
@@ -800,7 +748,6 @@ async function startLiveChat() {
                             }
                         }
 
-                        // 2. テキスト内タグの検知（フォールバック）
                         if (p.text) { 
                             const match = p.text.match(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/i);
                             if (match) {
@@ -809,9 +756,7 @@ async function startLiveChat() {
                                 document.getElementById('whiteboard-content').innerText = content;
                             }
                             
-                            // ネル先生の発言をログに追加
                             chatTranscript += `Nell: ${p.text}\n`;
-
                             saveToNellMemory('nell', p.text); 
                             updateNellMessage(p.text, "normal", false, true);
                         } 
@@ -828,7 +773,6 @@ async function startLiveChat() {
 }
 
 function stopLiveChat() { 
-    // 会話終了時に記憶を更新する
     if (chatTranscript && chatTranscript.length > 10 && window.NellMemory) {
         window.NellMemory.updateProfileFromChat(currentUser.id, chatTranscript);
     }
@@ -844,19 +788,18 @@ function stopLiveChat() {
     if (audioContext && audioContext.state !== 'closed') audioContext.close(); 
     window.isNellSpeaking = false; 
     
-    // モードに応じてボタンを復帰
+    // ボタン復帰
     const btnId = currentMode === 'simple-chat' ? 'mic-btn-simple' : 'mic-btn';
     const btn = document.getElementById(btnId);
-    
     if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = currentMode === 'simple-chat' ? "#66bb6a" : "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; } 
-    liveSocket = null; 
     
+    liveSocket = null; 
     const video = document.getElementById('live-chat-video');
     if(video) video.srcObject = null;
     document.getElementById('live-chat-video-container').style.display = 'none';
 }
 
-// 割り込み用: 再生中の音声を即座に止める関数
+// ★割り込み用: 再生中の音声を即座に止める関数
 function stopLiveAudio() {
     activeLiveAudioNodes.forEach(node => {
         try { node.stop(); } catch(e) {}
@@ -864,7 +807,7 @@ function stopLiveAudio() {
     activeLiveAudioNodes = [];
     
     if (audioContext) {
-        nextStartTime = audioContext.currentTime; 
+        nextStartTime = audioContext.currentTime; // 次の再生位置をリセット
     }
     
     window.isNellSpeaking = false;
@@ -880,15 +823,18 @@ async function startMicrophone() {
             recognition.interimResults = true; 
             recognition.lang = 'ja-JP'; 
             
-            // 割り込み対応: 音声を検知した瞬間にネル先生を止める
+            // 話し始めを検知したら、ネル先生を黙らせる（割り込み）
+            recognition.onsoundstart = () => {
+                 if (window.isNellSpeaking) stopLiveAudio();
+            };
+
             recognition.onresult = (event) => { 
                 let interim = ''; 
                 for (let i = event.resultIndex; i < event.results.length; ++i) { 
-                    if (!event.results[i].isFinal) {
-                        interim += event.results[i][0].transcript;
-                        if (interim.length > 0 && window.isNellSpeaking) stopLiveAudio();
-                    } else { 
+                    if (event.results[i].isFinal) { 
+                        // 確定したタイミングでも確実に止める
                         stopLiveAudio();
+
                         const userText = event.results[i][0].transcript;
                         chatTranscript += `Student: ${userText}\n`;
                         saveToNellMemory('user', userText); 
@@ -896,6 +842,10 @@ async function startMicrophone() {
                         const txtId = currentMode === 'simple-chat' ? 'user-speech-text-simple' : 'user-speech-text';
                         const el = document.getElementById(txtId); 
                         if(el) el.innerText = userText; 
+                    } else {
+                        interim += event.results[i][0].transcript;
+                        // 途中経過でも何か喋っていたら止める
+                        if (interim.length > 0 && window.isNellSpeaking) stopLiveAudio();
                     }
                 } 
             }; 
@@ -927,7 +877,7 @@ async function startMicrophone() {
         workletNode.port.onmessage = (event) => { 
             if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return; 
             
-            // エコーキャンセル
+            // ★エコーキャンセル: ネル先生が喋っている間はマイク音声を送らない
             if (window.isNellSpeaking) return;
 
             const downsampled = downsampleBuffer(event.data, audioContext.sampleRate, 16000); 

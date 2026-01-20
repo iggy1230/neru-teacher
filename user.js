@@ -1,4 +1,4 @@
-// --- user.js (完全版 v201.0: ポップアップログイン復旧) ---
+// --- user.js (完全修正版 v133.0: PNG形式復帰 & 軽量サイズ版) ---
 
 // Firebase初期化
 let app, auth, db;
@@ -58,7 +58,6 @@ window.logoutProcess = async function() {
     currentUser = null;
 };
 
-// ★修正: ポップアップ方式に戻しました
 window.startGoogleLogin = function() {
     if (!auth) return alert("Firebaseの設定ファイル(firebase-config.js)が見つからないにゃ！");
     const provider = new firebase.auth.GoogleAuthProvider();
@@ -260,7 +259,7 @@ async function renderForSave() {
     const img = new Image(); img.crossOrigin = "Anonymous"; 
     try { await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = 'student-id-base.png?' + new Date().getTime(); }); } catch (e) { return null; }
     
-    // 容量削減のため幅を300pxに縮小
+    // ★修正: 容量削減のため幅を300pxに縮小
     const BASE_W = 300; 
     const scaleFactor = BASE_W / img.width; 
     const canvas = document.createElement('canvas');
@@ -318,6 +317,7 @@ async function renderForSave() {
     }
     const nameVal = document.getElementById('new-student-name').value; const gradeVal = document.getElementById('new-student-grade').value; ctx.fillStyle = "#333"; const fontSize = 32 * rx; ctx.font = `bold ${fontSize}px 'M PLUS Rounded 1c', sans-serif`; ctx.textAlign = "left"; ctx.textBaseline = "middle"; const textX = 346 * rx; if (gradeVal) ctx.fillText(gradeVal + "年生", textX, 168 * ry + 1); if (nameVal) ctx.fillText(nameVal, textX, 231 * ry + 3);
     
+    // ★修正: PNG形式に戻す (サイズ縮小により容量対策済み)
     try { return canvas.toDataURL('image/png'); } catch (e) { return null; }
 }
 
