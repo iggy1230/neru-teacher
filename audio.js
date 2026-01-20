@@ -1,4 +1,4 @@
-// --- audio.js (完全版 v198.0) ---
+// --- audio.js (完全版 v215.0: 強制ミュート機能追加) ---
 
 let audioCtx = null;
 let currentSource = null;
@@ -17,19 +17,26 @@ window.initAudioContext = async function() {
     }
 };
 
-async function speakNell(text, mood = "normal") {
-    if (!text || text === "") return;
-
-    // 1. 前の音声を停止
+// ★追加: 通常のTTSを強制停止する関数（Live Chat優先用）
+window.cancelNellSpeech = function() {
     if (currentSource) {
         try { currentSource.stop(); } catch(e) {}
         currentSource = null;
     }
-
-    // 2. 前の通信（読み込み中）があればキャンセル
     if (abortController) {
         abortController.abort();
+        abortController = null;
     }
+    window.isNellSpeaking = false;
+};
+
+async function speakNell(text, mood = "normal") {
+    if (!text || text === "") return;
+
+    // 1. 前の音声を停止
+    window.cancelNellSpeech();
+
+    // 2. 新しい通信用コントローラー
     abortController = new AbortController();
 
     // 3. 口パクOFF

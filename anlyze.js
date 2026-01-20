@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v212.0: バージイン・割り込み機能搭載) ---
+// --- anlyze.js (完全版 v215.0: 音声優先順位の徹底) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -196,6 +196,12 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     
     if (saveToMemory) { saveToNellMemory('nell', t); }
     
+    // ★重要: Live Socketが接続中なら、ここでのTTS発話（speak=true）は禁止する
+    if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
+        // WebSocket接続中は標準TTSをミュート（字幕のみ更新）
+        return;
+    }
+
     if (speak && typeof speakNell === 'function') {
         let textForSpeech = displayText.replace(/【.*?】/g, "").trim();
         textForSpeech = textForSpeech.replace(/🐾/g, "");
@@ -336,7 +342,7 @@ function sendSilentPrompt(text) {
 }
 
 // ==========================================
-// 6. 「これ見て！」カメラ機能 (v211.0: 音声重複防止機能強化)
+// 6. 「これ見て！」カメラ機能
 // ==========================================
 
 window.captureAndSendLiveImage = function() {
@@ -353,6 +359,8 @@ window.captureAndSendLiveImage = function() {
     stopAudioPlayback();
     ignoreIncomingAudio = true; 
     window.isNellSpeaking = false;
+    // ★追加: TTSも確実に止める
+    if(window.cancelNellSpeech) window.cancelNellSpeech();
     
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth || 640;
@@ -384,6 +392,7 @@ window.captureAndSendLiveImage = function() {
         }, 3000);
     }
 
+    // ★修正: 字幕更新するが、speak=falseにしてTTSは呼ばない
     updateNellMessage("ん？どれどれ…", "thinking", false, false);
     
     // 2. 画像送信
@@ -411,7 +420,7 @@ function stopAudioPlayback() {
 }
 
 // ==========================================
-// 7. 宿題分析ロジック
+// 7. 宿題分析ロジック (v205.0: 画質最適化版維持)
 // ==========================================
 
 window.startAnalysis = async function(b64) {
@@ -900,11 +909,10 @@ async function startMicrophone() {
             recognition.interimResults = true; 
             recognition.lang = 'ja-JP'; 
             
-            // ★重要: 話し始めを検知して停止するロジック
+            // ★修正: バージイン機能 (音声検知で再生停止)
             recognition.onresult = (event) => { 
-                // 何か音声を検知したら即座に再生を停止（バージイン）
                 if (event.results.length > 0) {
-                    stopAudioPlayback();
+                    stopAudioPlayback(); // ★ここで再生停止
                 }
 
                 let interim = ''; 
