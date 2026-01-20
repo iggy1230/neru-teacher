@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v216.0: 二重音声・完全根絶版) ---
+// --- anlyze.js (完全版 v217.0: 相槌対応・スマート割り込み版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -31,7 +31,7 @@ let connectionTimeout = null;
 let recognition = null;
 let isRecognitionActive = false;
 
-// ★追加: 再生キューに入っているすべての音声を管理する配列
+// 音声ソース管理
 let liveAudioSources = []; 
 let ignoreIncomingAudio = false;
 
@@ -183,8 +183,6 @@ async function saveToNellMemory(role, text) {
 }
 
 window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false, speak = true) {
-    // ★絶対条件：Live Chat(WebSocket)接続中は、絶対にTTSを再生しない。
-    // Geminiからのテキスト字幕を更新するだけで、音声はGeminiの生声に任せる。
     if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
         speak = false;
     }
@@ -344,23 +342,17 @@ function sendSilentPrompt(text) {
 // 6. 「これ見て！」カメラ機能 & 音声割り込み強化
 // ==========================================
 
-// ヘルパー: 音声の完全停止（バージイン）
 function stopAudioPlayback() {
-    // スケジュールされているすべてのWebSocket音声を停止
     liveAudioSources.forEach(source => {
         try { source.stop(); } catch(e){}
     });
-    liveAudioSources = []; // 配列クリア
-
+    liveAudioSources = [];
     if (audioContext && audioContext.state === 'running') {
-        // 現在時刻より先を指定して、バッファに残った音声を無効化
         nextStartTime = audioContext.currentTime + 0.05;
     }
     window.isNellSpeaking = false;
     if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer);
     if(speakingStartTimer) clearTimeout(speakingStartTimer);
-
-    // ★追加: TTSが鳴っていた場合も強制キャンセル
     if (window.cancelNellSpeech) window.cancelNellSpeech();
 }
 
@@ -374,7 +366,6 @@ window.captureAndSendLiveImage = function() {
         return alert("カメラが動いてないにゃ...。一度「おはなしする」を終了して、もう一度つなぎ直してみてにゃ。");
     }
 
-    // 1. 強制的に全音声を停止し、フラグを立てる
     stopAudioPlayback();
     ignoreIncomingAudio = true; 
     
@@ -385,7 +376,6 @@ window.captureAndSendLiveImage = function() {
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
     
-    // 視覚エフェクト
     const flash = document.createElement('div');
     flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;";
     document.body.appendChild(flash);
@@ -410,10 +400,8 @@ window.captureAndSendLiveImage = function() {
 
     updateNellMessage("ん？どれどれ…", "thinking", false, false);
     
-    // 2. 画像送信
     liveSocket.send(JSON.stringify({ base64Image: base64Data }));
     
-    // 3. フラグ解除 & 強いプロンプト送信 (少し長めに待ってから解除)
     setTimeout(() => {
         ignoreIncomingAudio = false; 
         sendSilentPrompt("【緊急指示】今までの話は全て中断して、たった今送った画像「だけ」を見て！写っているのが「文字・数式」なら勉強として解説して。「物体・キャラ」なら、その正体（名前）を特定して！関係ない話はしないで！");
@@ -421,7 +409,7 @@ window.captureAndSendLiveImage = function() {
 };
 
 // ==========================================
-// 7. 宿題分析ロジック
+// 7. 宿題分析ロジック (v205.0: 画質最適化版維持)
 // ==========================================
 
 window.startAnalysis = async function(b64) {
@@ -588,6 +576,7 @@ window.showHintText = function(level) {
 
 window.revealAnswer = function() {
     const ansArea = document.getElementById('answer-display-area'); const finalTxt = document.getElementById('final-answer-text');
+    // 配列対応
     const correctArr = Array.isArray(selectedProblem.correct_answer) ? selectedProblem.correct_answer : [selectedProblem.correct_answer];
     let displayAnswer = correctArr.map(part => part.split('|')[0]).join(', ');
     if (ansArea && finalTxt) { finalTxt.innerText = displayAnswer; ansArea.classList.remove('hidden'); ansArea.style.display = "block"; }
@@ -595,11 +584,14 @@ window.revealAnswer = function() {
     updateNellMessage(`答えは「${displayAnswer}」だにゃ！`, "gentle", false); 
 };
 
+// --- リスト生成 (配列対応版) ---
 function createProblemItem(p, mode) {
     const isGradeMode = (mode === 'grade');
     let markHtml = "", bgStyle = "background:white;";
+    
     let correctList = Array.isArray(p.correct_answer) ? p.correct_answer : [String(p.correct_answer)];
     correctList = correctList.map(s => String(s).trim()).filter(s => s !== ""); 
+
     let studentList = Array.isArray(p.student_answer) ? p.student_answer : [String(p.student_answer)];
     
     if (isGradeMode) {
@@ -620,6 +612,7 @@ function createProblemItem(p, mode) {
     }
     
     let inputHtml = "";
+    
     if (correctList.length > 1) {
         inputHtml = `<div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px; width:100%;">`;
         for (let i = 0; i < correctList.length; i++) {
@@ -664,6 +657,7 @@ window.renderProblemSelection = function() {
     const btn = document.querySelector('#problem-selection-view button.orange-btn'); if (btn) { btn.disabled = false; btn.innerText = "✨ ぜんぶわかったにゃ！"; } 
 };
 
+// --- 採点ロジック (配列対応) ---
 function normalizeAnswer(str) { if (!str) return ""; let normalized = str.trim().replace(/[\u30a1-\u30f6]/g, m => String.fromCharCode(m.charCodeAt(0) - 0x60)); return normalized; }
 function isMatch(student, correctString) { const s = normalizeAnswer(student); const options = normalizeAnswer(correctString).split('|'); return options.some(opt => opt === s); }
 
@@ -683,6 +677,7 @@ function _performCheckMultiAnswer(id) {
     const problem = transcribedProblems.find(p => p.id === id); if (!problem) return;
     const userValues = problem.student_answer; 
     const correctList = Array.isArray(problem.correct_answer) ? problem.correct_answer : [problem.correct_answer];
+    
     let allCorrect = false;
     if (userValues.length === correctList.length) {
         const usedIndices = new Set(); let matchCount = 0;
@@ -722,8 +717,10 @@ function _performCheckAnswerDynamically(id, val) {
 
 window.checkOneProblem = function(id) { 
     const problem = transcribedProblems.find(p => p.id === id); if (!problem) return; 
+    
     const correctList = Array.isArray(problem.correct_answer) ? problem.correct_answer : [problem.correct_answer];
     let userValues = []; 
+    
     if (correctList.length > 1) { 
         const inputs = document.querySelectorAll(`.multi-input-${id}`); 
         userValues = Array.from(inputs).map(i => i.value); 
@@ -731,6 +728,7 @@ window.checkOneProblem = function(id) {
         const input = document.getElementById(`single-input-${id}`); 
         if(input) userValues = [input.value]; 
     } 
+    
     let isCorrect = false; 
     if (userValues.length === correctList.length) { 
         const usedIndices = new Set(); let matchCount = 0; 
@@ -818,7 +816,6 @@ async function startLiveChat() {
                             }
                             chatTranscript += `Nell: ${p.text}\n`;
                             saveToNellMemory('nell', p.text); 
-                            // ★WebSocket接続中は speak=false にしてTTSを呼ばない
                             updateNellMessage(p.text, "normal", false, false);
                         } 
                         if (p.inlineData) playLivePcmAudio(p.inlineData.data); 
@@ -860,10 +857,23 @@ async function startMicrophone() {
             recognition.interimResults = true; 
             recognition.lang = 'ja-JP'; 
             recognition.onresult = (event) => { 
-                // ★バージイン: ユーザーが喋り始めたらネル先生を即座に黙らせる
-                if (event.results.length > 0) {
-                    stopAudioPlayback();
+                let currentText = "";
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    currentText += event.results[i][0].transcript;
                 }
+                
+                // ★修正: スマート割り込み機能
+                // 3文字以下、または相槌リストに含まれる場合は停止しない
+                const aizuchi = ["うん", "はい", "へー", "そう", "あ", "え", "ん", "うんうん", "はいはい", "そっか", "なるほど", "えっと"];
+                const cleanText = currentText.trim();
+                
+                // ネル先生が話していて、かつユーザーの発言が短すぎず、相槌でもない場合のみ停止
+                if (window.isNellSpeaking && cleanText.length > 0) {
+                    if (cleanText.length > 3 || (cleanText.length >= 2 && !aizuchi.includes(cleanText))) {
+                        stopAudioPlayback();
+                    }
+                }
+
                 let interim = ''; 
                 for (let i = event.resultIndex; i < event.results.length; ++i) { 
                     if (event.results[i].isFinal) { 
@@ -899,7 +909,6 @@ async function startMicrophone() {
     } catch(e) { console.warn(e); } 
 }
 
-// ★完全停止処理: 全ての音声ソースを抹殺する
 function stopAudioPlayback() {
     liveAudioSources.forEach(source => {
         try { source.stop(); } catch(e){}
@@ -927,13 +936,8 @@ function playLivePcmAudio(base64) {
     const source = audioContext.createBufferSource(); 
     source.buffer = buffer; 
     source.connect(audioContext.destination); 
-    
-    // ★管理配列に追加
     liveAudioSources.push(source);
-    source.onended = () => {
-        liveAudioSources = liveAudioSources.filter(s => s !== source);
-    };
-
+    source.onended = () => { liveAudioSources = liveAudioSources.filter(s => s !== source); };
     const now = audioContext.currentTime; 
     if (nextStartTime < now) nextStartTime = now; 
     source.start(nextStartTime); 
