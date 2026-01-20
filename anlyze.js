@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v211.0: 音声バッファクリア & 強力リセット版) ---
+// --- anlyze.js (完全版 v212.0: バージイン・割り込み機能搭載) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -31,7 +31,7 @@ let connectionTimeout = null;
 let recognition = null;
 let isRecognitionActive = false;
 let currentLiveAudioSource = null;
-let ignoreIncomingAudio = false; // ★追加: 古い音声の受信拒否フラグ
+let ignoreIncomingAudio = false;
 
 // ゲーム・Cropper関連
 let gameCanvas, ctx, ball, paddle, bricks, score, gameRunning = false, gameAnimId = null;
@@ -351,7 +351,7 @@ window.captureAndSendLiveImage = function() {
 
     // 1. 強制的に発話を停止し、フラグを立てる
     stopAudioPlayback();
-    ignoreIncomingAudio = true; // ★重要: これで遅れて届く旧音声を無視
+    ignoreIncomingAudio = true; 
     window.isNellSpeaking = false;
     
     const canvas = document.createElement('canvas');
@@ -390,8 +390,6 @@ window.captureAndSendLiveImage = function() {
     liveSocket.send(JSON.stringify({ base64Image: base64Data }));
     
     // 3. フラグ解除 & 強いプロンプト送信
-    // 画像送信直後に「新しいコンテキスト」としてフラグを解除して、これ以降（新回答）は許可する
-    // ※タイミングがシビアなので、プロンプト送信と同時に解除
     setTimeout(() => {
         ignoreIncomingAudio = false; 
         sendSilentPrompt("【緊急指示】今までの話は全て中断して、たった今送った画像「だけ」を見て！写っているのが「文字・数式」なら勉強として解説して。「物体・キャラ」なら、その正体（名前）を特定して！関係ない話はしないで！");
@@ -405,7 +403,6 @@ function stopAudioPlayback() {
         currentLiveAudioSource = null;
     }
     if (audioContext && audioContext.state === 'running') {
-        // 現在時刻より少し先にnextStartTimeを設定して、キュー内の未再生分を実質スキップ
         nextStartTime = audioContext.currentTime + 0.1;
     }
     window.isNellSpeaking = false;
@@ -414,7 +411,7 @@ function stopAudioPlayback() {
 }
 
 // ==========================================
-// 7. 宿題分析ロジック (v205.0: 画質最適化版維持)
+// 7. 宿題分析ロジック
 // ==========================================
 
 window.startAnalysis = async function(b64) {
@@ -902,14 +899,19 @@ async function startMicrophone() {
             recognition.continuous = true; 
             recognition.interimResults = true; 
             recognition.lang = 'ja-JP'; 
+            
+            // ★重要: 話し始めを検知して停止するロジック
             recognition.onresult = (event) => { 
+                // 何か音声を検知したら即座に再生を停止（バージイン）
+                if (event.results.length > 0) {
+                    stopAudioPlayback();
+                }
+
                 let interim = ''; 
                 for (let i = event.resultIndex; i < event.results.length; ++i) { 
                     if (event.results[i].isFinal) { 
                         const userText = event.results[i][0].transcript;
-                        // 生徒の発言をログに追加
                         chatTranscript += `Student: ${userText}\n`;
-
                         saveToNellMemory('user', userText); 
                         
                         const txtId = currentMode === 'simple-chat' ? 'user-speech-text-simple' : 'user-speech-text';
@@ -922,7 +924,6 @@ async function startMicrophone() {
             recognition.start(); 
         } 
         
-        // カメラは個別指導モードのときだけON
         const useVideo = (currentMode === 'chat');
         
         mediaStream = await navigator.mediaDevices.getUserMedia({ 
@@ -969,7 +970,7 @@ async function startMicrophone() {
     } 
 }
 function playLivePcmAudio(base64) { 
-    if (!audioContext || ignoreIncomingAudio) return; // ★修正: フラグが立っていたら再生しない
+    if (!audioContext || ignoreIncomingAudio) return; 
     
     const binary = window.atob(base64); 
     const bytes = new Uint8Array(binary.length); 
@@ -985,7 +986,6 @@ function playLivePcmAudio(base64) {
     source.buffer = buffer; 
     source.connect(audioContext.destination); 
     
-    // ソース追跡
     currentLiveAudioSource = source;
     
     const now = audioContext.currentTime; 
