@@ -1,4 +1,4 @@
-// --- server.js (完全版 v203.0: 空欄判定厳格化 & 縦書き分離強化) ---
+// --- server.js (完全版 v206.0: 給食リアクション更新版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -162,6 +162,7 @@ app.post('/update-memory', async (req, res) => {
 });
 
 // --- Analyze (宿題分析: gemini-2.5-pro) ---
+// ※変更なし（安定版）
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, name } = req.body;
@@ -250,11 +251,20 @@ app.post('/lunch-reaction', async (req, res) => {
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
         const isSpecial = (count % 10 === 0);
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+        
+        // ★修正: 「さん付け徹底」と「思わず笑ってしまうセリフ」
         let prompt = isSpecial 
-            ? `あなたは猫の「ネル先生」。生徒「${name}さん」から記念すべき${count}個目の給食をもらいました！
-               感謝感激して、50文字以内で熱く語ってください。語尾は「にゃ」。`
-            : `あなたは猫の「ネル先生」。生徒「${name}さん」から${count}回目の給食をもらいました。
-               20文字以内で面白くリアクションして。語尾は「にゃ」。`;
+            ? `あなたは猫の「ネル先生」。生徒の「${name}さん」から記念すべき${count}個目の給食（カリカリ）をもらいました！
+               【ルール】
+               1. 相手を呼ぶときは必ず「${name}さん」と呼ぶこと。呼び捨て厳禁。
+               2. テンションMAXで、思わず笑ってしまうような大げさな感謝と喜びを50文字以内で叫んでください。
+               3. 語尾は「にゃ」。`
+            : `あなたは猫の「ネル先生」。生徒の「${name}さん」から給食（カリカリ）をもらって食べました。
+               【ルール】
+               1. 相手を呼ぶときは必ず「${name}さん」と呼ぶこと。呼び捨て厳禁。
+               2. 思わずクスッと笑ってしまうような、独特な食レポや、猫ならではの感想を30文字以内で言ってください。
+               3. 語尾は「にゃ」。`;
+
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text().trim(), isSpecial });
     } catch { res.json({ reply: "おいしいにゃ！", isSpecial: false }); }
