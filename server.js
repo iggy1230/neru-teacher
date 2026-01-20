@@ -1,4 +1,4 @@
-// --- server.js (完全版 v202.0: モデル統一 & 人格完成版) ---
+// --- server.js (完全版 v203.0: 空欄判定厳格化 & 縦書き分離強化) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -66,8 +66,9 @@ function getSubjectInstructions(subject) {
             `;
         case 'こくご':
             return `
-            - **縦書き対応**: 問題文が縦書きの場合は、必ず「右から左」へ読み取ること。
-            - **レイアウト**: 隣り合う問題の文章や選択肢、解答欄を混同しないよう区切りを意識すること。
+            - **縦書きレイアウトの厳格な分離**: 問題文や選択肢は縦書きです。**縦の罫線や行間の余白**を強く意識し、隣の行や列の内容が絶対に混ざらないようにしてください。
+            - **列の独立性**: ある問題の列にある文字と、隣の問題の列にある文字を混同しないこと。
+            - **読み取り順序**: 右の行から左の行へ、上から下へ読み取ること。
             - **漢字の書き取り**: 「読み」が書かれていて漢字を書く問題の場合、答えとなる空欄は『□(ふりがな)』という形式で出力すること。（例: □(ねこ)が好き）
             - **ふりがな**: □の横に小さく書いてある文字は(ふりがな)として認識すること。
             `;
@@ -115,7 +116,6 @@ app.post('/synthesize', async (req, res) => {
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
-        // 指定により gemini-2.0-flash-exp に統一
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp", 
             generationConfig: { responseMimeType: "application/json" }
@@ -167,7 +167,6 @@ app.post('/analyze', async (req, res) => {
         const { image, mode, grade, subject, name } = req.body;
         console.log(`[Analyze] Subject: ${subject}, Grade: ${grade}, Name: ${name}, Mode: ${mode} (Model: gemini-2.5-pro)`);
 
-        // 指定により gemini-2.5-pro に確定
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.5-pro", 
             generationConfig: { responseMimeType: "application/json", temperature: 0.0 }
@@ -183,8 +182,8 @@ app.post('/analyze', async (req, res) => {
         ${subjectSpecificInstructions}
 
         【重要: 手書き文字の認識強化】
+        - **空欄・無回答の厳格な判定**: 解答欄に**「鉛筆による手書きの筆跡」**が明確に認められない場合は、正解が明白であっても、**絶対に student_answer を空文字 "" にしてください**。AIが気を利かせて正解を埋めることは禁止です。
         - **子供特有の筆跡**: 子供の字は崩れていることが多いです。単に形状だけで判断せず、**前後の文脈（計算の整合性、文章の意味）から推測して補正**してください。
-        - **空欄判定**: 解答欄に「手書きの筆跡」がない場合は、正解が分かっていても**絶対に student_answer を空文字 "" にしてください**。
         - **数字と文字の判別**: '1'と'7'、'0'と'6'、'l'と'1'など、子供が書き間違えやすい文字は、文脈（数式か文章か）で判断してください。
 
         【タスク1: 問題文の書き起こし】
@@ -196,6 +195,7 @@ app.post('/analyze', async (req, res) => {
 
         【タスク3: 採点 & ヒント】
         - 手書きの答え(student_answer)を読み取り、正誤判定(is_correct)を行う。
+        - student_answer が空文字 "" の場合は、is_correct は false にする。
         - 3段階のヒント(hints)を作成する。
 
         【出力JSONフォーマット】
@@ -249,7 +249,6 @@ app.post('/lunch-reaction', async (req, res) => {
         const { count, name } = req.body;
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
         const isSpecial = (count % 10 === 0);
-        // 指定により gemini-2.0-flash-exp に統一
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         let prompt = isSpecial 
             ? `あなたは猫の「ネル先生」。生徒「${name}さん」から記念すべき${count}個目の給食をもらいました！
@@ -265,7 +264,6 @@ app.post('/lunch-reaction', async (req, res) => {
 app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;
-        // 指定により gemini-2.0-flash-exp に統一
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         let prompt = "";
         let mood = "excited";
@@ -344,7 +342,6 @@ wss.on('connection', async (clientWs, req) => {
 
             geminiWs.send(JSON.stringify({
                 setup: {
-                    // 指定により gemini-2.0-flash-exp に統一
                     model: "models/gemini-2.0-flash-exp",
                     generationConfig: { 
                         responseModalities: ["AUDIO"], 

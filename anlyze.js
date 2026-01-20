@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v199.0: 重複定義エラー修正版) ---
+// --- anlyze.js (完全版 v203.0: セリフ更新版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -387,14 +387,25 @@ window.startAnalysis = async function(b64) {
     const timer = setInterval(() => { if (!isAnalyzing) { clearInterval(timer); return; } if (p < 30) p += 1; else if (p < 80) p += 0.4; else if (p < 95) p += 0.1; updateProgress(p); }, 300);
     
     const performAnalysisNarration = async () => {
+        // ★更新: ユーザー指定のセリフリスト (mood: "thinking"に統一)
         const msgs = [
-            { text: "じーっと見て、問題を書き写してるにゃ...", mood: "thinking" },
+            { text: "じーっと見て、問題を書き写してるにゃ…", mood: "thinking" },
             { text: "肉球がちょっとじゃまだにゃ…", mood: "thinking" },
-            { text: "ふむふむ…この問題、なかなか手強いにゃ。", mood: "thinking" },
+            { text: "ふむふむ…この問題、なかなか手強いにゃ…", mood: "thinking" },
             { text: "今、ネル先生の天才的な頭脳で解いてるからにゃね…", mood: "thinking" },
-            { text: "この問題、どこかで見たことあるにゃ...えーっと...", mood: "thinking" }
+            { text: "この問題、どこかで見たことあるにゃ…えーっと…", mood: "thinking" },
+            { text: "しっぽの先まで集中して考え中だにゃ…", mood: "thinking" },
+            { text: "ネル先生のピピピッ！と光るヒゲが、正解をバッチリ受信してるにゃ！", mood: "thinking" },
+            { text: "にゃるほど…だいたい分かってきたにゃ…", mood: "thinking" },
+            { text: "あとちょっとで、ネル先生の脳みそが『ピコーン！』って鳴るにゃ！", mood: "thinking" }
         ];
-        for (const item of msgs) { if (!isAnalyzing) return; await updateNellMessage(item.text, item.mood, false); if (!isAnalyzing) return; await new Promise(r => setTimeout(r, 1500)); }
+
+        for (const item of msgs) { 
+            if (!isAnalyzing) return; 
+            await updateNellMessage(item.text, item.mood, false); 
+            if (!isAnalyzing) return; 
+            await new Promise(r => setTimeout(r, 1500)); 
+        }
     };
     performAnalysisNarration();
 
