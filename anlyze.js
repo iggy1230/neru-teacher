@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v207.0: カメラ撮影演出 & 即時発話停止機能) ---
+// --- anlyze.js (完全版 v208.0: 強制リセット強化版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -30,7 +30,7 @@ let nextStartTime = 0;
 let connectionTimeout = null;
 let recognition = null;
 let isRecognitionActive = false;
-let currentLiveAudioSource = null; // ★追加: リアルタイム音声の停止用
+let currentLiveAudioSource = null;
 
 // ゲーム・Cropper関連
 let gameCanvas, ctx, ball, paddle, bricks, score, gameRunning = false, gameAnimId = null;
@@ -56,7 +56,6 @@ sfxBunseki.volume = 0.05;
 const sfxHirameku = new Audio('hirameku.mp3'); 
 const sfxMaru = new Audio('maru.mp3');
 const sfxBatu = new Audio('batu.mp3');
-const sfxShutter = new Audio('shutter.mp3'); // シャッター音があれば使う（今回は視覚効果メイン）
 
 const gameHitComments = ["うまいにゃ！", "すごいにゃ！", "さすがにゃ！", "がんばれにゃ！"];
 
@@ -336,7 +335,7 @@ function sendSilentPrompt(text) {
 }
 
 // ==========================================
-// 6. 「これ見て！」カメラ機能 (★修正: 即時停止 & プレビュー機能)
+// 6. 「これ見て！」カメラ機能 (v208.0: 割り込み強化)
 // ==========================================
 
 window.captureAndSendLiveImage = function() {
@@ -355,9 +354,9 @@ window.captureAndSendLiveImage = function() {
         try { currentLiveAudioSource.stop(); } catch(e){}
         currentLiveAudioSource = null;
     }
-    // キューに入っている音声を無効化するため、コンテキスト時間をリセット的に扱う（AudioContextはリセットできないので、nextStartTimeを現在時刻に）
     if (audioContext && audioContext.state === 'running') {
-        nextStartTime = audioContext.currentTime; 
+        // コンテキスト時間をジャンプさせてキューを無効化
+        nextStartTime = audioContext.currentTime + 0.1;
     }
     
     // 2. 画像キャプチャ
@@ -377,7 +376,6 @@ window.captureAndSendLiveImage = function() {
     // 4. 視覚エフェクト: プレビュー静止画オーバーレイ
     const videoContainer = document.getElementById('live-chat-video-container');
     if (videoContainer) {
-        // 既存のプレビューがあれば消す
         const oldPreview = document.getElementById('snapshot-preview-overlay');
         if(oldPreview) oldPreview.remove();
 
@@ -385,10 +383,9 @@ window.captureAndSendLiveImage = function() {
         previewImg.id = 'snapshot-preview-overlay';
         previewImg.src = canvas.toDataURL('image/jpeg', 0.8);
         previewImg.style.cssText = "position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; z-index:10; border:4px solid #ffeb3b; box-sizing:border-box; animation: fadeIn 0.2s;";
-        videoContainer.style.position = "relative"; // 念のため
+        videoContainer.style.position = "relative"; 
         videoContainer.appendChild(previewImg);
 
-        // 3秒後に消す
         setTimeout(() => {
             if(previewImg && previewImg.parentNode) previewImg.remove();
         }, 3000);
@@ -396,11 +393,12 @@ window.captureAndSendLiveImage = function() {
 
     updateNellMessage("ん？どれどれ…", "thinking", false, false);
     
-    // 5. 送信
+    // 5. 送信 (強い中断命令を入れる)
     liveSocket.send(JSON.stringify({ base64Image: base64Data }));
     
     setTimeout(() => {
-        sendSilentPrompt("今送った画像を見て！今までの話は中断して、この画像について詳しく解説して。");
+        // ★修正: 強い指示
+        sendSilentPrompt("【緊急指示】今までの会話はすべて忘れて中断して！たった今送った新しい画像だけを見て！これが何の画像か判断して（イラスト？勉強？）、それに合った反応をして！");
     }, 500);
 };
 
