@@ -1,4 +1,4 @@
-// --- server.js (完全版 v197.0: 誕生日記憶 & 宿題分析強化) ---
+// --- server.js (完全版 v200.0: 教科別詳細解析 & 筆跡推論強化) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -52,6 +52,43 @@ try {
 } catch (e) { console.error("Init Error:", e.message); }
 
 // ==========================================
+// Helper Functions
+// ==========================================
+
+// ★教科ごとの詳細な解析指示を生成する関数
+function getSubjectInstructions(subject) {
+    switch (subject) {
+        case 'さんすう':
+            return `
+            - **数式の記号**: 筆算の「横線」と「マイナス記号」を絶対に混同しないこと。
+            - **複雑な表記**: 累乗（2^2など）、分数、帯分数を正確に認識すること。
+            - **図形問題**: 図の中に書かれた長さや角度の数値も見落とさないこと。
+            `;
+        case 'こくご':
+            return `
+            - **縦書き対応**: 問題文が縦書きの場合は、必ず「右から左」へ読み取ること。
+            - **レイアウト**: 隣り合う問題の文章や選択肢、解答欄を混同しないよう区切りを意識すること。
+            - **漢字の書き取り**: 「読み」が書かれていて漢字を書く問題の場合、答えとなる空欄は『□(ふりがな)』という形式で出力すること。（例: □(ねこ)が好き）
+            - **ふりがな**: □の横に小さく書いてある文字は(ふりがな)として認識すること。
+            `;
+        case 'りか':
+            return `
+            - **グラフ・表**: グラフの軸ラベルや単位（g, cm, ℃, A, Vなど）を絶対に省略せず読み取ること。
+            - **選択問題**: 記号選択問題（ア、イ、ウ...）の選択肢の文章もすべて書き出すこと。
+            - **配置**: 図や表のすぐ近くや上部に「最初の問題」が配置されている場合が多いので、見逃さないこと。
+            `;
+        case 'しゃかい':
+            return `
+            - **選択問題**: 記号選択問題（ア、イ、ウ...）の選択肢の文章もすべて書き出すこと。
+            - **資料読み取り**: 地図やグラフ、年表の近くにある「最初の問題」を見逃さないこと。
+            - **用語**: 歴史用語や地名は正確に（子供の字が崩れていても文脈から補正して）読み取ること。
+            `;
+        default:
+            return `- 基本的にすべての文字、図表内の数値を拾うこと。`;
+    }
+}
+
+// ==========================================
 // API Endpoints
 // ==========================================
 
@@ -74,12 +111,10 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- Memory Update (誕生日対応版) ---
+// --- Memory Update ---
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
-        console.log("[Memory] Updating profile...");
-
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash", 
             generationConfig: { responseMimeType: "application/json" }
@@ -96,17 +131,16 @@ app.post('/update-memory', async (req, res) => {
         ${chatLog}
 
         【更新ルール】
-        1. **birthday (誕生日)**: 会話の中で誕生日や年齢が出てきたら必ず記録・更新してください（例: "5月5日", "10歳"）。
+        1. **birthday (誕生日)**: 会話の中で誕生日や年齢が出てきたら必ず記録・更新してください。
         2. **likes (好きなもの)**: 新しく判明した好きなものがあれば追加。
         3. **weaknesses (苦手なこと)**: 勉強でつまづいた箇所や苦手と言ったことがあれば追加。
         4. **achievements (頑張ったこと)**: 宿題をやった、正解した、褒められた内容を具体的に記録。
         5. **last_topic (最後の話題)**: 会話の最後に何を話していたかを短く記録。
-        6. **必ず純粋なJSON形式**で出力してください。
 
         【出力フォーマット】
         {
-            "nickname": "あだ名(あれば)",
-            "birthday": "誕生日または年齢(不明なら空文字)",
+            "nickname": "...",
+            "birthday": "...",
             "likes": ["..."],
             "weaknesses": ["..."],
             "achievements": ["..."],
@@ -117,9 +151,7 @@ app.post('/update-memory', async (req, res) => {
         const result = await model.generateContent(prompt);
         let text = result.response.text();
         text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-        
         const newProfile = JSON.parse(text);
-        console.log("[Memory] Updated:", newProfile);
         res.json(newProfile);
 
     } catch (error) {
@@ -128,49 +160,56 @@ app.post('/update-memory', async (req, res) => {
     }
 });
 
-// --- Analyze (Gemini 2.5 Pro) ---
+// --- Analyze (Gemini 2.5 Pro: 教科別強化版) ---
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, name } = req.body;
         console.log(`[Analyze] Subject: ${subject}, Grade: ${grade}, Name: ${name}, Mode: ${mode} (Model: Gemini 2.5 Pro)`);
 
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.5-pro",
+            model: "gemini-2.0-pro-exp-02-05", // 最新モデル推奨 (なければ gemini-1.5-pro 等)
             generationConfig: { responseMimeType: "application/json", temperature: 0.0 }
         });
 
+        // 教科別の特別指示を取得
+        const subjectSpecificInstructions = getSubjectInstructions(subject);
+
         const prompt = `
         あなたは小学${grade}年生の${name}さんの${subject}担当の教育AI「ネル先生」です。
-        画像（鮮明化処理済み）を解析し、以下の厳格なJSONフォーマットでデータを出力してください。
-        Markdownのコードブロックは不要です。純粋なJSON配列のみを返してください。
+        提供された画像（生徒のノートやドリル）を解析し、以下の厳格なJSONフォーマットでデータを出力してください。
+
+        【重要: 教科別の解析ルール (${subject})】
+        ${subjectSpecificInstructions}
+
+        【重要: 手書き文字の認識強化】
+        - **子供特有の筆跡**: 子供の字は崩れていることが多いです。単に形状だけで判断せず、**前後の文脈（計算の整合性、文章の意味）から推測して補正**してください。
+        - **空欄判定**: 解答欄に「手書きの筆跡」がない場合は、正解が分かっていても**絶対に student_answer を空文字 "" にしてください**。
+        - **数字と文字の判別**: '1'と'7'、'0'と'6'、'l'と'1'など、子供が書き間違えやすい文字は、文脈（数式か文章か）で判断してください。
 
         【タスク1: 問題文の書き起こし】
-        - 設問文、選択肢（ア：〜、イ：〜）を含めて書き起こす。
+        - 設問文、選択肢を正確に書き起こす。
 
-        【タスク2: 手書き答えの読み取り】
-        - ${name}さんの手書きの答えを読み取る。
-        - **空欄判定**: 解答欄に**「手書きの筆跡」**がない場合は、正解が分かっていても**絶対に student_answer を空文字 "" にしてください。**
+        【タスク2: 正解データの作成 (配列形式)】
+        - 答えは必ず「文字列のリスト（配列）」にする。
+        - 記述問題も["文章"]、複数回答も["ア", "イ"]とする。
 
-        【タスク3: 正解データの作成 (配列形式)】
-        - **答えは必ず「文字列のリスト（配列）」にする**。
-        - 記述問題（文章）の場合も、["文章"] という形式にする。
-        - 複数回答（アとイなど）の場合のみ、["ア", "イ"] とする。
-
-        【タスク4: 採点 & ヒント】
-        - 判定(is_correct)と、3段階のヒントを作成。
+        【タスク3: 採点 & ヒント】
+        - 手書きの答え(student_answer)を読み取り、正誤判定(is_correct)を行う。
+        - 3段階のヒント(hints)を作成する。
 
         【出力JSONフォーマット】
         [
           {
             "id": 1,
             "label": "①",
-            "question": "問題文",
+            "question": "問題文（漢字書き取りは『□(ふりがな)』の形式）",
             "correct_answer": ["正解"], 
-            "student_answer": ["手書きの答え"],
+            "student_answer": ["手書きの答え（空欄なら空文字）"],
             "is_correct": true,
             "hints": ["ヒント1", "ヒント2", "ヒント3"]
           }
         ]
+        Markdownコードブロックは不要です。純粋なJSONのみを返してください。
         `;
 
         const result = await model.generateContent([
@@ -182,9 +221,7 @@ app.post('/analyze', async (req, res) => {
         
         let problems = [];
         try {
-            // Markdown除去とパースをより頑丈に
             const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            // 配列の開始 [ を探してそこからパースする
             const jsonStart = cleanText.indexOf('[');
             const jsonEnd = cleanText.lastIndexOf(']');
             if (jsonStart !== -1 && jsonEnd !== -1) {
@@ -211,13 +248,11 @@ app.post('/lunch-reaction', async (req, res) => {
         const { count, name } = req.body;
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
         const isSpecial = (count % 10 === 0);
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
         let prompt = isSpecial 
             ? `あなたは猫の「ネル先生」。生徒「${name}さん」から記念すべき${count}個目の給食をもらいました！
-               必ず「${name}さん」と呼んでください。呼び捨て禁止。
                感謝感激して、50文字以内で熱く語ってください。語尾は「にゃ」。`
             : `あなたは猫の「ネル先生」。生徒「${name}さん」から${count}回目の給食をもらいました。
-               必ず「${name}さん」と呼んでください。呼び捨て禁止。
                20文字以内で面白くリアクションして。語尾は「にゃ」。`;
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text().trim(), isSpecial });
@@ -228,19 +263,14 @@ app.post('/lunch-reaction', async (req, res) => {
 app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
         let prompt = "";
         let mood = "excited";
 
         if (type === 'start') {
-            prompt = `あなたはネル先生。「${name}さん」がゲーム開始。必ず「${name}さん」と呼んで短く応援して。呼び捨て禁止。語尾は「にゃ」。`;
+            prompt = `あなたはネル先生。「${name}さん」がゲーム開始。短く応援して。語尾は「にゃ」。`;
         } else if (type === 'end') {
-            prompt = `
-            あなたはネル先生。ゲーム終了。「${name}さん」のスコアは${score}点（満点20点）。
-            必ず「${name}さん」と呼んでください。呼び捨て禁止。
-            スコアに応じて20文字以内でコメントして。
-            語尾は「にゃ」。
-            `;
+            prompt = `あなたはネル先生。ゲーム終了。「${name}さん」のスコアは${score}点。20文字以内でコメントして。語尾は「にゃ」。`;
         } else {
             return res.json({ reply: "ナイスにゃ！", mood: "excited" });
         }
@@ -271,20 +301,14 @@ wss.on('connection', async (clientWs, req) => {
         geminiWs.on('open', () => {
             const systemInstructionText = `
             あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。相手は小学${grade}年生の${name}さん。
-            
-            【話し方のルール】
-            1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
-            2. 親しみやすく、子供にも分かりやすい言葉で話してにゃ。
-            3. 生徒を呼び捨て禁止。必ず「さん」をつけるにゃ。
+            語尾は「にゃ」。親しみやすく。
             
             【特殊機能】
-            1. **show_kanji ツール**: 「漢字の書き方」「式」などを聞かれたら必ず使って表示してにゃ。
-               （ツールが使えない場合は [DISPLAY: 文字] タグを使ってにゃ）
-            2. **画像認識**: 画像が来たら、その内容を詳しく解説してにゃ。
+            1. **show_kanji ツール**: 漢字や式を聞かれたら表示する。
+            2. **画像認識**: 画像が来たら詳しく解説する。
 
             【生徒についての記憶】
             ${statusContext}
-            ※もし誕生日の情報があれば、「そういえばもうすぐ誕生日だにゃ？」などと話題にしてにゃ。
             `;
 
             const tools = [{ 
@@ -294,9 +318,7 @@ wss.on('connection', async (clientWs, req) => {
                     description: "Display a Kanji, word, or math formula on the whiteboard.",
                     parameters: {
                         type: "OBJECT",
-                        properties: {
-                            content: { type: "STRING", description: "The text to display." }
-                        },
+                        properties: { content: { type: "STRING" } },
                         required: ["content"]
                     }
                 }]
@@ -321,7 +343,6 @@ wss.on('connection', async (clientWs, req) => {
 
         clientWs.on('message', (data) => {
             const msg = JSON.parse(data);
-            
             if (msg.toolResponse && geminiWs.readyState === WebSocket.OPEN) {
                 geminiWs.send(JSON.stringify({ clientContent: msg.toolResponse }));
                 return;
