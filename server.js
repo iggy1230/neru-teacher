@@ -1,4 +1,4 @@
-// --- server.js (完全版 v200.0: 教科別詳細解析 & 筆跡推論強化) ---
+// --- server.js (完全版 v202.0: モデル統一 & 人格完成版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -115,8 +115,9 @@ app.post('/synthesize', async (req, res) => {
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
+        // 指定により gemini-2.0-flash-exp に統一
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.0-flash", 
+            model: "gemini-2.0-flash-exp", 
             generationConfig: { responseMimeType: "application/json" }
         });
 
@@ -160,18 +161,18 @@ app.post('/update-memory', async (req, res) => {
     }
 });
 
-// --- Analyze (Gemini 2.5 Pro: 教科別強化版) ---
+// --- Analyze (宿題分析: gemini-2.5-pro) ---
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, name } = req.body;
-        console.log(`[Analyze] Subject: ${subject}, Grade: ${grade}, Name: ${name}, Mode: ${mode} (Model: Gemini 2.5 Pro)`);
+        console.log(`[Analyze] Subject: ${subject}, Grade: ${grade}, Name: ${name}, Mode: ${mode} (Model: gemini-2.5-pro)`);
 
+        // 指定により gemini-2.5-pro に確定
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.0-pro-exp-02-05", // 最新モデル推奨 (なければ gemini-1.5-pro 等)
+            model: "gemini-2.5-pro", 
             generationConfig: { responseMimeType: "application/json", temperature: 0.0 }
         });
 
-        // 教科別の特別指示を取得
         const subjectSpecificInstructions = getSubjectInstructions(subject);
 
         const prompt = `
@@ -242,13 +243,14 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
-// --- 4. 給食反応 ---
+// --- 4. 給食反応 (gemini-2.0-flash-exp) ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
         const { count, name } = req.body;
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
         const isSpecial = (count % 10 === 0);
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+        // 指定により gemini-2.0-flash-exp に統一
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         let prompt = isSpecial 
             ? `あなたは猫の「ネル先生」。生徒「${name}さん」から記念すべき${count}個目の給食をもらいました！
                感謝感激して、50文字以内で熱く語ってください。語尾は「にゃ」。`
@@ -259,11 +261,12 @@ app.post('/lunch-reaction', async (req, res) => {
     } catch { res.json({ reply: "おいしいにゃ！", isSpecial: false }); }
 });
 
-// --- 3. ゲーム反応 ---
+// --- 3. ゲーム反応 (gemini-2.0-flash-exp) ---
 app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+        // 指定により gemini-2.0-flash-exp に統一
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         let prompt = "";
         let mood = "excited";
 
@@ -285,7 +288,7 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- WebSocket (Chat) ---
+// --- WebSocket (Chat: gemini-2.0-flash-exp) ---
 const wss = new WebSocketServer({ server });
 wss.on('connection', async (clientWs, req) => {
     const params = parse(req.url, true).query;
@@ -301,14 +304,29 @@ wss.on('connection', async (clientWs, req) => {
         geminiWs.on('open', () => {
             const systemInstructionText = `
             あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。相手は小学${grade}年生の${name}さん。
-            語尾は「にゃ」。親しみやすく。
-            
+
+            【話し方のルール】
+            1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
+            2. 親しみやすい日本の小学校の先生として、一文字一文字をはっきりと、丁寧に発音してにゃ。
+            3. 特に最初や最後の音を、一文字抜かしたり消したりせずに、最初から最後までしっかり声に出して喋るのがコツだにゃ。
+            4. 落ち着いた日本語のリズムを大切にして、親しみやすく話してにゃ。
+            5. 給食(餌)のカリカリが大好物にゃ。
+            6. とにかく何でも知っているにゃ。
+            7. ときどき「${name}さんは宿題は終わったかにゃ？」や「そろそろ宿題始めようかにゃ？」と宿題を促してくるにゃ。
+            8. 句読点で少し間をとる。
+
+            【NGなこと】
+            ・ロボットみたいに不自然に区切るのではなく、繋がりのある滑らかな日本語でお願いにゃ。
+            ・早口になりすぎて、言葉の一部が消えてしまうのはダメだにゃ。
+
             【特殊機能】
-            1. **show_kanji ツール**: 漢字や式を聞かれたら表示する。
-            2. **画像認識**: 画像が来たら詳しく解説する。
+            1. **show_kanji ツール**: 「漢字の書き方」「式」などを聞かれたら必ず使って表示してにゃ。
+               （ツールが使えない場合は [DISPLAY: 文字] タグを使ってにゃ）
+            2. **画像認識**: 画像が来たら、その内容を詳しく解説してにゃ。
 
             【生徒についての記憶】
             ${statusContext}
+            ※もし誕生日の情報があれば、「そういえばもうすぐ誕生日だにゃ？」などと話題にしてにゃ。
             `;
 
             const tools = [{ 
@@ -326,6 +344,7 @@ wss.on('connection', async (clientWs, req) => {
 
             geminiWs.send(JSON.stringify({
                 setup: {
+                    // 指定により gemini-2.0-flash-exp に統一
                     model: "models/gemini-2.0-flash-exp",
                     generationConfig: { 
                         responseModalities: ["AUDIO"], 
