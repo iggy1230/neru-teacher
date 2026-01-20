@@ -1,4 +1,4 @@
-// --- server.js (完全版 v219.0: JSONオブジェクト強制版) ---
+// --- server.js (完全版 v222.0: 記憶要約力・強化版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -88,7 +88,7 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- Memory Update (修正版) ---
+// --- Memory Update (要約機能強化版) ---
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
@@ -108,12 +108,18 @@ app.post('/update-memory', async (req, res) => {
         ${chatLog}
 
         【更新ルール】
-        1. **birthday (誕生日)**: 会話の中で誕生日や年齢が出てきたら必ず記録・更新してください（例: "5月5日", "10歳"）。
-        2. **likes (好きなもの)**: 新しく判明した好きなものがあれば追加。
-        3. **weaknesses (苦手なこと)**: 勉強でつまづいた箇所や苦手と言ったことがあれば追加。
-        4. **achievements (頑張ったこと)**: 宿題をやった、正解した、褒められた内容を具体的に記録。
-        5. **last_topic (最後の話題)**: 会話の最後に何を話していたかを短く記録。
-        6. **【重要】出力は必ず「単体のJSONオブジェクト」にすること。配列（リスト）にしてはいけません。**
+        1. **birthday**: 会話内で誕生日や年齢が出たら記録（例: "5月5日"）。
+        2. **likes**: 新しく判明した好きなものを追加。
+        3. **weaknesses**: 苦手なこと、つまづいたことを追加。
+        4. **achievements**: 頑張ったこと、褒められたことを記録。
+        
+        5. **last_topic (最後の話題) ※最重要修正**: 
+           - 単語だけでなく、**「どんな会話をしたか」が分かるように要約**して記録してください。
+           - 質問があった場合は、「何の質問をして、どういう回答を得たか」を含めてください。
+           - **悪い例**: "2026年", "サッカー"
+           - **良い例**: "2026年のJリーグ開幕日について質問し、教えてもらった", "お菓子の『じゃがりこ』のパッケージを見せて盛り上がった"
+
+        6. **出力形式**: 必ず単体のJSONオブジェクトで出力すること（配列禁止）。
 
         【出力フォーマット】
         {
@@ -131,8 +137,6 @@ app.post('/update-memory', async (req, res) => {
         text = text.replace(/```json/g, '').replace(/```/g, '').trim();
         
         let newProfile = JSON.parse(text);
-        
-        // 念のためサーバー側でも配列なら修正
         if (Array.isArray(newProfile)) {
             newProfile = newProfile[0];
         }
@@ -222,7 +226,7 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
-// --- 4. 給食反応 (gemini-2.0-flash-exp) ---
+// --- 4. 給食反応 ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
         const { count, name } = req.body;
@@ -247,7 +251,7 @@ app.post('/lunch-reaction', async (req, res) => {
     } catch { res.json({ reply: "おいしいにゃ！", isSpecial: false }); }
 });
 
-// --- 3. ゲーム反応 (gemini-2.0-flash-exp) ---
+// --- 3. ゲーム反応 ---
 app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;
@@ -273,7 +277,7 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- WebSocket (Chat: gemini-2.0-flash-exp) ---
+// --- WebSocket (Chat) ---
 const wss = new WebSocketServer({ server });
 wss.on('connection', async (clientWs, req) => {
     const params = parse(req.url, true).query;
@@ -301,12 +305,11 @@ wss.on('connection', async (clientWs, req) => {
             【重要：話題提供と沈黙の扱い】
             - **ユーザーが話さないとき**: ずっと黙っている必要はないにゃ。
             - **適度に話題を振る**:
-              - 「そういえば、${name}さんは〇〇（プロフィールの好きなもの）が好きだったにゃ？」
+              - 「そういえば、${name}さんは〇〇（プロフィールの好きなもの）が好きだったにゃ？」など、**生徒の記憶データに基づいて**話しかけてにゃ。
+            - **【頻度制限のある話題（5分に1回程度）】**: 
               - 「今日の給食は何だったにゃ？」
-              など、**生徒の記憶データに基づいて**話しかけてにゃ。
-            - **【宿題の催促について】**: 
-              - 「宿題は終わったかにゃ？」と聞くのは、**会話が途切れて話題がない時だけにする**にゃ。
-              - **頻度は「5分に1回」くらいが目安だにゃ。** しつこく言わないように注意してにゃ。
+              - 「宿題は終わったかにゃ？」
+              これらの質問は、**会話が途切れて話題がない時だけにする**にゃ。しつこく言わないように注意してにゃ。
             - **【禁止事項】**: さっき見せた画像の説明を、頼まれてもいないのに繰り返すのはNGだにゃ。新しい話題を振るにゃ。
 
             【重要：画像が送られた時のルール（物体認識＆検索機能）】
