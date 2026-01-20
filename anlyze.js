@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v208.0: 重複定義エラー修正) ---
+// --- anlyze.js (完全版 v209.0: 解析データ受け取り強化 & 全機能統合) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -45,7 +45,7 @@ let studyTimerInterval = null;
 let studyTimerRunning = false;
 let studyTimerCheck = 0; 
 
-// 効果音
+// 効果音 (sfxChimeはui.jsで定義済みのため除外)
 const sfxBori = new Audio('boribori.mp3');
 const sfxHit = new Audio('cat1c.mp3');
 const sfxPaddle = new Audio('poka02.mp3'); 
@@ -55,7 +55,6 @@ sfxBunseki.volume = 0.05;
 const sfxHirameku = new Audio('hirameku.mp3'); 
 const sfxMaru = new Audio('maru.mp3');
 const sfxBatu = new Audio('batu.mp3');
-// ★削除: const sfxChime = ... (ui.jsにあるため削除)
 
 const gameHitComments = ["うまいにゃ！", "すごいにゃ！", "さすがにゃ！", "がんばれにゃ！"];
 
@@ -186,6 +185,7 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     const targetId = isGameHidden ? 'nell-text' : 'nell-text-game';
     const el = document.getElementById(targetId);
     
+    // 表示用: タグを消す
     const displayText = t.replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "");
     if (el) el.innerText = displayText;
     
@@ -363,7 +363,7 @@ window.captureAndSendLiveImage = function() {
 
 
 // ==========================================
-// 7. 宿題分析ロジック
+// 7. 宿題分析ロジック (強化版)
 // ==========================================
 
 window.startAnalysis = async function(b64) {
@@ -394,20 +394,16 @@ window.startAnalysis = async function(b64) {
             { text: "肉球がちょっとじゃまだにゃ…", mood: "thinking" },
             { text: "ふむふむ…この問題、なかなか手強いにゃ。", mood: "thinking" },
             { text: "今、ネル先生の天才的な頭脳で解いてるからにゃね…", mood: "thinking" },
-            { text: "この問題、どこかで見たことあるにゃ...えーっと...", mood: "thinking" },
-            { text: "しっぽの先まで集中して考え中だにゃ…", mood: "thinking" },
-            { text: "この問題は手強いにゃ…。でも大丈夫、ネル先生のピピピッ！と光るヒゲが、正解をバッチリ受信してるにゃ！", mood: "thinking" },
-            { text: "にゃるほど…だいたい分かってきたにゃ…", mood: "thinking" },
-            { text: "あとちょっとで、ネル先生の脳みそが『ピコーン！』って鳴るにゃ！", mood: "thinking" }
+            { text: "この問題、どこかで見たことあるにゃ...えーっと...", mood: "thinking" }
         ];
-        
+        // 無限ループで待機
         let i = 0;
-        while (isAnalyzing) {
+        while(isAnalyzing) {
             const item = msgs[i % msgs.length];
             await updateNellMessage(item.text, item.mood, false);
-            for (let w = 0; w < 25; w++) {
-                if (!isAnalyzing) return;
-                await new Promise(r => setTimeout(r, 100));
+            for(let w=0; w<20; w++) {
+                if(!isAnalyzing) return;
+                await new Promise(r=>setTimeout(r, 100));
             }
             i++;
         }
@@ -424,10 +420,27 @@ window.startAnalysis = async function(b64) {
             throw new Error(`Server Error: ${res.status} ${errText}`);
         }
         
-        const data = await res.json();
-        
-        if (!data || !Array.isArray(data) || data.length === 0) {
-            throw new Error("データが空か、正しい形式ではありませんでした。");
+        const rawData = await res.json();
+        let data = [];
+
+        // ★修正: データ構造の柔軟な受け取り
+        if (Array.isArray(rawData)) {
+            data = rawData;
+        } else if (rawData && typeof rawData === 'object') {
+            // オブジェクトの中に配列がないか探す
+            const possibleArray = Object.values(rawData).find(val => Array.isArray(val));
+            if (possibleArray) {
+                data = possibleArray;
+            } else if (rawData.problems) {
+                data = rawData.problems; // 一般的なキー
+            } else if (rawData.questions) {
+                data = rawData.questions;
+            }
+        }
+
+        // それでも配列でなければエラー
+        if (!Array.isArray(data) || data.length === 0) {
+            throw new Error("解析データが見つかりませんでした。");
         }
         
         transcribedProblems = data.map((prob, index) => {
@@ -447,6 +460,7 @@ window.startAnalysis = async function(b64) {
 
         isAnalyzing = false; clearInterval(timer); updateProgress(100); cleanupAnalysis();
         try { sfxHirameku.currentTime = 0; sfxHirameku.play().catch(e=>{}); } catch(e){}
+        
         setTimeout(() => { 
             document.getElementById('thinking-view').classList.add('hidden'); 
             const doneMsg = "読めたにゃ！"; 
@@ -821,7 +835,6 @@ async function startLiveChat() {
 function stopLiveChat() { 
     // 会話終了時に記憶を更新する
     if (chatTranscript && chatTranscript.length > 10 && window.NellMemory) {
-        console.log("Saving memory...", chatTranscript.length);
         window.NellMemory.updateProfileFromChat(currentUser.id, chatTranscript);
     }
 
@@ -835,8 +848,6 @@ function stopLiveChat() {
     if (liveSocket) liveSocket.close(); 
     if (audioContext && audioContext.state !== 'closed') audioContext.close(); 
     window.isNellSpeaking = false; 
-    if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer); 
-    if(speakingStartTimer) clearTimeout(speakingStartTimer); 
     
     // モードに応じてボタンを復帰
     const btnId = currentMode === 'simple-chat' ? 'mic-btn-simple' : 'mic-btn';
@@ -858,7 +869,7 @@ function stopLiveAudio() {
     activeLiveAudioNodes = [];
     
     if (audioContext) {
-        nextStartTime = audioContext.currentTime; // 次の再生位置をリセット
+        nextStartTime = audioContext.currentTime; 
     }
     
     window.isNellSpeaking = false;
@@ -880,12 +891,9 @@ async function startMicrophone() {
                 for (let i = event.resultIndex; i < event.results.length; ++i) { 
                     if (!event.results[i].isFinal) {
                         interim += event.results[i][0].transcript;
-                        // 途中経過でも何か喋っていたら止める
                         if (interim.length > 0 && window.isNellSpeaking) stopLiveAudio();
                     } else { 
-                        // 確定したタイミングでも確実に止める
                         stopLiveAudio();
-
                         const userText = event.results[i][0].transcript;
                         chatTranscript += `Student: ${userText}\n`;
                         saveToNellMemory('user', userText); 
@@ -926,7 +934,7 @@ async function startMicrophone() {
         workletNode.port.onmessage = (event) => { 
             if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return; 
             
-            // ★エコーキャンセル: ネル先生が喋っている間はマイク音声を送らない
+            // エコーキャンセル
             if (window.isNellSpeaking) return;
 
             const downsampled = downsampleBuffer(event.data, audioContext.sampleRate, 16000); 
@@ -971,8 +979,7 @@ function updateMiniKarikari() { if(currentUser) { const el = document.getElement
 function showKarikariEffect(amount) { const container = document.querySelector('.nell-avatar-wrap'); if(container) { const floatText = document.createElement('div'); floatText.className = 'floating-text'; floatText.innerText = amount > 0 ? `+${amount}` : `${amount}`; floatText.style.color = amount > 0 ? '#ff9100' : '#ff5252'; floatText.style.right = '0px'; floatText.style.top = '0px'; container.appendChild(floatText); setTimeout(() => floatText.remove(), 1500); } }
 window.addEventListener('DOMContentLoaded', () => { const camIn = document.getElementById('hw-input-camera'); const albIn = document.getElementById('hw-input-album'); if(camIn) camIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; }); if(albIn) albIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; }); });
 window.handleFileUpload = async (file) => { if (isAnalyzing || !file) return; document.getElementById('upload-controls').classList.add('hidden'); document.getElementById('cropper-modal').classList.remove('hidden'); const canvas = document.getElementById('crop-canvas'); canvas.style.opacity = '0'; const reader = new FileReader(); reader.onload = async (e) => { cropImg = new Image(); cropImg.onload = async () => { const w = cropImg.width; const h = cropImg.height; cropPoints = [ { x: w * 0.1, y: h * 0.1 }, { x: w * 0.9, y: h * 0.1 }, { x: w * 0.9, y: h * 0.9 }, { x: w * 0.1, y: h * 0.9 } ]; canvas.style.opacity = '1'; updateNellMessage("ここを読み取るにゃ？", "normal"); initCustomCropper(); }; cropImg.src = e.target.result; }; reader.readAsDataURL(file); };
-function initCustomCropper() { const modal = document.getElementById('cropper-modal'); modal.classList.remove('hidden'); const canvas = document.getElementById('crop-canvas'); const MAX_CANVAS_SIZE = 2500; let w = cropImg.width; let h = cropImg.height; if (w > MAX_CANVAS_SIZE || h > MAX_CANVAS_SIZE) { const scale = Math.min(MAX_CANVAS_SIZE / w, MAX_CANVAS_SIZE / h); w *= scale; h *= scale; cropPoints = cropPoints.map(p => ({ x: p.x * scale, y: p.y * scale })); } canvas.width = w; canvas.height = h; canvas.style.width = '100%'; canvas.style.height = '100%'; canvas.style.objectFit = 'contain'; const ctx = canvas.getContext('2d'); ctx.drawImage(cropImg, 0, 0, w, h); updateCropUI(canvas); const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl']; handles.forEach((id, idx) => { const el = document.getElementById(id); const startDrag = (e) => { e.preventDefault(); activeHandle = idx; }; el.onmousedown = startDrag; el.ontouchstart = startDrag; }); const move = (e) => { if (activeHandle === -1) return; e.preventDefault(); const rect = canvas.getBoundingClientRect(); const imgRatio = canvas.width / canvas.height; const rectRatio = rect.width / rect.height; let drawX, drawY, drawW, drawH; if (imgRatio > rectRatio) { drawW = rect.width; drawH = rect.width / imgRatio; drawX = 0; drawY = (rect.height - drawH) / 2; } else { drawH = rect.height; drawW = rect.height * imgRatio; drawY = 0; drawX = (rect.width - drawW) / 2; } const clientX = e.touches ? e.touches[0].clientX : e.clientX; const clientY = e.touches ? e.touches[0].clientY : e.clientY; let relX = (clientX - rect.left - drawX) / drawW; let relY = (clientY - rect.top - drawY) / drawH; relX = Math.max(0, Math.min(1, relX)); relY = Math.max(0, Math.min(1, relY)); cropPoints[activeHandle] = { x: relX * canvas.width, y: relY * canvas.height }; updateCropUI(canvas); }; const end = () => { activeHandle = -1; }; window.onmousemove = move; window.ontouchmove = move; window.onmouseup = end; window.ontouchend = end; document.getElementById('cropper-cancel-btn').onclick = () => { modal.classList.add('hidden'); window.onmousemove = null; window.ontouchmove = null; document.getElementById('upload-controls').classList.remove('hidden'); }; document.getElementById('cropper-ok-btn').onclick = () => { modal.classList.add('hidden'); window.onmousemove = null; window.ontouchmove = null; const croppedBase64 = performPerspectiveCrop(canvas, cropPoints); startAnalysis(croppedBase64); }; }
-function updateCropUI(canvas) { const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl']; const rect = canvas.getBoundingClientRect(); const imgRatio = canvas.width / canvas.height; const rectRatio = rect.width / rect.height; let drawX, drawY, drawW, drawH; if (imgRatio > rectRatio) { drawW = rect.width; drawH = rect.width / imgRatio; drawX = 0; drawY = (rect.height - drawH) / 2; } else { drawH = rect.height; drawW = rect.height * imgRatio; drawY = 0; drawX = (rect.width - drawW) / 2; } const toScreen = (p) => ({ x: (p.x / canvas.width) * drawW + drawX + canvas.offsetLeft, y: (p.y / canvas.height) * drawH + drawY + canvas.offsetTop }); const screenPoints = cropPoints.map(toScreen); handles.forEach((id, i) => { const el = document.getElementById(id); el.style.left = screenPoints[i].x + 'px'; el.style.top = screenPoints[i].y + 'px'; }); const svg = document.getElementById('crop-lines'); svg.style.left = canvas.offsetLeft + 'px'; svg.style.top = canvas.offsetTop + 'px'; svg.style.width = canvas.offsetWidth + 'px'; svg.style.height = canvas.offsetHeight + 'px'; const toSvg = (p) => ({ x: (p.x / canvas.width) * drawW + drawX, y: (p.y / canvas.height) * drawH + drawY }); const svgPts = cropPoints.map(toSvg); const ptsStr = svgPts.map(p => `${p.x},${p.y}`).join(' '); svg.innerHTML = `<polyline points="${ptsStr} ${svgPts[0].x},${svgPts[0].y}" style="fill:rgba(255,255,255,0.2);stroke:#ff4081;stroke-width:2;stroke-dasharray:5" />`; }
+function initCustomCropper() { const modal = document.getElementById('cropper-modal'); modal.classList.remove('hidden'); const canvas = document.getElementById('crop-canvas'); const MAX_CANVAS_SIZE = 2500; let w = cropImg.width; let h = cropImg.height; if (w > MAX_CANVAS_SIZE || h > MAX_CANVAS_SIZE) { const scale = Math.min(MAX_CANVAS_SIZE / w, MAX_CANVAS_SIZE / h); w *= scale; h *= scale; cropPoints = cropPoints.map(p => ({ x: p.x * scale, y: p.y * scale })); } canvas.width = w; canvas.height = h; canvas.style.width = '100%'; canvas.style.height = '100%'; canvas.style.objectFit = 'contain'; const ctx = canvas.getContext('2d'); ctx.drawImage(cropImg, 0, 0, w, h); updateCropUI(canvas); const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl']; handles.forEach((id, idx) => { const el = document.getElementById(id); const startDrag = (e) => { e.preventDefault(); activeHandle = idx; }; el.onmousedown = startDrag; el.ontouchstart = startDrag; }); const move = (e) => { if (activeHandle === -1) return; e.preventDefault(); const rect = canvas.getBoundingClientRect(); const imgRatio = canvas.width / canvas.height; const rectRatio = rect.width / rect.height; let drawX, drawY, drawW, drawH; if (imgRatio > rectRatio) { drawW = rect.width; drawH = rect.width / imgRatio; drawX = 0; drawY = (rect.height - drawH) / 2; } else { drawH = rect.height; drawW = rect.height * imgRatio; drawY = 0; drawX = (rect.width - drawW) / 2; } const toScreen = (p) => ({ x: (p.x / canvas.width) * drawW + drawX + canvas.offsetLeft, y: (p.y / canvas.height) * drawH + drawY + canvas.offsetTop }); const screenPoints = cropPoints.map(toScreen); handles.forEach((id, i) => { const el = document.getElementById(id); el.style.left = screenPoints[i].x + 'px'; el.style.top = screenPoints[i].y + 'px'; }); const svg = document.getElementById('crop-lines'); svg.style.left = canvas.offsetLeft + 'px'; svg.style.top = canvas.offsetTop + 'px'; svg.style.width = canvas.offsetWidth + 'px'; svg.style.height = canvas.offsetHeight + 'px'; const toSvg = (p) => ({ x: (p.x / canvas.width) * drawW + drawX, y: (p.y / canvas.height) * drawH + drawY }); const svgPts = cropPoints.map(toSvg); const ptsStr = svgPts.map(p => `${p.x},${p.y}`).join(' '); svg.innerHTML = `<polyline points="${ptsStr} ${svgPts[0].x},${svgPts[0].y}" style="fill:rgba(255,255,255,0.2);stroke:#ff4081;stroke-width:2;stroke-dasharray:5" />`; }
 function performPerspectiveCrop(sourceCanvas, points) { const minX = Math.min(...points.map(p => p.x)), maxX = Math.max(...points.map(p => p.x)); const minY = Math.min(...points.map(p => p.y)), maxY = Math.max(...points.map(p => p.y)); let w = maxX - minX, h = maxY - minY; if (w < 1) w = 1; if (h < 1) h = 1; const tempCv = document.createElement('canvas'); const MAX_OUT = 1536; let outW = w, outH = h; if (outW > MAX_OUT || outH > MAX_OUT) { const s = Math.min(MAX_OUT/outW, MAX_OUT/outH); outW *= s; outH *= s; } tempCv.width = outW; tempCv.height = outH; const ctx = tempCv.getContext('2d'); ctx.drawImage(sourceCanvas, minX, minY, w, h, 0, 0, outW, outH); return tempCv.toDataURL('image/jpeg', 0.85).split(',')[1]; }
 
 // ==========================================
