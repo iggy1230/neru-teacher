@@ -1,7 +1,8 @@
-// --- ui.js (完全版 v198.0) ---
+// --- ui.js (完全版 v210.0: グローバル変数化) ---
 
-const sfxChime = new Audio('Jpn_sch_chime.mp3');
-const sfxBtn = new Audio('botan1.mp3');
+// 音声ファイルをグローバル変数として定義（他のファイルからも見えるように）
+window.sfxChime = new Audio('Jpn_sch_chime.mp3');
+window.sfxBtn = new Audio('botan1.mp3');
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -22,7 +23,7 @@ window.switchScreen = function(to) {
 };
 
 window.startApp = function() {
-    try { sfxChime.currentTime = 0; sfxChime.play(); } catch(e){}
+    try { window.sfxChime.currentTime = 0; window.sfxChime.play(); } catch(e){}
     switchScreen('screen-gate');
     if (window.initAudioContext) window.initAudioContext();
 };
@@ -140,7 +141,7 @@ document.addEventListener('click', () => {
 document.addEventListener('click', (e) => { 
     if (e.target.classList && e.target.classList.contains('main-btn') && !e.target.disabled) { 
         if (!e.target.classList.contains('title-start-btn') && !e.target.onclick?.toString().includes('null')) { 
-            try { sfxBtn.currentTime = 0; sfxBtn.play(); } catch(err) {} 
+            try { window.sfxBtn.currentTime = 0; window.sfxBtn.play(); } catch(err) {} 
         } 
     } 
 });
