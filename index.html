@@ -62,7 +62,7 @@
             <div class="title-btn-container">
                 <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
             </div>
-            <div class="version-tag">Build: v196.0-Stable</div>
+            <div class="version-tag">Build: v218.0-Stable</div>
         </section>
 
         <!-- 1. 校門 (ユーザー選択) -->
@@ -353,8 +353,9 @@
     </div>
 
     <!-- Firebase設定・ロジック読み込み -->
+    <!-- ★重要: memory.js は user.js より先に読み込む -->
     <script src="firebase-config.js"></script>
-    <script src="memory.js"></script>
+    <script src="memory.js"></script> 
     <script src="audio.js"></script>
     <script src="ui.js"></script>
     <script src="user.js"></script>

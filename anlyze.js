@@ -148,6 +148,7 @@ function closeHomeworkCamera() {
 // 3. 記憶・メッセージ管理
 // ==========================================
 
+// 会話ログ保存関数（デバッグログ付き）
 async function saveToNellMemory(role, text) {
     if (!currentUser || !currentUser.id) return;
     const trimmed = text.trim();
@@ -158,7 +159,7 @@ async function saveToNellMemory(role, text) {
     ];
     if (trimmed.length <= 1 || ignoreWords.includes(trimmed)) return;
     
-    // 会話ログ変数に追記
+    console.log(`【Memory】ログ追加: [${role}] ${trimmed}`);
     chatTranscript += `${role === 'user' ? '生徒' : 'ネル'}: ${trimmed}\n`;
 
     const newItem = { role: role, text: trimmed, time: new Date().toISOString() };
@@ -185,7 +186,6 @@ async function saveToNellMemory(role, text) {
 
 window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false, speak = true) {
     // ★絶対条件：Live Chat(WebSocket)接続中は、絶対にTTSを再生しない。
-    // Geminiからのテキスト字幕を更新するだけで、音声はGeminiの生声に任せる。
     if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
         speak = false;
     }
@@ -348,6 +348,7 @@ function sendSilentPrompt(text) {
 
 // ★完全停止処理: 全ての音声ソースを抹殺する
 function stopAudioPlayback() {
+    // スケジュールされているすべてのWebSocket音声を停止
     liveAudioSources.forEach(source => {
         try { source.stop(); } catch(e){}
     });
@@ -360,7 +361,7 @@ function stopAudioPlayback() {
     window.isNellSpeaking = false;
     if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer);
     if(speakingStartTimer) clearTimeout(speakingStartTimer);
-    
+
     // TTSが鳴っていた場合も強制キャンセル
     if (window.cancelNellSpeech) window.cancelNellSpeech();
 }
@@ -781,23 +782,19 @@ function endGame(c) { gameRunning = false; if(gameAnimId)cancelAnimationFrame(ga
 // ==========================================
 
 async function startLiveChat() { 
-    // モードに応じてボタンを特定
     const btnId = currentMode === 'simple-chat' ? 'mic-btn-simple' : 'mic-btn';
     const btn = document.getElementById(btnId);
-    
     if (liveSocket) { stopLiveChat(); return; } 
-    
     try { 
         updateNellMessage("ネル先生を呼んでるにゃ…", "thinking", false); 
         if(btn) btn.disabled = true; 
         
-        // 記憶コンテキストを読み込んでURLに埋め込む
         let memoryContext = "";
         if (window.NellMemory) {
             memoryContext = await window.NellMemory.generateContextString(currentUser.id);
         }
         
-        chatTranscript = ""; // ログ初期化
+        chatTranscript = ""; 
         
         if (window.initAudioContext) await window.initAudioContext(); 
         audioContext = new (window.AudioContext || window.webkitAudioContext)(); 
@@ -826,27 +823,16 @@ async function startLiveChat() {
                 
                 if (data.serverContent?.modelTurn?.parts) { 
                     data.serverContent.modelTurn.parts.forEach(p => { 
-                        
-                        // 1. ツール実行 (Function Call) の検知
+                        // Tool execution
                         if (p.functionCall) {
                             if (p.functionCall.name === "show_kanji") {
                                 const content = p.functionCall.args.content;
                                 document.getElementById('inline-whiteboard').classList.remove('hidden');
                                 document.getElementById('whiteboard-content').innerText = content;
-                                
-                                liveSocket.send(JSON.stringify({
-                                    toolResponse: {
-                                        functionResponses: [{
-                                            name: "show_kanji",
-                                            response: { result: "displayed" },
-                                            id: p.functionCall.id || "call_id"
-                                        }]
-                                    }
-                                }));
+                                liveSocket.send(JSON.stringify({ toolResponse: { functionResponses: [{ name: "show_kanji", response: { result: "displayed" }, id: p.functionCall.id || "call_id" }] } }));
                             }
                         }
-
-                        // 2. テキスト内タグの検知（フォールバック）
+                        // Text (Subtitles)
                         if (p.text) { 
                             const match = p.text.match(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/i);
                             if (match) {
@@ -854,15 +840,12 @@ async function startLiveChat() {
                                 document.getElementById('inline-whiteboard').classList.remove('hidden');
                                 document.getElementById('whiteboard-content').innerText = content;
                             }
-                            
-                            // ネル先生の発言をログに追加
                             chatTranscript += `Nell: ${p.text}\n`;
-
                             saveToNellMemory('nell', p.text); 
                             // ★WebSocket接続中は speak=false にしてTTSを呼ばない
                             updateNellMessage(p.text, "normal", false, false);
                         } 
-
+                        // Audio
                         if (p.inlineData) playLivePcmAudio(p.inlineData.data); 
                     }); 
                 } 
@@ -876,9 +859,13 @@ async function startLiveChat() {
 
 function stopLiveChat() { 
     // ★追加: 会話終了時に記憶を更新する
-    if (chatTranscript && chatTranscript.length > 10 && window.NellMemory) {
-        console.log("Saving memory...", chatTranscript.length);
-        window.NellMemory.updateProfileFromChat(currentUser.id, chatTranscript);
+    if (window.NellMemory) {
+        if (chatTranscript && chatTranscript.length > 10) {
+            console.log(`【Memory】更新開始 (ログ長: ${chatTranscript.length})`);
+            window.NellMemory.updateProfileFromChat(currentUser.id, chatTranscript);
+        } else {
+            console.log("【Memory】会話が短いため更新スキップ");
+        }
     }
 
     isRecognitionActive = false; 
@@ -892,10 +879,9 @@ function stopLiveChat() {
     if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer); 
     if(speakingStartTimer) clearTimeout(speakingStartTimer); 
     
-    // モードに応じてボタンを復帰
+    // UIのリセット処理
     const btnId = currentMode === 'simple-chat' ? 'mic-btn-simple' : 'mic-btn';
     const btn = document.getElementById(btnId);
-    
     if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = currentMode === 'simple-chat' ? "#66bb6a" : "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; } 
     liveSocket = null; 
     
@@ -925,6 +911,7 @@ async function startMicrophone() {
                 // ネル先生が話していて、かつユーザーの発言が短すぎず、相槌でもない場合のみ停止
                 if (window.isNellSpeaking && cleanText.length > 0) {
                     if (cleanText.length > 3 || (cleanText.length >= 2 && !aizuchi.includes(cleanText))) {
+                        console.log("【Audio】割り込み検知: 停止");
                         stopAudioPlayback();
                     }
                 }
@@ -933,9 +920,7 @@ async function startMicrophone() {
                 for (let i = event.resultIndex; i < event.results.length; ++i) { 
                     if (event.results[i].isFinal) { 
                         const userText = event.results[i][0].transcript;
-                        // 生徒の発言をログに追加
                         chatTranscript += `Student: ${userText}\n`;
-
                         saveToNellMemory('user', userText); 
                         
                         const txtId = currentMode === 'simple-chat' ? 'user-speech-text-simple' : 'user-speech-text';
@@ -948,7 +933,6 @@ async function startMicrophone() {
             recognition.start(); 
         } 
         
-        // カメラは個別指導モードのときだけON
         const useVideo = (currentMode === 'chat');
         
         mediaStream = await navigator.mediaDevices.getUserMedia({ 
@@ -997,14 +981,13 @@ async function startMicrophone() {
 
 // ★完全停止処理: 全ての音声ソースを抹殺する
 function stopAudioPlayback() {
-    // スケジュールされているすべてのWebSocket音声を停止
     liveAudioSources.forEach(source => {
         try { source.stop(); } catch(e){}
     });
     liveAudioSources = []; // 配列クリア
 
     if (audioContext && audioContext.state === 'running') {
-        // 現在時刻より先を指定して、バッファに残った音声を無効化
+        // 現在時刻より少し先を指定して、バッファに残った音声を無効化
         nextStartTime = audioContext.currentTime + 0.05;
     }
     window.isNellSpeaking = false;
