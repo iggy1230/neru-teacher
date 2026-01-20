@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v205.0: 画質最適化・リカバリー版) ---
+// --- anlyze.js (完全版 v207.0: カメラ撮影演出 & 即時発話停止機能) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -30,6 +30,7 @@ let nextStartTime = 0;
 let connectionTimeout = null;
 let recognition = null;
 let isRecognitionActive = false;
+let currentLiveAudioSource = null; // ★追加: リアルタイム音声の停止用
 
 // ゲーム・Cropper関連
 let gameCanvas, ctx, ball, paddle, bricks, score, gameRunning = false, gameAnimId = null;
@@ -55,6 +56,7 @@ sfxBunseki.volume = 0.05;
 const sfxHirameku = new Audio('hirameku.mp3'); 
 const sfxMaru = new Audio('maru.mp3');
 const sfxBatu = new Audio('batu.mp3');
+const sfxShutter = new Audio('shutter.mp3'); // シャッター音があれば使う（今回は視覚効果メイン）
 
 const gameHitComments = ["うまいにゃ！", "すごいにゃ！", "さすがにゃ！", "がんばれにゃ！"];
 
@@ -334,7 +336,7 @@ function sendSilentPrompt(text) {
 }
 
 // ==========================================
-// 6. 「これ見て！」カメラ機能
+// 6. 「これ見て！」カメラ機能 (★修正: 即時停止 & プレビュー機能)
 // ==========================================
 
 window.captureAndSendLiveImage = function() {
@@ -347,24 +349,63 @@ window.captureAndSendLiveImage = function() {
         return alert("カメラが動いてないにゃ...。一度「おはなしする」を終了して、もう一度つなぎ直してみてにゃ。");
     }
 
+    // 1. 強制的に発話を停止する
+    window.isNellSpeaking = false;
+    if (currentLiveAudioSource) {
+        try { currentLiveAudioSource.stop(); } catch(e){}
+        currentLiveAudioSource = null;
+    }
+    // キューに入っている音声を無効化するため、コンテキスト時間をリセット的に扱う（AudioContextはリセットできないので、nextStartTimeを現在時刻に）
+    if (audioContext && audioContext.state === 'running') {
+        nextStartTime = audioContext.currentTime; 
+    }
+    
+    // 2. 画像キャプチャ
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    
     const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
     
-    updateNellMessage("どれどれ…見てみるにゃ…", "thinking", false, false);
+    // 3. 視覚エフェクト: フラッシュ
+    const flash = document.createElement('div');
+    flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;";
+    document.body.appendChild(flash);
+    setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
+
+    // 4. 視覚エフェクト: プレビュー静止画オーバーレイ
+    const videoContainer = document.getElementById('live-chat-video-container');
+    if (videoContainer) {
+        // 既存のプレビューがあれば消す
+        const oldPreview = document.getElementById('snapshot-preview-overlay');
+        if(oldPreview) oldPreview.remove();
+
+        const previewImg = document.createElement('img');
+        previewImg.id = 'snapshot-preview-overlay';
+        previewImg.src = canvas.toDataURL('image/jpeg', 0.8);
+        previewImg.style.cssText = "position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; z-index:10; border:4px solid #ffeb3b; box-sizing:border-box; animation: fadeIn 0.2s;";
+        videoContainer.style.position = "relative"; // 念のため
+        videoContainer.appendChild(previewImg);
+
+        // 3秒後に消す
+        setTimeout(() => {
+            if(previewImg && previewImg.parentNode) previewImg.remove();
+        }, 3000);
+    }
+
+    updateNellMessage("ん？どれどれ…", "thinking", false, false);
+    
+    // 5. 送信
     liveSocket.send(JSON.stringify({ base64Image: base64Data }));
     
     setTimeout(() => {
-        sendSilentPrompt("今カメラで見せているものについて、詳しく解説して。問題なら解き方を教えて。");
+        sendSilentPrompt("今送った画像を見て！今までの話は中断して、この画像について詳しく解説して。");
     }, 500);
 };
 
 // ==========================================
-// 7. 宿題分析ロジック
+// 7. 宿題分析ロジック (v205.0: 画質最適化版維持)
 // ==========================================
 
 window.startAnalysis = async function(b64) {
@@ -918,7 +959,38 @@ async function startMicrophone() {
         } catch(ex) { alert("マイクも使えないみたいだにゃ..."); }
     } 
 }
-function playLivePcmAudio(base64) { if (!audioContext) return; const binary = window.atob(base64); const bytes = new Uint8Array(binary.length); for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i); const float32 = new Float32Array(bytes.length / 2); const view = new DataView(bytes.buffer); for (let i = 0; i < float32.length; i++) float32[i] = view.getInt16(i * 2, true) / 32768.0; const buffer = audioContext.createBuffer(1, float32.length, 24000); buffer.copyToChannel(float32, 0); const source = audioContext.createBufferSource(); source.buffer = buffer; source.connect(audioContext.destination); const now = audioContext.currentTime; if (nextStartTime < now) nextStartTime = now; source.start(nextStartTime); const startDelay = (nextStartTime - now) * 1000; const duration = buffer.duration * 1000; if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer); speakingStartTimer = setTimeout(() => { window.isNellSpeaking = true; }, startDelay); stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, startDelay + duration + 100); nextStartTime += buffer.duration; }
+function playLivePcmAudio(base64) { 
+    if (!audioContext) return; 
+    const binary = window.atob(base64); 
+    const bytes = new Uint8Array(binary.length); 
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i); 
+    const float32 = new Float32Array(bytes.length / 2); 
+    const view = new DataView(bytes.buffer); 
+    for (let i = 0; i < float32.length; i++) float32[i] = view.getInt16(i * 2, true) / 32768.0; 
+    
+    const buffer = audioContext.createBuffer(1, float32.length, 24000); 
+    buffer.copyToChannel(float32, 0); 
+    
+    const source = audioContext.createBufferSource(); 
+    source.buffer = buffer; 
+    source.connect(audioContext.destination); 
+    
+    // ★追加: ソースを追跡
+    currentLiveAudioSource = source;
+    
+    const now = audioContext.currentTime; 
+    if (nextStartTime < now) nextStartTime = now; 
+    source.start(nextStartTime); 
+    
+    const startDelay = (nextStartTime - now) * 1000; 
+    const duration = buffer.duration * 1000; 
+    
+    if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer); 
+    speakingStartTimer = setTimeout(() => { window.isNellSpeaking = true; }, startDelay); 
+    stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, startDelay + duration + 100); 
+    
+    nextStartTime += buffer.duration; 
+}
 function floatTo16BitPCM(float32Array) { const buffer = new ArrayBuffer(float32Array.length * 2); const view = new DataView(buffer); let offset = 0; for (let i = 0; i < float32Array.length; i++, offset += 2) { let s = Math.max(-1, Math.min(1, float32Array[i])); view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true); } return buffer; }
 function downsampleBuffer(buffer, sampleRate, outSampleRate) { if (outSampleRate >= sampleRate) return buffer; const ratio = sampleRate / outSampleRate; const newLength = Math.round(buffer.length / ratio); const result = new Float32Array(newLength); let offsetResult = 0, offsetBuffer = 0; while (offsetResult < result.length) { const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio); let accum = 0, count = 0; for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) { accum += buffer[i]; count++; } result[offsetResult] = accum / count; offsetResult++; offsetBuffer = nextOffsetBuffer; } return result; }
 function arrayBufferToBase64(buffer) { let binary = ''; const bytes = new Uint8Array(buffer); for (let i = 0; i < bytes.byteLength; i++) { binary += String.fromCharCode(bytes[i]); } return window.btoa(binary); }
@@ -929,32 +1001,21 @@ window.handleFileUpload = async (file) => { if (isAnalyzing || !file) return; do
 function initCustomCropper() { const modal = document.getElementById('cropper-modal'); modal.classList.remove('hidden'); const canvas = document.getElementById('crop-canvas'); const MAX_CANVAS_SIZE = 2500; let w = cropImg.width; let h = cropImg.height; if (w > MAX_CANVAS_SIZE || h > MAX_CANVAS_SIZE) { const scale = Math.min(MAX_CANVAS_SIZE / w, MAX_CANVAS_SIZE / h); w *= scale; h *= scale; cropPoints = cropPoints.map(p => ({ x: p.x * scale, y: p.y * scale })); } canvas.width = w; canvas.height = h; canvas.style.width = '100%'; canvas.style.height = '100%'; canvas.style.objectFit = 'contain'; const ctx = canvas.getContext('2d'); ctx.drawImage(cropImg, 0, 0, w, h); updateCropUI(canvas); const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl']; handles.forEach((id, idx) => { const el = document.getElementById(id); const startDrag = (e) => { e.preventDefault(); activeHandle = idx; }; el.onmousedown = startDrag; el.ontouchstart = startDrag; }); const move = (e) => { if (activeHandle === -1) return; e.preventDefault(); const rect = canvas.getBoundingClientRect(); const imgRatio = canvas.width / canvas.height; const rectRatio = rect.width / rect.height; let drawX, drawY, drawW, drawH; if (imgRatio > rectRatio) { drawW = rect.width; drawH = rect.width / imgRatio; drawX = 0; drawY = (rect.height - drawH) / 2; } else { drawH = rect.height; drawW = rect.height * imgRatio; drawY = 0; drawX = (rect.width - drawW) / 2; } const clientX = e.touches ? e.touches[0].clientX : e.clientX; const clientY = e.touches ? e.touches[0].clientY : e.clientY; let relX = (clientX - rect.left - drawX) / drawW; let relY = (clientY - rect.top - drawY) / drawH; relX = Math.max(0, Math.min(1, relX)); relY = Math.max(0, Math.min(1, relY)); cropPoints[activeHandle] = { x: relX * canvas.width, y: relY * canvas.height }; updateCropUI(canvas); }; const end = () => { activeHandle = -1; }; window.onmousemove = move; window.ontouchmove = move; window.onmouseup = end; window.ontouchend = end; document.getElementById('cropper-cancel-btn').onclick = () => { modal.classList.add('hidden'); window.onmousemove = null; window.ontouchmove = null; document.getElementById('upload-controls').classList.remove('hidden'); }; document.getElementById('cropper-ok-btn').onclick = () => { modal.classList.add('hidden'); window.onmousemove = null; window.ontouchmove = null; const croppedBase64 = performPerspectiveCrop(canvas, cropPoints); startAnalysis(croppedBase64); }; }
 function updateCropUI(canvas) { const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl']; const rect = canvas.getBoundingClientRect(); const imgRatio = canvas.width / canvas.height; const rectRatio = rect.width / rect.height; let drawX, drawY, drawW, drawH; if (imgRatio > rectRatio) { drawW = rect.width; drawH = rect.width / imgRatio; drawX = 0; drawY = (rect.height - drawH) / 2; } else { drawH = rect.height; drawW = rect.height * imgRatio; drawY = 0; drawX = (rect.width - drawW) / 2; } const toScreen = (p) => ({ x: (p.x / canvas.width) * drawW + drawX + canvas.offsetLeft, y: (p.y / canvas.height) * drawH + drawY + canvas.offsetTop }); const screenPoints = cropPoints.map(toScreen); handles.forEach((id, i) => { const el = document.getElementById(id); el.style.left = screenPoints[i].x + 'px'; el.style.top = screenPoints[i].y + 'px'; }); const svg = document.getElementById('crop-lines'); svg.style.left = canvas.offsetLeft + 'px'; svg.style.top = canvas.offsetTop + 'px'; svg.style.width = canvas.offsetWidth + 'px'; svg.style.height = canvas.offsetHeight + 'px'; const toSvg = (p) => ({ x: (p.x / canvas.width) * drawW + drawX, y: (p.y / canvas.height) * drawH + drawY }); const svgPts = cropPoints.map(toSvg); const ptsStr = svgPts.map(p => `${p.x},${p.y}`).join(' '); svg.innerHTML = `<polyline points="${ptsStr} ${svgPts[0].x},${svgPts[0].y}" style="fill:rgba(255,255,255,0.2);stroke:#ff4081;stroke-width:2;stroke-dasharray:5" />`; }
 
-// ★画像補正・リサイズ処理 (リカバリー版: 高画質・シンプルリサイズ)
+// ★画像補正・リサイズ処理 (v205.0準拠: 高画質・シンプルリサイズ)
 function processImageForAI(sourceCanvas) {
-    const MAX_WIDTH = 1600; // 画質確保のため少し大きめに
+    const MAX_WIDTH = 1600; 
     let w = sourceCanvas.width;
     let h = sourceCanvas.height;
     
-    // アスペクト比を維持してリサイズ計算
     if (w > MAX_WIDTH || h > MAX_WIDTH) {
-        if (w > h) {
-            h *= MAX_WIDTH / w;
-            w = MAX_WIDTH;
-        } else {
-            w *= MAX_WIDTH / h;
-            h = MAX_WIDTH;
-        }
+        if (w > h) { h *= MAX_WIDTH / w; w = MAX_WIDTH; } 
+        else { w *= MAX_WIDTH / h; h = MAX_WIDTH; }
     }
     
     const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
+    canvas.width = w; canvas.height = h;
     const ctx = canvas.getContext('2d');
-    
-    // 単純リサイズのみ行う (ピクセル操作は削除)
     ctx.drawImage(sourceCanvas, 0, 0, w, h);
-    
-    // JPEG品質 0.9 で返す (ノイズ対策)
     return canvas.toDataURL('image/jpeg', 0.9);
 }
 
