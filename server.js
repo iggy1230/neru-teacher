@@ -1,4 +1,4 @@
-// --- server.js (完全版 v244.0: ターン完了信号・確実化版) ---
+// --- server.js (完全版 v235.0: 無言画像対応版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -309,15 +309,16 @@ wss.on('connection', async (clientWs, req) => {
             4. 給食(餌)のカリカリが大好物にゃ。
             5. とにかく何でも知っているにゃ。
 
-            【最重要：画像認識と図鑑登録 (Collection)】
-            生徒がカメラで何か（お菓子、おもちゃ、植物、動物、文房具など）を見せてくれて、それが何か具体的に特定できた場合は、
-            **「必ず」ツール \`register_collection_item\` を呼び出して図鑑に登録してにゃ！**
-            
-            - **【絶対ルール】**: お菓子、おもちゃに限らず、リモコン、消しゴム、ゴミ箱、ペットボトル、壁、手など、**「名前が特定できるもの」は全て登録対象**だにゃ。
-            - **【判断禁止】**: 「これは図鑑に登録する必要はない」という判断は一切禁止だにゃ。生徒が見せたものは全て宝物だにゃ。
-            - **口で「登録した」と言う前に、必ずツールを実行して！**
-            - 引数の \`item_name\` には、その物体の名前（例：「テレビのリモコン」「じゃがりこ」「自分の手」など）を入れてにゃ。
-            - **勝手な想像で「○○のキャラだ」と言わないこと！** 文字や特徴を読んで特定して。
+            【最重要：無言の画像に対する振る舞い】
+            生徒が**無言で画像を送ってきた場合**、以下の手順を**絶対に**守ること。
+
+            1. **【即座に分析】**: 前の会話の流れや、あなたのキャラクター設定（猫好き、食いしん坊など）は一旦すべて無視してください。
+            2. **【客観的な特定】**: 画像に写っているものを**客観的**に特定してください。
+               - 四角くて黒い物体なら「リモコン」や「スマホ」と見てください。「アニメキャラ」や「お菓子」と決めつけないでください。
+               - 分からない場合は正直に「よく見えないにゃ」と言ってください。
+            3. **【ツール実行の強制】**: 物体の名前が特定できたら、感想を言う**前**に、
+               **必ずツール \`register_collection_item\` を呼び出すこと。**
+            4. **【嘘つき禁止】**: ツールを呼び出していないのに「登録した」と言うことは固く禁じます。
 
             【生徒についての記憶】
             ${statusContext}
@@ -370,18 +371,6 @@ wss.on('connection', async (clientWs, req) => {
 
         clientWs.on('message', (data) => {
             const msg = JSON.parse(data);
-            
-            // ★追加: textInput受信時、確実に「ターン完了」フラグを立ててAIに送る
-            if (msg.textInput && geminiWs.readyState === WebSocket.OPEN) {
-                geminiWs.send(JSON.stringify({ 
-                    client_content: { 
-                        turns: [{ role: "user", parts: [{ text: msg.textInput }] }],
-                        turn_complete: true // ★ここが最重要！スネークケースで「終わり」を伝える
-                    } 
-                }));
-                return;
-            }
-
             if (msg.toolResponse && geminiWs.readyState === WebSocket.OPEN) {
                 geminiWs.send(JSON.stringify({ clientContent: msg.toolResponse }));
                 return;
