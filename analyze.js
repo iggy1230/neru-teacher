@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v234.0: 誤認識防止・ツール実行強制版) ---
+// --- analyze.js (完全版 v235.0: 指示先行型・見切り発車防止版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -388,7 +388,7 @@ window.captureAndSendLiveImage = function() {
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     
-    // ★追加: 図鑑用にサムネイルを作成してキャッシュ
+    // ★図鑑用にサムネイルを作成してキャッシュ
     const thumbCanvas = document.createElement('canvas');
     const thumbSize = 150; 
     let tw = canvas.width, th = canvas.height;
@@ -428,15 +428,15 @@ window.captureAndSendLiveImage = function() {
 
     updateNellMessage("ん？どれどれ…", "thinking", false, false);
     
-    // 2. 画像送信
-    liveSocket.send(JSON.stringify({ base64Image: base64Data }));
-    
-    // 3. フラグ解除 & 強いプロンプト送信 (100ms)
-    // ★ここを修正: より強い命令でツール実行とハルシネーション防止を強制する
+    // ★ここが最大の修正ポイント: 画像を送る「前」に、指示を送ってAIを身構えさせる！
+    // タイムラグによるハルシネーションを防ぐため、先にテキストでモードを切り替える。
+    sendSilentPrompt("【緊急モード切替】\nこれから画像を送るから、前の会話は無視して、画像に写っているものを客観的に特定して。\n特定したら、感想を言う前に **必ず** `register_collection_item` ツールを実行して！\n「登録した」と嘘をつくのは禁止！");
+
+    // その直後に画像を送る (数ミリ秒後)
     setTimeout(() => {
+        liveSocket.send(JSON.stringify({ base64Image: base64Data }));
         ignoreIncomingAudio = false; 
-        sendSilentPrompt("【緊急画像認識指示】\n1. 今送った画像を**客観的**に見て名前を特定して（勝手な想像やキャラ名の決めつけは厳禁！）。\n2. 感想を言う前に **必ず** `register_collection_item` ツールを実行して！\n3. ツールを呼び出さずに「登録した」と言うことは禁止！");
-    }, 100);
+    }, 50);
 };
 
 // ==========================================
