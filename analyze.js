@@ -1,4 +1,4 @@
-// --- analyze.js (真・完全版 v241.0: 欠落関数復旧版) ---
+// --- analyze.js (完全版 v242.0: 応答ブロック解除・即時反応版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -32,7 +32,7 @@ let recognition = null;
 let isRecognitionActive = false;
 let recognitionWatchdogTimer = null; // 音声認識の「番犬」用
 
-// ★音声ソース管理（二重音声防止用）
+// ★音声ソース管理
 let liveAudioSources = []; 
 let ignoreIncomingAudio = false;
 let currentLiveAudioSource = null;
@@ -163,7 +163,6 @@ async function saveToNellMemory(role, text) {
     ];
     if (trimmed.length <= 1 || ignoreWords.includes(trimmed)) return;
     
-    // console.log(`【Memory】ログ追加: [${role}] ${trimmed}`);
     chatTranscript += `${role === 'user' ? '生徒' : 'ネル'}: ${trimmed}\n`;
 
     const newItem = { role: role, text: trimmed, time: new Date().toISOString() };
@@ -210,7 +209,6 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
         let textForSpeech = displayText.replace(/【.*?】/g, "").trim();
         textForSpeech = textForSpeech.replace(/🐾/g, "");
         if (textForSpeech.length > 0) {
-            // 音声再生でエラーやタイムアウトが起きても、UI処理を止めないようにcatchする
             try {
                 await speakNell(textForSpeech, mood);
             } catch(e) {
@@ -235,9 +233,6 @@ window.selectMode = function(m) {
     const icon = document.querySelector('.nell-avatar-wrap img'); if(icon) icon.src = defaultIcon;
     document.getElementById('mini-karikari-display').classList.remove('hidden'); 
     
-    // ★ここがエラーの原因でした。関数が下の方にあるため。
-    // しかしJSのfunction定義は巻き上げられるはずですが、もし定義自体が欠落していたならエラーになります。
-    // 今回のコードには末尾にupdateMiniKarikariが含まれています。
     if(typeof updateMiniKarikari === 'function') updateMiniKarikari();
     
     if (m === 'chat') { 
@@ -361,23 +356,23 @@ function sendSilentPrompt(text) {
 // 6. 「これ見て！」カメラ機能 & 音声割り込み
 // ==========================================
 
-// ★完全停止処理: 全ての音声ソースを抹殺する
+// ★完全停止処理: 全ての音声ソースを抹殺し、タイミングをリセットする
 function stopAudioPlayback() {
-    // スケジュールされているすべてのWebSocket音声を停止
     liveAudioSources.forEach(source => {
         try { source.stop(); } catch(e){}
     });
-    liveAudioSources = []; // 配列クリア
+    liveAudioSources = []; 
 
+    // ★重要修正: 再生スケジュール時刻を「現在」にリセットする
+    // これにより、次に届く音声が「未来の予定」として待たされるのを防ぐ
     if (audioContext && audioContext.state === 'running') {
-        // 現在時刻より少し先を指定して、バッファに残った音声を無効化
-        nextStartTime = audioContext.currentTime + 0.05;
+        nextStartTime = audioContext.currentTime; 
     }
+    
     window.isNellSpeaking = false;
     if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer);
     if(speakingStartTimer) clearTimeout(speakingStartTimer);
 
-    // TTSが鳴っていた場合も強制キャンセル
     if (window.cancelNellSpeech) window.cancelNellSpeech();
 }
 
@@ -393,9 +388,11 @@ window.captureAndSendLiveImage = function() {
 
     // 1. 強制的に全音声を停止
     stopAudioPlayback();
-    // 音声入力をブロック（自分の声がAIの回答に被らないように）
-    ignoreIncomingAudio = true; 
     
+    // ★重要修正: AIの音声をブロックしない！
+    // ignoreIncomingAudio = true;  <-- これを削除。AIの即答を聞き逃さないようにする。
+    ignoreIncomingAudio = false; 
+
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
@@ -412,7 +409,6 @@ window.captureAndSendLiveImage = function() {
     thumbCanvas.getContext('2d').drawImage(canvas, 0, 0, tw, th);
     window.lastSentCollectionImage = thumbCanvas.toDataURL('image/jpeg', 0.7);
 
-    // デバッグログ
     console.log("[Collection] Snapshot captured and cached.", window.lastSentCollectionImage ? "OK" : "Error");
 
     const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
@@ -442,17 +438,14 @@ window.captureAndSendLiveImage = function() {
 
     updateNellMessage("ん？どれどれ…", "thinking", false, false);
     
-    // ★修正ポイント: 画像を「先」に送り、少し待ってから「タイムスタンプ付きの指示」を送る。
-    // これにより、AIは毎回新しいリクエストとして認識し、必ず応答するようになる。
+    // ★画像送信 (ここでAIは既に処理を開始する)
     liveSocket.send(JSON.stringify({ base64Image: base64Data }));
 
+    // 少し待ってから、ユニークなID付きでテキスト指示を送る
+    // これはAIへの「念押し」であり、画像認識のトリガーではない
     setTimeout(() => {
-        // マイクのブロックを解除し、念のため音声認識を再開させる
-        ignoreIncomingAudio = false; 
         if (recognition) { try { recognition.start(); } catch(e){} }
-
-        const ts = Date.now(); // ユニークなタイムスタンプ
-        // 毎回異なるプロンプトを送ることで、AIに「新しい指示」だと認識させる
+        const ts = Date.now(); 
         sendSilentPrompt(`【緊急画像認識指示 ID:${ts}】\nたった今、画像を送ったにゃ。\nこの画像に写っているものを特定して、感想を言う前に **必ず** \`register_collection_item\` ツールを実行して！\n「登録した」と嘘をつくのは禁止！`);
     }, 200); 
 };
