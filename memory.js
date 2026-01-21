@@ -1,4 +1,4 @@
-// --- memory.js (v225.0: 図鑑データ対応版) ---
+// --- memory.js (完全版 v230.0: 図鑑データ対応版) ---
 
 (function(global) {
     const Memory = {};
@@ -95,12 +95,50 @@
         if (p.nickname) context += `・あだ名: ${p.nickname}\n`;
         if (p.birthday) context += `・誕生日: ${p.birthday}\n`; 
         if (p.likes && p.likes.length > 0) context += `・好きなもの: ${p.likes.join(", ")}\n`;
+        
+        // ★追加: 直近のコレクション情報をAIに教える
         if (p.collection && p.collection.length > 0) {
             // 直近3つのコレクションを教える
-            const recentItems = p.collection.slice(-3).map(i => i.name).join(", ");
-            context += `・最近見せてくれたもの: ${recentItems}\n`;
+            const recentItems = p.collection.slice(0, 3).map(i => i.name).join(", ");
+            context += `・最近見せてくれたもの図鑑: ${recentItems}\n`;
         }
+        
         return context;
+    };
+
+    // ★追加: 図鑑にアイテムを追加する関数
+    Memory.addToCollection = async function(userId, itemName, imageBase64) {
+        try {
+            const profile = await Memory.getUserProfile(userId);
+            if (!profile.collection) profile.collection = [];
+            
+            // 重複チェック: 同じ名前があれば更新、なければ先頭に追加
+            const existingIndex = profile.collection.findIndex(i => i.name === itemName);
+            
+            const newItem = {
+                name: itemName,
+                image: imageBase64,
+                date: new Date().toISOString()
+            };
+
+            if (existingIndex !== -1) {
+                // 既存のものを更新して先頭に移動させるか、単に更新するか
+                // ここでは単純に更新
+                profile.collection[existingIndex] = newItem;
+            } else {
+                profile.collection.unshift(newItem); // 先頭に追加
+            }
+
+            // 容量制限（画像のBase64は重いので、最新30件くらいに制限）
+            if (profile.collection.length > 30) {
+                profile.collection = profile.collection.slice(0, 30);
+            }
+
+            await Memory.saveUserProfile(userId, profile);
+            console.log(`[Memory] Collection updated: ${itemName}`);
+        } catch (e) {
+            console.error("[Memory] Add Collection Error:", e);
+        }
     };
 
     global.NellMemory = Memory;

@@ -1,4 +1,4 @@
-// --- ui.js (完全版 v198.0) ---
+// --- ui.js (完全版 v230.0) ---
 
 const sfxChime = new Audio('Jpn_sch_chime.mp3');
 const sfxBtn = new Audio('botan1.mp3');
@@ -130,6 +130,58 @@ window.updateProgress = function(p) {
     if (bar) bar.style.width = p + '%'; 
     const txt = document.getElementById('progress-percent'); 
     if (txt) txt.innerText = Math.floor(p); 
+};
+
+// ★追加: 図鑑表示ロジック
+window.showCollection = async function() {
+    if (!currentUser) return;
+    const modal = document.getElementById('collection-modal');
+    const grid = document.getElementById('collection-grid');
+    if (!modal || !grid) return;
+
+    modal.classList.remove('hidden');
+    grid.innerHTML = '<p style="width:100%; text-align:center;">読み込み中にゃ...</p>';
+
+    // データ取得
+    const profile = await window.NellMemory.getUserProfile(currentUser.id);
+    const collection = profile.collection || [];
+
+    grid.innerHTML = '';
+    
+    if (collection.length === 0) {
+        grid.innerHTML = '<p style="width:100%; text-align:center; color:#888;">まだ何もないにゃ。<br>「個別指導」でカメラを見せてにゃ！</p>';
+        return;
+    }
+
+    collection.forEach(item => {
+        const div = document.createElement('div');
+        div.style.cssText = "background:white; border-radius:10px; padding:8px; box-shadow:0 2px 5px rgba(0,0,0,0.1); text-align:center; border:2px solid #fff176;";
+        
+        const img = document.createElement('img');
+        img.src = item.image;
+        img.style.cssText = "width:64px; height:64px; object-fit:contain; border-radius:5px; margin-bottom:5px; background:#f5f5f5;";
+        
+        const name = document.createElement('div');
+        name.innerText = item.name;
+        name.style.cssText = "font-size:0.8rem; font-weight:bold; color:#555; word-break:break-all; line-height:1.2;";
+        
+        // 日付（おまけ）
+        const date = document.createElement('div');
+        try {
+            date.innerText = new Date(item.date).toLocaleDateString();
+        } catch(e) { date.innerText = ""; }
+        date.style.cssText = "font-size:0.6rem; color:#aaa; margin-top:2px;";
+
+        div.appendChild(img);
+        div.appendChild(name);
+        div.appendChild(date);
+        grid.appendChild(div);
+    });
+};
+
+window.closeCollection = function() {
+    const modal = document.getElementById('collection-modal');
+    if (modal) modal.classList.add('hidden');
 };
 
 // 効果音 & AudioContext初期化
