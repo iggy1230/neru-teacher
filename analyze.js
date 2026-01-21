@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v233.0: 即座認識＆ツール強制版) ---
+// --- analyze.js (完全版 v234.0: 誤認識防止・ツール実行強制版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -432,10 +432,10 @@ window.captureAndSendLiveImage = function() {
     liveSocket.send(JSON.stringify({ base64Image: base64Data }));
     
     // 3. フラグ解除 & 強いプロンプト送信 (100ms)
-    // ★ここを修正: より強い命令でツール実行を強制する
+    // ★ここを修正: より強い命令でツール実行とハルシネーション防止を強制する
     setTimeout(() => {
         ignoreIncomingAudio = false; 
-        sendSilentPrompt("【緊急指示】今送った画像に何が写っているか名前を特定し、\n感想を言う前に **必ず** `register_collection_item` ツールを実行して図鑑に登録して！\n「登録しなくていい」という判断は禁止！絶対登録して！");
+        sendSilentPrompt("【緊急画像認識指示】\n1. 今送った画像を**客観的**に見て名前を特定して（勝手な想像やキャラ名の決めつけは厳禁！）。\n2. 感想を言う前に **必ず** `register_collection_item` ツールを実行して！\n3. ツールを呼び出さずに「登録した」と言うことは禁止！");
     }, 100);
 };
 

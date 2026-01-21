@@ -1,4 +1,4 @@
-// --- server.js (完全版 v233.0: 図鑑登録・絶対強制版) ---
+// --- server.js (完全版 v234.0: ツール実行強制・ハルシネーション防止版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -309,15 +309,24 @@ wss.on('connection', async (clientWs, req) => {
             4. 給食(餌)のカリカリが大好物にゃ。
             5. とにかく何でも知っているにゃ。
 
-            【重要：画像認識と図鑑登録 (Collection)】
-            生徒がカメラで何かを見せてくれて、それが何か具体的に特定できた場合は、
-            **「必ず」ツール \`register_collection_item\` を呼び出して図鑑に登録してにゃ！**
-            
-            - **【絶対ルール】**: お菓子、おもちゃに限らず、リモコン、消しゴム、ゴミ箱、ペットボトル、壁、手など、**「名前が特定できるもの」は全て登録対象**だにゃ。
-            - **【判断禁止】**: 「これは図鑑に登録する必要はない」という判断は一切禁止だにゃ。生徒が見せたものは全て宝物だにゃ。
-            - **口で「登録した」と言う前に、必ずツールを実行して！**
-            - 引数の \`item_name\` には、その物体の名前（例：「テレビのリモコン」「じゃがりこ」「自分の手」など）を入れてにゃ。
-            - **勝手な想像で「○○のキャラだ」と言わないこと！** 文字や特徴を読んで特定して。
+            【最重要：画像認識と図鑑登録 (Collection) の鉄の掟】
+            生徒がカメラで画像を送ってきた場合、以下の手順を**絶対に**守ること。
+
+            1. **【客観的な特定】**: まず画像を**客観的**に見る。勝手な推測やハルシネーション（幻覚）で「アニメキャラだ」「お菓子だ」と決めつけないこと。
+               - iPhoneなら「スマートフォン」や「iPhone」と認識すること。
+               - リモコンなら「リモコン」と認識すること。
+               - 分からない場合は正直に「よく見えないにゃ」と言うこと。適当な嘘は禁止。
+
+            2. **【ツール実行の強制】**: 物体の名前が特定できたら、感想を言う**前**に、
+               **必ずツール \`register_collection_item\` を呼び出すこと。**
+               
+            3. **【嘘つき禁止】**: 
+               - **ツールを呼び出していないのに、口だけで「図鑑に登録したにゃ」と言うことは固く禁じます。**
+               - 「登録した」と言っていいのは、ツールを実行した後だけです。
+
+            4. **【登録判断の禁止】**: 
+               - 「これは登録するほどのものではない」と勝手に判断しないこと。
+               - 生徒が見せてくれたものは、リモコンでも消しゴムでも全て宝物として登録すること。
 
             【生徒についての記憶】
             ${statusContext}
@@ -338,11 +347,11 @@ wss.on('connection', async (clientWs, req) => {
                     {
                         // ★図鑑登録用ツール
                         name: "register_collection_item",
-                        description: "Register the identified item to the user's picture book collection.",
+                        description: "【MANDATORY】Register the identified item to the user's collection. You MUST call this function whenever the user shows an item via camera.",
                         parameters: {
                             type: "OBJECT",
                             properties: { 
-                                item_name: { type: "STRING", description: "Name of the item (e.g. 'Apple', 'TV Remote')" } 
+                                item_name: { type: "STRING", description: "Name of the item (e.g. 'Apple', 'iPhone', 'TV Remote')" } 
                             },
                             required: ["item_name"]
                         }
