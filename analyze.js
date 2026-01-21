@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v235.0: 指示先行型・見切り発車防止版) ---
+// --- analyze.js (完全版 v236.0: 画像先行・確実反応版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -428,15 +428,14 @@ window.captureAndSendLiveImage = function() {
 
     updateNellMessage("ん？どれどれ…", "thinking", false, false);
     
-    // ★ここが最大の修正ポイント: 画像を送る「前」に、指示を送ってAIを身構えさせる！
-    // タイムラグによるハルシネーションを防ぐため、先にテキストでモードを切り替える。
-    sendSilentPrompt("【緊急モード切替】\nこれから画像を送るから、前の会話は無視して、画像に写っているものを客観的に特定して。\n特定したら、感想を言う前に **必ず** `register_collection_item` ツールを実行して！\n「登録した」と嘘をつくのは禁止！");
+    // ★ここが修正ポイント: 画像を「先」に送る。そして少し待ってから「見て！」と指示を出す。
+    // これにより、AIは手元に画像がある状態で指示を受け取るため、確実に対応できる。
+    liveSocket.send(JSON.stringify({ base64Image: base64Data }));
 
-    // その直後に画像を送る (数ミリ秒後)
     setTimeout(() => {
-        liveSocket.send(JSON.stringify({ base64Image: base64Data }));
         ignoreIncomingAudio = false; 
-    }, 50);
+        sendSilentPrompt("【緊急画像認識指示】\nたった今、画像を送ったにゃ。\nこの画像に写っているものを特定して、感想を言う前に **必ず** `register_collection_item` ツールを実行して！\n「登録した」と嘘をつくのは禁止！");
+    }, 200); // 200msのバッファを持たせる
 };
 
 // ==========================================
