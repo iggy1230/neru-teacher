@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v238.0: 音声認識監視・連続反応強化版) ---
+// --- analyze.js (完全版 v237.0: 連続撮影対応・タイムスタンプ付与版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -30,7 +30,6 @@ let nextStartTime = 0;
 let connectionTimeout = null;
 let recognition = null;
 let isRecognitionActive = false;
-let recognitionWatchdogTimer = null; // ★音声認識の「番犬」用
 
 // ★音声ソース管理（二重音声防止用）
 let liveAudioSources = []; 
@@ -379,9 +378,8 @@ window.captureAndSendLiveImage = function() {
         return alert("カメラが動いてないにゃ...。一度「おはなしする」を終了して、もう一度つなぎ直してみてにゃ。");
     }
 
-    // 1. 強制的に全音声を停止
+    // 1. 強制的に全音声を停止し、フラグを立てる
     stopAudioPlayback();
-    // 音声入力をブロック（自分の声がAIの回答に被らないように）
     ignoreIncomingAudio = true; 
     
     const canvas = document.createElement('canvas');
@@ -435,12 +433,8 @@ window.captureAndSendLiveImage = function() {
     liveSocket.send(JSON.stringify({ base64Image: base64Data }));
 
     setTimeout(() => {
-        // マイクのブロックを解除し、念のため音声認識を再開させる
         ignoreIncomingAudio = false; 
-        if (recognition) { try { recognition.start(); } catch(e){} }
-
-        const ts = Date.now(); // ユニークなタイムスタンプ
-        // 毎回異なるプロンプトを送ることで、AIに「新しい指示」だと認識させる
+        const ts = new Date().getTime(); // 毎回異なるテキストにするためのタイムスタンプ
         sendSilentPrompt(`【緊急画像認識指示 ID:${ts}】\nたった今、画像を送ったにゃ。\nこの画像に写っているものを特定して、感想を言う前に **必ず** \`register_collection_item\` ツールを実行して！\n「登録した」と嘘をつくのは禁止！`);
     }, 200); 
 };
@@ -837,18 +831,7 @@ async function startLiveChat() {
             if(btn) { btn.innerText = "📞 つながった！(終了)"; btn.style.background = "#ff5252"; btn.disabled = false; } 
             updateNellMessage("お待たせ！なんでも話してにゃ！", "happy", false, false); 
             isRecognitionActive = true; 
-            startMicrophone();
-            
-            // ★追加: 音声認識の「番犬」タイマー (2秒ごとにチェック)
-            if(recognitionWatchdogTimer) clearInterval(recognitionWatchdogTimer);
-            recognitionWatchdogTimer = setInterval(() => {
-                if (isRecognitionActive && recognition) {
-                    try {
-                        recognition.start();
-                    } catch(e) {
-                    }
-                }
-            }, 2000);
+            startMicrophone(); 
         }; 
         
         liveSocket.onmessage = async (event) => { 
@@ -965,7 +948,6 @@ function stopLiveChat() {
     isRecognitionActive = false; 
     if (connectionTimeout) clearTimeout(connectionTimeout); 
     if (recognition) try{recognition.stop()}catch(e){} 
-    if (recognitionWatchdogTimer) clearInterval(recognitionWatchdogTimer); // 番犬停止
     if (mediaStream) mediaStream.getTracks().forEach(t=>t.stop()); 
     if (workletNode) { workletNode.port.postMessage('stop'); workletNode.disconnect(); } 
     if (liveSocket) liveSocket.close(); 
@@ -1076,3 +1058,283 @@ async function startMicrophone() {
         } catch(ex) { alert("マイクも使えないみたいだにゃ..."); }
     } 
 }
+
+// ★完全停止処理: 全ての音声ソースを抹殺する
+function stopAudioPlayback() {
+    // スケジュールされているすべてのWebSocket音声を停止
+    liveAudioSources.forEach(source => {
+        try { source.stop(); } catch(e){}
+    });
+    liveAudioSources = []; // 配列クリア
+
+    if (audioContext && audioContext.state === 'running') {
+        // 現在時刻より少し先を指定して、バッファに残った音声を無効化
+        nextStartTime = audioContext.currentTime + 0.05;
+    }
+    window.isNellSpeaking = false;
+    if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer);
+    if(speakingStartTimer) clearTimeout(speakingStartTimer);
+
+    // TTSが鳴っていた場合も強制キャンセル
+    if (window.cancelNellSpeech) window.cancelNellSpeech();
+}
+
+function playLivePcmAudio(base64) { 
+    if (!audioContext || ignoreIncomingAudio) return; 
+    
+    const binary = window.atob(base64); 
+    const bytes = new Uint8Array(binary.length); 
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i); 
+    const float32 = new Float32Array(bytes.length / 2); 
+    const view = new DataView(bytes.buffer); 
+    for (let i = 0; i < float32.length; i++) float32[i] = view.getInt16(i * 2, true) / 32768.0; 
+    
+    const buffer = audioContext.createBuffer(1, float32.length, 24000); 
+    buffer.copyToChannel(float32, 0); 
+    
+    const source = audioContext.createBufferSource(); 
+    source.buffer = buffer; 
+    source.connect(audioContext.destination); 
+    
+    // ★管理配列に追加
+    liveAudioSources.push(source);
+    source.onended = () => {
+        liveAudioSources = liveAudioSources.filter(s => s !== source);
+    };
+
+    const now = audioContext.currentTime; 
+    if (nextStartTime < now) nextStartTime = now; 
+    source.start(nextStartTime); 
+    
+    const startDelay = (nextStartTime - now) * 1000; 
+    const duration = buffer.duration * 1000; 
+    
+    if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer); 
+    speakingStartTimer = setTimeout(() => { window.isNellSpeaking = true; }, startDelay); 
+    stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, startDelay + duration + 100); 
+    
+    nextStartTime += buffer.duration; 
+}
+function floatTo16BitPCM(float32Array) { const buffer = new ArrayBuffer(float32Array.length * 2); const view = new DataView(buffer); let offset = 0; for (let i = 0; i < float32Array.length; i++, offset += 2) { let s = Math.max(-1, Math.min(1, float32Array[i])); view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true); } return buffer; }
+function downsampleBuffer(buffer, sampleRate, outSampleRate) { if (outSampleRate >= sampleRate) return buffer; const ratio = sampleRate / outSampleRate; const newLength = Math.round(buffer.length / ratio); const result = new Float32Array(newLength); let offsetResult = 0, offsetBuffer = 0; while (offsetResult < result.length) { const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio); let accum = 0, count = 0; for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) { accum += buffer[i]; count++; } result[offsetResult] = accum / count; offsetResult++; offsetBuffer = nextOffsetBuffer; } return result; }
+function arrayBufferToBase64(buffer) { let binary = ''; const bytes = new Uint8Array(buffer); for (let i = 0; i < bytes.byteLength; i++) { binary += String.fromCharCode(bytes[i]); } return window.btoa(binary); }
+function updateMiniKarikari() { if(currentUser) { const el = document.getElementById('mini-karikari-count'); if(el) el.innerText = currentUser.karikari; const el2 = document.getElementById('karikari-count'); if(el2) el2.innerText = currentUser.karikari; } }
+function showKarikariEffect(amount) { const container = document.querySelector('.nell-avatar-wrap'); if(container) { const floatText = document.createElement('div'); floatText.className = 'floating-text'; floatText.innerText = amount > 0 ? `+${amount}` : `${amount}`; floatText.style.color = amount > 0 ? '#ff9100' : '#ff5252'; floatText.style.right = '0px'; floatText.style.top = '0px'; container.appendChild(floatText); setTimeout(() => floatText.remove(), 1500); } }
+window.addEventListener('DOMContentLoaded', () => { const camIn = document.getElementById('hw-input-camera'); const albIn = document.getElementById('hw-input-album'); if(camIn) camIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; }); if(albIn) albIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; }); });
+window.handleFileUpload = async (file) => { if (isAnalyzing || !file) return; document.getElementById('upload-controls').classList.add('hidden'); document.getElementById('cropper-modal').classList.remove('hidden'); const canvas = document.getElementById('crop-canvas'); canvas.style.opacity = '0'; const reader = new FileReader(); reader.onload = async (e) => { cropImg = new Image(); cropImg.onload = async () => { const w = cropImg.width; const h = cropImg.height; cropPoints = [ { x: w * 0.1, y: h * 0.1 }, { x: w * 0.9, y: h * 0.1 }, { x: w * 0.9, y: h * 0.9 }, { x: w * 0.1, y: h * 0.9 } ]; canvas.style.opacity = '1'; updateNellMessage("ここを読み取るにゃ？", "normal"); initCustomCropper(); }; cropImg.src = e.target.result; }; reader.readAsDataURL(file); };
+function initCustomCropper() { const modal = document.getElementById('cropper-modal'); modal.classList.remove('hidden'); const canvas = document.getElementById('crop-canvas'); const MAX_CANVAS_SIZE = 2500; let w = cropImg.width; let h = cropImg.height; if (w > MAX_CANVAS_SIZE || h > MAX_CANVAS_SIZE) { const scale = Math.min(MAX_CANVAS_SIZE / w, MAX_CANVAS_SIZE / h); w *= scale; h *= scale; cropPoints = cropPoints.map(p => ({ x: p.x * scale, y: p.y * scale })); } canvas.width = w; canvas.height = h; canvas.style.width = '100%'; canvas.style.height = '100%'; canvas.style.objectFit = 'contain'; const ctx = canvas.getContext('2d'); ctx.drawImage(cropImg, 0, 0, w, h); updateCropUI(canvas); const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl']; handles.forEach((id, idx) => { const el = document.getElementById(id); const startDrag = (e) => { e.preventDefault(); activeHandle = idx; }; el.onmousedown = startDrag; el.ontouchstart = startDrag; }); const move = (e) => { if (activeHandle === -1) return; e.preventDefault(); const rect = canvas.getBoundingClientRect(); const imgRatio = canvas.width / canvas.height; const rectRatio = rect.width / rect.height; let drawX, drawY, drawW, drawH; if (imgRatio > rectRatio) { drawW = rect.width; drawH = rect.width / imgRatio; drawX = 0; drawY = (rect.height - drawH) / 2; } else { drawH = rect.height; drawW = rect.height * imgRatio; drawY = 0; drawX = (rect.width - drawW) / 2; } const clientX = e.touches ? e.touches[0].clientX : e.clientX; const clientY = e.touches ? e.touches[0].clientY : e.clientY; let relX = (clientX - rect.left - drawX) / drawW; let relY = (clientY - rect.top - drawY) / drawH; relX = Math.max(0, Math.min(1, relX)); relY = Math.max(0, Math.min(1, relY)); cropPoints[activeHandle] = { x: relX * canvas.width, y: relY * canvas.height }; updateCropUI(canvas); }; const end = () => { activeHandle = -1; }; window.onmousemove = move; window.ontouchmove = move; window.onmouseup = end; window.ontouchend = end; document.getElementById('cropper-cancel-btn').onclick = () => { modal.classList.add('hidden'); window.onmousemove = null; window.ontouchmove = null; document.getElementById('upload-controls').classList.remove('hidden'); }; document.getElementById('cropper-ok-btn').onclick = () => { modal.classList.add('hidden'); window.onmousemove = null; window.ontouchmove = null; const croppedBase64 = performPerspectiveCrop(canvas, cropPoints); startAnalysis(croppedBase64); }; }
+function updateCropUI(canvas) { const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl']; const rect = canvas.getBoundingClientRect(); const imgRatio = canvas.width / canvas.height; const rectRatio = rect.width / rect.height; let drawX, drawY, drawW, drawH; if (imgRatio > rectRatio) { drawW = rect.width; drawH = rect.width / imgRatio; drawX = 0; drawY = (rect.height - drawH) / 2; } else { drawH = rect.height; drawW = rect.height * imgRatio; drawY = 0; drawX = (rect.width - drawW) / 2; } const toScreen = (p) => ({ x: (p.x / canvas.width) * drawW + drawX + canvas.offsetLeft, y: (p.y / canvas.height) * drawH + drawY + canvas.offsetTop }); const screenPoints = cropPoints.map(toScreen); handles.forEach((id, i) => { const el = document.getElementById(id); el.style.left = screenPoints[i].x + 'px'; el.style.top = screenPoints[i].y + 'px'; }); const svg = document.getElementById('crop-lines'); svg.style.left = canvas.offsetLeft + 'px'; svg.style.top = canvas.offsetTop + 'px'; svg.style.width = canvas.offsetWidth + 'px'; svg.style.height = canvas.offsetHeight + 'px'; const toSvg = (p) => ({ x: (p.x / canvas.width) * drawW + drawX, y: (p.y / canvas.height) * drawH + drawY }); const svgPts = cropPoints.map(toSvg); const ptsStr = svgPts.map(p => `${p.x},${p.y}`).join(' '); svg.innerHTML = `<polyline points="${ptsStr} ${svgPts[0].x},${svgPts[0].y}" style="fill:rgba(255,255,255,0.2);stroke:#ff4081;stroke-width:2;stroke-dasharray:5" />`; }
+
+// ★画像補正・リサイズ処理 (v205.0準拠: 高画質・シンプルリサイズ)
+function processImageForAI(sourceCanvas) {
+    const MAX_WIDTH = 1600; 
+    let w = sourceCanvas.width;
+    let h = sourceCanvas.height;
+    
+    if (w > MAX_WIDTH || h > MAX_WIDTH) {
+        if (w > h) { h *= MAX_WIDTH / w; w = MAX_WIDTH; } 
+        else { w *= MAX_WIDTH / h; h = MAX_WIDTH; }
+    }
+    
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(sourceCanvas, 0, 0, w, h);
+    return canvas.toDataURL('image/jpeg', 0.9);
+}
+
+// クロップ処理の最後に補正を入れる
+function performPerspectiveCrop(sourceCanvas, points) { 
+    const minX = Math.min(...points.map(p => p.x)), maxX = Math.max(...points.map(p => p.x)); 
+    const minY = Math.min(...points.map(p => p.y)), maxY = Math.max(...points.map(p => p.y)); 
+    let w = maxX - minX, h = maxY - minY; 
+    if (w < 1) w = 1; if (h < 1) h = 1; 
+    
+    const tempCv = document.createElement('canvas'); 
+    tempCv.width = w; 
+    tempCv.height = h; 
+    const ctx = tempCv.getContext('2d'); 
+    ctx.drawImage(sourceCanvas, minX, minY, w, h, 0, 0, w, h); 
+    
+    // ★ここで最適化関数を呼ぶ
+    return processImageForAI(tempCv).split(',')[1];
+}
+
+// ==========================================
+// 11. 記憶管理 (Memory Manager) UI
+// ==========================================
+
+window.openMemoryManager = async function() {
+    if (!currentUser) return;
+    const modal = document.getElementById('memory-manager-modal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        switchMemoryTab('profile'); // デフォルトはプロフィール
+    }
+};
+
+window.closeMemoryManager = function() {
+    const modal = document.getElementById('memory-manager-modal');
+    if (modal) modal.classList.add('hidden');
+};
+
+window.switchMemoryTab = async function(tab) {
+    const tabProfile = document.getElementById('tab-profile');
+    const tabLogs = document.getElementById('tab-logs');
+    const viewProfile = document.getElementById('memory-view-profile');
+    const viewLogs = document.getElementById('memory-view-logs');
+
+    if (tab === 'profile') {
+        tabProfile.classList.add('active');
+        tabLogs.classList.remove('active');
+        viewProfile.classList.remove('hidden');
+        viewLogs.classList.add('hidden');
+        await renderProfile();
+    } else {
+        tabProfile.classList.remove('active');
+        tabLogs.classList.add('active');
+        viewProfile.classList.add('hidden');
+        viewLogs.classList.remove('hidden');
+        await renderMemoryList();
+    }
+};
+
+// プロフィール描画
+window.renderProfile = async function() {
+    const container = document.getElementById('profile-container');
+    if (!container || !window.NellMemory) return;
+    container.innerHTML = '<p style="text-align:center;">読み込み中にゃ...</p>';
+
+    const profile = await window.NellMemory.getUserProfile(currentUser.id);
+    container.innerHTML = '';
+
+    if (!profile) {
+        container.innerHTML = '<p>まだデータがないにゃ。</p>';
+        return;
+    }
+
+    const createSection = (title, icon, items, key) => {
+        if (!items || items.length === 0) return '';
+        let tagsHtml = items.map((item, idx) => `
+            <div class="profile-tag">
+                ${item}
+                <button class="profile-tag-delete" onclick="deleteProfileItem('${key}', ${idx})">×</button>
+            </div>
+        `).join('');
+        return `
+            <div class="profile-section">
+                <div class="profile-title">${icon} ${title}</div>
+                <div class="profile-tags">${tagsHtml}</div>
+            </div>
+        `;
+    };
+
+    let html = "";
+    
+    // 基本情報
+    if (profile.nickname || profile.birthday) {
+        html += `<div class="profile-section"><div class="profile-title">👤 基本情報</div><div style="font-size:0.9rem; padding:5px;">`;
+        if (profile.nickname) html += `あだ名: <b>${profile.nickname}</b><br>`;
+        if (profile.birthday) html += `誕生日: <b>${profile.birthday}</b>`;
+        html += `</div></div>`;
+    }
+
+    html += createSection("好きなもの", "💖", profile.likes, "likes");
+    html += createSection("苦手なこと", "💦", profile.weaknesses, "weaknesses");
+    html += createSection("頑張ったこと", "🏆", profile.achievements, "achievements");
+    
+    if (profile.last_topic) {
+        html += `<div class="profile-section"><div class="profile-title">💬 前回の話題</div><div style="font-size:0.9rem; padding:5px; background:#f5f5f5; border-radius:5px;">${profile.last_topic}</div></div>`;
+    }
+
+    if (html === "") {
+        html = '<p style="text-align:center; color:#999;">まだ真っ白だにゃ。</p>';
+    }
+
+    container.innerHTML = html;
+};
+
+// プロフィール項目削除
+window.deleteProfileItem = async function(key, index) {
+    if (!confirm("この情報を削除するにゃ？")) return;
+    
+    const profile = await window.NellMemory.getUserProfile(currentUser.id);
+    if (profile[key] && Array.isArray(profile[key])) {
+        profile[key].splice(index, 1);
+        await window.NellMemory.saveUserProfile(currentUser.id, profile);
+        renderProfile(); // 再描画
+    }
+};
+
+window.renderMemoryList = async function() {
+    const container = document.getElementById('memory-list-container');
+    if (!container) return;
+    container.innerHTML = '<p style="text-align:center;">読み込み中にゃ...</p>';
+
+    // データの取得
+    let history = [];
+    const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
+    
+    try {
+        history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
+    } catch(e) {}
+
+    // Firestoreからも取得
+    if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) {
+        try {
+            const doc = await db.collection("memories").doc(currentUser.id).get();
+            if (doc.exists) {
+                history = doc.data().history || [];
+            }
+        } catch(e) { console.error("Memory Fetch Error:", e); }
+    }
+
+    container.innerHTML = '';
+    if (history.length === 0) {
+        container.innerHTML = '<p style="text-align:center; color:#999;">まだ会話ログがないにゃ</p>';
+        return;
+    }
+
+    // 新しい順に表示
+    for (let i = history.length - 1; i >= 0; i--) {
+        const item = history[i];
+        const div = document.createElement('div');
+        div.className = 'memory-item';
+        
+        const roleLabel = item.role === 'user' ? 'キミ' : 'ネル先生';
+        const roleClass = item.role === 'user' ? 'memory-role-user' : 'memory-role-nell';
+        
+        div.innerHTML = `
+            <div style="flex:1;">
+                <div class="memory-meta ${roleClass}">${roleLabel} (${new Date(item.time).toLocaleTimeString()})</div>
+                <div class="memory-text">${item.text}</div>
+            </div>
+            <button onclick="deleteMemoryItem(${i})" class="delete-mem-btn">削除</button>
+        `;
+        container.appendChild(div);
+    }
+};
+
+window.deleteMemoryItem = async function(index) {
+    if (!confirm("このログを削除するにゃ？")) return;
+    
+    const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
+    let history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
+    
+    if (index >= 0 && index < history.length) {
+        history.splice(index, 1);
+    }
+    
+    localStorage.setItem(memoryKey, JSON.stringify(history));
+    
+    if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) {
+        try {
+            await db.collection("memories").doc(currentUser.id).set({
+                history: history,
+                lastUpdated: new Date().toISOString()
+            }, { merge: true });
+        } catch(e) { console.error("Memory Delete Sync Error:", e); }
+    }
+
+    renderMemoryList();
+};
