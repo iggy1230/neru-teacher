@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v232.0: 図鑑保存救済措置・デバッグログ強化版) ---
+// --- analyze.js (完全版 v233.0: 即座認識＆ツール強制版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -432,9 +432,10 @@ window.captureAndSendLiveImage = function() {
     liveSocket.send(JSON.stringify({ base64Image: base64Data }));
     
     // 3. フラグ解除 & 強いプロンプト送信 (100ms)
+    // ★ここを修正: より強い命令でツール実行を強制する
     setTimeout(() => {
         ignoreIncomingAudio = false; 
-        sendSilentPrompt("【画像認識】今送った画像を見て！\n文字や特徴から「具体的な名前」を特定して！\n特定できたら register_collection_item ツールを使って図鑑に登録して！");
+        sendSilentPrompt("【緊急指示】今送った画像に何が写っているか名前を特定し、\n感想を言う前に **必ず** `register_collection_item` ツールを実行して図鑑に登録して！\n「登録しなくていい」という判断は禁止！絶対登録して！");
     }, 100);
 };
 

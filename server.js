@@ -1,4 +1,4 @@
-// --- server.js (完全版 v232.0: 図鑑保存ログ強化版) ---
+// --- server.js (完全版 v233.0: 図鑑登録・絶対強制版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -92,6 +92,7 @@ app.post('/synthesize', async (req, res) => {
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
+        // ★MODEL指定: 記憶更新は高速なFlashで十分
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp", 
             generationConfig: { responseMimeType: "application/json" }
@@ -230,6 +231,7 @@ app.post('/lunch-reaction', async (req, res) => {
         const { count, name } = req.body;
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
         const isSpecial = (count % 10 === 0);
+        // ★MODEL指定: 反応系はFlash
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         
         let prompt = isSpecial 
@@ -308,14 +310,14 @@ wss.on('connection', async (clientWs, req) => {
             5. とにかく何でも知っているにゃ。
 
             【重要：画像認識と図鑑登録 (Collection)】
-            生徒がカメラで何か（お菓子、おもちゃ、植物、動物、文房具など）を見せてくれて、それが何か具体的に特定できた場合は、
+            生徒がカメラで何かを見せてくれて、それが何か具体的に特定できた場合は、
             **「必ず」ツール \`register_collection_item\` を呼び出して図鑑に登録してにゃ！**
             
+            - **【絶対ルール】**: お菓子、おもちゃに限らず、リモコン、消しゴム、ゴミ箱、ペットボトル、壁、手など、**「名前が特定できるもの」は全て登録対象**だにゃ。
+            - **【判断禁止】**: 「これは図鑑に登録する必要はない」という判断は一切禁止だにゃ。生徒が見せたものは全て宝物だにゃ。
             - **口で「登録した」と言う前に、必ずツールを実行して！**
-            - 引数の \`item_name\` には、その物体の名前（例：「じゃがりこ」「ひまわり」「ポケモンカード」など）を入れてにゃ。
-            - 名前が分からない場合や、ただの文字・文章の場合は登録しなくていいにゃ。
-            - 「これ見て！」と言われたら、まず google_search で調べて、特定できたら register_collection_item を呼ぶのが黄金パターンだにゃ。
-            - **【絶対厳守】** 勝手な想像で「○○のキャラだ」と言わないこと！
+            - 引数の \`item_name\` には、その物体の名前（例：「テレビのリモコン」「じゃがりこ」「自分の手」など）を入れてにゃ。
+            - **勝手な想像で「○○のキャラだ」と言わないこと！** 文字や特徴を読んで特定して。
 
             【生徒についての記憶】
             ${statusContext}
@@ -340,7 +342,7 @@ wss.on('connection', async (clientWs, req) => {
                         parameters: {
                             type: "OBJECT",
                             properties: { 
-                                item_name: { type: "STRING", description: "Name of the item (e.g. 'Apple', 'Pocky')" } 
+                                item_name: { type: "STRING", description: "Name of the item (e.g. 'Apple', 'TV Remote')" } 
                             },
                             required: ["item_name"]
                         }
