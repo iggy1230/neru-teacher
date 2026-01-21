@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v242.0: 応答ブロック解除・即時反応版) ---
+// --- analyze.js (完全版 v243.0: 欠落補完・即時反応版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -356,15 +356,12 @@ function sendSilentPrompt(text) {
 // 6. 「これ見て！」カメラ機能 & 音声割り込み
 // ==========================================
 
-// ★完全停止処理: 全ての音声ソースを抹殺し、タイミングをリセットする
 function stopAudioPlayback() {
     liveAudioSources.forEach(source => {
         try { source.stop(); } catch(e){}
     });
     liveAudioSources = []; 
 
-    // ★重要修正: 再生スケジュール時刻を「現在」にリセットする
-    // これにより、次に届く音声が「未来の予定」として待たされるのを防ぐ
     if (audioContext && audioContext.state === 'running') {
         nextStartTime = audioContext.currentTime; 
     }
@@ -388,9 +385,7 @@ window.captureAndSendLiveImage = function() {
 
     // 1. 強制的に全音声を停止
     stopAudioPlayback();
-    
-    // ★重要修正: AIの音声をブロックしない！
-    // ignoreIncomingAudio = true;  <-- これを削除。AIの即答を聞き逃さないようにする。
+    // 2. 音声をブロックしない (即座に反応を聞くため)
     ignoreIncomingAudio = false; 
 
     const canvas = document.createElement('canvas');
@@ -399,7 +394,7 @@ window.captureAndSendLiveImage = function() {
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     
-    // ★図鑑用にサムネイルを作成してキャッシュ
+    // 図鑑用にサムネイルを作成してキャッシュ
     const thumbCanvas = document.createElement('canvas');
     const thumbSize = 150; 
     let tw = canvas.width, th = canvas.height;
@@ -438,16 +433,17 @@ window.captureAndSendLiveImage = function() {
 
     updateNellMessage("ん？どれどれ…", "thinking", false, false);
     
-    // ★画像送信 (ここでAIは既に処理を開始する)
+    // ★画像データを送信 (即座に)
     liveSocket.send(JSON.stringify({ base64Image: base64Data }));
 
-    // 少し待ってから、ユニークなID付きでテキスト指示を送る
-    // これはAIへの「念押し」であり、画像認識のトリガーではない
+    // ★重要: 画像送信の0.3秒後に、「ユーザーが発言した」ことにする指示データを送る
     setTimeout(() => {
         if (recognition) { try { recognition.start(); } catch(e){} }
+        
         const ts = Date.now(); 
+        // 毎回異なるIDをつけることで、AIに新しい命令として認識させる
         sendSilentPrompt(`【緊急画像認識指示 ID:${ts}】\nたった今、画像を送ったにゃ。\nこの画像に写っているものを特定して、感想を言う前に **必ず** \`register_collection_item\` ツールを実行して！\n「登録した」と嘘をつくのは禁止！`);
-    }, 200); 
+    }, 300); 
 };
 
 // ==========================================
@@ -1083,26 +1079,23 @@ async function startMicrophone() {
 }
 
 // ==========================================
-// ★ 以下、前回欠落していた重要関数群を復元
+// ★ 前回欠落していた重要関数群を復元
 // ==========================================
 
-// ★完全停止処理: 全ての音声ソースを抹殺する
 function stopAudioPlayback() {
-    // スケジュールされているすべてのWebSocket音声を停止
     liveAudioSources.forEach(source => {
         try { source.stop(); } catch(e){}
     });
-    liveAudioSources = []; // 配列クリア
+    liveAudioSources = []; 
 
     if (audioContext && audioContext.state === 'running') {
-        // 現在時刻より少し先を指定して、バッファに残った音声を無効化
-        nextStartTime = audioContext.currentTime + 0.05;
+        nextStartTime = audioContext.currentTime; 
     }
+    
     window.isNellSpeaking = false;
     if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer);
     if(speakingStartTimer) clearTimeout(speakingStartTimer);
 
-    // TTSが鳴っていた場合も強制キャンセル
     if (window.cancelNellSpeech) window.cancelNellSpeech();
 }
 
@@ -1123,7 +1116,6 @@ function playLivePcmAudio(base64) {
     source.buffer = buffer; 
     source.connect(audioContext.destination); 
     
-    // ★管理配列に追加
     liveAudioSources.push(source);
     source.onended = () => {
         liveAudioSources = liveAudioSources.filter(s => s !== source);
@@ -1147,7 +1139,7 @@ function floatTo16BitPCM(float32Array) { const buffer = new ArrayBuffer(float32A
 function downsampleBuffer(buffer, sampleRate, outSampleRate) { if (outSampleRate >= sampleRate) return buffer; const ratio = sampleRate / outSampleRate; const newLength = Math.round(buffer.length / ratio); const result = new Float32Array(newLength); let offsetResult = 0, offsetBuffer = 0; while (offsetResult < result.length) { const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio); let accum = 0, count = 0; for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) { accum += buffer[i]; count++; } result[offsetResult] = accum / count; offsetResult++; offsetBuffer = nextOffsetBuffer; } return result; }
 function arrayBufferToBase64(buffer) { let binary = ''; const bytes = new Uint8Array(buffer); for (let i = 0; i < bytes.byteLength; i++) { binary += String.fromCharCode(bytes[i]); } return window.btoa(binary); }
 
-// ★エラーの原因だった関数
+// ★エラーの原因だった関数をここに復元
 function updateMiniKarikari() { if(currentUser) { const el = document.getElementById('mini-karikari-count'); if(el) el.innerText = currentUser.karikari; const el2 = document.getElementById('karikari-count'); if(el2) el2.innerText = currentUser.karikari; } }
 
 function showKarikariEffect(amount) { const container = document.querySelector('.nell-avatar-wrap'); if(container) { const floatText = document.createElement('div'); floatText.className = 'floating-text'; floatText.innerText = amount > 0 ? `+${amount}` : `${amount}`; floatText.style.color = amount > 0 ? '#ff9100' : '#ff5252'; floatText.style.right = '0px'; floatText.style.top = '0px'; container.appendChild(floatText); setTimeout(() => floatText.remove(), 1500); } }
