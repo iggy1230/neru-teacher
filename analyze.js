@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v230.0: 図鑑機能統合・全機能統合版) ---
+// --- analyze.js (完全版 v232.0: 図鑑保存救済措置・デバッグログ強化版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -162,7 +162,7 @@ async function saveToNellMemory(role, text) {
     ];
     if (trimmed.length <= 1 || ignoreWords.includes(trimmed)) return;
     
-    console.log(`【Memory】ログ追加: [${role}] ${trimmed}`);
+    // console.log(`【Memory】ログ追加: [${role}] ${trimmed}`);
     chatTranscript += `${role === 'user' ? '生徒' : 'ネル'}: ${trimmed}\n`;
 
     const newItem = { role: role, text: trimmed, time: new Date().toISOString() };
@@ -397,6 +397,9 @@ window.captureAndSendLiveImage = function() {
     thumbCanvas.width = tw; thumbCanvas.height = th;
     thumbCanvas.getContext('2d').drawImage(canvas, 0, 0, tw, th);
     window.lastSentCollectionImage = thumbCanvas.toDataURL('image/jpeg', 0.7);
+
+    // デバッグログ
+    console.log("[Collection] Snapshot captured and cached.", window.lastSentCollectionImage ? "OK" : "Error");
 
     const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
     
@@ -836,22 +839,61 @@ async function startLiveChat() {
                 if (rawData instanceof Blob) rawData = await rawData.text();
                 const data = JSON.parse(rawData);
 
-                // ★追加: 図鑑登録指令の受信処理
+                // ★追加: 図鑑登録指令の受信処理 (完全版 v232.0 救済措置付き)
                 if (data.type === "save_to_collection") {
-                    console.log(`[Collection] Saving item: ${data.itemName}`);
-                    if (window.lastSentCollectionImage) {
-                        await window.NellMemory.addToCollection(currentUser.id, data.itemName, window.lastSentCollectionImage);
-                        
-                        // UI通知
-                        const notif = document.createElement('div');
-                        notif.innerText = `📖 図鑑に「${data.itemName}」を追加したにゃ！`;
-                        notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:3px solid #ff85a1; padding:15px; border-radius:30px; font-weight:bold; color:#d81b60; z-index:10000; box-shadow:0 5px 15px rgba(0,0,0,0.3); animation: popIn 0.5s ease;";
-                        document.body.appendChild(notif);
-                        setTimeout(() => notif.remove(), 3000);
-                        
-                        try{ sfxHirameku.play(); } catch(e){} 
+                    console.log(`[Collection] 📥 Save command received for: ${data.itemName}`);
+                    
+                    let imageToSave = window.lastSentCollectionImage;
+
+                    // ★ 救済措置: キャッシュがない場合、現在の映像からキャプチャを試みる
+                    if (!imageToSave) {
+                        console.warn("[Collection] ⚠️ No cached image! Trying to capture current frame...");
+                        const v = document.getElementById('live-chat-video');
+                        if (v && v.srcObject && v.srcObject.active) {
+                            const c = document.createElement('canvas');
+                            c.width = 150; c.height = 150; // サムネイルサイズ
+                            // 簡易的な中央切り抜きでキャプチャ
+                            const vw = v.videoWidth || 640;
+                            const vh = v.videoHeight || 480;
+                            const size = Math.min(vw, vh);
+                            const sx = (vw - size) / 2;
+                            const sy = (vh - size) / 2;
+                            c.getContext('2d').drawImage(v, sx, sy, size, size, 0, 0, 150, 150);
+                            imageToSave = c.toDataURL('image/jpeg', 0.7);
+                            console.log("[Collection] 📸 Captured fallback image.");
+                        }
+                    }
+
+                    if (imageToSave) {
+                        try {
+                            await window.NellMemory.addToCollection(currentUser.id, data.itemName, imageToSave);
+                            console.log("[Collection] ✅ Saved to memory successfully.");
+                            
+                            // UI通知（リッチなポップアップ）
+                            const notif = document.createElement('div');
+                            notif.innerText = `📖 図鑑に「${data.itemName}」を登録したにゃ！`;
+                            notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #00bcd4; color:#006064; padding:15px 25px; border-radius:30px; font-weight:900; z-index:10000; box-shadow:0 10px 25px rgba(0,0,0,0.3); font-size:1.2rem; animation: popIn 0.5s ease;";
+                            document.body.appendChild(notif);
+                            setTimeout(() => notif.remove(), 4000);
+                            
+                            try{ sfxHirameku.currentTime=0; sfxHirameku.play(); } catch(e){} 
+                        } catch (err) {
+                            console.error("[Collection] ❌ Memory save failed:", err);
+                            // ユーザーへのエラー通知
+                            const errNotif = document.createElement('div');
+                            errNotif.innerText = `保存に失敗したにゃ...\n${err.message}`;
+                            errNotif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:#ffcdd2; border:2px solid #ef5350; color:#b71c1c; padding:10px; border-radius:10px; z-index:10000;";
+                            document.body.appendChild(errNotif);
+                            setTimeout(() => errNotif.remove(), 4000);
+                        }
                     } else {
-                        console.warn("[Collection] No image cached to save.");
+                        console.error("[Collection] ❌ No image available to save.");
+                        // 画像が見つからない場合のエラー通知
+                        const errNotif = document.createElement('div');
+                        errNotif.innerText = "画像が見つからなくて登録できなかったにゃ...";
+                        errNotif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:#ffe0b2; border:2px solid #ff9800; color:#e65100; padding:10px; border-radius:10px; z-index:10000;";
+                        document.body.appendChild(errNotif);
+                        setTimeout(() => errNotif.remove(), 4000);
                     }
                     return; 
                 }

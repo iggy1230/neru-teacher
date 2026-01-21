@@ -1,4 +1,4 @@
-// --- server.js (完全版 v231.0: AIモデル厳格固定版) ---
+// --- server.js (完全版 v232.0: 図鑑保存ログ強化版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -92,7 +92,6 @@ app.post('/synthesize', async (req, res) => {
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
-        // ★MODEL指定: 記憶更新は高速なFlashで十分
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp", 
             generationConfig: { responseMimeType: "application/json" }
@@ -151,7 +150,7 @@ app.post('/update-memory', async (req, res) => {
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, name } = req.body;
-        // ★MODEL指定: 宿題分析は最高精度のProを使用
+        // ★MODEL指定: 宿題分析は最高精度のPro
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.5-pro", 
             generationConfig: { responseMimeType: "application/json", temperature: 0.0 }
@@ -231,7 +230,6 @@ app.post('/lunch-reaction', async (req, res) => {
         const { count, name } = req.body;
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
         const isSpecial = (count % 10 === 0);
-        // ★MODEL指定: 反応系はFlash
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         
         let prompt = isSpecial 
@@ -255,7 +253,6 @@ app.post('/lunch-reaction', async (req, res) => {
 app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;
-        // ★MODEL指定: 反応系はFlash
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         let prompt = "";
         let mood = "excited";
@@ -302,7 +299,6 @@ wss.on('connection', async (clientWs, req) => {
 
             【重要：現在の時刻設定】
             **現在は ${todayStr} です。**
-            この日付を基準に、「今年」「来年」「誕生日まであとどれくらい」などを正確に判断してください。
 
             【話し方のルール】
             1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
@@ -310,25 +306,16 @@ wss.on('connection', async (clientWs, req) => {
             3. 落ち着いた日本語のリズムを大切にして、親しみやすく話してにゃ。
             4. 給食(餌)のカリカリが大好物にゃ。
             5. とにかく何でも知っているにゃ。
-            6. 句読点で少し間をとる。
-
-            【重要：話題提供と沈黙の扱い】
-            - **ユーザーが話さないとき**: ずっと黙っている必要はないにゃ。
-            - **適度に話題を振る**: 生徒の記憶データに基づいて話しかけてにゃ。
-            - **頻度制限**: 「今日の給食」「宿題」は、しつこく聞かないで。
 
             【重要：画像認識と図鑑登録 (Collection)】
             生徒がカメラで何か（お菓子、おもちゃ、植物、動物、文房具など）を見せてくれて、それが何か具体的に特定できた場合は、
-            **必ずツール \`register_collection_item\` を使って図鑑に登録してにゃ！**
+            **「必ず」ツール \`register_collection_item\` を呼び出して図鑑に登録してにゃ！**
             
+            - **口で「登録した」と言う前に、必ずツールを実行して！**
             - 引数の \`item_name\` には、その物体の名前（例：「じゃがりこ」「ひまわり」「ポケモンカード」など）を入れてにゃ。
             - 名前が分からない場合や、ただの文字・文章の場合は登録しなくていいにゃ。
             - 「これ見て！」と言われたら、まず google_search で調べて、特定できたら register_collection_item を呼ぶのが黄金パターンだにゃ。
             - **【絶対厳守】** 勝手な想像で「○○のキャラだ」と言わないこと！
-
-            【NGなこと】
-            - ユーザーが何も言っていないのに、勝手な想像で「これは○○のアニメキャラだ」と決めつけること（ハルシネーション）。
-            - 早口になりすぎて、言葉の一部が消えてしまうこと。
 
             【生徒についての記憶】
             ${statusContext}
@@ -347,7 +334,7 @@ wss.on('connection', async (clientWs, req) => {
                         }
                     },
                     {
-                        // ★追加: 図鑑登録用ツール
+                        // ★図鑑登録用ツール
                         name: "register_collection_item",
                         description: "Register the identified item to the user's picture book collection.",
                         parameters: {
@@ -408,7 +395,7 @@ wss.on('connection', async (clientWs, req) => {
                             // ▼ 図鑑登録ツールの呼び出しを検知
                             if (part.functionCall.name === "register_collection_item") {
                                 const itemName = part.functionCall.args.item_name;
-                                console.log(`[Collection] AI requested to save: ${itemName}`);
+                                console.log(`[Collection] 🤖 AI Tool Called: register_collection_item for "${itemName}"`);
                                 
                                 // クライアントに「さっきの画像をこの名前で保存して！」と指令を送る
                                 if (clientWs.readyState === WebSocket.OPEN) {
@@ -416,9 +403,10 @@ wss.on('connection', async (clientWs, req) => {
                                         type: "save_to_collection",
                                         itemName: itemName
                                     }));
+                                    console.log(`[Collection] 📤 Sent save_to_collection command to client.`);
                                 }
                                 
-                                // Geminiに「保存したよ」と結果を返す（会話を続けるため）
+                                // Geminiに「保存したよ」と結果を返す
                                 geminiWs.send(JSON.stringify({
                                     toolResponse: {
                                         functionResponses: [{
