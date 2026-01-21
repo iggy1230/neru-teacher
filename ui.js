@@ -1,4 +1,4 @@
-// --- ui.js (完全版 v225.0: 図鑑機能搭載版) ---
+// --- ui.js (完全版 v198.0) ---
 
 const sfxChime = new Audio('Jpn_sch_chime.mp3');
 const sfxBtn = new Audio('botan1.mp3');
@@ -130,38 +130,6 @@ window.updateProgress = function(p) {
     if (bar) bar.style.width = p + '%'; 
     const txt = document.getElementById('progress-percent'); 
     if (txt) txt.innerText = Math.floor(p); 
-};
-
-// ★図鑑表示機能
-window.showCollection = async function() {
-    const grid = document.getElementById('collection-grid');
-    if (!grid) return;
-    grid.innerHTML = '<p style="grid-column:1/-1;text-align:center;">読み込み中にゃ...</p>';
-    
-    // プロフィール取得（Firestore or LocalStorage）
-    let profile = null;
-    if (window.NellMemory && typeof currentUser !== 'undefined') {
-        profile = await window.NellMemory.getUserProfile(currentUser.id);
-    }
-    
-    grid.innerHTML = "";
-    
-    if (!profile || !profile.collection || profile.collection.length === 0) {
-        grid.innerHTML = '<p style="grid-column:1/-1;text-align:center;color:#666;">まだ何もないにゃ。<br>個別指導で「これ見て！」してにゃ。</p>';
-        return;
-    }
-    
-    // 新しい順に表示
-    [...profile.collection].reverse().forEach(item => {
-        const div = document.createElement('div');
-        div.className = 'zukan-item';
-        div.innerHTML = `
-            <img src="${item.image}">
-            <div class="zukan-name">${item.name}</div>
-            <div class="zukan-date">${item.date}</div>
-        `;
-        grid.appendChild(div);
-    });
 };
 
 // 効果音 & AudioContext初期化
