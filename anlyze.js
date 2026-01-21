@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v221.0: 割り込み検知・緩和版) ---
+// --- anlyze.js (完全版 v223.0: 統合・安定版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -31,7 +31,7 @@ let connectionTimeout = null;
 let recognition = null;
 let isRecognitionActive = false;
 
-// 音声ソース管理（二重音声防止用）
+// ★音声ソース管理（二重音声防止用）
 let liveAudioSources = []; 
 let ignoreIncomingAudio = false;
 let currentLiveAudioSource = null;
@@ -111,6 +111,7 @@ async function startHomeworkWebcam() {
     const modal = document.getElementById('camera-modal');
     const video = document.getElementById('camera-video');
     const shutter = document.getElementById('camera-shutter-btn');
+    const cancel = document.getElementById('camera-cancel-btn');
     if (!modal || !video) return;
     try {
         let constraints = { video: { facingMode: "environment" } };
@@ -133,7 +134,7 @@ async function startHomeworkWebcam() {
                 }
             }, 'image/jpeg', 0.9);
         };
-        document.getElementById('camera-cancel-btn').onclick = closeHomeworkCamera;
+        cancel.onclick = closeHomeworkCamera;
     } catch (err) { alert("カメラエラー: " + err.message); closeHomeworkCamera(); }
 }
 function closeHomeworkCamera() {
@@ -158,6 +159,7 @@ async function saveToNellMemory(role, text) {
     ];
     if (trimmed.length <= 1 || ignoreWords.includes(trimmed)) return;
     
+    // ログ保存
     console.log(`【Memory】ログ追加: [${role}] ${trimmed}`);
     chatTranscript += `${role === 'user' ? '生徒' : 'ネル'}: ${trimmed}\n`;
 
@@ -184,7 +186,7 @@ async function saveToNellMemory(role, text) {
 }
 
 window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false, speak = true) {
-    // Live Chat中はTTSを再生しない
+    // Live Chat(WebSocket)接続中は、絶対にTTSを再生しない。
     if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
         speak = false;
     }
@@ -341,22 +343,28 @@ function sendSilentPrompt(text) {
 }
 
 // ==========================================
-// 6. 「これ見て！」カメラ機能 & 音声割り込み
+// 6. 「これ見て！」カメラ機能 (完全停止・高速指示)
 // ==========================================
 
-// 完全停止処理: 全ての音声ソースを抹殺する
+// 音声の完全停止（バージイン・TTS込み）
 function stopAudioPlayback() {
+    // WebSocket音声を停止
     liveAudioSources.forEach(source => {
         try { source.stop(); } catch(e){}
     });
     liveAudioSources = []; 
 
+    // オーディオコンテキストのキューをクリア（擬似的）
     if (audioContext && audioContext.state === 'running') {
         nextStartTime = audioContext.currentTime + 0.05;
     }
+    
+    // フラグとタイマーリセット
     window.isNellSpeaking = false;
     if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer);
     if(speakingStartTimer) clearTimeout(speakingStartTimer);
+
+    // TTSが鳴っていた場合も強制キャンセル
     if (window.cancelNellSpeech) window.cancelNellSpeech();
 }
 
@@ -370,7 +378,7 @@ window.captureAndSendLiveImage = function() {
         return alert("カメラが動いてないにゃ...。一度「おはなしする」を終了して、もう一度つなぎ直してみてにゃ。");
     }
 
-    // 強制停止＆受信拒否
+    // 1. 強制的に全音声を停止し、フラグを立てる
     stopAudioPlayback();
     ignoreIncomingAudio = true; 
     
@@ -381,13 +389,12 @@ window.captureAndSendLiveImage = function() {
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
     
-    // フラッシュ演出
+    // 視覚エフェクト
     const flash = document.createElement('div');
     flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;";
     document.body.appendChild(flash);
     setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
 
-    // プレビュー表示
     const videoContainer = document.getElementById('live-chat-video-container');
     if (videoContainer) {
         const oldPreview = document.getElementById('snapshot-preview-overlay');
@@ -407,13 +414,14 @@ window.captureAndSendLiveImage = function() {
 
     updateNellMessage("ん？どれどれ…", "thinking", false, false);
     
+    // 2. 画像送信
     liveSocket.send(JSON.stringify({ base64Image: base64Data }));
     
-    // フラグ解除 & 強いプロンプト送信
+    // 3. フラグ解除 & 強いプロンプト送信 (100ms: 高速化)
     setTimeout(() => {
         ignoreIncomingAudio = false; 
-        sendSilentPrompt("【緊急指示】今までの話は全て中断して、たった今送った画像「だけ」を見て！写っているのが「文字・数式」なら勉強として解説して。「物体・キャラ」なら、その正体（名前）を特定して！関係ない話はしないで！");
-    }, 800);
+        sendSilentPrompt("【緊急指示】今までの話は全て中断して、たった今送った画像「だけ」を見て！写っているのが「文字・数式」なら勉強として解説して。「物体・キャラ」なら、その正体（名前）を特定して！無言で画像が送られた場合でも、必ず特定して解説して！");
+    }, 100);
 };
 
 // ==========================================
@@ -584,6 +592,7 @@ window.showHintText = function(level) {
 
 window.revealAnswer = function() {
     const ansArea = document.getElementById('answer-display-area'); const finalTxt = document.getElementById('final-answer-text');
+    // 配列対応
     const correctArr = Array.isArray(selectedProblem.correct_answer) ? selectedProblem.correct_answer : [selectedProblem.correct_answer];
     let displayAnswer = correctArr.map(part => part.split('|')[0]).join(', ');
     if (ansArea && finalTxt) { finalTxt.innerText = displayAnswer; ansArea.classList.remove('hidden'); ansArea.style.display = "block"; }
@@ -591,12 +600,16 @@ window.revealAnswer = function() {
     updateNellMessage(`答えは「${displayAnswer}」だにゃ！`, "gentle", false); 
 };
 
+// --- リスト生成 (配列対応版) ---
 function createProblemItem(p, mode) {
     const isGradeMode = (mode === 'grade');
     let markHtml = "", bgStyle = "background:white;";
+    
     let correctList = Array.isArray(p.correct_answer) ? p.correct_answer : [String(p.correct_answer)];
     correctList = correctList.map(s => String(s).trim()).filter(s => s !== ""); 
+
     let studentList = Array.isArray(p.student_answer) ? p.student_answer : [String(p.student_answer)];
+    
     if (isGradeMode) {
         let isCorrect = p.is_correct;
         if (isCorrect === undefined) { 
@@ -613,7 +626,9 @@ function createProblemItem(p, mode) {
     } else {
         markHtml = `<div id="mark-${p.id}" style="font-weight:900; color:#4a90e2; font-size:2rem; width:50px; text-align:center; flex-shrink:0;"></div>`;
     }
+    
     let inputHtml = "";
+    
     if (correctList.length > 1) {
         inputHtml = `<div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px; width:100%;">`;
         for (let i = 0; i < correctList.length; i++) {
@@ -628,6 +643,7 @@ function createProblemItem(p, mode) {
         const idAttr = isGradeMode ? "" : `id="single-input-${p.id}"`;
         inputHtml = `<div style="width:100%;"><input type="text" ${idAttr} value="${val}" ${onInput} style="width:100%; padding:8px; border:2px solid #ddd; border-radius:8px; font-size:1rem; font-weight:bold; color:#333; box-sizing:border-box;"></div>`;
     }
+
     let buttonsHtml = "";
     if (isGradeMode) {
         buttonsHtml = `<div style="display:flex; flex-direction:column; gap:5px; width:80px; flex-shrink:0; justify-content:center; margin-left:auto;"><button class="mini-teach-btn" onclick="startHint(${p.id})" style="width:100%;">教えて</button></div>`;
@@ -657,6 +673,7 @@ window.renderProblemSelection = function() {
     const btn = document.querySelector('#problem-selection-view button.orange-btn'); if (btn) { btn.disabled = false; btn.innerText = "✨ ぜんぶわかったにゃ！"; } 
 };
 
+// --- 採点ロジック (配列対応) ---
 function normalizeAnswer(str) { if (!str) return ""; let normalized = str.trim().replace(/[\u30a1-\u30f6]/g, m => String.fromCharCode(m.charCodeAt(0) - 0x60)); return normalized; }
 function isMatch(student, correctString) { const s = normalizeAnswer(student); const options = normalizeAnswer(correctString).split('|'); return options.some(opt => opt === s); }
 
@@ -676,6 +693,7 @@ function _performCheckMultiAnswer(id) {
     const problem = transcribedProblems.find(p => p.id === id); if (!problem) return;
     const userValues = problem.student_answer; 
     const correctList = Array.isArray(problem.correct_answer) ? problem.correct_answer : [problem.correct_answer];
+    
     let allCorrect = false;
     if (userValues.length === correctList.length) {
         const usedIndices = new Set(); let matchCount = 0;
@@ -715,8 +733,10 @@ function _performCheckAnswerDynamically(id, val) {
 
 window.checkOneProblem = function(id) { 
     const problem = transcribedProblems.find(p => p.id === id); if (!problem) return; 
+    
     const correctList = Array.isArray(problem.correct_answer) ? problem.correct_answer : [problem.correct_answer];
     let userValues = []; 
+    
     if (correctList.length > 1) { 
         const inputs = document.querySelectorAll(`.multi-input-${id}`); 
         userValues = Array.from(inputs).map(i => i.value); 
@@ -724,6 +744,7 @@ window.checkOneProblem = function(id) {
         const input = document.getElementById(`single-input-${id}`); 
         if(input) userValues = [input.value]; 
     } 
+    
     let isCorrect = false; 
     if (userValues.length === correctList.length) { 
         const usedIndices = new Set(); let matchCount = 0; 
@@ -838,7 +859,7 @@ async function startLiveChat() {
 }
 
 function stopLiveChat() { 
-    // ★会話終了時に記憶を更新する
+    // ★追加: 会話終了時に記憶を更新する
     if (window.NellMemory) {
         if (chatTranscript && chatTranscript.length > 10) {
             console.log(`【Memory】更新開始 (ログ長: ${chatTranscript.length})`);
@@ -964,6 +985,7 @@ async function startMicrophone() {
 
 // ★完全停止処理: 全ての音声ソースを抹殺する
 function stopAudioPlayback() {
+    // スケジュールされているすべてのWebSocket音声を停止
     liveAudioSources.forEach(source => {
         try { source.stop(); } catch(e){}
     });

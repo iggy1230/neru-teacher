@@ -1,4 +1,4 @@
-// --- server.js (完全版 v222.0: 記憶要約力・強化版) ---
+// --- server.js (完全版 v223.0: 現在日時認識 & 無言画像対策版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -88,7 +88,7 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- Memory Update (要約機能強化版) ---
+// --- Memory Update (配列対応版) ---
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
@@ -108,18 +108,15 @@ app.post('/update-memory', async (req, res) => {
         ${chatLog}
 
         【更新ルール】
-        1. **birthday**: 会話内で誕生日や年齢が出たら記録（例: "5月5日"）。
-        2. **likes**: 新しく判明した好きなものを追加。
+        1. **birthday**: 会話内で誕生日や年齢が出たら記録（例: "5月5日", "10歳"）。
+        2. **likes**: 新しく判明した好きなものがあれば追加。
         3. **weaknesses**: 苦手なこと、つまづいたことを追加。
         4. **achievements**: 頑張ったこと、褒められたことを記録。
-        
-        5. **last_topic (最後の話題) ※最重要修正**: 
+        5. **last_topic (最後の話題)**: 
            - 単語だけでなく、**「どんな会話をしたか」が分かるように要約**して記録してください。
            - 質問があった場合は、「何の質問をして、どういう回答を得たか」を含めてください。
-           - **悪い例**: "2026年", "サッカー"
-           - **良い例**: "2026年のJリーグ開幕日について質問し、教えてもらった", "お菓子の『じゃがりこ』のパッケージを見せて盛り上がった"
-
-        6. **出力形式**: 必ず単体のJSONオブジェクトで出力すること（配列禁止）。
+           - 例: "2026年のJリーグ開幕日について質問し、教えてもらった", "お菓子の『じゃがりこ』のパッケージを見せて盛り上がった"
+        6. **【重要】出力は必ず「単体のJSONオブジェクト」にすること。配列（リスト）にしてはいけません。**
 
         【出力フォーマット】
         {
@@ -285,6 +282,11 @@ wss.on('connection', async (clientWs, req) => {
     const name = decodeURIComponent(params.name || "生徒");
     const statusContext = decodeURIComponent(params.context || "特になし");
 
+    // ★重要: 現在日時を取得して、AIの認識を矯正する
+    const now = new Date();
+    const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'Asia/Tokyo' };
+    const todayStr = now.toLocaleDateString('ja-JP', dateOptions);
+
     const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${process.env.GEMINI_API_KEY}`;
     
     let geminiWs = null;
@@ -293,6 +295,10 @@ wss.on('connection', async (clientWs, req) => {
         geminiWs.on('open', () => {
             const systemInstructionText = `
             あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。相手は小学${grade}年生の${name}さん。
+
+            【重要：現在の時刻設定】
+            **現在は ${todayStr} です。**
+            この日付を基準に、「今年」「来年」「誕生日まであとどれくらい」などを正確に判断してください。
 
             【話し方のルール】
             1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
@@ -304,19 +310,16 @@ wss.on('connection', async (clientWs, req) => {
 
             【重要：話題提供と沈黙の扱い】
             - **ユーザーが話さないとき**: ずっと黙っている必要はないにゃ。
-            - **適度に話題を振る**:
-              - 「そういえば、${name}さんは〇〇（プロフィールの好きなもの）が好きだったにゃ？」など、**生徒の記憶データに基づいて**話しかけてにゃ。
-            - **【頻度制限のある話題（5分に1回程度）】**: 
-              - 「今日の給食は何だったにゃ？」
-              - 「宿題は終わったかにゃ？」
-              これらの質問は、**会話が途切れて話題がない時だけにする**にゃ。しつこく言わないように注意してにゃ。
+            - **適度に話題を振る**: 生徒の記憶データに基づいて話しかけてにゃ。
+            - **【頻度制限のある話題（5分に1回程度）】**: 「今日の給食」「宿題」は、しつこく聞かないで。
             - **【禁止事項】**: さっき見せた画像の説明を、頼まれてもいないのに繰り返すのはNGだにゃ。新しい話題を振るにゃ。
 
             【重要：画像が送られた時のルール（物体認識＆検索機能）】
             1. **まず画像をよく見る**にゃ。
             2. **勉強の質問の場合**: 文字や数式があれば、今まで通り解説するにゃ。
             3. **それ以外の場合（お菓子、おもちゃ、キャラ、風景など）**:
-               - ユーザーが何も言わなくても、**画像に写っている「主役」が何か**を特定してにゃ。
+               - **ユーザーが何も言わなくても（無言でも）**、画像に写っている「主役」を特定して、解説してにゃ。
+               - 「これは何？」と聞かれた時と同じように反応してにゃ。勝手なキャラ設定を作って話し出すのは禁止だにゃ。
                - もし名前が分からない場合は、**必ず Google検索ツール (google_search) を使って調べる**にゃ。
                - 解説するときは「あ！これは○○だにゃ！知ってるにゃ！」と、**さも当然のように知っていたかのように振る舞って**解説してにゃ。「検索しました」とは言わないで。
 
