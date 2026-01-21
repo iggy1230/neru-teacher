@@ -18,6 +18,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     
     <style>
+        /* 追加のインラインスタイル（JS制御用） */
         .timer-box {
             background: #fff; border: 3px solid #ff85a1; border-radius: 15px;
             padding: 10px; margin: 10px 0; text-align: center;
@@ -62,7 +63,7 @@
             <div class="title-btn-container">
                 <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
             </div>
-            <div class="version-tag">Build: v218.0-Stable</div>
+            <div class="version-tag">Build: v225.0-Stable</div>
         </section>
 
         <!-- 1. 校門 (ユーザー選択) -->
@@ -124,6 +125,10 @@
                 <button onclick="showGame()" class="main-btn yellow-btn">🎮 カリカリ・キャッチ</button>
                 <button onclick="selectMode('simple-chat')" class="main-btn green-btn">🎤 こじんめんだん</button>
                 <button onclick="selectMode('chat')" class="main-btn" style="background:#5c6bc0; box-shadow: 0 4px 0 #3949ab;">👩‍🏫 ネル先生の個別指導</button>
+                
+                <!-- 図鑑ボタン -->
+                <button onclick="selectMode('collection')" class="main-btn" style="background:#8bc34a; box-shadow:0 4px 0 #689f38;">📖 ネル先生に見せたもの図鑑</button>
+                
                 <button onclick="selectMode('lunch')" class="main-btn pink-btn">🍽️ おいしい給食</button>
                 <button onclick="showAttendance()" class="main-btn purple-btn">📅 出席簿をみる</button>
                 <button onclick="openMemoryManager()" class="main-btn gray-btn" style="background:#607d8b; border:none; box-shadow:0 4px 0 #455a64;">🧠 記憶を整理する</button>
@@ -284,6 +289,13 @@
                 <div id="attendance-grid" class="attendance-grid"></div>
             </div>
             <button onclick="backToLobby()" class="main-btn pink-btn" style="margin-top:20px;">教室にもどる</button>
+        </section>
+
+        <!-- 7. 図鑑画面 (New) -->
+        <section id="screen-collection" class="screen hidden">
+            <h2 class="section-title">📖 見せたもの図鑑</h2>
+            <div id="collection-grid" class="zukan-grid"></div>
+            <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">ロビーに戻る</button>
         </section>
     </div>
 

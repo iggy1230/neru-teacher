@@ -1,4 +1,4 @@
-// --- memory.js (v219.0: データ構造自動修復版) ---
+// --- memory.js (v225.0: 図鑑データ対応版) ---
 
 (function(global) {
     const Memory = {};
@@ -11,7 +11,8 @@
             likes: [],
             weaknesses: [],
             achievements: [],
-            last_topic: ""
+            last_topic: "",
+            collection: [] // ★追加: 図鑑データ
         };
     };
 
@@ -37,18 +38,21 @@
             } catch {}
         }
 
-        // ★修正: 配列で保存されてしまっていた場合のリカバリー
+        // 配列リカバリー
         if (Array.isArray(profile)) {
-            console.warn("【Memory】配列形式のプロフィールを検出。オブジェクトに変換します。");
             profile = profile[0];
         }
 
-        return profile || Memory.createEmptyProfile();
+        // ★追加: 既存ユーザーにcollectionがない場合の補完
+        const defaultProfile = Memory.createEmptyProfile();
+        if (!profile) return defaultProfile;
+        if (!profile.collection) profile.collection = [];
+
+        return profile;
     };
 
     // プロフィールを保存
     Memory.saveUserProfile = async function(userId, profile) {
-        // ★修正: 保存前に必ずオブジェクトであることを確認
         if (Array.isArray(profile)) {
             profile = profile[0] || Memory.createEmptyProfile();
         }
@@ -62,57 +66,40 @@
         }
     };
 
-    // サーバーに要約を依頼して更新する
+    // サーバー更新用（変更なし）
     Memory.updateProfileFromChat = async function(userId, chatLog) {
-        if (!chatLog || chatLog.length < 10) {
-            console.log("【Memory】会話が短すぎるため更新スキップ");
-            return;
-        }
-
+        if (!chatLog || chatLog.length < 10) return;
         const currentProfile = await Memory.getUserProfile(userId);
-
         try {
-            console.log("🧠 記憶の更新リクエスト送信中...");
             const res = await fetch('/update-memory', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    currentProfile: currentProfile,
-                    chatLog: chatLog
-                })
+                body: JSON.stringify({ currentProfile, chatLog })
             });
-
             if (res.ok) {
                 let newProfile = await res.json();
+                if (Array.isArray(newProfile)) newProfile = newProfile[0];
                 
-                // ★重要修正: AIが配列で返してきた場合、中身を取り出す
-                if (Array.isArray(newProfile)) {
-                    console.log("【Memory】AI返答が配列でした。オブジェクトに修正します。");
-                    newProfile = newProfile[0];
-                }
-
+                // ★重要: サーバーはcollectionを知らないので、上書きされないように復元する
+                newProfile.collection = currentProfile.collection || [];
+                
                 await Memory.saveUserProfile(userId, newProfile);
-                console.log("✨ 記憶が更新されたにゃ！", newProfile);
             }
-        } catch(e) {
-            console.error("Memory Update Failed:", e);
-        }
+        } catch(e) {}
     };
 
-    // ネル先生に渡す「コンテキスト文字列」を作る
+    // コンテキスト生成
     Memory.generateContextString = async function(userId) {
         const p = await Memory.getUserProfile(userId);
-        
-        console.log("【Memory】ネル先生に渡すプロフィール:", p); // デバッグ用ログ
-
         let context = "";
         if (p.nickname) context += `・あだ名: ${p.nickname}\n`;
         if (p.birthday) context += `・誕生日: ${p.birthday}\n`; 
         if (p.likes && p.likes.length > 0) context += `・好きなもの: ${p.likes.join(", ")}\n`;
-        if (p.weaknesses && p.weaknesses.length > 0) context += `・苦手なこと: ${p.weaknesses.join(", ")} (励まして！)\n`;
-        if (p.achievements && p.achievements.length > 0) context += `・最近の頑張り: ${p.achievements.join(", ")} (褒めて！)\n`;
-        if (p.last_topic) context += `・前の話題: ${p.last_topic}\n`;
-        
+        if (p.collection && p.collection.length > 0) {
+            // 直近3つのコレクションを教える
+            const recentItems = p.collection.slice(-3).map(i => i.name).join(", ");
+            context += `・最近見せてくれたもの: ${recentItems}\n`;
+        }
         return context;
     };
 
