@@ -1,4 +1,4 @@
-// --- anlyze.js (完全版 v223.0: 統合・安定版) ---
+// --- anlyze.js (完全版 v224.0: 全機能統合・安定版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -159,7 +159,6 @@ async function saveToNellMemory(role, text) {
     ];
     if (trimmed.length <= 1 || ignoreWords.includes(trimmed)) return;
     
-    // ログ保存
     console.log(`【Memory】ログ追加: [${role}] ${trimmed}`);
     chatTranscript += `${role === 'user' ? '生徒' : 'ネル'}: ${trimmed}\n`;
 
@@ -186,7 +185,7 @@ async function saveToNellMemory(role, text) {
 }
 
 window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false, speak = true) {
-    // Live Chat(WebSocket)接続中は、絶対にTTSを再生しない。
+    // ★絶対条件：Live Chat(WebSocket)接続中は、絶対にTTSを再生しない。
     if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
         speak = false;
     }
@@ -343,23 +342,21 @@ function sendSilentPrompt(text) {
 }
 
 // ==========================================
-// 6. 「これ見て！」カメラ機能 (完全停止・高速指示)
+// 6. 「これ見て！」カメラ機能 & 音声割り込み
 // ==========================================
 
-// 音声の完全停止（バージイン・TTS込み）
+// ★完全停止処理: 全ての音声ソースを抹殺する
 function stopAudioPlayback() {
-    // WebSocket音声を停止
+    // スケジュールされているすべてのWebSocket音声を停止
     liveAudioSources.forEach(source => {
         try { source.stop(); } catch(e){}
     });
-    liveAudioSources = []; 
+    liveAudioSources = []; // 配列クリア
 
-    // オーディオコンテキストのキューをクリア（擬似的）
     if (audioContext && audioContext.state === 'running') {
+        // 現在時刻より少し先を指定して、バッファに残った音声を無効化
         nextStartTime = audioContext.currentTime + 0.05;
     }
-    
-    // フラグとタイマーリセット
     window.isNellSpeaking = false;
     if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer);
     if(speakingStartTimer) clearTimeout(speakingStartTimer);
@@ -417,10 +414,10 @@ window.captureAndSendLiveImage = function() {
     // 2. 画像送信
     liveSocket.send(JSON.stringify({ base64Image: base64Data }));
     
-    // 3. フラグ解除 & 強いプロンプト送信 (100ms: 高速化)
+    // 3. フラグ解除 & 強いプロンプト送信 (100ms)
     setTimeout(() => {
         ignoreIncomingAudio = false; 
-        sendSilentPrompt("【緊急指示】今までの話は全て中断して、たった今送った画像「だけ」を見て！写っているのが「文字・数式」なら勉強として解説して。「物体・キャラ」なら、その正体（名前）を特定して！無言で画像が送られた場合でも、必ず特定して解説して！");
+        sendSilentPrompt("【緊急指示】今までの会話や、生徒の好きなものの情報は一旦すべて無視して！\nたった今送った画像に写っているものを『客観的』に見て！\n・文字やパッケージがあればそれを読んで特定して。\n・勝手にキャラクター名を当てずっぽうで言うのは絶対禁止！\n・もし分からなければ正直に「分からない」と言って。");
     }, 100);
 };
 
