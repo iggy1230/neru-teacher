@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v238.0: 音声認識監視・連続反応強化版) ---
+// --- analyze.js (完全版 v240.0: 音声エラー無視・安定動作版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -30,7 +30,7 @@ let nextStartTime = 0;
 let connectionTimeout = null;
 let recognition = null;
 let isRecognitionActive = false;
-let recognitionWatchdogTimer = null; // ★音声認識の「番犬」用
+let recognitionWatchdogTimer = null; // 音声認識の「番犬」用
 
 // ★音声ソース管理（二重音声防止用）
 let liveAudioSources = []; 
@@ -209,7 +209,14 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     if (speak && typeof speakNell === 'function') {
         let textForSpeech = displayText.replace(/【.*?】/g, "").trim();
         textForSpeech = textForSpeech.replace(/🐾/g, "");
-        if (textForSpeech.length > 0) await speakNell(textForSpeech, mood);
+        if (textForSpeech.length > 0) {
+            // ★修正: 音声再生でエラーやタイムアウトが起きても、UI処理を止めないようにcatchする
+            try {
+                await speakNell(textForSpeech, mood);
+            } catch(e) {
+                console.warn("Speech skipped/failed, but UI continues.", e);
+            }
+        }
     }
 };
 
