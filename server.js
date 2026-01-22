@@ -1,4 +1,4 @@
-// --- server.js (完全版 v250.0: 給食・ゲーム反応含む完全版) ---
+// --- server.js (完全版 v262.0: 図鑑登録ツール・全機能統合版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -130,14 +130,13 @@ app.post('/update-memory', async (req, res) => {
         const result = await model.generateContent(prompt);
         let text = result.response.text();
         
-        // ★JSONパースエラー対策
+        // JSONパースエラー対策
         text = text.replace(/```json/g, '').replace(/```/g, '').trim();
         
         let newProfile;
         try {
             newProfile = JSON.parse(text);
         } catch (e) {
-            console.error("JSON Parse failed, attempting cleanup:", text);
             const match = text.match(/\{[\s\S]*\}/);
             if (match) {
                 newProfile = JSON.parse(match[0]);
@@ -324,27 +323,48 @@ wss.on('connection', async (clientWs, req) => {
                 4. 給食(餌)のカリカリが大好物にゃ。
                 5. とにかく何でも知っているにゃ。
 
-                【最重要：図鑑登録の絶対ルール】
+                【最重要：図鑑登録のルール】
                 ユーザーから画像が送信された場合（Image Chunkを受信した場合）：
-                1. **画像の特定**: 画像内の物体を客観的に特定し、「これは〇〇だにゃ！」と明るく反応してください。
-                2. **【タグ出力】**: 感想を言った直後に、**必ず** 以下の形式でアイテム名を発言してください。
-                   **【図鑑登録：アイテム名】**
+                1. **画像の特定**: 画像内の物体を客観的に特定し、「これは○○だにゃ！」と明るく反応してください。
+                2. **【ツール実行の義務】**: 感想を言うのと同時に、**必ずツール \`register_collection_item(item_name)\` を実行してください。**
                 
-                例：
-                - 「これはテレビのリモコンだにゃ！ 【図鑑登録：テレビのリモコン】」
-                - 「わぁ、可愛いクマのぬいぐるみだにゃ！ 【図鑑登録：クマのぬいぐるみ】」
-                
-                **注意点:**
-                - ユーザーが何も言わなくても、画像を見たら必ずこのタグを出力してください。
-                - 名前がわからない場合は、【図鑑登録：謎の物体】としてください。
-                - このタグ部分はシステムが読み取って図鑑に登録します。
+                **厳守事項:**
+                - 口で名前を言うだけではダメです。必ずツールを呼んでシステムに名前を渡してください。
+                - 名前が明確でない場合でも、見た目の特徴（例：「青い丸いもの」）を引数にしてツールを実行してください。
+                - ユーザーが「登録して」と言わなくても、画像を見たら自動的に登録ツールを回してください。
 
                 【生徒についての記憶】
                 ${statusContext}
                 `;
 
-                // ツール定義（念のため残すが、メインはタグ処理）
-                const tools = [{ google_search: {} }];
+                // ツール定義
+                const tools = [
+                    { google_search: {} },
+                    {
+                        function_declarations: [
+                            {
+                                name: "show_kanji",
+                                description: "Display a Kanji, word, or math formula on the whiteboard.",
+                                parameters: {
+                                    type: "OBJECT",
+                                    properties: { content: { type: "STRING" } },
+                                    required: ["content"]
+                                }
+                            },
+                            {
+                                name: "register_collection_item",
+                                description: "【MANDATORY】Register the identified item to the user's collection. You MUST call this function whenever the user shows an item via camera.",
+                                parameters: {
+                                    type: "OBJECT",
+                                    properties: { 
+                                        item_name: { type: "STRING", description: "Name of the item identified in the image" } 
+                                    },
+                                    required: ["item_name"]
+                                }
+                            }
+                        ]
+                    }
+                ];
 
                 geminiWs.send(JSON.stringify({
                     setup: {
@@ -371,8 +391,64 @@ wss.on('connection', async (clientWs, req) => {
             geminiWs.on('message', (data) => {
                 try {
                     const response = JSON.parse(data);
-                    // Geminiからのメッセージをそのままクライアントへ転送
+                    
+                    // ツール呼び出しの処理
+                    if (response.serverContent?.modelTurn?.parts) {
+                        const parts = response.serverContent.modelTurn.parts;
+                        parts.forEach(part => {
+                            if (part.functionCall) {
+                                if (part.functionCall.name === "register_collection_item") {
+                                    const itemName = part.functionCall.args.item_name;
+                                    console.log(`[Collection] 🤖 AI Tool Called: register_collection_item for "${itemName}"`);
+                                    
+                                    // クライアントへ通知
+                                    if (clientWs.readyState === WebSocket.OPEN) {
+                                        clientWs.send(JSON.stringify({
+                                            type: "save_to_collection",
+                                            itemName: itemName
+                                        }));
+                                    }
+                                    
+                                    // Geminiへ完了通知を返す
+                                    geminiWs.send(JSON.stringify({
+                                        toolResponse: {
+                                            functionResponses: [{
+                                                name: "register_collection_item",
+                                                response: { result: "saved_success" },
+                                                id: part.functionCall.id
+                                            }]
+                                        }
+                                    }));
+                                }
+                                // 他のツール (show_kanji)
+                                else if (part.functionCall.name === "show_kanji") {
+                                    const content = part.functionCall.args.content;
+                                    if (clientWs.readyState === WebSocket.OPEN) {
+                                        // 漢字表示指示はテキストとしてクライアントへ（クライアント側でパースされる）
+                                        // または専用タイプで送っても良いが、現状のロジックに合わせておく
+                                        // ここではanalyze.jsがテキスト内の[DISPLAY:...]をパースするので、
+                                        // 単にGeminiに成功を返すだけで、Geminiがテキストで[DISPLAY:...]を出すのを待つか、
+                                        // クライアントへ明示的に送る。
+                                        // v260.0のanalyze.jsはtoolResponse.functionResponsesを見ていないので、
+                                        // Geminiがテキストで補足するのを期待するフロー。
+                                    }
+                                    geminiWs.send(JSON.stringify({
+                                        toolResponse: {
+                                            functionResponses: [{
+                                                name: "show_kanji",
+                                                response: { result: "displayed" },
+                                                id: part.functionCall.id
+                                            }]
+                                        }
+                                    }));
+                                }
+                            }
+                        });
+                    }
+                    
+                    // 音声やテキストデータはそのままクライアントへ転送
                     if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data);
+                    
                 } catch (e) {
                     console.error("Gemini WS Handling Error:", e);
                     if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data);
