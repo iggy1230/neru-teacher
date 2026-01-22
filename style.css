@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v196.0) --- */
+/* --- style.css (完全版 v241.0: モーダルレイアウト修正版) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -776,20 +776,26 @@ button { font-family: inherit; }
     stroke-dasharray: 5;
 }
 
-/* 記憶管理モーダル */
+/* 記憶管理モーダル（修正版） */
 .memory-modal-overlay {
     position: fixed; top: 0; left: 0; width: 100%; height: 100%;
     background: rgba(0,0,0,0.6); z-index: 9999;
     display: flex; align-items: center; justify-content: center;
 }
+/* ★重要修正: フレックスボックスで中身を管理 */
 .memory-modal-content {
     background: #fff; width: 90%; max-width: 500px; max-height: 80vh;
     border-radius: 15px; padding: 20px;
-    display: flex; flex-direction: column;
+    display: flex; flex-direction: column; /* 縦並び */
     box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    overflow: hidden; /* モーダル自体は伸びない */
 }
+/* ★重要修正: リスト部分だけスクロールさせる */
 .memory-list {
-    flex: 1; overflow-y: auto; margin: 15px 0;
+    flex: 1; /* 残りのスペースを埋める */
+    overflow-y: auto; /* ここだけスクロール */
+    min-height: 0; /* Flexboxのバグ回避 */
+    margin: 15px 0;
     border: 1px solid #eee; border-radius: 8px; padding: 10px;
     background: #fafafa;
 }
@@ -811,8 +817,13 @@ button { font-family: inherit; }
     border-radius: 5px; padding: 5px 10px; cursor: pointer;
     font-size: 0.8rem; flex-shrink: 0; margin-left: 10px;
 }
+/* 閉じるボタンエリア */
+.modal-footer-btn {
+    flex-shrink: 0; /* 縮まないようにする */
+    margin-top: 10px;
+}
 
-/* --- タイマー関連 (New) --- */
+/* --- タイマー関連 --- */
 .timer-box {
     background: #fff; 
     border: 3px solid #ff85a1; 
@@ -845,7 +856,7 @@ button { font-family: inherit; }
     font-size: 0.9rem;
 }
 
-/* --- Liveカメラ関連 (New) --- */
+/* --- Liveカメラ関連 --- */
 .mini-cam-btn {
     background: #4a90e2; 
     color: white; 
@@ -884,7 +895,7 @@ button { font-family: inherit; }
     object-fit: cover;
 }
 
-/* --- ホワイトボード（漢字表示用） (New) --- */
+/* --- ホワイトボード（漢字表示用） --- */
 .whiteboard-overlay {
     position: fixed;
     top: 0;
@@ -944,7 +955,7 @@ button { font-family: inherit; }
     box-shadow: 0 2px 0 #d32f2f;
 }
 
-/* --- 記憶管理タブ (v196.0) --- */
+/* --- 記憶管理タブ --- */
 .memory-tab {
     flex: 1;
     background: none;

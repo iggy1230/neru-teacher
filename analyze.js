@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v246.0: 会話ログ保存修正版) ---
+// --- analyze.js (完全版 v247.0: UIフリーズ防止＆レイアウト修正版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -226,32 +226,47 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
 };
 
 // ==========================================
-// 4. モード選択 & UI制御
+// 4. モード選択 & UI制御 (修正版)
 // ==========================================
 
 window.selectMode = function(m) {
+    // 既存のチャットやゲームを安全に停止
+    try { stopLiveChat(); } catch(e) { console.warn("LiveChat stop error:", e); }
+    gameRunning = false;
+
     currentMode = m; 
     if (typeof switchScreen === 'function') switchScreen('screen-main'); 
+    
     const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'simple-chat-view', 'lunch-view', 'grade-sheet-container', 'hint-detail-container'];
     ids.forEach(id => { const el = document.getElementById(id); if (el) el.classList.add('hidden'); });
+    
     const backBtn = document.getElementById('main-back-btn');
     if (backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = backToLobby; }
-    stopLiveChat(); gameRunning = false;
+    
     const icon = document.querySelector('.nell-avatar-wrap img'); if(icon) icon.src = defaultIcon;
     document.getElementById('mini-karikari-display').classList.remove('hidden'); updateMiniKarikari();
     
     if (m === 'chat') { 
         document.getElementById('chat-view').classList.remove('hidden'); 
         updateNellMessage("「おはなしする」を押してね！", "gentle", false); 
-        updateTimerDisplay();
+        if(typeof updateTimerDisplay === 'function') updateTimerDisplay();
     } 
     else if (m === 'simple-chat') {
         document.getElementById('simple-chat-view').classList.remove('hidden');
         updateNellMessage("今日はお話だけするにゃ？", "gentle", false);
     }
-    else if (m === 'lunch') { document.getElementById('lunch-view').classList.remove('hidden'); updateNellMessage("お腹ペコペコだにゃ……", "thinking", false); } 
-    else if (m === 'review') { renderMistakeSelection(); } 
-    else { const subjectView = document.getElementById('subject-selection-view'); if (subjectView) subjectView.classList.remove('hidden'); updateNellMessage("どの教科にするのかにゃ？", "normal", false); }
+    else if (m === 'lunch') { 
+        document.getElementById('lunch-view').classList.remove('hidden'); 
+        updateNellMessage("お腹ペコペコだにゃ……", "thinking", false); 
+    } 
+    else if (m === 'review') { 
+        if(typeof renderMistakeSelection === 'function') renderMistakeSelection(); 
+    } 
+    else { 
+        const subjectView = document.getElementById('subject-selection-view'); 
+        if (subjectView) subjectView.classList.remove('hidden'); 
+        updateNellMessage("どの教科にするのかにゃ？", "normal", false); 
+    }
 };
 
 window.setSubject = function(s) { 
@@ -468,6 +483,9 @@ window.captureAndSendLiveImage = function() {
         }
         console.log("次の画像送信準備OKにゃ");
     }, 2000);
+
+    // ★重要: バッティング回避のため、ここでの sendSilentPrompt は削除しました。
+    // AIは System Instruction に従って、画像を受け取ったら自律的に反応します。
 };
 
 // 安全装置: フラグを強制リセットする
@@ -1277,14 +1295,3 @@ window.deleteMemoryItem = async function(index) {
 
     renderMemoryList();
 };
-
-// 安全装置: フラグを強制リセットする
-function resetLiveChatFlags() {
-    window.isLiveImageSending = false;
-    ignoreIncomingAudio = false;
-    const btn = document.getElementById('live-camera-btn');
-    if (btn) {
-        btn.innerHTML = "<span>📷</span> これ教えて！（カメラで見せる）";
-        btn.style.backgroundColor = "#4a90e2";
-    }
-}
