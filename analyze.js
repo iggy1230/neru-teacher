@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v259.0: 図鑑タグ検出・1ターン完結版) ---
+// --- analyze.js (完全版 v260.0: 統合・安定版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -38,6 +38,8 @@ let currentLiveAudioSource = null;
 
 // ★Liveカメラ用ロックフラグ
 window.isLiveImageSending = false;
+// ★マイクミュートフラグ
+window.isMicMuted = false;
 
 // ★図鑑用画像キャッシュ
 window.lastSentCollectionImage = null;
@@ -170,6 +172,17 @@ async function saveToNellMemory(role, text) {
         if (history.length > 50) history.shift(); 
         localStorage.setItem(memoryKey, JSON.stringify(history));
     } catch(e) {}
+    if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) {
+        try {
+            const docRef = db.collection("memories").doc(currentUser.id);
+            const docSnap = await docRef.get();
+            let cloudHistory = docSnap.exists ? (docSnap.data().history || []) : [];
+            if (cloudHistory.length > 0 && cloudHistory[cloudHistory.length - 1].text === trimmed) return;
+            cloudHistory.push(newItem);
+            if (cloudHistory.length > 50) cloudHistory.shift();
+            await docRef.set({ history: cloudHistory, lastUpdated: new Date().toISOString() }, { merge: true });
+        } catch(e) {}
+    }
 }
 
 window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false, speak = true) {
@@ -186,7 +199,8 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     let displayText = t
         .replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "")
         .replace(/【図鑑登録[:：]\s*.*?】/g, "")
-        .replace(/\[CAPTURE[:：]\s*.*?\]/gi, "");
+        .replace(/\[CAPTURE[:：]\s*.*?\]/gi, "")
+        .replace(/(?:キャプチャー|図鑑登録)[、,，\s]*([^\s。]+)/gi, "$1");
 
     if (el) el.innerText = displayText;
     
@@ -369,9 +383,11 @@ window.captureAndSendLiveImage = function() {
         return alert("カメラが動いてないにゃ...。一度「おはなしする」を終了して、もう一度つなぎ直してみてにゃ。");
     }
 
+    // 1. 強制的に全音声を停止し、フラグを立てる
     stopAudioPlayback();
     ignoreIncomingAudio = true; 
     
+    // ★ロック開始 & UI変更
     window.isLiveImageSending = true;
     const btn = document.getElementById('live-camera-btn');
     if (btn) {
@@ -379,12 +395,16 @@ window.captureAndSendLiveImage = function() {
         btn.style.backgroundColor = "#ccc";
     }
 
+    // ★★★ マイクを物理的にミュート（システム優先モード） ★★★
+    window.isMicMuted = true;
+
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     
+    // ★図鑑用にサムネイルを作成してキャッシュ
     const thumbCanvas = document.createElement('canvas');
     const thumbSize = 150; 
     let tw = canvas.width, th = canvas.height;
@@ -398,16 +418,20 @@ window.captureAndSendLiveImage = function() {
     if (window.NellMemory) {
         const timestamp = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         const tempName = `🔍 解析中... (${timestamp})`;
+        console.log(`[Collection] 💾 Pre-saving item: "${tempName}"`);
         try {
             window.NellMemory.addToCollection(currentUser.id, tempName, window.lastSentCollectionImage);
-            console.log("[Collection] ✅ Pre-saved image:", tempName);
+            
             const notif = document.createElement('div');
             notif.innerText = `📸 写真を撮ったにゃ！`;
             notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #4caf50; color:#2e7d32; padding:10px 20px; border-radius:30px; font-weight:bold; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 4px 10px rgba(0,0,0,0.2);";
             document.body.appendChild(notif);
             setTimeout(() => notif.remove(), 2000);
+            
             try{ sfxHirameku.currentTime=0; sfxHirameku.play(); } catch(e){}
-        } catch(e) { console.error("[Collection] Pre-save failed:", e); }
+        } catch(e) {
+            console.error("[Collection] ❌ Pre-save failed:", e);
+        }
     }
 
     const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
@@ -439,7 +463,7 @@ window.captureAndSendLiveImage = function() {
     
     // ★★★ 1ターン完結型送信 ★★★
     if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
-        console.log("[Collection] 🚀 Sending bundled turn.");
+        console.log("[Collection] 🚀 Sending bundled turn with image and prompt.");
         liveSocket.send(JSON.stringify({ 
             clientContent: { 
                 turns: [{ 
@@ -455,17 +479,23 @@ window.captureAndSendLiveImage = function() {
         }));
     }
 
-    // ロック解除
+    // ★追加: 強制的にロック解除（2秒後）& UI戻し
     setTimeout(() => {
         window.isLiveImageSending = false;
+        // マイク復活
+        window.isMicMuted = false;
+        console.log("[Audio] 🎤 Mic unmuted.");
+        
         if (btn) {
             btn.innerHTML = "<span>📷</span> これ教えて！（カメラで見せる）";
             btn.style.backgroundColor = "#4a90e2";
         }
         console.log("次の画像送信準備OKにゃ");
-    }, 2000);
+    }, 3000);
     
-    setTimeout(() => { ignoreIncomingAudio = false; }, 300);
+    setTimeout(() => {
+         ignoreIncomingAudio = false; 
+    }, 300);
 };
 
 // ==========================================
@@ -850,27 +880,22 @@ async function startLiveChat() {
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:'; 
         let statusSummary = `${currentUser.name}さんは今、お話しにきたにゃ。カリカリは${currentUser.karikari}個持ってるにゃ。`; 
         
-        // ★修正: contextはURLに含めず、初期化メッセージで送る（URL長制限対策）
         const url = `${wsProto}//${location.host}?grade=${currentUser.grade}&name=${encodeURIComponent(currentUser.name)}`; 
         
         liveSocket = new WebSocket(url); 
         liveSocket.binaryType = "blob"; 
         connectionTimeout = setTimeout(() => { if (liveSocket && liveSocket.readyState !== WebSocket.OPEN) { updateNellMessage("なかなかつながらないにゃ…", "thinking", false); stopLiveChat(); } }, 10000); 
         
-        // ★キャッシュリセット（前の変な画像の影響を消す）
         window.lastSentCollectionImage = null;
         window.isLiveImageSending = false;
 
         liveSocket.onopen = () => { 
-            // ★即座に初期化メッセージを送信
             liveSocket.send(JSON.stringify({
                 type: "init",
                 name: currentUser.name,
                 grade: currentUser.grade,
                 context: statusSummary + "\n" + memoryContext
             }));
-            
-            // isRecognitionActive = true; // server_readyを待つためここではまだtrueにしない
         }; 
         
         liveSocket.onmessage = async (event) => { 
@@ -879,7 +904,6 @@ async function startLiveChat() {
                 if (rawData instanceof Blob) rawData = await rawData.text();
                 const data = JSON.parse(rawData);
 
-                // ★サーバーからの準備完了信号を受信
                 if (data.type === "server_ready") {
                     clearTimeout(connectionTimeout); 
                     if(btn) { btn.innerText = "📞 つながった！(終了)"; btn.style.background = "#ff5252"; btn.disabled = false; } 
@@ -889,80 +913,14 @@ async function startLiveChat() {
                     return;
                 }
 
-                // ★追加: 図鑑登録指令の受信処理 (完全版 v232.0 救済措置付き)
                 if (data.type === "save_to_collection") {
-                    console.log(`[Collection] 📥 Save command received for: ${data.itemName}`);
-                    
-                    let imageToSave = window.lastSentCollectionImage;
-
-                    // ★ 救済措置: キャッシュがない場合、現在の映像からキャプチャを試みる
-                    if (!imageToSave) {
-                        console.warn("[Collection] ⚠️ No cached image! Trying to capture current frame...");
-                        const v = document.getElementById('live-chat-video');
-                        if (v && v.srcObject && v.srcObject.active) {
-                            const c = document.createElement('canvas');
-                            c.width = 150; c.height = 150; // サムネイルサイズ
-                            // 簡易的な中央切り抜きでキャプチャ
-                            const vw = v.videoWidth || 640;
-                            const vh = v.videoHeight || 480;
-                            const size = Math.min(vw, vh);
-                            const sx = (vw - size) / 2;
-                            const sy = (vh - size) / 2;
-                            c.getContext('2d').drawImage(v, sx, sy, size, size, 0, 0, 150, 150);
-                            imageToSave = c.toDataURL('image/jpeg', 0.7);
-                            console.log("[Collection] 📸 Captured fallback image.");
-                        }
-                    }
-
-                    if (imageToSave) {
-                        try {
-                            await window.NellMemory.addToCollection(currentUser.id, data.itemName, imageToSave);
-                            console.log("[Collection] ✅ Saved to memory successfully.");
-                            
-                            // UI通知（リッチなポップアップ）
-                            const notif = document.createElement('div');
-                            notif.innerText = `📖 図鑑に「${data.itemName}」を登録したにゃ！`;
-                            notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #00bcd4; color:#006064; padding:15px 25px; border-radius:30px; font-weight:900; z-index:10000; box-shadow:0 10px 25px rgba(0,0,0,0.3); font-size:1.2rem; animation: popIn 0.5s ease;";
-                            document.body.appendChild(notif);
-                            setTimeout(() => notif.remove(), 4000);
-                            
-                            try{ sfxHirameku.currentTime=0; sfxHirameku.play(); } catch(e){} 
-                        } catch (err) {
-                            console.error("[Collection] ❌ Memory save failed:", err);
-                            // ユーザーへのエラー通知
-                            const errNotif = document.createElement('div');
-                            errNotif.innerText = `保存に失敗したにゃ...\n${err.message}`;
-                            errNotif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:#ffcdd2; border:2px solid #ef5350; color:#b71c1c; padding:10px; border-radius:10px; z-index:10000;";
-                            document.body.appendChild(errNotif);
-                            setTimeout(() => errNotif.remove(), 4000);
-                        }
-                    } else {
-                        console.error("[Collection] ❌ No image available to save.");
-                        // 画像が見つからない場合のエラー通知
-                        const errNotif = document.createElement('div');
-                        errNotif.innerText = "画像が見つからなくて登録できなかったにゃ...";
-                        errNotif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:#ffe0b2; border:2px solid #ff9800; color:#e65100; padding:10px; border-radius:10px; z-index:10000;";
-                        document.body.appendChild(errNotif);
-                        setTimeout(() => errNotif.remove(), 4000);
-                    }
-                    return; 
+                    console.log(`[Collection] 📥 Tool Call detected: ${data.itemName}`);
                 }
                 
                 if (data.serverContent?.modelTurn?.parts) { 
                     data.serverContent.modelTurn.parts.forEach(p => { 
-                        // Tool execution
-                        if (p.functionCall) {
-                            if (p.functionCall.name === "show_kanji") {
-                                const content = p.functionCall.args.content;
-                                document.getElementById('inline-whiteboard').classList.remove('hidden');
-                                document.getElementById('whiteboard-content').innerText = content;
-                                liveSocket.send(JSON.stringify({ toolResponse: { functionResponses: [{ name: "show_kanji", response: { result: "displayed" }, id: p.functionCall.id || "call_id" }] } }));
-                            }
-                        }
-                        // Text (Subtitles)
                         if (p.text) { 
-                            // ★デバッグ用: AIの生出力をログに出す
-                            console.log(`[Gemini Text] ${p.text}`);
+                            console.log(`[Gemini Raw Text] ${p.text}`);
 
                             const match = p.text.match(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/i);
                             if (match) {
@@ -973,21 +931,30 @@ async function startLiveChat() {
 
                             // ★★★ 合言葉タグ検出ロジック (強化版) ★★★
                             let itemName = null;
-                            const captureMatch = p.text.match(/【図鑑登録[:：]\s*(.+?)】/);
-                            if (captureMatch) {
-                                itemName = captureMatch[1].trim();
-                            } else {
-                                const engMatch = p.text.match(/\[CAPTURE\s*[:：]\s*(.+?)\]/i);
-                                if(engMatch) itemName = engMatch[1].trim();
+                            let detectedPattern = "";
+
+                            const matchJP = p.text.match(/【図鑑登録[:：]\s*(.+?)】/);
+                            if (matchJP) { itemName = matchJP[1]; detectedPattern = "JP Tag"; }
+
+                            if (!itemName) {
+                                const matchEN = p.text.match(/\[CAPTURE\s*[:：]\s*(.+?)\]/i);
+                                if(matchEN) { itemName = matchEN[1]; detectedPattern = "EN Tag"; }
                             }
                             
                             if (!itemName) {
-                                const match3 = p.text.match(/キャプチャー[、,\s]\s*([^\s。]+)/i);
-                                if (match3) itemName = match3[1];
+                                const matchRaw = p.text.match(/CAPTURE\s*[:：]\s*(.+?)(?:$|\n|。)/i);
+                                if (matchRaw) { itemName = matchRaw[1]; detectedPattern = "Raw CAPTURE"; }
+                            }
+
+                            if (!itemName) {
+                                const matchSpeech = p.text.match(/(?:図鑑登録|キャプチャー)[、,，\s]\s*([^\s。]+)/i);
+                                if (matchSpeech) { itemName = matchSpeech[1]; detectedPattern = "Speech Pattern"; }
                             }
 
                             if (itemName) {
-                                console.log(`[Collection] 📥 Tag detected: ${itemName}`);
+                                itemName = itemName.trim();
+                                console.log(`[Collection] ✅ Matched! Pattern: "${detectedPattern}", Item: "${itemName}"`);
+                                
                                 if (window.NellMemory) {
                                     window.NellMemory.updateLatestCollectionItem(currentUser.id, itemName);
                                     
@@ -1000,11 +967,9 @@ async function startLiveChat() {
                                 }
                             }
 
-                            // ★WebSocket接続中は speak=false にしてTTSを呼ばない
                             saveToNellMemory('nell', p.text); 
                             updateNellMessage(p.text, "normal", false, false);
                         } 
-                        // Audio
                         if (p.inlineData) playLivePcmAudio(p.inlineData.data); 
                     }); 
                 } 
@@ -1017,7 +982,6 @@ async function startLiveChat() {
 }
 
 function stopLiveChat() { 
-    // ★追加: 会話終了時に記憶を更新する
     if (window.NellMemory) {
         if (chatTranscript && chatTranscript.length > 10) {
             console.log(`【Memory】更新開始 (ログ長: ${chatTranscript.length})`);
@@ -1038,13 +1002,11 @@ function stopLiveChat() {
     if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer); 
     if(speakingStartTimer) clearTimeout(speakingStartTimer); 
     
-    // UIのリセット処理
     const btnId = currentMode === 'simple-chat' ? 'mic-btn-simple' : 'mic-btn';
     const btn = document.getElementById(btnId);
     if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = currentMode === 'simple-chat' ? "#66bb6a" : "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; } 
     liveSocket = null; 
     
-    // カメラボタンのリセット
     const camBtn = document.getElementById('live-camera-btn');
     if (camBtn) {
         camBtn.innerHTML = "<span>📷</span> これ教えて！（カメラで見せる）";
@@ -1066,24 +1028,17 @@ async function startMicrophone() {
             recognition.interimResults = true; 
             recognition.lang = 'ja-JP'; 
             
-            // ★スマート割り込み機能 (緩和版: 特定ワード または 長文のみで停止)
             recognition.onresult = (event) => { 
                 let currentText = "";
                 for (let i = event.resultIndex; i < event.results.length; ++i) {
                     currentText += event.results[i][0].transcript;
                 }
                 const cleanText = currentText.trim();
-                
-                // 停止キーワード
                 const stopKeywords = ["違う", "ちがう", "待って", "まって", "ストップ", "やめて", "うるさい", "静か", "しずか"];
                 
-                // ネル先生が話していて、かつユーザーの発言がある場合
                 if (window.isNellSpeaking && cleanText.length > 0) {
-                    // 長文判定（10文字以上なら「意味のある発言」とみなして止める）
                     const isLongEnough = cleanText.length >= 10;
-                    // キーワード判定
                     const isStopCommand = stopKeywords.some(w => cleanText.includes(w));
-
                     if (isLongEnough || isStopCommand) {
                         console.log(`【Audio】割り込み検知: "${cleanText}" -> 停止`);
                         stopAudioPlayback();
@@ -1095,7 +1050,6 @@ async function startMicrophone() {
                     if (event.results[i].isFinal) { 
                         const userText = event.results[i][0].transcript;
                         saveToNellMemory('user', userText); 
-                        
                         const txtId = currentMode === 'simple-chat' ? 'user-speech-text-simple' : 'user-speech-text';
                         const el = document.getElementById(txtId); 
                         if(el) el.innerText = userText; 
@@ -1107,7 +1061,6 @@ async function startMicrophone() {
         } 
         
         const useVideo = (currentMode === 'chat');
-        
         mediaStream = await navigator.mediaDevices.getUserMedia({ 
             audio: { sampleRate: 16000, channelCount: 1 }, 
             video: useVideo ? { facingMode: "environment" } : false 
@@ -1129,9 +1082,7 @@ async function startMicrophone() {
         workletNode = new AudioWorkletNode(audioContext, 'pcm-processor'); 
         source.connect(workletNode); 
         workletNode.port.onmessage = (event) => { 
-            // ★マイクミュート中は送信しない
             if (window.isMicMuted) return;
-
             if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return; 
             const downsampled = downsampleBuffer(event.data, audioContext.sampleRate, 16000); 
             liveSocket.send(JSON.stringify({ base64Audio: arrayBufferToBase64(floatTo16BitPCM(downsampled)) })); 
@@ -1148,7 +1099,6 @@ async function startMicrophone() {
             source.connect(workletNode); 
             workletNode.port.onmessage = (event) => { 
                 if (window.isMicMuted) return;
-                
                 if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return; 
                 const downsampled = downsampleBuffer(event.data, audioContext.sampleRate, 16000); 
                 liveSocket.send(JSON.stringify({ base64Audio: arrayBufferToBase64(floatTo16BitPCM(downsampled)) })); 
@@ -1157,60 +1107,39 @@ async function startMicrophone() {
     } 
 }
 
-// ★完全停止処理: 全ての音声ソースを抹殺する
 function stopAudioPlayback() {
-    // スケジュールされているすべてのWebSocket音声を停止
-    liveAudioSources.forEach(source => {
-        try { source.stop(); } catch(e){}
-    });
-    liveAudioSources = []; // 配列クリア
-
-    if (audioContext && audioContext.state === 'running') {
-        // 現在時刻より少し先を指定して、バッファに残った音声を無効化
-        nextStartTime = audioContext.currentTime + 0.05;
-    }
+    liveAudioSources.forEach(source => { try { source.stop(); } catch(e){} });
+    liveAudioSources = [];
+    if (audioContext && audioContext.state === 'running') nextStartTime = audioContext.currentTime + 0.05;
     window.isNellSpeaking = false;
     if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer);
     if(speakingStartTimer) clearTimeout(speakingStartTimer);
-
-    // TTSが鳴っていた場合も強制キャンセル
     if (window.cancelNellSpeech) window.cancelNellSpeech();
 }
 
 function playLivePcmAudio(base64) { 
     if (!audioContext || ignoreIncomingAudio) return; 
-    
     const binary = window.atob(base64); 
     const bytes = new Uint8Array(binary.length); 
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i); 
     const float32 = new Float32Array(bytes.length / 2); 
     const view = new DataView(bytes.buffer); 
     for (let i = 0; i < float32.length; i++) float32[i] = view.getInt16(i * 2, true) / 32768.0; 
-    
     const buffer = audioContext.createBuffer(1, float32.length, 24000); 
     buffer.copyToChannel(float32, 0); 
-    
     const source = audioContext.createBufferSource(); 
     source.buffer = buffer; 
     source.connect(audioContext.destination); 
-    
-    // ★管理配列に追加
     liveAudioSources.push(source);
-    source.onended = () => {
-        liveAudioSources = liveAudioSources.filter(s => s !== source);
-    };
-
+    source.onended = () => { liveAudioSources = liveAudioSources.filter(s => s !== source); };
     const now = audioContext.currentTime; 
     if (nextStartTime < now) nextStartTime = now; 
     source.start(nextStartTime); 
-    
     const startDelay = (nextStartTime - now) * 1000; 
     const duration = buffer.duration * 1000; 
-    
     if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer); 
     speakingStartTimer = setTimeout(() => { window.isNellSpeaking = true; }, startDelay); 
     stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, startDelay + duration + 100); 
-    
     nextStartTime += buffer.duration; 
 }
 function floatTo16BitPCM(float32Array) { const buffer = new ArrayBuffer(float32Array.length * 2); const view = new DataView(buffer); let offset = 0; for (let i = 0; i < float32Array.length; i++, offset += 2) { let s = Math.max(-1, Math.min(1, float32Array[i])); view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true); } return buffer; }
