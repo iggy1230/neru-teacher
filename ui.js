@@ -1,4 +1,4 @@
-// --- ui.js (完全版 v263.0: 削除ボタン付き図鑑・UIロジック) ---
+// --- ui.js (完全版 v263.1: 記憶管理機能実装・図鑑統合版) ---
 
 const sfxChime = new Audio('Jpn_sch_chime.mp3');
 const sfxBtn = new Audio('botan1.mp3');
@@ -44,6 +44,10 @@ window.backToLobby = function(suppressGreeting = false) {
         }
     }
 };
+
+// ==========================================
+// 出席簿 (Attendance)
+// ==========================================
 
 window.showAttendance = function() {
     switchScreen('screen-attendance');
@@ -112,6 +116,10 @@ window.changeCalendarMonth = function(diff) {
     renderAttendance(); 
 };
 
+// ==========================================
+// プログレスバー
+// ==========================================
+
 window.updateProgress = function(p) { 
     const bar = document.getElementById('progress-bar'); 
     if (bar) bar.style.width = p + '%'; 
@@ -119,7 +127,10 @@ window.updateProgress = function(p) {
     if (txt) txt.innerText = Math.floor(p); 
 };
 
-// --- 図鑑表示 (削除機能追加) ---
+// ==========================================
+// 図鑑 (Collection)
+// ==========================================
+
 window.showCollection = async function() {
     if (!currentUser) return;
     const modal = document.getElementById('collection-modal');
@@ -185,6 +196,150 @@ window.closeCollection = function() {
     const modal = document.getElementById('collection-modal');
     if (modal) modal.classList.add('hidden');
 };
+
+// ==========================================
+// ★ 記憶管理 (Memory Manager)
+// ==========================================
+
+window.openMemoryManager = function() {
+    if (!currentUser) return;
+    const modal = document.getElementById('memory-manager-modal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        switchMemoryTab('profile'); // デフォルトはプロフィールタブ
+    }
+};
+
+window.closeMemoryManager = function() {
+    const modal = document.getElementById('memory-manager-modal');
+    if (modal) modal.classList.add('hidden');
+};
+
+window.switchMemoryTab = async function(tab) {
+    // UIのタブ切り替え
+    document.querySelectorAll('.memory-tab').forEach(t => t.classList.remove('active'));
+    const activeTabBtn = document.getElementById(`tab-${tab}`);
+    if (activeTabBtn) activeTabBtn.classList.add('active');
+
+    // 表示エリアの切り替え
+    document.getElementById('memory-view-profile').classList.add('hidden');
+    document.getElementById('memory-view-logs').classList.add('hidden');
+    document.getElementById(`memory-view-${tab}`).classList.remove('hidden');
+
+    // データの読み込み
+    const container = (tab === 'profile') ? document.getElementById('profile-container') : document.getElementById('memory-list-container');
+    if (container) {
+        container.innerHTML = '<p style="text-align:center; padding:20px; color:#888;">読み込み中にゃ...</p>';
+        
+        if (tab === 'profile') {
+            const profile = await window.NellMemory.getUserProfile(currentUser.id);
+            renderProfileView(container, profile);
+        } else {
+            renderLogView(container);
+        }
+    }
+};
+
+function renderProfileView(container, profile) {
+    container.innerHTML = '';
+    if (!profile) {
+        container.innerHTML = '<p style="text-align:center;">まだ記憶がないにゃ。</p>';
+        return;
+    }
+
+    // セクション作成ヘルパー
+    const createSection = (title, items, isArray = false) => {
+        const div = document.createElement('div');
+        div.className = 'profile-section';
+        const h4 = document.createElement('h4');
+        h4.className = 'profile-title';
+        h4.innerText = title;
+        div.appendChild(h4);
+
+        if (isArray) {
+            const tagsDiv = document.createElement('div');
+            tagsDiv.className = 'profile-tags';
+            if (!items || items.length === 0) {
+                tagsDiv.innerHTML = '<span style="color:#aaa; font-size:0.8rem;">(まだないにゃ)</span>';
+            } else {
+                items.forEach(item => {
+                    const tag = document.createElement('span');
+                    tag.className = 'profile-tag';
+                    tag.innerText = item;
+                    tagsDiv.appendChild(tag);
+                });
+            }
+            div.appendChild(tagsDiv);
+        } else {
+            const p = document.createElement('p');
+            p.style.fontSize = '0.9rem';
+            p.style.margin = '0';
+            p.style.paddingLeft = '5px';
+            p.innerText = items || '(まだわかんないにゃ)';
+            div.appendChild(p);
+        }
+        return div;
+    };
+
+    container.appendChild(createSection('あだ名', profile.nickname));
+    container.appendChild(createSection('お誕生日', profile.birthday));
+    container.appendChild(createSection('好きなもの', profile.likes, true));
+    container.appendChild(createSection('苦手なこと', profile.weaknesses, true));
+    container.appendChild(createSection('頑張ったこと', profile.achievements, true));
+    
+    // 最終トピック
+    if (profile.last_topic) {
+         const div = document.createElement('div');
+         div.className = 'profile-section';
+         div.innerHTML = `<h4 class="profile-title">最後のお話</h4><p style="font-size:0.8rem; color:#666;">${profile.last_topic}</p>`;
+         container.appendChild(div);
+    }
+}
+
+function renderLogView(container) {
+    container.innerHTML = '';
+    const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
+    let history = [];
+    try {
+        history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
+    } catch(e) {}
+
+    if (history.length === 0) {
+        container.innerHTML = '<p style="text-align:center; color:#888;">まだ会話してないにゃ。</p>';
+        return;
+    }
+
+    // 新しい順に表示 (最新50件)
+    [...history].reverse().forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'memory-item';
+        
+        const isUser = (item.role === 'user');
+        const roleColor = isUser ? '#2196f3' : '#ff85a1';
+        const roleName = isUser ? 'あなた' : 'ネル先生';
+        
+        let timeStr = '';
+        try { 
+            const d = new Date(item.time);
+            timeStr = `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`;
+        } catch(e){}
+
+        div.innerHTML = `
+            <div style="width:100%;">
+                <div class="memory-meta" style="color:${roleColor}; font-weight:bold; display:flex; justify-content:space-between;">
+                    <span>${roleName}</span>
+                    <span style="color:#ccc; font-weight:normal; font-size:0.7rem;">${timeStr}</span>
+                </div>
+                <div class="memory-text" style="margin-top:2px;">${item.text}</div>
+            </div>
+        `;
+        container.appendChild(div);
+    });
+}
+
+// ==========================================
+// 初期化イベント
+// ==========================================
 
 document.addEventListener('click', () => { 
     if (window.initAudioContext) window.initAudioContext().catch(e => console.log("Audio Init:", e)); 
