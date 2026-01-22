@@ -1,4 +1,4 @@
-// --- ui.js (完全版 v230.0) ---
+// --- ui.js (完全版 v250.0: 図鑑削除ボタン追加) ---
 
 const sfxChime = new Audio('Jpn_sch_chime.mp3');
 const sfxBtn = new Audio('botan1.mp3');
@@ -6,12 +6,9 @@ const sfxBtn = new Audio('botan1.mp3');
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
 
-// ★最重要: 画面切り替え関数
+// 画面切り替え関数
 window.switchScreen = function(to) {
-    // 全ての画面(.screen)を隠す
     document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
-    
-    // 指定された画面だけ表示する
     const target = document.getElementById(to);
     if (target) {
         target.classList.remove('hidden');
@@ -40,7 +37,6 @@ window.backToGate = function() {
 
 window.backToLobby = function(suppressGreeting = false) {
     switchScreen('screen-lobby');
-    // 戻ったときに一言
     const shouldGreet = (typeof suppressGreeting === 'boolean') ? !suppressGreeting : true;
     if (shouldGreet && typeof currentUser !== 'undefined' && currentUser) {
         if (typeof updateNellMessage === 'function') {
@@ -49,13 +45,11 @@ window.backToLobby = function(suppressGreeting = false) {
     }
 };
 
-// 出席簿画面へ
 window.showAttendance = function() {
     switchScreen('screen-attendance');
     renderAttendance();
 };
 
-// カレンダー描画
 window.renderAttendance = function() {
     const grid = document.getElementById('attendance-grid');
     if (!grid || !currentUser) return;
@@ -67,16 +61,13 @@ window.renderAttendance = function() {
     
     grid.style.gap = "2px";
     grid.style.padding = "5px";
-    
     grid.innerHTML = ""; 
     
-    // ヘッダー（月移動）
     const header = document.createElement('div');
     header.style = "grid-column: span 7; display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; font-weight: bold; font-size: 1rem; padding: 0 5px;";
     header.innerHTML = `<button onclick="changeCalendarMonth(-1)" class="mini-teach-btn" style="width:30px; height:30px; font-size:1rem; margin:0; display:flex; align-items:center; justify-content:center;">◀</button><span style="flex: 1; text-align: center;">${year}年 ${month + 1}月</span><button onclick="changeCalendarMonth(1)" class="mini-teach-btn" style="width:30px; height:30px; font-size:1rem; margin:0; display:flex; align-items:center; justify-content:center;">▶</button>`;
     grid.appendChild(header);
     
-    // 曜日
     const weekDays = ['日', '月', '火', '水', '木', '金', '土'];
     weekDays.forEach(day => { 
         const dayEl = document.createElement('div'); 
@@ -85,12 +76,10 @@ window.renderAttendance = function() {
         grid.appendChild(dayEl); 
     });
     
-    // 空白マス
     for (let i = 0; i < firstDay; i++) grid.appendChild(document.createElement('div'));
     
     const todayStr = new Date().toISOString().split('T')[0];
     
-    // 日付マス
     for (let day = 1; day <= daysInMonth; day++) {
         const dateKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const hasAttended = currentUser.attendance && currentUser.attendance[dateKey];
@@ -106,7 +95,6 @@ window.renderAttendance = function() {
         }
         
         div.style = `height: 40px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; border: ${borderStyle}; background-color: ${bgStyle}; border-radius: 4px; position: relative; font-size: 0.7rem; overflow: hidden;`;
-        
         div.innerHTML = `<div style="font-size: 0.6rem; color:#555; margin-top:2px;">${day}</div>`;
         
         if (hasAttended) {
@@ -115,7 +103,6 @@ window.renderAttendance = function() {
             stamp.style.cssText = "position:absolute; bottom:2px; width:70%; height:auto; object-fit:contain; opacity:0.8;";
             div.appendChild(stamp);
         }
-        
         grid.appendChild(div);
     }
 };
@@ -132,7 +119,7 @@ window.updateProgress = function(p) {
     if (txt) txt.innerText = Math.floor(p); 
 };
 
-// ★追加: 図鑑表示ロジック
+// --- 図鑑表示 (削除機能追加) ---
 window.showCollection = async function() {
     if (!currentUser) return;
     const modal = document.getElementById('collection-modal');
@@ -142,7 +129,6 @@ window.showCollection = async function() {
     modal.classList.remove('hidden');
     grid.innerHTML = '<p style="width:100%; text-align:center;">読み込み中にゃ...</p>';
 
-    // データ取得
     const profile = await window.NellMemory.getUserProfile(currentUser.id);
     const collection = profile.collection || [];
 
@@ -153,19 +139,28 @@ window.showCollection = async function() {
         return;
     }
 
-    collection.forEach(item => {
+    collection.forEach((item, index) => {
         const div = document.createElement('div');
-        div.style.cssText = "background:white; border-radius:10px; padding:8px; box-shadow:0 2px 5px rgba(0,0,0,0.1); text-align:center; border:2px solid #fff176;";
+        div.style.cssText = "background:white; border-radius:10px; padding:8px; box-shadow:0 2px 5px rgba(0,0,0,0.1); text-align:center; border:2px solid #fff176; position:relative;";
         
+        // 削除ボタン
+        const delBtn = document.createElement('button');
+        delBtn.innerText = "×";
+        delBtn.style.cssText = "position:absolute; top:-8px; right:-8px; background:#ff5252; color:white; border:2px solid white; border-radius:50%; width:24px; height:24px; font-weight:bold; cursor:pointer; font-size:14px; line-height:1; padding:0; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 4px rgba(0,0,0,0.2);";
+        delBtn.onclick = (e) => {
+            e.stopPropagation();
+            window.deleteCollectionItem(index);
+        };
+        div.appendChild(delBtn);
+
         const img = document.createElement('img');
         img.src = item.image;
-        img.style.cssText = "width:64px; height:64px; object-fit:contain; border-radius:5px; margin-bottom:5px; background:#f5f5f5;";
+        img.style.cssText = "width:100%; aspect-ratio:1; object-fit:contain; border-radius:5px; margin-bottom:5px; background:#f5f5f5;";
         
         const name = document.createElement('div');
         name.innerText = item.name;
-        name.style.cssText = "font-size:0.8rem; font-weight:bold; color:#555; word-break:break-all; line-height:1.2;";
+        name.style.cssText = "font-size:0.8rem; font-weight:bold; color:#555; word-break:break-all; line-height:1.2; min-height:1.2em;";
         
-        // 日付（おまけ）
         const date = document.createElement('div');
         try {
             date.innerText = new Date(item.date).toLocaleDateString();
@@ -179,12 +174,18 @@ window.showCollection = async function() {
     });
 };
 
+window.deleteCollectionItem = async function(index) {
+    if (!confirm("本当にこの写真を削除するにゃ？")) return;
+    await window.NellMemory.deleteFromCollection(currentUser.id, index);
+    // 削除後に再描画
+    window.showCollection();
+};
+
 window.closeCollection = function() {
     const modal = document.getElementById('collection-modal');
     if (modal) modal.classList.add('hidden');
 };
 
-// 効果音 & AudioContext初期化
 document.addEventListener('click', () => { 
     if (window.initAudioContext) window.initAudioContext().catch(e => console.log("Audio Init:", e)); 
 }, { once: true });

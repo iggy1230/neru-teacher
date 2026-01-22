@@ -1,4 +1,4 @@
-// --- server.js (完全版 v247.0: 図鑑登録・明確なタグ指示版) ---
+// --- server.js (完全版 v250.0: 給食・ゲーム反応含む完全版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -92,6 +92,7 @@ app.post('/synthesize', async (req, res) => {
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
+        // ★MODEL指定: 記憶更新は高速なFlashで十分
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp", 
             generationConfig: { responseMimeType: "application/json" }
@@ -323,7 +324,7 @@ wss.on('connection', async (clientWs, req) => {
                 4. 給食(餌)のカリカリが大好物にゃ。
                 5. とにかく何でも知っているにゃ。
 
-                【最重要：図鑑登録のルール】
+                【最重要：図鑑登録の絶対ルール】
                 ユーザーから画像が送信された場合（Image Chunkを受信した場合）：
                 1. **画像の特定**: 画像内の物体を客観的に特定し、「これは〇〇だにゃ！」と明るく反応してください。
                 2. **【タグ出力】**: 感想を言った直後に、**必ず** 以下の形式でアイテム名を発言してください。
@@ -342,7 +343,7 @@ wss.on('connection', async (clientWs, req) => {
                 ${statusContext}
                 `;
 
-                // ツール定義（念のため残す）
+                // ツール定義（念のため残すが、メインはタグ処理）
                 const tools = [{ google_search: {} }];
 
                 geminiWs.send(JSON.stringify({

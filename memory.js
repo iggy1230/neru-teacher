@@ -1,4 +1,4 @@
-// --- memory.js (完全版 v244.0: 最新アイテム名更新機能追加) ---
+// --- memory.js (完全版 v250.0: 削除機能・名前更新機能付き) ---
 
 (function(global) {
     const Memory = {};
@@ -131,7 +131,7 @@
         }
     };
 
-    // ★追加: 最新の図鑑アイテムの名前を更新する（AI解析後用）
+    // ★ 最新の図鑑アイテムの名前を更新する（AI解析後用）
     Memory.updateLatestCollectionItem = async function(userId, newName) {
         try {
             const profile = await Memory.getUserProfile(userId);
@@ -147,6 +147,21 @@
             await Memory.saveUserProfile(userId, profile);
         } catch (e) {
             console.error("[Memory] Update Item Name Error:", e);
+        }
+    };
+
+    // ★ 図鑑からアイテムを削除する
+    Memory.deleteFromCollection = async function(userId, index) {
+        try {
+            const profile = await Memory.getUserProfile(userId);
+            if (profile.collection && profile.collection[index]) {
+                const deletedName = profile.collection[index].name;
+                profile.collection.splice(index, 1);
+                await Memory.saveUserProfile(userId, profile);
+                console.log(`[Memory] Deleted item: ${deletedName}`);
+            }
+        } catch(e) {
+            console.error("[Memory] Delete Error:", e);
         }
     };
 

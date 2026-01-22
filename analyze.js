@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v258.0: 1ターン完結・絶対認識確定版) ---
+// --- analyze.js (完全版 v259.0: 図鑑タグ検出・1ターン完結版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -158,15 +158,9 @@ function closeHomeworkCamera() {
 async function saveToNellMemory(role, text) {
     if (!currentUser || !currentUser.id) return;
     const trimmed = text.trim();
-    const ignoreWords = [
-        "あー", "えーと", "うーん", "はい", "ねえ", "ネル先生", "にゃー", "にゃ", "。", 
-        "ok", "OK", "接続中...", "読み込み中...",
-        "お待たせ！なんでも話してにゃ！", "おいしいにゃ！", "おつかれさまにゃ！"
-    ];
-    if (trimmed.length <= 1 || ignoreWords.includes(trimmed)) return;
+    if (trimmed.length <= 1) return;
     
     chatTranscript += `${role === 'user' ? '生徒' : 'ネル'}: ${trimmed}\n`;
-
     const newItem = { role: role, text: trimmed, time: new Date().toISOString() };
     try {
         const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
@@ -176,21 +170,9 @@ async function saveToNellMemory(role, text) {
         if (history.length > 50) history.shift(); 
         localStorage.setItem(memoryKey, JSON.stringify(history));
     } catch(e) {}
-    if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) {
-        try {
-            const docRef = db.collection("memories").doc(currentUser.id);
-            const docSnap = await docRef.get();
-            let cloudHistory = docSnap.exists ? (docSnap.data().history || []) : [];
-            if (cloudHistory.length > 0 && cloudHistory[cloudHistory.length - 1].text === trimmed) return;
-            cloudHistory.push(newItem);
-            if (cloudHistory.length > 50) cloudHistory.shift();
-            await docRef.set({ history: cloudHistory, lastUpdated: new Date().toISOString() }, { merge: true });
-        } catch(e) {}
-    }
 }
 
 window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false, speak = true) {
-    // ★絶対条件：Live Chat(WebSocket)接続中は、絶対にTTSを再生しない。
     if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
         speak = false;
     }
@@ -203,9 +185,8 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     // 表示用テキストのクリーニング（タグを除去）
     let displayText = t
         .replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "")
-        .replace(/\[CAPTURE\s*[:：]\s*.*?\]/gi, "")
         .replace(/【図鑑登録[:：]\s*.*?】/g, "")
-        .replace(/キャプチャー[、,\s]*([^\s。]+)/gi, "$1"); 
+        .replace(/\[CAPTURE[:：]\s*.*?\]/gi, "");
 
     if (el) el.innerText = displayText;
     
@@ -381,21 +362,16 @@ window.captureAndSendLiveImage = function() {
         return alert("まずは「おはなしする」でネル先生とつながってにゃ！");
     }
 
-    // ★追加: 連続撮影・送信重複防止
-    if (window.isLiveImageSending) {
-        return; 
-    }
+    if (window.isLiveImageSending) return; 
     
     const video = document.getElementById('live-chat-video');
     if (!video || !video.srcObject || !video.srcObject.active) {
         return alert("カメラが動いてないにゃ...。一度「おはなしする」を終了して、もう一度つなぎ直してみてにゃ。");
     }
 
-    // 1. 強制的に全音声を停止し、フラグを立てる
     stopAudioPlayback();
     ignoreIncomingAudio = true; 
     
-    // ★ロック開始 & UI変更
     window.isLiveImageSending = true;
     const btn = document.getElementById('live-camera-btn');
     if (btn) {
@@ -403,17 +379,12 @@ window.captureAndSendLiveImage = function() {
         btn.style.backgroundColor = "#ccc";
     }
 
-    // ★★★ マイクを物理的にミュート（システム優先モード） ★★★
-    // これにより、AIは「ユーザーが無言」という情報すら受け取れなくなる
-    window.isMicMuted = true;
-
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     
-    // ★図鑑用にサムネイルを作成してキャッシュ
     const thumbCanvas = document.createElement('canvas');
     const thumbSize = 150; 
     let tw = canvas.width, th = canvas.height;
@@ -430,18 +401,13 @@ window.captureAndSendLiveImage = function() {
         try {
             window.NellMemory.addToCollection(currentUser.id, tempName, window.lastSentCollectionImage);
             console.log("[Collection] ✅ Pre-saved image:", tempName);
-            
-            // ユーザーに「撮れたよ」感を出す通知
             const notif = document.createElement('div');
             notif.innerText = `📸 写真を撮ったにゃ！`;
             notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #4caf50; color:#2e7d32; padding:10px 20px; border-radius:30px; font-weight:bold; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 4px 10px rgba(0,0,0,0.2);";
             document.body.appendChild(notif);
             setTimeout(() => notif.remove(), 2000);
-            
             try{ sfxHirameku.currentTime=0; sfxHirameku.play(); } catch(e){}
-        } catch(e) {
-            console.error("[Collection] Pre-save failed:", e);
-        }
+        } catch(e) { console.error("[Collection] Pre-save failed:", e); }
     }
 
     const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
@@ -471,9 +437,9 @@ window.captureAndSendLiveImage = function() {
 
     updateNellMessage("ん？どれどれ…", "thinking", false, false);
     
-    // ★★★ 今回の修正ポイント: 1ターン完結型送信 (ユーザー提案の最強構成) ★★★
+    // ★★★ 1ターン完結型送信 ★★★
     if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
-        console.log("[Collection] 🚀 Sending bundled turn: Prompt + Image + ForceReply");
+        console.log("[Collection] 🚀 Sending bundled turn.");
         liveSocket.send(JSON.stringify({ 
             clientContent: { 
                 turns: [{ 
@@ -481,30 +447,25 @@ window.captureAndSendLiveImage = function() {
                     parts: [
                         { text: "（ユーザーが画像を見せました）これなぁに？ この画像に写っている一番はっきりした物体を特定して。" },
                         { inlineData: { mime_type: "image/jpeg", data: base64Data } },
-                        { text: "必ず『【図鑑登録：名前】』の形式で答えて。" }
+                        { text: "必ず『【図鑑登録：名前】』の形式でタグを出力して答えて。" }
                     ]
                 }],
-                turnComplete: true // これで確実にAIに回答させる
+                turnComplete: true
             } 
         }));
     }
 
-    // ★追加: 強制的にロック解除（2秒後）& UI戻し
+    // ロック解除
     setTimeout(() => {
         window.isLiveImageSending = false;
-        // マイク復活
-        window.isMicMuted = false;
-        
         if (btn) {
             btn.innerHTML = "<span>📷</span> これ教えて！（カメラで見せる）";
             btn.style.backgroundColor = "#4a90e2";
         }
         console.log("次の画像送信準備OKにゃ");
-    }, 3000); // マイクミュートは少し長めに（AIが喋り出すまで）
+    }, 2000);
     
-    setTimeout(() => {
-         ignoreIncomingAudio = false; 
-    }, 300);
+    setTimeout(() => { ignoreIncomingAudio = false; }, 300);
 };
 
 // ==========================================
