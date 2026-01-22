@@ -1,4 +1,4 @@
-// --- server.js (完全版 v239.0: 図鑑登録フロー完結版) ---
+// --- server.js (完全版 v240.0: 図鑑登録・発話トリガー対応版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -311,13 +311,14 @@ wss.on('connection', async (clientWs, req) => {
                 2. 親しみやすい日本の小学校の先生として話してにゃ。
 
                 【最重要・絶対遵守：画像認識と図鑑登録】
-                生徒が無言で、あるいは「これ何？」と画像を送信してきた場合、以下の手順を**ロボットのように厳格に**実行してください。
+                1. **画像が送られてきた時**:
+                   - 直前の会話や文脈は全て無視し、**今送られてきた画像に写っている主要な物体**を客観的に特定してください。
+                   - 物体の名前（例: "ハンドソープ", "猫", "鉛筆"）が特定できたら、**感想を言う前に、まず最初に必ずツール \`register_collection_item(item_name)\` を実行してください。**
+                   - 順序: [画像受信] -> [ツール実行] -> [成功確認] -> [「これは〇〇だにゃ！」と発言]
 
-                1. **【即時認識】**: 直前の会話や文脈は全て無視し、**今送られてきた画像に写っている主要な物体**を客観的に特定してください。
-                2. **【ツール実行の義務】**: 物体の名前（例: "ハンドソープ", "猫", "鉛筆"）が特定できたら、**感想を言う前に、まず最初に必ずツール \`register_collection_item(item_name)\` を実行してください。**
-                3. **【会話の順序】**: 
-                   - 正解手順: [画像受信] -> [ツール実行] -> [成功を確認] -> [「これは〇〇だにゃ！」と発言]
-                   - 禁止手順: [画像受信] -> [「これは〇〇に見えるにゃ」と発言] -> [ツール実行しない]
+                2. **ユーザーが「登録して」「保存して」と言った時**:
+                   - もし直前に画像を見ていて、まだ登録していないなら、その名前でツールを実行してください。
+                   - 画像が見当たらない場合は「写真を見せてくれたら登録するにゃ！」と答えてください。
 
                 【生徒についての記憶】
                 ${statusContext}
@@ -338,7 +339,7 @@ wss.on('connection', async (clientWs, req) => {
                         {
                             // ★重要ツール: 図鑑登録
                             name: "register_collection_item",
-                            description: "Registers the identified item from the user's camera image into their collection. MUST be called whenever an image is presented.",
+                            description: "Registers the identified item from the user's camera image into their collection. Call this WHENEVER an image is presented OR the user asks to register.",
                             parameters: {
                                 type: "OBJECT",
                                 properties: { 

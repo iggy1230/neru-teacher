@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v242.0: 図鑑登録・バッティング解消版) ---
+// --- analyze.js (完全版 v243.0: 絶対保存・救済システム版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -39,7 +39,7 @@ let currentLiveAudioSource = null;
 // ★Liveカメラ用ロックフラグ（2枚目以降対応）
 window.isLiveImageSending = false;
 
-// ★図鑑用画像キャッシュ (超重要: 送信した画像をここに保持し、ツール指令が来たらこれを使う)
+// ★図鑑用画像キャッシュ
 window.lastSentCollectionImage = null;
 
 // ゲーム・Cropper関連
@@ -455,9 +455,6 @@ window.captureAndSendLiveImage = function() {
         }
         console.log("次の画像送信準備OKにゃ");
     }, 2000);
-
-    // ★重要: バッティング回避のため、ここでの sendSilentPrompt は削除しました。
-    // AIは System Instruction に従って、画像を受け取ったら自律的に反応します。
 };
 
 // 安全装置: フラグを強制リセットする
