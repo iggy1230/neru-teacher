@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v246.0: 図鑑登録タグ・サイレントプロンプト修正版) ---
+// --- analyze.js (完全版 v247.0: 先行保存・後更新方式) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -31,12 +31,12 @@ let connectionTimeout = null;
 let recognition = null;
 let isRecognitionActive = false;
 
-// ★音声ソース管理（二重音声防止用）
+// ★音声ソース管理
 let liveAudioSources = []; 
 let ignoreIncomingAudio = false;
 let currentLiveAudioSource = null;
 
-// ★Liveカメラ用ロックフラグ（2枚目以降対応）
+// ★Liveカメラ用ロックフラグ
 window.isLiveImageSending = false;
 
 // ★図鑑用画像キャッシュ
@@ -165,7 +165,6 @@ async function saveToNellMemory(role, text) {
     ];
     if (trimmed.length <= 1 || ignoreWords.includes(trimmed)) return;
     
-    // console.log(`【Memory】ログ追加: [${role}] ${trimmed}`);
     chatTranscript += `${role === 'user' ? '生徒' : 'ネル'}: ${trimmed}\n`;
 
     const newItem = { role: role, text: trimmed, time: new Date().toISOString() };
@@ -418,8 +417,27 @@ window.captureAndSendLiveImage = function() {
     thumbCanvas.getContext('2d').drawImage(canvas, 0, 0, tw, th);
     window.lastSentCollectionImage = thumbCanvas.toDataURL('image/jpeg', 0.7);
 
-    // デバッグログ
-    console.log("[Collection] Snapshot captured and cached for AI analysis.");
+    // ★★★ 先行保存処理 ★★★
+    // 名前はまだわからないので「解析中...」としてとりあえず保存する
+    if (window.NellMemory) {
+        const timestamp = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const tempName = `🔍 解析中... (${timestamp})`;
+        try {
+            window.NellMemory.addToCollection(currentUser.id, tempName, window.lastSentCollectionImage);
+            console.log("[Collection] ✅ Pre-saved image:", tempName);
+            
+            // ユーザーに「撮れたよ」感を出す通知
+            const notif = document.createElement('div');
+            notif.innerText = `📸 写真を撮ったにゃ！`;
+            notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #4caf50; color:#2e7d32; padding:10px 20px; border-radius:30px; font-weight:bold; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 4px 10px rgba(0,0,0,0.2);";
+            document.body.appendChild(notif);
+            setTimeout(() => notif.remove(), 2000);
+            
+            try{ sfxHirameku.currentTime=0; sfxHirameku.play(); } catch(e){}
+        } catch(e) {
+            console.error("[Collection] Pre-save failed:", e);
+        }
+    }
 
     const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
     
@@ -464,8 +482,9 @@ window.captureAndSendLiveImage = function() {
     setTimeout(() => {
         ignoreIncomingAudio = false; 
         const ts = new Date().getTime(); 
-        // ★プロンプト強化: 「合言葉」という表現を排除し、「システム用タグを出力せよ」と指示
-        sendSilentPrompt(`【画像認識・システム処理指示 ID:${ts}】\nたった今、新しい画像を送ったにゃ。\n写っているものを特定して感想を言って。\nその発言の最後に、必ず **\`[CAPTURE:アイテム名]\`** というシステム用タグを付け加えてください。\nユーザーにはこのタグのことは説明せず、自然に会話して。\n（タグを出力しないとシステムエラーになります）`);
+        // ★プロンプト強化: 感想の中に合言葉タグを混ぜさせる
+        // 「発音しない」指示を追加
+        sendSilentPrompt(`【画像認識・図鑑登録指示 ID:${ts}】\nたった今、新しい画像を送ったにゃ。\n写っているものを特定して感想を言って。\nその発言の中に必ず『[CAPTURE:アイテム名]』というタグを混ぜて！\n例：「これは[CAPTURE:リンゴ]だにゃ！美味しそうだにゃ！」\n**注意：[CAPTURE:...]の部分は読み上げず、テキストとして出力するだけでいい。**`);
     }, 200); 
 };
 
@@ -970,35 +989,19 @@ async function startLiveChat() {
                             }
 
                             // ★★★ 合言葉タグ検出ロジック ★★★
+                            // CAPTUREタグを発見したら、直近のアイテム名を書き換える
                             const captureMatch = p.text.match(/\[CAPTURE:(.+?)\]/);
                             if (captureMatch) {
                                 const itemName = captureMatch[1].trim();
                                 console.log(`[Collection] 📥 Tag detected: ${itemName}`);
                                 
-                                // 画像保存処理
-                                let imageToSave = window.lastSentCollectionImage;
-                                if (!imageToSave) {
-                                    // 救済措置: キャプチャ
-                                    const v = document.getElementById('live-chat-video');
-                                    if (v && v.srcObject && v.srcObject.active) {
-                                        const c = document.createElement('canvas');
-                                        c.width = 150; c.height = 150; 
-                                        const vw = v.videoWidth || 640;
-                                        const vh = v.videoHeight || 480;
-                                        const size = Math.min(vw, vh);
-                                        const sx = (vw - size) / 2;
-                                        const sy = (vh - size) / 2;
-                                        c.getContext('2d').drawImage(v, sx, sy, size, size, 0, 0, 150, 150);
-                                        imageToSave = c.toDataURL('image/jpeg', 0.7);
-                                    }
-                                }
-
-                                if (imageToSave && window.NellMemory) {
-                                    window.NellMemory.addToCollection(currentUser.id, itemName, imageToSave);
+                                if (window.NellMemory) {
+                                    // 先行保存した「解析中...」の名前を、AIが特定した名前に更新する
+                                    window.NellMemory.updateLatestCollectionItem(currentUser.id, itemName);
                                     
                                     // UI通知
                                     const notif = document.createElement('div');
-                                    notif.innerText = `📖 図鑑に「${itemName}」を登録したにゃ！`;
+                                    notif.innerText = `📖 図鑑に「${itemName}」として登録したにゃ！`;
                                     notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #00bcd4; color:#006064; padding:15px 25px; border-radius:30px; font-weight:900; z-index:10000; box-shadow:0 10px 25px rgba(0,0,0,0.3); font-size:1.2rem; animation: popIn 0.5s ease;";
                                     document.body.appendChild(notif);
                                     setTimeout(() => notif.remove(), 4000);

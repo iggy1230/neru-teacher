@@ -1,4 +1,4 @@
-// --- memory.js (完全版 v230.0: 図鑑データ対応版) ---
+// --- memory.js (完全版 v244.0: 最新アイテム名更新機能追加) ---
 
 (function(global) {
     const Memory = {};
@@ -12,7 +12,7 @@
             weaknesses: [],
             achievements: [],
             last_topic: "",
-            collection: [] // ★追加: 図鑑データ
+            collection: [] // 図鑑データ
         };
     };
 
@@ -43,7 +43,7 @@
             profile = profile[0];
         }
 
-        // ★追加: 既存ユーザーにcollectionがない場合の補完
+        // 既存ユーザーにcollectionがない場合の補完
         const defaultProfile = Memory.createEmptyProfile();
         if (!profile) return defaultProfile;
         if (!profile.collection) profile.collection = [];
@@ -66,7 +66,7 @@
         }
     };
 
-    // サーバー更新用（変更なし）
+    // サーバー更新用
     Memory.updateProfileFromChat = async function(userId, chatLog) {
         if (!chatLog || chatLog.length < 10) return;
         const currentProfile = await Memory.getUserProfile(userId);
@@ -80,7 +80,7 @@
                 let newProfile = await res.json();
                 if (Array.isArray(newProfile)) newProfile = newProfile[0];
                 
-                // ★重要: サーバーはcollectionを知らないので、上書きされないように復元する
+                // サーバーはcollectionを知らないので復元する
                 newProfile.collection = currentProfile.collection || [];
                 
                 await Memory.saveUserProfile(userId, newProfile);
@@ -96,9 +96,7 @@
         if (p.birthday) context += `・誕生日: ${p.birthday}\n`; 
         if (p.likes && p.likes.length > 0) context += `・好きなもの: ${p.likes.join(", ")}\n`;
         
-        // ★追加: 直近のコレクション情報をAIに教える
         if (p.collection && p.collection.length > 0) {
-            // 直近3つのコレクションを教える
             const recentItems = p.collection.slice(0, 3).map(i => i.name).join(", ");
             context += `・最近見せてくれたもの図鑑: ${recentItems}\n`;
         }
@@ -106,38 +104,49 @@
         return context;
     };
 
-    // ★追加: 図鑑にアイテムを追加する関数
+    // 図鑑にアイテムを追加
     Memory.addToCollection = async function(userId, itemName, imageBase64) {
         try {
             const profile = await Memory.getUserProfile(userId);
             if (!profile.collection) profile.collection = [];
             
-            // 重複チェック: 同じ名前があれば更新、なければ先頭に追加
-            const existingIndex = profile.collection.findIndex(i => i.name === itemName);
-            
+            // 先頭に追加（常に最新がindex 0に来るようにする）
             const newItem = {
                 name: itemName,
                 image: imageBase64,
                 date: new Date().toISOString()
             };
 
-            if (existingIndex !== -1) {
-                // 既存のものを更新して先頭に移動させるか、単に更新するか
-                // ここでは単純に更新
-                profile.collection[existingIndex] = newItem;
-            } else {
-                profile.collection.unshift(newItem); // 先頭に追加
-            }
+            profile.collection.unshift(newItem); 
 
-            // 容量制限（画像のBase64は重いので、最新30件くらいに制限）
+            // 容量制限（最新30件）
             if (profile.collection.length > 30) {
                 profile.collection = profile.collection.slice(0, 30);
             }
 
             await Memory.saveUserProfile(userId, profile);
-            console.log(`[Memory] Collection updated: ${itemName}`);
+            console.log(`[Memory] Collection added: ${itemName}`);
         } catch (e) {
             console.error("[Memory] Add Collection Error:", e);
+        }
+    };
+
+    // ★追加: 最新の図鑑アイテムの名前を更新する（AI解析後用）
+    Memory.updateLatestCollectionItem = async function(userId, newName) {
+        try {
+            const profile = await Memory.getUserProfile(userId);
+            if (!profile.collection || profile.collection.length === 0) return;
+
+            // 最新（配列の先頭）を取得して名前を更新
+            const latest = profile.collection[0];
+            const oldName = latest.name;
+            latest.name = newName;
+            
+            console.log(`[Memory] Renaming item: "${oldName}" -> "${newName}"`);
+            
+            await Memory.saveUserProfile(userId, profile);
+        } catch (e) {
+            console.error("[Memory] Update Item Name Error:", e);
         }
     };
 
