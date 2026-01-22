@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v250.0: 画像認識精度・プロンプト修正版) ---
+// --- analyze.js (完全版 v251.0: 質問自動送信・発話誘導版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -200,11 +200,15 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     const targetId = isGameHidden ? 'nell-text' : 'nell-text-game';
     const el = document.getElementById(targetId);
     
-    // 表示用テキストのクリーニング（タグを除去）
-    // AIがタグを口走った場合も、画面表示からは消す
+    // 表示用テキストのクリーニング
+    // ★「キャプチャー」という言葉は画面には出さず、裏で処理するだけにする
     let displayText = t.replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "");
     displayText = displayText.replace(/\[CAPTURE\s*[:：]\s*.*?\]/gi, ""); 
-    displayText = displayText.replace(/キャプチャー[、,\s]*([^\s。]+)/gi, "$1"); 
+    
+    // 「キャプチャー、〇〇」のようなシステム的な発言を画面から隠す（より自然に見せるため）
+    // ただし、AIが「これはキャプチャーだにゃ」と雑談で言う可能性もあるので、文末付近の特定パターンのみ消すなどの調整
+    // ここでは単純にタグだけ消し、発言はそのまま残す（ユーザーが登録されたと認識しやすいように）
+    // displayText = displayText.replace(/キャプチャー[、,\s]*([^\s。]+)/gi, "$1"); 
 
     if (el) el.innerText = displayText;
     
@@ -479,12 +483,24 @@ window.captureAndSendLiveImage = function() {
         console.log("次の画像送信準備OKにゃ");
     }, 2000);
 
+    // ★★★ 今回の修正ポイント ★★★
+    // ユーザーに代わってシステムが「これ何？」と聞く
+    // これによりAIは「質問に答える」モードになり、幻覚（勝手な雑談）が減る
     setTimeout(() => {
         ignoreIncomingAudio = false; 
-        const ts = new Date().getTime(); 
-        // ★プロンプト強化: 「感想」ではなく「物体認識タスク」であることを強調する
-        // 「これは何ですか？」という質問に対する回答を強制する
-        sendSilentPrompt(`【視覚認識タスク ID:${ts}】\nたった今、ユーザーが画像を見せました。「これは何ですか？」\n画像に写っている物体を**客観的に、真面目に**特定してください。\n特定した名前を『[CAPTURE:名前]』という形式で出力してください。\nキャラ作りよりも正確さを優先してください。`);
+        
+        if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
+            console.log("[Collection] 🚀 Sending auto-prompt to simulate user question.");
+            liveSocket.send(JSON.stringify({ 
+                clientContent: { 
+                    turns: [{ 
+                        role: "user", 
+                        parts: [{ text: "これなぁに？図鑑に載せるから『キャプチャー、(物の名前)』ってハッキリ言って！" }] 
+                    }],
+                    turnComplete: true 
+                } 
+            }));
+        }
     }, 200); 
 };
 
@@ -1004,9 +1020,10 @@ async function startLiveChat() {
                                 if (match2) itemName = match2[1];
                             }
 
+                            // ★★★ 今回の修正ポイント ★★★
                             // パターン3: キャプチャー、名前 (口語)
+                            // AIが「キャプチャー、〇〇」と喋ってしまった場合も検出
                             if (!itemName) {
-                                // "キャプチャー、" や "キャプチャー " の後の単語を拾う
                                 const match3 = p.text.match(/キャプチャー[、,\s]\s*([^\s。]+)/i);
                                 if (match3) itemName = match3[1];
                             }

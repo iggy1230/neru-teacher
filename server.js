@@ -1,4 +1,4 @@
-// --- server.js (完全版 v245.0: JSONパース強化・バグ修正版) ---
+// --- server.js (完全版 v246.0: 図鑑登録・発話許容プロンプト版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -129,16 +129,14 @@ app.post('/update-memory', async (req, res) => {
         const result = await model.generateContent(prompt);
         let text = result.response.text();
         
-        // ★JSONパースエラー対策: マークダウン記法を徹底的に除去
+        // ★JSONパースエラー対策
         text = text.replace(/```json/g, '').replace(/```/g, '').trim();
         
-        // 配列で返ってきた場合の処理
         let newProfile;
         try {
             newProfile = JSON.parse(text);
         } catch (e) {
             console.error("JSON Parse failed, attempting cleanup:", text);
-            // 最低限のリカバリ: [] で囲まれていれば中身を取り出す、など
             const match = text.match(/\{[\s\S]*\}/);
             if (match) {
                 newProfile = JSON.parse(match[0]);
@@ -328,20 +326,20 @@ wss.on('connection', async (clientWs, req) => {
                 【最重要：図鑑登録の絶対ルール】
                 ユーザーから画像が送信された場合（Image Chunkを受信した場合）：
                 1. **特定と感想**: 画像内の物体を特定し、「これは○○だにゃ！」と明るく反応してください。
-                2. **【タグ出力の強制】**: 感想を言った直後に、**必ず** 以下の形式でタグを出力してください。
-                   **\`[CAPTURE:特定した名前]\`**
+                2. **【名前の伝達】**: 感想を言った直後に、**「キャプチャー、(物の名前)」**とハッキリ発言してください。
+                   - 例：「これはリンゴだにゃ！美味しそうだにゃ！**キャプチャー、リンゴ**」
+                   - 例：「カッコいいロボットだにゃ！**キャプチャー、ロボット**」
                 
-                **厳守事項:**
-                - このタグ \`[CAPTURE:...]\` はシステム用です。**絶対に声に出して読み上げないでください。**
-                - 文末に無言で付け加えてください。
-                - 「キャプチャー、○○」と口頭で言うのは禁止です。タグとして出力してください。
-                - 名前がわからない場合でも、見た目の特徴を入れてタグを出力してください（例：\`[CAPTURE:謎の丸いもの]\`）。
+                **注意点:**
+                - システムが「キャプチャー、〇〇」という言葉を聞き取って図鑑に登録します。
+                - 隠さずに、ハッキリと言ってください。
+                - 名前がわからない場合は、「キャプチャー、不思議なもの」と言ってください。
 
                 【生徒についての記憶】
                 ${statusContext}
                 `;
 
-                // ツール定義（念のため残すが、メインはタグ処理）
+                // ツール定義（念のため残す）
                 const tools = [{ google_search: {} }];
 
                 geminiWs.send(JSON.stringify({
