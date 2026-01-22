@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v248.0: タグ検出強化・デバッグログ追加版) ---
+// --- analyze.js (完全版 v249.0: 図鑑登録・日本語発言対応版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -201,10 +201,10 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     const el = document.getElementById(targetId);
     
     // 表示用テキストのクリーニング（タグを除去）
-    // 正規表現を緩くして、全角コロンやスペースにも対応
-    const displayText = t
-        .replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "")
-        .replace(/\[CAPTURE\s*[:：]\s*.*?\]/gi, ""); // CAPTUREタグも消す
+    // AIがタグを口走った場合も、画面表示からは消す
+    let displayText = t.replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "");
+    displayText = displayText.replace(/\[CAPTURE\s*[:：]\s*.*?\]/gi, ""); 
+    displayText = displayText.replace(/キャプチャー[、,\s]*([^\s。]+)/gi, "$1"); // 「キャプチャー、〇〇」を「〇〇」だけ残す
 
     if (el) el.innerText = displayText;
     
@@ -419,7 +419,6 @@ window.captureAndSendLiveImage = function() {
     window.lastSentCollectionImage = thumbCanvas.toDataURL('image/jpeg', 0.7);
 
     // ★★★ 先行保存処理 ★★★
-    // 名前はまだわからないので「解析中...」としてとりあえず保存する
     if (window.NellMemory) {
         const timestamp = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         const tempName = `🔍 解析中... (${timestamp})`;
@@ -483,8 +482,8 @@ window.captureAndSendLiveImage = function() {
     setTimeout(() => {
         ignoreIncomingAudio = false; 
         const ts = new Date().getTime(); 
-        // ★プロンプト強化: 「合言葉」ではなく「システム用タグ」として指示し、表記ゆれにも対応しやすい形式を指定
-        sendSilentPrompt(`【画像認識・システム処理指示 ID:${ts}】\nたった今、新しい画像を送ったにゃ。\n写っているものを特定して感想を言って。\nその発言の最後に、必ず **\`[CAPTURE:アイテム名]\`** というシステム用タグを付け加えてください。\n**このタグは絶対に読み上げないでください。** テキストとして出力するだけです。`);
+        // ★プロンプト強化: 万が一読み上げてもいいように、日本語でのタグ形式も例示する
+        sendSilentPrompt(`【画像認識・図鑑登録指示 ID:${ts}】\nたった今、新しい画像を送ったにゃ。\n写っているものを特定して感想を言って。\nその発言の最後に、必ず **\`[CAPTURE:アイテム名]\`** というシステム用タグを付け加えてください。\nユーザーにはこのタグのことは説明せず、自然に会話して。\nもしタグが出力できない場合は、「キャプチャー、アイテム名」と発言しても構いません。`);
     }, 200); 
 };
 
@@ -991,15 +990,31 @@ async function startLiveChat() {
                                 document.getElementById('whiteboard-content').innerText = content;
                             }
 
-                            // ★★★ 合言葉タグ検出ロジック (強化版) ★★★
-                            // 全角コロン、スペース許容、大文字小文字無視
-                            const captureMatch = p.text.match(/\[CAPTURE\s*[:：]\s*(.+?)\]/i);
-                            if (captureMatch) {
-                                const itemName = captureMatch[1].trim();
-                                console.log(`[Collection] 📥 Tag detected: ${itemName}`);
+                            // ★★★ 合言葉タグ検出ロジック (強化版: 日本語発言にも対応) ★★★
+                            let itemName = null;
+                            
+                            // パターン1: [CAPTURE:名前] (正規)
+                            const match1 = p.text.match(/\[CAPTURE\s*[:：]\s*(.+?)\]/i);
+                            if (match1) itemName = match1[1];
+
+                            // パターン2: CAPTURE:名前 (括弧忘れ)
+                            if (!itemName) {
+                                const match2 = p.text.match(/CAPTURE\s*[:：]\s*(.+?)(?:$|\n|。)/i);
+                                if (match2) itemName = match2[1];
+                            }
+
+                            // パターン3: キャプチャー、名前 (口語)
+                            if (!itemName) {
+                                // "キャプチャー、" や "キャプチャー " の後の単語を拾う
+                                const match3 = p.text.match(/キャプチャー[、,\s]\s*([^\s。]+)/i);
+                                if (match3) itemName = match3[1];
+                            }
+
+                            if (itemName) {
+                                itemName = itemName.trim();
+                                console.log(`[Collection] 📥 Tag/Speech detected: ${itemName}`);
                                 
                                 if (window.NellMemory) {
-                                    // 先行保存した「解析中...」の名前を、AIが特定した名前に更新する
                                     window.NellMemory.updateLatestCollectionItem(currentUser.id, itemName);
                                     
                                     // UI通知
