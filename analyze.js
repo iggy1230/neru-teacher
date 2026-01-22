@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v257.0: マイク遮断・質問偽装・絶対認識版) ---
+// --- analyze.js (完全版 v258.0: 1ターン完結・絶対認識確定版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -38,8 +38,6 @@ let currentLiveAudioSource = null;
 
 // ★Liveカメラ用ロックフラグ
 window.isLiveImageSending = false;
-// ★マイクミュートフラグ（システム発言優先用）
-window.isMicMuted = false;
 
 // ★図鑑用画像キャッシュ
 window.lastSentCollectionImage = null;
@@ -473,33 +471,22 @@ window.captureAndSendLiveImage = function() {
 
     updateNellMessage("ん？どれどれ…", "thinking", false, false);
     
-    // ★★★ 今回の修正ポイント: マイクを殺した状態で質問をねじ込む ★★★
+    // ★★★ 今回の修正ポイント: 1ターン完結型送信 (ユーザー提案の最強構成) ★★★
     if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
-        
-        // 1. テキスト（質問）を送信（ターン完了しない）
+        console.log("[Collection] 🚀 Sending bundled turn: Prompt + Image + ForceReply");
         liveSocket.send(JSON.stringify({ 
             clientContent: { 
-                turns: [{ role: "user", parts: [{ text: "（これ見て）これは何？" }] }],
-                turnComplete: false 
+                turns: [{ 
+                    role: "user", 
+                    parts: [
+                        { text: "（ユーザーが画像を見せました）これなぁに？ この画像に写っている一番はっきりした物体を特定して。" },
+                        { inlineData: { mime_type: "image/jpeg", data: base64Data } },
+                        { text: "必ず『【図鑑登録：名前】』の形式で答えて。" }
+                    ]
+                }],
+                turnComplete: true // これで確実にAIに回答させる
             } 
         }));
-
-        // 2. 画像を送信
-        liveSocket.send(JSON.stringify({ base64Image: base64Data }));
-
-        // 3. 最後に「返事して！」の合図を送る
-        setTimeout(() => {
-            console.log("[Collection] 🚀 Sending final trigger prompt.");
-            liveSocket.send(JSON.stringify({ 
-                clientContent: { 
-                    turns: [{ 
-                        role: "user", 
-                        parts: [{ text: "『【図鑑登録：(名前)】』の形式で名前を教えて！" }] 
-                    }],
-                    turnComplete: true // ここで初めてAIに回答権を渡す
-                } 
-            }));
-        }, 100);
     }
 
     // ★追加: 強制的にロック解除（2秒後）& UI戻し
@@ -1033,7 +1020,6 @@ async function startLiveChat() {
                                 if(engMatch) itemName = engMatch[1].trim();
                             }
                             
-                            // 日本語会話文検出
                             if (!itemName) {
                                 const match3 = p.text.match(/キャプチャー[、,\s]\s*([^\s。]+)/i);
                                 if (match3) itemName = match3[1];
@@ -1104,7 +1090,7 @@ function stopLiveChat() {
         camBtn.style.backgroundColor = "#4a90e2";
     }
     window.isLiveImageSending = false;
-    window.isMicMuted = false; // マイクミュート解除
+    window.isMicMuted = false; 
 
     const video = document.getElementById('live-chat-video');
     if(video) video.srcObject = null;
