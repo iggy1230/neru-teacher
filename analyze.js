@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v240.0: ロック短縮＆ボタン表示改善版) ---
+// --- analyze.js (完全版 v241.0: 割り込み緩和＆連続撮影対応版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -1029,7 +1029,7 @@ async function startMicrophone() {
             recognition.interimResults = true; 
             recognition.lang = 'ja-JP'; 
             
-            // ★スマート割り込み機能 (相槌無視 + 10文字以上/特定ワード)
+            // ★スマート割り込み機能 (緩和版: 特定ワード または 長文のみで停止)
             recognition.onresult = (event) => { 
                 let currentText = "";
                 for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -1042,11 +1042,13 @@ async function startMicrophone() {
                 
                 // ネル先生が話していて、かつユーザーの発言がある場合
                 if (window.isNellSpeaking && cleanText.length > 0) {
+                    // 長文判定（10文字以上なら「意味のある発言」とみなして止める）
                     const isLongEnough = cleanText.length >= 10;
+                    // キーワード判定
                     const isStopCommand = stopKeywords.some(w => cleanText.includes(w));
 
                     if (isLongEnough || isStopCommand) {
-                        console.log(`【Audio】割り込み検知(緩和版): "${cleanText}" -> 停止`);
+                        console.log(`【Audio】割り込み検知: "${cleanText}" -> 停止`);
                         stopAudioPlayback();
                     }
                 }
