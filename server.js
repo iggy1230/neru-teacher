@@ -1,4 +1,4 @@
-// --- server.js (完全版 v244.0: 図鑑登録タグ・出力形式厳格化版) ---
+// --- server.js (完全版 v245.0: JSONパース強化・バグ修正版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -92,7 +92,6 @@ app.post('/synthesize', async (req, res) => {
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
-        // ★MODEL指定: 記憶更新は高速なFlashで十分
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp", 
             generationConfig: { responseMimeType: "application/json" }
@@ -129,9 +128,25 @@ app.post('/update-memory', async (req, res) => {
 
         const result = await model.generateContent(prompt);
         let text = result.response.text();
+        
+        // ★JSONパースエラー対策: マークダウン記法を徹底的に除去
         text = text.replace(/```json/g, '').replace(/```/g, '').trim();
         
-        let newProfile = JSON.parse(text);
+        // 配列で返ってきた場合の処理
+        let newProfile;
+        try {
+            newProfile = JSON.parse(text);
+        } catch (e) {
+            console.error("JSON Parse failed, attempting cleanup:", text);
+            // 最低限のリカバリ: [] で囲まれていれば中身を取り出す、など
+            const match = text.match(/\{[\s\S]*\}/);
+            if (match) {
+                newProfile = JSON.parse(match[0]);
+            } else {
+                throw new Error("Invalid JSON structure");
+            }
+        }
+
         if (Array.isArray(newProfile)) {
             newProfile = newProfile[0];
         }

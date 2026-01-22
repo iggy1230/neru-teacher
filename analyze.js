@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v249.0: 図鑑登録・日本語発言対応版) ---
+// --- analyze.js (完全版 v250.0: 画像認識精度・プロンプト修正版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -204,7 +204,7 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     // AIがタグを口走った場合も、画面表示からは消す
     let displayText = t.replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "");
     displayText = displayText.replace(/\[CAPTURE\s*[:：]\s*.*?\]/gi, ""); 
-    displayText = displayText.replace(/キャプチャー[、,\s]*([^\s。]+)/gi, "$1"); // 「キャプチャー、〇〇」を「〇〇」だけ残す
+    displayText = displayText.replace(/キャプチャー[、,\s]*([^\s。]+)/gi, "$1"); 
 
     if (el) el.innerText = displayText;
     
@@ -482,8 +482,9 @@ window.captureAndSendLiveImage = function() {
     setTimeout(() => {
         ignoreIncomingAudio = false; 
         const ts = new Date().getTime(); 
-        // ★プロンプト強化: 万が一読み上げてもいいように、日本語でのタグ形式も例示する
-        sendSilentPrompt(`【画像認識・図鑑登録指示 ID:${ts}】\nたった今、新しい画像を送ったにゃ。\n写っているものを特定して感想を言って。\nその発言の最後に、必ず **\`[CAPTURE:アイテム名]\`** というシステム用タグを付け加えてください。\nユーザーにはこのタグのことは説明せず、自然に会話して。\nもしタグが出力できない場合は、「キャプチャー、アイテム名」と発言しても構いません。`);
+        // ★プロンプト強化: 「感想」ではなく「物体認識タスク」であることを強調する
+        // 「これは何ですか？」という質問に対する回答を強制する
+        sendSilentPrompt(`【視覚認識タスク ID:${ts}】\nたった今、ユーザーが画像を見せました。「これは何ですか？」\n画像に写っている物体を**客観的に、真面目に**特定してください。\n特定した名前を『[CAPTURE:名前]』という形式で出力してください。\nキャラ作りよりも正確さを優先してください。`);
     }, 200); 
 };
 
@@ -990,7 +991,7 @@ async function startLiveChat() {
                                 document.getElementById('whiteboard-content').innerText = content;
                             }
 
-                            // ★★★ 合言葉タグ検出ロジック (強化版: 日本語発言にも対応) ★★★
+                            // ★★★ 合言葉タグ検出ロジック (強化版: 日本語発言・会話形式にも対応) ★★★
                             let itemName = null;
                             
                             // パターン1: [CAPTURE:名前] (正規)
@@ -1015,6 +1016,7 @@ async function startLiveChat() {
                                 console.log(`[Collection] 📥 Tag/Speech detected: ${itemName}`);
                                 
                                 if (window.NellMemory) {
+                                    // 先行保存した「解析中...」の名前を、AIが特定した名前に更新する
                                     window.NellMemory.updateLatestCollectionItem(currentUser.id, itemName);
                                     
                                     // UI通知
