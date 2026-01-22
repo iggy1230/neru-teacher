@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v239.0: 割り込み緩和＆Liveカメラ修正版) ---
+// --- analyze.js (完全版 v240.0: ロック短縮＆ボタン表示改善版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -378,8 +378,7 @@ window.captureAndSendLiveImage = function() {
 
     // ★追加: 連続撮影・送信重複防止（2枚目以降のブロック解除対策）
     if (window.isLiveImageSending) {
-        console.log("画像送信クールダウン中にゃ...");
-        return; // 連打防止
+        return; // 連打防止（メッセージは出さない）
     }
     
     const video = document.getElementById('live-chat-video');
@@ -391,8 +390,13 @@ window.captureAndSendLiveImage = function() {
     stopAudioPlayback();
     ignoreIncomingAudio = true; 
     
-    // ★ロック開始
+    // ★ロック開始 & UI変更
     window.isLiveImageSending = true;
+    const btn = document.getElementById('live-camera-btn');
+    if (btn) {
+        btn.innerHTML = "<span>📡</span> 送信中にゃ...";
+        btn.style.backgroundColor = "#ccc";
+    }
 
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth || 640;
@@ -443,17 +447,21 @@ window.captureAndSendLiveImage = function() {
     // ★画像送信
     liveSocket.send(JSON.stringify({ base64Image: base64Data }));
 
-    // ★追加: 強制的にロック解除（3秒後）
-    // これにより、AIが返答中であっても次の撮影が可能になる
+    // ★追加: 強制的にロック解除（2秒後）& UI戻し
     setTimeout(() => {
         window.isLiveImageSending = false;
+        if (btn) {
+            btn.innerHTML = "<span>📷</span> これ教えて！（カメラで見せる）";
+            btn.style.backgroundColor = "#4a90e2";
+        }
         console.log("次の画像送信準備OKにゃ");
-    }, 3000);
+    }, 2000);
 
     setTimeout(() => {
         ignoreIncomingAudio = false; 
         const ts = new Date().getTime(); // 毎回異なるテキストにするためのタイムスタンプ
-        sendSilentPrompt(`【緊急画像認識指示 ID:${ts}】\nたった今、画像を送ったにゃ。\nこの画像に写っているものを特定して、感想を言う前に **必ず** \`register_collection_item\` ツールを実行して！\n「登録した」と嘘をつくのは禁止！`);
+        // ★プロンプト強化: 「これ新しい写真だから前の話は忘れて！」と指示
+        sendSilentPrompt(`【緊急画像認識指示 ID:${ts}】\nたった今、新しい画像を送ったにゃ。\n前の会話の流れは一旦忘れて、この画像に写っているものを特定して！\n特定できたら感想を言う前に **必ず** \`register_collection_item\` ツールを実行して！\n「登録した」と嘘をつくのは禁止！`);
     }, 200); 
 };
 
@@ -846,6 +854,10 @@ async function startLiveChat() {
         liveSocket.binaryType = "blob"; 
         connectionTimeout = setTimeout(() => { if (liveSocket && liveSocket.readyState !== WebSocket.OPEN) { updateNellMessage("なかなかつながらないにゃ…", "thinking", false); stopLiveChat(); } }, 10000); 
         
+        // ★キャッシュリセット（前の変な画像の影響を消す）
+        window.lastSentCollectionImage = null;
+        window.isLiveImageSending = false;
+
         liveSocket.onopen = () => { 
             // ★即座に初期化メッセージを送信
             liveSocket.send(JSON.stringify({
@@ -996,6 +1008,14 @@ function stopLiveChat() {
     if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = currentMode === 'simple-chat' ? "#66bb6a" : "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; } 
     liveSocket = null; 
     
+    // カメラボタンのリセット
+    const camBtn = document.getElementById('live-camera-btn');
+    if (camBtn) {
+        camBtn.innerHTML = "<span>📷</span> これ教えて！（カメラで見せる）";
+        camBtn.style.backgroundColor = "#4a90e2";
+    }
+    window.isLiveImageSending = false;
+
     const video = document.getElementById('live-chat-video');
     if(video) video.srcObject = null;
     document.getElementById('live-chat-video-container').style.display = 'none';
