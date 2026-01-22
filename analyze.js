@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v256.0: サンドイッチ送信・絶対認識版) ---
+// --- analyze.js (完全版 v257.0: マイク遮断・質問偽装・絶対認識版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -38,6 +38,8 @@ let currentLiveAudioSource = null;
 
 // ★Liveカメラ用ロックフラグ
 window.isLiveImageSending = false;
+// ★マイクミュートフラグ（システム発言優先用）
+window.isMicMuted = false;
 
 // ★図鑑用画像キャッシュ
 window.lastSentCollectionImage = null;
@@ -201,11 +203,11 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     const el = document.getElementById(targetId);
     
     // 表示用テキストのクリーニング（タグを除去）
-    // AIがタグを口走った場合も、画面表示からは消す
-    let displayText = t.replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "");
-    displayText = displayText.replace(/\[CAPTURE\s*[:：]\s*.*?\]/gi, ""); 
-    displayText = displayText.replace(/【図鑑登録[:：]\s*.*?】/g, ""); 
-    displayText = displayText.replace(/キャプチャー[、,\s]*([^\s。]+)/gi, "$1"); 
+    let displayText = t
+        .replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "")
+        .replace(/\[CAPTURE\s*[:：]\s*.*?\]/gi, "")
+        .replace(/【図鑑登録[:：]\s*.*?】/g, "")
+        .replace(/キャプチャー[、,\s]*([^\s。]+)/gi, "$1"); 
 
     if (el) el.innerText = displayText;
     
@@ -403,6 +405,10 @@ window.captureAndSendLiveImage = function() {
         btn.style.backgroundColor = "#ccc";
     }
 
+    // ★★★ マイクを物理的にミュート（システム優先モード） ★★★
+    // これにより、AIは「ユーザーが無言」という情報すら受け取れなくなる
+    window.isMicMuted = true;
+
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
@@ -467,27 +473,28 @@ window.captureAndSendLiveImage = function() {
 
     updateNellMessage("ん？どれどれ…", "thinking", false, false);
     
-    // ★★★ 今回の修正ポイント: サンドイッチ送信作戦 ★★★
+    // ★★★ 今回の修正ポイント: マイクを殺した状態で質問をねじ込む ★★★
     if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
-        // 1. まず「画像を送るよ」と宣言 (ターンは終わらせない)
+        
+        // 1. テキスト（質問）を送信（ターン完了しない）
         liveSocket.send(JSON.stringify({ 
             clientContent: { 
-                turns: [{ role: "user", parts: [{ text: "（今から画像を送ります...）" }] }],
+                turns: [{ role: "user", parts: [{ text: "（これ見て）これは何？" }] }],
                 turnComplete: false 
             } 
         }));
 
-        // 2. 画像を送る
+        // 2. 画像を送信
         liveSocket.send(JSON.stringify({ base64Image: base64Data }));
 
-        // 3. すぐに「これ何？」と質問してターンを終了させる (100ms程度の微遅延で順序保証)
+        // 3. 最後に「返事して！」の合図を送る
         setTimeout(() => {
             console.log("[Collection] 🚀 Sending final trigger prompt.");
             liveSocket.send(JSON.stringify({ 
                 clientContent: { 
                     turns: [{ 
                         role: "user", 
-                        parts: [{ text: "（画像を送りました）これは何ですか？『【図鑑登録：(名前)】』の形式で名前を教えて！" }] 
+                        parts: [{ text: "『【図鑑登録：(名前)】』の形式で名前を教えて！" }] 
                     }],
                     turnComplete: true // ここで初めてAIに回答権を渡す
                 } 
@@ -498,12 +505,15 @@ window.captureAndSendLiveImage = function() {
     // ★追加: 強制的にロック解除（2秒後）& UI戻し
     setTimeout(() => {
         window.isLiveImageSending = false;
+        // マイク復活
+        window.isMicMuted = false;
+        
         if (btn) {
             btn.innerHTML = "<span>📷</span> これ教えて！（カメラで見せる）";
             btn.style.backgroundColor = "#4a90e2";
         }
         console.log("次の画像送信準備OKにゃ");
-    }, 2000);
+    }, 3000); // マイクミュートは少し長めに（AIが喋り出すまで）
     
     setTimeout(() => {
          ignoreIncomingAudio = false; 
@@ -1013,40 +1023,27 @@ async function startLiveChat() {
                                 document.getElementById('whiteboard-content').innerText = content;
                             }
 
-                            // ★★★ 合言葉タグ検出ロジック (強化版: 日本語発言・会話形式にも対応) ★★★
+                            // ★★★ 合言葉タグ検出ロジック (強化版) ★★★
                             let itemName = null;
-                            
-                            // パターン1: [CAPTURE:名前] (正規)
-                            const match1 = p.text.match(/\[CAPTURE\s*[:：]\s*(.+?)\]/i);
-                            if (match1) itemName = match1[1];
-
-                            // パターン2: CAPTURE:名前 (括弧忘れ)
-                            if (!itemName) {
-                                const match2 = p.text.match(/CAPTURE\s*[:：]\s*(.+?)(?:$|\n|。)/i);
-                                if (match2) itemName = match2[1];
+                            const captureMatch = p.text.match(/【図鑑登録[:：]\s*(.+?)】/);
+                            if (captureMatch) {
+                                itemName = captureMatch[1].trim();
+                            } else {
+                                const engMatch = p.text.match(/\[CAPTURE\s*[:：]\s*(.+?)\]/i);
+                                if(engMatch) itemName = engMatch[1].trim();
                             }
-
-                            // パターン3: キャプチャー、名前 (口語)
+                            
+                            // 日本語会話文検出
                             if (!itemName) {
                                 const match3 = p.text.match(/キャプチャー[、,\s]\s*([^\s。]+)/i);
                                 if (match3) itemName = match3[1];
                             }
-                            
-                            // パターン4: 【図鑑登録：名前】 (日本語タグ)
-                            if (!itemName) {
-                                const match4 = p.text.match(/【図鑑登録[:：]\s*(.+?)】/);
-                                if(match4) itemName = match4[1];
-                            }
 
                             if (itemName) {
-                                itemName = itemName.trim();
-                                console.log(`[Collection] 📥 Tag/Speech detected: ${itemName}`);
-                                
+                                console.log(`[Collection] 📥 Tag detected: ${itemName}`);
                                 if (window.NellMemory) {
-                                    // 先行保存した「解析中...」の名前を、AIが特定した名前に更新する
                                     window.NellMemory.updateLatestCollectionItem(currentUser.id, itemName);
                                     
-                                    // UI通知
                                     const notif = document.createElement('div');
                                     notif.innerText = `📖 図鑑に「${itemName}」として登録したにゃ！`;
                                     notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #00bcd4; color:#006064; padding:15px 25px; border-radius:30px; font-weight:900; z-index:10000; box-shadow:0 10px 25px rgba(0,0,0,0.3); font-size:1.2rem; animation: popIn 0.5s ease;";
@@ -1107,6 +1104,7 @@ function stopLiveChat() {
         camBtn.style.backgroundColor = "#4a90e2";
     }
     window.isLiveImageSending = false;
+    window.isMicMuted = false; // マイクミュート解除
 
     const video = document.getElementById('live-chat-video');
     if(video) video.srcObject = null;
@@ -1184,6 +1182,9 @@ async function startMicrophone() {
         workletNode = new AudioWorkletNode(audioContext, 'pcm-processor'); 
         source.connect(workletNode); 
         workletNode.port.onmessage = (event) => { 
+            // ★マイクミュート中は送信しない
+            if (window.isMicMuted) return;
+
             if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return; 
             const downsampled = downsampleBuffer(event.data, audioContext.sampleRate, 16000); 
             liveSocket.send(JSON.stringify({ base64Audio: arrayBufferToBase64(floatTo16BitPCM(downsampled)) })); 
@@ -1199,6 +1200,8 @@ async function startMicrophone() {
             workletNode = new AudioWorkletNode(audioContext, 'pcm-processor'); 
             source.connect(workletNode); 
             workletNode.port.onmessage = (event) => { 
+                if (window.isMicMuted) return;
+                
                 if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return; 
                 const downsampled = downsampleBuffer(event.data, audioContext.sampleRate, 16000); 
                 liveSocket.send(JSON.stringify({ base64Audio: arrayBufferToBase64(floatTo16BitPCM(downsampled)) })); 
