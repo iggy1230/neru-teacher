@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v254.0: 質問先行型・絶対認識版) ---
+// --- analyze.js (完全版 v255.0: 画像先行送信・確実反応版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -403,20 +403,6 @@ window.captureAndSendLiveImage = function() {
         btn.style.backgroundColor = "#ccc";
     }
 
-    // ★★★ 今回の修正ポイント1: 先に質問を投げつける（画像より先に） ★★★
-    if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
-        console.log("[Collection] 🚀 Sending text-prompt FIRST to pre-empt hallucinations.");
-        liveSocket.send(JSON.stringify({ 
-            clientContent: { 
-                turns: [{ 
-                    role: "user", 
-                    parts: [{ text: "（今から画像を送ります）「これは何ですか？」\n※画像に写っているものを正確に特定し、『【図鑑登録：(名前)】』の形式で名前を出力してください。" }] 
-                }],
-                turnComplete: false // まだターンを終わらせない（画像を続けて送るため）
-            } 
-        }));
-    }
-
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
@@ -481,9 +467,25 @@ window.captureAndSendLiveImage = function() {
 
     updateNellMessage("ん？どれどれ…", "thinking", false, false);
     
-    // ★★★ 今回の修正ポイント2: 画像を即座に送る ★★★
-    // 質問とセットで送ることで「質問への回答として画像を見る」ように誘導
+    // ★★★ 今回の修正ポイント1: 画像を送信 ★★★
     liveSocket.send(JSON.stringify({ base64Image: base64Data }));
+
+    // ★★★ 今回の修正ポイント2: 0.1秒後に質問を送信 (turnComplete: true) ★★★
+    // 「画像が先、質問が後」の順序を守ることで、AIが画像を文脈として認識する
+    setTimeout(() => {
+        if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
+            console.log("[Collection] 🚀 Sending text-prompt AFTER image to trigger response.");
+            liveSocket.send(JSON.stringify({ 
+                clientContent: { 
+                    turns: [{ 
+                        role: "user", 
+                        parts: [{ text: "（今送った画像について）「これは何ですか？」\n※画像に写っているものを正確に特定し、『【図鑑登録：(名前)】』の形式で名前を出力してください。" }] 
+                    }],
+                    turnComplete: true // ここで初めてターン終了＝回答生成開始
+                } 
+            }));
+        }
+    }, 100); // 画像送信の直後(100ms)に送る
 
     // ★追加: 強制的にロック解除（2秒後）& UI戻し
     setTimeout(() => {
