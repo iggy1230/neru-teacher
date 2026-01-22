@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v241.0: モーダルレイアウト修正版) --- */
+/* --- style.css (完全版 v242.0: レイアウト崩れ＆操作不能バグ修正版) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -47,6 +47,8 @@ body::before {
 }
 
 button { font-family: inherit; }
+
+/* ★重要修正: 非表示クラスを最強にする */
 .hidden { display: none !important; }
 
 #app-container {
@@ -776,29 +778,51 @@ button { font-family: inherit; }
     stroke-dasharray: 5;
 }
 
-/* 記憶管理モーダル（修正版） */
+/* 記憶管理モーダル（完全修正版） */
 .memory-modal-overlay {
     position: fixed; top: 0; left: 0; width: 100%; height: 100%;
     background: rgba(0,0,0,0.6); z-index: 9999;
     display: flex; align-items: center; justify-content: center;
 }
-/* ★重要修正: フレックスボックスで中身を管理 */
+
+/* ★Flexboxで高さを管理し、はみ出しを防ぐ */
 .memory-modal-content {
-    background: #fff; width: 90%; max-width: 500px; max-height: 80vh;
+    background: #fff; width: 90%; max-width: 500px;
+    max-height: 85vh; /* 画面からはみ出さない */
     border-radius: 15px; padding: 20px;
-    display: flex; flex-direction: column; /* 縦並び */
+    display: flex; flex-direction: column; 
     box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-    overflow: hidden; /* モーダル自体は伸びない */
+    overflow: hidden;
 }
-/* ★重要修正: リスト部分だけスクロールさせる */
-.memory-list {
-    flex: 1; /* 残りのスペースを埋める */
+
+/* コンテンツエリア（ここが伸びる） */
+#memory-view-profile, #memory-view-logs {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* 内部スクロールのため */
+    min-height: 0; /* Flexboxバグ回避 */
+}
+
+/* スクロールエリア */
+.memory-list, #collection-grid {
+    flex: 1;
     overflow-y: auto; /* ここだけスクロール */
-    min-height: 0; /* Flexboxのバグ回避 */
-    margin: 15px 0;
+    -webkit-overflow-scrolling: touch;
+    margin: 10px 0;
     border: 1px solid #eee; border-radius: 8px; padding: 10px;
     background: #fafafa;
 }
+
+/* 図鑑グリッドの上書き */
+#collection-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 10px;
+    padding: 5px;
+    max-height: none !important; /* 親のFlexに従う */
+}
+
 .memory-item {
     display: flex; justify-content: space-between; align-items: flex-start;
     background: white; padding: 10px; margin-bottom: 8px;
@@ -817,10 +841,13 @@ button { font-family: inherit; }
     border-radius: 5px; padding: 5px 10px; cursor: pointer;
     font-size: 0.8rem; flex-shrink: 0; margin-left: 10px;
 }
-/* 閉じるボタンエリア */
-.modal-footer-btn {
-    flex-shrink: 0; /* 縮まないようにする */
+
+/* ★フッターボタン（常に下に表示） */
+.memory-modal-content > button,
+.memory-modal-content > div > button {
+    flex-shrink: 0;
     margin-top: 10px;
+    width: 100%;
 }
 
 /* --- タイマー関連 --- */
