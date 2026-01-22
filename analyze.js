@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v247.0: UIフリーズ防止＆レイアウト修正版) ---
+// --- analyze.js (完全版 v240.0: ロック短縮＆ボタン表示改善版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -31,7 +31,7 @@ let connectionTimeout = null;
 let recognition = null;
 let isRecognitionActive = false;
 
-// ★音声ソース管理
+// ★音声ソース管理（二重音声防止用）
 let liveAudioSources = []; 
 let ignoreIncomingAudio = false;
 let currentLiveAudioSource = null;
@@ -163,37 +163,26 @@ async function saveToNellMemory(role, text) {
         "ok", "OK", "接続中...", "読み込み中...",
         "お待たせ！なんでも話してにゃ！", "おいしいにゃ！", "おつかれさまにゃ！"
     ];
-    // 短すぎる相槌などは保存しない
     if (trimmed.length <= 1 || ignoreWords.includes(trimmed)) return;
     
-    // AIのコンテキスト（短期記憶）に追加
+    // console.log(`【Memory】ログ追加: [${role}] ${trimmed}`);
     chatTranscript += `${role === 'user' ? '生徒' : 'ネル'}: ${trimmed}\n`;
 
-    // ログ保存用オブジェクト
     const newItem = { role: role, text: trimmed, time: new Date().toISOString() };
-    
-    // LocalStorageへの保存 (UI表示用)
     try {
         const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
         let history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
-        
-        // 重複排除 (直前と同じ発言なら保存しない)
         if (history.length > 0 && history[history.length - 1].text === trimmed) return;
-        
         history.push(newItem);
-        if (history.length > 50) history.shift(); // 最新50件保持
+        if (history.length > 50) history.shift(); 
         localStorage.setItem(memoryKey, JSON.stringify(history));
     } catch(e) {}
-
-    // Firestoreへの保存 (クラウド同期)
     if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) {
         try {
             const docRef = db.collection("memories").doc(currentUser.id);
             const docSnap = await docRef.get();
             let cloudHistory = docSnap.exists ? (docSnap.data().history || []) : [];
-            
             if (cloudHistory.length > 0 && cloudHistory[cloudHistory.length - 1].text === trimmed) return;
-            
             cloudHistory.push(newItem);
             if (cloudHistory.length > 50) cloudHistory.shift();
             await docRef.set({ history: cloudHistory, lastUpdated: new Date().toISOString() }, { merge: true });
@@ -202,6 +191,7 @@ async function saveToNellMemory(role, text) {
 }
 
 window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false, speak = true) {
+    // ★絶対条件：Live Chat(WebSocket)接続中は、絶対にTTSを再生しない。
     if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
         speak = false;
     }
@@ -226,47 +216,32 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
 };
 
 // ==========================================
-// 4. モード選択 & UI制御 (修正版)
+// 4. モード選択 & UI制御
 // ==========================================
 
 window.selectMode = function(m) {
-    // 既存のチャットやゲームを安全に停止
-    try { stopLiveChat(); } catch(e) { console.warn("LiveChat stop error:", e); }
-    gameRunning = false;
-
     currentMode = m; 
     if (typeof switchScreen === 'function') switchScreen('screen-main'); 
-    
     const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'simple-chat-view', 'lunch-view', 'grade-sheet-container', 'hint-detail-container'];
     ids.forEach(id => { const el = document.getElementById(id); if (el) el.classList.add('hidden'); });
-    
     const backBtn = document.getElementById('main-back-btn');
     if (backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = backToLobby; }
-    
+    stopLiveChat(); gameRunning = false;
     const icon = document.querySelector('.nell-avatar-wrap img'); if(icon) icon.src = defaultIcon;
     document.getElementById('mini-karikari-display').classList.remove('hidden'); updateMiniKarikari();
     
     if (m === 'chat') { 
         document.getElementById('chat-view').classList.remove('hidden'); 
         updateNellMessage("「おはなしする」を押してね！", "gentle", false); 
-        if(typeof updateTimerDisplay === 'function') updateTimerDisplay();
+        updateTimerDisplay();
     } 
     else if (m === 'simple-chat') {
         document.getElementById('simple-chat-view').classList.remove('hidden');
         updateNellMessage("今日はお話だけするにゃ？", "gentle", false);
     }
-    else if (m === 'lunch') { 
-        document.getElementById('lunch-view').classList.remove('hidden'); 
-        updateNellMessage("お腹ペコペコだにゃ……", "thinking", false); 
-    } 
-    else if (m === 'review') { 
-        if(typeof renderMistakeSelection === 'function') renderMistakeSelection(); 
-    } 
-    else { 
-        const subjectView = document.getElementById('subject-selection-view'); 
-        if (subjectView) subjectView.classList.remove('hidden'); 
-        updateNellMessage("どの教科にするのかにゃ？", "normal", false); 
-    }
+    else if (m === 'lunch') { document.getElementById('lunch-view').classList.remove('hidden'); updateNellMessage("お腹ペコペコだにゃ……", "thinking", false); } 
+    else if (m === 'review') { renderMistakeSelection(); } 
+    else { const subjectView = document.getElementById('subject-selection-view'); if (subjectView) subjectView.classList.remove('hidden'); updateNellMessage("どの教科にするのかにゃ？", "normal", false); }
 };
 
 window.setSubject = function(s) { 
@@ -378,16 +353,21 @@ function sendSilentPrompt(text) {
 
 // ★完全停止処理: 全ての音声ソースを抹殺する
 function stopAudioPlayback() {
-    liveAudioSources.forEach(source => { try { source.stop(); } catch(e){} });
-    liveAudioSources = []; 
+    // スケジュールされているすべてのWebSocket音声を停止
+    liveAudioSources.forEach(source => {
+        try { source.stop(); } catch(e){}
+    });
+    liveAudioSources = []; // 配列クリア
 
     if (audioContext && audioContext.state === 'running') {
+        // 現在時刻より少し先を指定して、バッファに残った音声を無効化
         nextStartTime = audioContext.currentTime + 0.05;
     }
     window.isNellSpeaking = false;
     if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer);
     if(speakingStartTimer) clearTimeout(speakingStartTimer);
 
+    // TTSが鳴っていた場合も強制キャンセル
     if (window.cancelNellSpeech) window.cancelNellSpeech();
 }
 
@@ -396,8 +376,9 @@ window.captureAndSendLiveImage = function() {
         return alert("まずは「おはなしする」でネル先生とつながってにゃ！");
     }
 
+    // ★追加: 連続撮影・送信重複防止（2枚目以降のブロック解除対策）
     if (window.isLiveImageSending) {
-        return; // 連打防止
+        return; // 連打防止（メッセージは出さない）
     }
     
     const video = document.getElementById('live-chat-video');
@@ -407,7 +388,6 @@ window.captureAndSendLiveImage = function() {
 
     // 1. 強制的に全音声を停止し、フラグを立てる
     stopAudioPlayback();
-    // ★ここ重要: 画像送信中は音声を受け付けないが、送信直後に解除する
     ignoreIncomingAudio = true; 
     
     // ★ロック開始 & UI変更
@@ -424,7 +404,7 @@ window.captureAndSendLiveImage = function() {
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     
-    // ★図鑑用にサムネイルを作成してキャッシュ (150px)
+    // ★図鑑用にサムネイルを作成してキャッシュ
     const thumbCanvas = document.createElement('canvas');
     const thumbSize = 150; 
     let tw = canvas.width, th = canvas.height;
@@ -432,10 +412,9 @@ window.captureAndSendLiveImage = function() {
     else { tw *= thumbSize / th; th = thumbSize; }
     thumbCanvas.width = tw; thumbCanvas.height = th;
     thumbCanvas.getContext('2d').drawImage(canvas, 0, 0, tw, th);
-    
-    // グローバル変数にセット (ツール指令が来たらこれを使う)
     window.lastSentCollectionImage = thumbCanvas.toDataURL('image/jpeg', 0.7);
 
+    // デバッグログ
     console.log("[Collection] Snapshot captured and cached.", window.lastSentCollectionImage ? "OK" : "Error");
 
     const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
@@ -446,7 +425,6 @@ window.captureAndSendLiveImage = function() {
     document.body.appendChild(flash);
     setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
 
-    // プレビュー表示
     const videoContainer = document.getElementById('live-chat-video-container');
     if (videoContainer) {
         const oldPreview = document.getElementById('snapshot-preview-overlay');
@@ -469,11 +447,6 @@ window.captureAndSendLiveImage = function() {
     // ★画像送信
     liveSocket.send(JSON.stringify({ base64Image: base64Data }));
 
-    // ★重要: 送信したらすぐに音声受信ブロックを解除する
-    setTimeout(() => {
-        ignoreIncomingAudio = false; 
-    }, 500);
-
     // ★追加: 強制的にロック解除（2秒後）& UI戻し
     setTimeout(() => {
         window.isLiveImageSending = false;
@@ -484,20 +457,13 @@ window.captureAndSendLiveImage = function() {
         console.log("次の画像送信準備OKにゃ");
     }, 2000);
 
-    // ★重要: バッティング回避のため、ここでの sendSilentPrompt は削除しました。
-    // AIは System Instruction に従って、画像を受け取ったら自律的に反応します。
+    setTimeout(() => {
+        ignoreIncomingAudio = false; 
+        const ts = new Date().getTime(); // 毎回異なるテキストにするためのタイムスタンプ
+        // ★プロンプト強化: 「これ新しい写真だから前の話は忘れて！」と指示
+        sendSilentPrompt(`【緊急画像認識指示 ID:${ts}】\nたった今、新しい画像を送ったにゃ。\n前の会話の流れは一旦忘れて、この画像に写っているものを特定して！\n特定できたら感想を言う前に **必ず** \`register_collection_item\` ツールを実行して！\n「登録した」と嘘をつくのは禁止！`);
+    }, 200); 
 };
-
-// 安全装置: フラグを強制リセットする
-function resetLiveChatFlags() {
-    window.isLiveImageSending = false;
-    ignoreIncomingAudio = false;
-    const btn = document.getElementById('live-camera-btn');
-    if (btn) {
-        btn.innerHTML = "<span>📷</span> これ教えて！（カメラで見せる）";
-        btn.style.backgroundColor = "#4a90e2";
-    }
-}
 
 // ==========================================
 // 7. 宿題分析ロジック (高画質・シンプルリサイズ版)
@@ -947,8 +913,7 @@ async function startLiveChat() {
 
                     if (imageToSave) {
                         try {
-                            // ★修正: descriptionを受け取る
-                            await window.NellMemory.addToCollection(currentUser.id, data.itemName, imageToSave, data.description);
+                            await window.NellMemory.addToCollection(currentUser.id, data.itemName, imageToSave);
                             console.log("[Collection] ✅ Saved to memory successfully.");
                             
                             // UI通知（リッチなポップアップ）
@@ -1000,7 +965,6 @@ async function startLiveChat() {
                                 document.getElementById('whiteboard-content').innerText = content;
                             }
                             // ★WebSocket接続中は speak=false にしてTTSを呼ばない
-                            // ★重要: 会話ログに保存する
                             saveToNellMemory('nell', p.text); 
                             updateNellMessage(p.text, "normal", false, false);
                         } 
@@ -1014,6 +978,139 @@ async function startLiveChat() {
         liveSocket.onclose = () => stopLiveChat(); 
         liveSocket.onerror = () => stopLiveChat(); 
     } catch (e) { stopLiveChat(); } 
+}
+
+function stopLiveChat() { 
+    // ★追加: 会話終了時に記憶を更新する
+    if (window.NellMemory) {
+        if (chatTranscript && chatTranscript.length > 10) {
+            console.log(`【Memory】更新開始 (ログ長: ${chatTranscript.length})`);
+            window.NellMemory.updateProfileFromChat(currentUser.id, chatTranscript);
+        } else {
+            console.log("【Memory】会話が短いため更新スキップ");
+        }
+    }
+
+    isRecognitionActive = false; 
+    if (connectionTimeout) clearTimeout(connectionTimeout); 
+    if (recognition) try{recognition.stop()}catch(e){} 
+    if (mediaStream) mediaStream.getTracks().forEach(t=>t.stop()); 
+    if (workletNode) { workletNode.port.postMessage('stop'); workletNode.disconnect(); } 
+    if (liveSocket) liveSocket.close(); 
+    if (audioContext && audioContext.state !== 'closed') audioContext.close(); 
+    window.isNellSpeaking = false; 
+    if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer); 
+    if(speakingStartTimer) clearTimeout(speakingStartTimer); 
+    
+    // UIのリセット処理
+    const btnId = currentMode === 'simple-chat' ? 'mic-btn-simple' : 'mic-btn';
+    const btn = document.getElementById(btnId);
+    if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = currentMode === 'simple-chat' ? "#66bb6a" : "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; } 
+    liveSocket = null; 
+    
+    // カメラボタンのリセット
+    const camBtn = document.getElementById('live-camera-btn');
+    if (camBtn) {
+        camBtn.innerHTML = "<span>📷</span> これ教えて！（カメラで見せる）";
+        camBtn.style.backgroundColor = "#4a90e2";
+    }
+    window.isLiveImageSending = false;
+
+    const video = document.getElementById('live-chat-video');
+    if(video) video.srcObject = null;
+    document.getElementById('live-chat-video-container').style.display = 'none';
+}
+
+async function startMicrophone() { 
+    try { 
+        if ('webkitSpeechRecognition' in window) { 
+            recognition = new webkitSpeechRecognition(); 
+            recognition.continuous = true; 
+            recognition.interimResults = true; 
+            recognition.lang = 'ja-JP'; 
+            
+            // ★スマート割り込み機能 (相槌無視 + 10文字以上/特定ワード)
+            recognition.onresult = (event) => { 
+                let currentText = "";
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    currentText += event.results[i][0].transcript;
+                }
+                const cleanText = currentText.trim();
+                
+                // 停止キーワード
+                const stopKeywords = ["違う", "ちがう", "待って", "まって", "ストップ", "やめて", "うるさい", "静か", "しずか"];
+                
+                // ネル先生が話していて、かつユーザーの発言がある場合
+                if (window.isNellSpeaking && cleanText.length > 0) {
+                    const isLongEnough = cleanText.length >= 10;
+                    const isStopCommand = stopKeywords.some(w => cleanText.includes(w));
+
+                    if (isLongEnough || isStopCommand) {
+                        console.log(`【Audio】割り込み検知(緩和版): "${cleanText}" -> 停止`);
+                        stopAudioPlayback();
+                    }
+                }
+
+                let interim = ''; 
+                for (let i = event.resultIndex; i < event.results.length; ++i) { 
+                    if (event.results[i].isFinal) { 
+                        const userText = event.results[i][0].transcript;
+                        saveToNellMemory('user', userText); 
+                        
+                        const txtId = currentMode === 'simple-chat' ? 'user-speech-text-simple' : 'user-speech-text';
+                        const el = document.getElementById(txtId); 
+                        if(el) el.innerText = userText; 
+                    } else interim += event.results[i][0].transcript; 
+                } 
+            }; 
+            recognition.onend = () => { if (isRecognitionActive && liveSocket && liveSocket.readyState === WebSocket.OPEN) try{recognition.start()}catch(e){} }; 
+            recognition.start(); 
+        } 
+        
+        const useVideo = (currentMode === 'chat');
+        
+        mediaStream = await navigator.mediaDevices.getUserMedia({ 
+            audio: { sampleRate: 16000, channelCount: 1 }, 
+            video: useVideo ? { facingMode: "environment" } : false 
+        }); 
+        
+        if (useVideo) {
+            const video = document.getElementById('live-chat-video');
+            if (video) {
+                video.srcObject = mediaStream;
+                video.play();
+                document.getElementById('live-chat-video-container').style.display = 'block';
+            }
+        }
+
+        const processorCode = `class PcmProcessor extends AudioWorkletProcessor { constructor() { super(); this.bufferSize = 2048; this.buffer = new Float32Array(this.bufferSize); this.index = 0; } process(inputs, outputs, parameters) { const input = inputs[0]; if (input.length > 0) { const channel = input[0]; for (let i = 0; i < channel.length; i++) { this.buffer[this.index++] = channel[i]; if (this.index >= this.bufferSize) { this.port.postMessage(this.buffer); this.index = 0; } } } return true; } } registerProcessor('pcm-processor', PcmProcessor);`; 
+        const blob = new Blob([processorCode], { type: 'application/javascript' }); 
+        await audioContext.audioWorklet.addModule(URL.createObjectURL(blob)); 
+        const source = audioContext.createMediaStreamSource(mediaStream); 
+        workletNode = new AudioWorkletNode(audioContext, 'pcm-processor'); 
+        source.connect(workletNode); 
+        workletNode.port.onmessage = (event) => { 
+            if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return; 
+            const downsampled = downsampleBuffer(event.data, audioContext.sampleRate, 16000); 
+            liveSocket.send(JSON.stringify({ base64Audio: arrayBufferToBase64(floatTo16BitPCM(downsampled)) })); 
+        }; 
+    } catch(e) {
+        console.warn("Camera failed or not needed, trying audio only:", e);
+        try {
+            mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1 } });
+            const processorCode = `class PcmProcessor extends AudioWorkletProcessor { constructor() { super(); this.bufferSize = 2048; this.buffer = new Float32Array(this.bufferSize); this.index = 0; } process(inputs, outputs, parameters) { const input = inputs[0]; if (input.length > 0) { const channel = input[0]; for (let i = 0; i < channel.length; i++) { this.buffer[this.index++] = channel[i]; if (this.index >= this.bufferSize) { this.port.postMessage(this.buffer); this.index = 0; } } } return true; } } registerProcessor('pcm-processor', PcmProcessor);`; 
+            const blob = new Blob([processorCode], { type: 'application/javascript' }); 
+            await audioContext.audioWorklet.addModule(URL.createObjectURL(blob)); 
+            const source = audioContext.createMediaStreamSource(mediaStream); 
+            workletNode = new AudioWorkletNode(audioContext, 'pcm-processor'); 
+            source.connect(workletNode); 
+            workletNode.port.onmessage = (event) => { 
+                if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return; 
+                const downsampled = downsampleBuffer(event.data, audioContext.sampleRate, 16000); 
+                liveSocket.send(JSON.stringify({ base64Audio: arrayBufferToBase64(floatTo16BitPCM(downsampled)) })); 
+            };
+        } catch(ex) { alert("マイクも使えないみたいだにゃ..."); }
+    } 
 }
 
 // ★完全停止処理: 全ての音声ソースを抹殺する
