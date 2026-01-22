@@ -1,4 +1,4 @@
-// --- user.js (完全修正版 v133.0: PNG形式復帰 & 軽量サイズ版) ---
+// --- user.js (完全版 v263.0: ユーザー管理ロジック) ---
 
 // Firebase初期化
 let app, auth, db;

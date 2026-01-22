@@ -1,4 +1,4 @@
-// --- ui.js (完全版 v250.0: 図鑑削除ボタン追加) ---
+// --- ui.js (完全版 v263.0: 削除ボタン付き図鑑・UIロジック) ---
 
 const sfxChime = new Audio('Jpn_sch_chime.mp3');
 const sfxBtn = new Audio('botan1.mp3');
@@ -143,7 +143,7 @@ window.showCollection = async function() {
         const div = document.createElement('div');
         div.style.cssText = "background:white; border-radius:10px; padding:8px; box-shadow:0 2px 5px rgba(0,0,0,0.1); text-align:center; border:2px solid #fff176; position:relative;";
         
-        // 削除ボタン
+        // 削除ボタン (×)
         const delBtn = document.createElement('button');
         delBtn.innerText = "×";
         delBtn.style.cssText = "position:absolute; top:-8px; right:-8px; background:#ff5252; color:white; border:2px solid white; border-radius:50%; width:24px; height:24px; font-weight:bold; cursor:pointer; font-size:14px; line-height:1; padding:0; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 4px rgba(0,0,0,0.2);";

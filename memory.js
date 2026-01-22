@@ -1,4 +1,4 @@
-// --- memory.js (完全版 v251.0: ログ強化・デバッグ版) ---
+// --- memory.js (完全版 v263.0: 先行保存・後更新・削除対応版) ---
 
 (function(global) {
     const Memory = {};
@@ -104,7 +104,7 @@
         return context;
     };
 
-    // 図鑑にアイテムを追加
+    // 図鑑にアイテムを追加（先行保存用）
     Memory.addToCollection = async function(userId, itemName, imageBase64) {
         console.log(`[Memory] addToCollection called. Name: ${itemName}`);
         try {
@@ -117,20 +117,22 @@
                 date: new Date().toISOString()
             };
 
+            // 先頭に追加（常に最新がindex 0）
             profile.collection.unshift(newItem); 
 
+            // 容量制限（最新30件）
             if (profile.collection.length > 30) {
                 profile.collection = profile.collection.slice(0, 30);
             }
 
             await Memory.saveUserProfile(userId, profile);
-            console.log(`[Memory] Collection added successfully. Total: ${profile.collection.length}`);
+            console.log(`[Memory] Collection added successfully.`);
         } catch (e) {
             console.error("[Memory] Add Collection Error:", e);
         }
     };
 
-    // 最新の図鑑アイテムの名前を更新する
+    // ★ 最新の図鑑アイテムの名前を更新する（AI解析完了後用）
     Memory.updateLatestCollectionItem = async function(userId, newName) {
         console.log(`[Memory] updateLatestCollectionItem called. New Name: ${newName}`);
         try {
@@ -141,6 +143,7 @@
                 return;
             }
 
+            // 最新（配列の先頭）を取得して名前を更新
             const latest = profile.collection[0];
             const oldName = latest.name;
             latest.name = newName;
@@ -153,7 +156,7 @@
         }
     };
 
-    // 図鑑からアイテムを削除する
+    // ★ 図鑑からアイテムを削除する
     Memory.deleteFromCollection = async function(userId, index) {
         try {
             const profile = await Memory.getUserProfile(userId);
