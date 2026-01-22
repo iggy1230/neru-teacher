@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v263.0: 消失関数復元・図鑑登録安定版) ---
+// --- analyze.js (完全版 v263.1: 図鑑登録・無言撮影・全機能統合版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -171,17 +171,6 @@ async function saveToNellMemory(role, text) {
         if (history.length > 50) history.shift(); 
         localStorage.setItem(memoryKey, JSON.stringify(history));
     } catch(e) {}
-    if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) {
-        try {
-            const docRef = db.collection("memories").doc(currentUser.id);
-            const docSnap = await docRef.get();
-            let cloudHistory = docSnap.exists ? (docSnap.data().history || []) : [];
-            if (cloudHistory.length > 0 && cloudHistory[cloudHistory.length - 1].text === trimmed) return;
-            cloudHistory.push(newItem);
-            if (cloudHistory.length > 50) cloudHistory.shift();
-            await docRef.set({ history: cloudHistory, lastUpdated: new Date().toISOString() }, { merge: true });
-        } catch(e) {}
-    }
 }
 
 window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false, speak = true) {
@@ -214,7 +203,6 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
 // 4. モード選択 & UI制御
 // ==========================================
 
-// ★ここが修正ポイント: stopLiveChatの存在確認と呼び出し
 window.selectMode = function(m) {
     currentMode = m; 
     if (typeof switchScreen === 'function') switchScreen('screen-main'); 
@@ -385,6 +373,7 @@ window.captureAndSendLiveImage = function() {
         btn.style.backgroundColor = "#ccc";
     }
 
+    // マイクミュート
     window.isMicMuted = true;
 
     const canvas = document.createElement('canvas');
@@ -446,7 +435,7 @@ window.captureAndSendLiveImage = function() {
 
     updateNellMessage("ん？どれどれ…", "thinking", false, false);
     
-    // ★★★ 1ターン完結型送信 ★★★
+    // サンドイッチ送信 (質問 + 画像 + ツール強制)
     if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
         console.log("[Collection] 🚀 Sending bundled turn with image and prompt.");
         liveSocket.send(JSON.stringify({ 
@@ -464,7 +453,6 @@ window.captureAndSendLiveImage = function() {
         }));
     }
 
-    // ★追加: 強制的にロック解除（2秒後）& UI戻し
     setTimeout(() => {
         window.isLiveImageSending = false;
         window.isMicMuted = false;
@@ -897,7 +885,7 @@ async function startLiveChat() {
                     return;
                 }
 
-                // ツール呼び出し検出
+                // ツール呼び出し検出（バッファに保存）
                 if (data.type === "save_to_collection") {
                     console.log(`[Collection] 📥 Tool Call detected: ${data.itemName}`);
                     latestDetectedName = data.itemName;
@@ -915,18 +903,32 @@ async function startLiveChat() {
                                 document.getElementById('whiteboard-content').innerText = content;
                             }
 
-                            // タグ検出（念のため）
+                            // タグ検出（バッファに保存）
                             let itemName = null;
+                            let detectedPattern = "";
+
                             const matchJP = p.text.match(/【図鑑登録[:：]\s*(.+?)】/);
-                            if (matchJP) itemName = matchJP[1];
-                            else {
-                                const matchRaw = p.text.match(/CAPTURE\s*[:：]\s*(.+?)(?:$|\n|。)/i);
-                                if (matchRaw) itemName = matchRaw[1];
+                            if (matchJP) { itemName = matchJP[1]; detectedPattern = "JP Tag"; }
+
+                            if (!itemName) {
+                                const matchEN = p.text.match(/\[CAPTURE\s*[:：]\s*(.+?)\]/i);
+                                if(matchEN) { itemName = matchEN[1]; detectedPattern = "EN Tag"; }
                             }
                             
+                            if (!itemName) {
+                                const matchRaw = p.text.match(/CAPTURE\s*[:：]\s*(.+?)(?:$|\n|。)/i);
+                                if (matchRaw) { itemName = matchRaw[1]; detectedPattern = "Raw CAPTURE"; }
+                            }
+                            
+                            // 口語パターン
+                            if (!itemName) {
+                                const matchSpeech = p.text.match(/(?:図鑑登録|キャプチャー)[、,，\s]\s*([^\s。]+)/i);
+                                if (matchSpeech) { itemName = matchSpeech[1]; detectedPattern = "Speech Pattern"; }
+                            }
+
                             if (itemName) {
                                 itemName = itemName.trim();
-                                console.log(`[Collection] ✅ Matched Tag: "${itemName}"`);
+                                console.log(`[Collection] ✅ Matched! Pattern: "${detectedPattern}", Item: "${itemName}"`);
                                 latestDetectedName = itemName;
                             }
 
@@ -937,7 +939,7 @@ async function startLiveChat() {
                     }); 
                 }
 
-                // ターン完了時に確定
+                // ターン完了時に確定処理
                 if (data.serverContent && data.serverContent.turnComplete) {
                     if (latestDetectedName && window.NellMemory) {
                         console.log(`[Collection] 🔄 Turn Complete. Committing name: ${latestDetectedName}`);
@@ -963,7 +965,7 @@ async function startLiveChat() {
 }
 
 // --------------------------------------------------------
-// ★ グローバル定義: stopLiveChat (ここが重要！)
+// ★ グローバル定義: stopLiveChat (これが欠けていた関数)
 // --------------------------------------------------------
 window.stopLiveChat = function() {
     if (window.NellMemory) {
@@ -1005,7 +1007,6 @@ window.stopLiveChat = function() {
 };
 
 // ... (以下、startMicrophone関数などは既存のコードと同じため省略せず記述) ...
-
 async function startMicrophone() { 
     try { 
         if ('webkitSpeechRecognition' in window) { 
