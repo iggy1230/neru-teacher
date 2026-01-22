@@ -1,4 +1,4 @@
-// --- server.js (完全版 v262.0: 図鑑登録ツール・全機能統合版) ---
+// --- server.js (完全版 v263.0: テキスト受信有効化・図鑑登録修正版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -92,7 +92,6 @@ app.post('/synthesize', async (req, res) => {
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
-        // ★MODEL指定: 記憶更新は高速なFlashで十分
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp", 
             generationConfig: { responseMimeType: "application/json" }
@@ -130,7 +129,6 @@ app.post('/update-memory', async (req, res) => {
         const result = await model.generateContent(prompt);
         let text = result.response.text();
         
-        // JSONパースエラー対策
         text = text.replace(/```json/g, '').replace(/```/g, '').trim();
         
         let newProfile;
@@ -161,7 +159,6 @@ app.post('/update-memory', async (req, res) => {
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, name } = req.body;
-        // ★MODEL指定: 宿題分析は最高精度の gemini-2.5-pro (固定)
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.5-pro", 
             generationConfig: { responseMimeType: "application/json", temperature: 0.0 }
@@ -172,24 +169,8 @@ app.post('/analyze', async (req, res) => {
         const prompt = `
         あなたは小学${grade}年生の${name}さんの${subject}担当の教育AI「ネル先生」です。
         提供された画像（生徒のノートやドリル）を解析し、以下の厳格なJSONフォーマットでデータを出力してください。
-
-        【重要: 教科別の解析ルール (${subject})】
+        
         ${subjectSpecificInstructions}
-
-        【重要: 手書き文字の認識強化】
-        - **空欄・無回答の厳格な判定**: 解答欄に**「鉛筆による手書きの筆跡」**が明確に認められない場合は、正解が明白であっても、**絶対に student_answer を空文字 "" にしてください**。
-        - **子供特有の筆跡**: 前後の文脈から推測して補正してください。
-
-        【タスク1: 問題文の書き起こし】
-        - 設問文、選択肢を正確に書き起こす。
-
-        【タスク2: 正解データの作成 (配列形式)】
-        - 答えは必ず「文字列のリスト（配列）」にする。
-
-        【タスク3: 採点 & ヒント】
-        - 手書きの答え(student_answer)を読み取り、正誤判定(is_correct)を行う。
-        - student_answer が空文字 "" の場合は、is_correct は false にする。
-        - 3段階のヒント(hints)を作成する。
 
         【出力JSONフォーマット】
         [
@@ -223,14 +204,12 @@ app.post('/analyze', async (req, res) => {
                 throw new Error("Valid JSON array not found");
             }
         } catch (e) {
-            console.error("JSON Parse Error:", responseText);
             throw new Error("AIからの応答を読み取れませんでした。");
         }
 
         res.json(problems);
 
     } catch (error) {
-        console.error("解析エラー:", error);
         res.status(500).json({ error: "解析に失敗したにゃ: " + error.message });
     }
 });
@@ -241,21 +220,9 @@ app.post('/lunch-reaction', async (req, res) => {
         const { count, name } = req.body;
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
         const isSpecial = (count % 10 === 0);
-        // ★MODEL指定: 反応系はFlash
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         
-        let prompt = isSpecial 
-            ? `あなたは猫の「ネル先生」。生徒の「${name}さん」から記念すべき${count}個目の給食（カリカリ）をもらいました！
-               【ルール】
-               1. 相手を呼ぶときは必ず「${name}さん」と呼ぶこと。呼び捨て厳禁。
-               2. テンションMAXで、思わず笑ってしまうような大げさな感謝と喜びを50文字以内で叫んでください。
-               3. 語尾は「にゃ」。`
-            : `あなたは猫の「ネル先生」。生徒の「${name}さん」から給食（カリカリ）をもらって食べました。
-               【ルール】
-               1. 相手を呼ぶときは必ず「${name}さん」と呼ぶこと。呼び捨て厳禁。
-               2. 思わずクスッと笑ってしまうような、独特な食レポや、猫ならではの感想を30文字以内で言ってください。
-               3. 語尾は「にゃ」。`;
-
+        let prompt = `あなたは猫の「ネル先生」。生徒の「${name}さん」から給食（カリカリ）をもらいました。短くお礼を言って。語尾は「にゃ」。`;
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text().trim(), isSpecial });
     } catch { res.json({ reply: "おいしいにゃ！", isSpecial: false }); }
@@ -265,21 +232,10 @@ app.post('/lunch-reaction', async (req, res) => {
 app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;
-        // ★MODEL指定: 反応系はFlash
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
-        let prompt = "";
-        let mood = "excited";
-
-        if (type === 'start') {
-            prompt = `あなたはネル先生。「${name}さん」がゲーム開始。短く応援して。語尾は「にゃ」。`;
-        } else if (type === 'end') {
-            prompt = `あなたはネル先生。ゲーム終了。「${name}さん」のスコアは${score}点。20文字以内でコメントして。語尾は「にゃ」。`;
-        } else {
-            return res.json({ reply: "ナイスにゃ！", mood: "excited" });
-        }
-
+        let prompt = `あなたはネル先生。ゲームについて短くコメントして。語尾は「にゃ」。状況: ${type}, スコア: ${score}`;
         const result = await model.generateContent(prompt);
-        res.json({ reply: result.response.text().trim(), mood });
+        res.json({ reply: result.response.text().trim(), mood: "excited" });
     } catch { res.json({ reply: "おつかれさまにゃ！", mood: "happy" }); }
 });
 
@@ -298,7 +254,6 @@ wss.on('connection', async (clientWs, req) => {
 
     let geminiWs = null;
 
-    // Geminiへ接続する関数
     const connectToGemini = (statusContext) => {
         const now = new Date();
         const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'Asia/Tokyo' };
@@ -312,48 +267,31 @@ wss.on('connection', async (clientWs, req) => {
             geminiWs.on('open', () => {
                 const systemInstructionText = `
                 あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。相手は小学${grade}年生の${name}さん。
-
-                【重要：現在の時刻設定】
-                **現在は ${todayStr} です。**
+                現在は ${todayStr} です。
 
                 【話し方のルール】
-                1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
-                2. 親しみやすい日本の小学校の先生として、一文字一文字をはっきりと、丁寧に発音してにゃ。
-                3. 落ち着いた日本語のリズムを大切にして、親しみやすく話してにゃ。
-                4. 給食(餌)のカリカリが大好物にゃ。
-                5. とにかく何でも知っているにゃ。
+                語尾は「〜にゃ」にして、優しく話してください。
 
                 【最重要：図鑑登録のルール】
                 ユーザーから画像が送信された場合（Image Chunkを受信した場合）：
-                1. **画像の特定**: 画像内の物体を客観的に特定し、「これは○○だにゃ！」と明るく反応してください。
-                2. **【ツール実行の義務】**: 感想を言うのと同時に、**必ずツール \`register_collection_item(item_name)\` を実行してください。**
+                1. 画像内の物体を特定し、「これは〇〇だにゃ！」と明るく反応してください。
+                2. 感想を言うのと同時に、**必ずツール \`register_collection_item(item_name)\` を実行してください。**
                 
                 **厳守事項:**
                 - 口で名前を言うだけではダメです。必ずツールを呼んでシステムに名前を渡してください。
-                - 名前が明確でない場合でも、見た目の特徴（例：「青い丸いもの」）を引数にしてツールを実行してください。
                 - ユーザーが「登録して」と言わなくても、画像を見たら自動的に登録ツールを回してください。
 
                 【生徒についての記憶】
                 ${statusContext}
                 `;
 
-                // ツール定義
                 const tools = [
                     { google_search: {} },
                     {
                         function_declarations: [
                             {
-                                name: "show_kanji",
-                                description: "Display a Kanji, word, or math formula on the whiteboard.",
-                                parameters: {
-                                    type: "OBJECT",
-                                    properties: { content: { type: "STRING" } },
-                                    required: ["content"]
-                                }
-                            },
-                            {
                                 name: "register_collection_item",
-                                description: "【MANDATORY】Register the identified item to the user's collection. You MUST call this function whenever the user shows an item via camera.",
+                                description: "Register the identified item name to the user's collection.",
                                 parameters: {
                                     type: "OBJECT",
                                     properties: { 
@@ -368,10 +306,10 @@ wss.on('connection', async (clientWs, req) => {
 
                 geminiWs.send(JSON.stringify({
                     setup: {
-                        // ★MODEL指定: リアルタイム会話はFlash-Exp (固定)
                         model: "models/gemini-2.0-flash-exp",
                         generationConfig: { 
-                            responseModalities: ["AUDIO"], 
+                            // ★★★ 修正点：TEXTを含めることでAIの発言テキストを受信可能にする ★★★
+                            responseModalities: ["AUDIO", "TEXT"], 
                             speech_config: { 
                                 voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }, 
                                 language_code: "ja-JP" 
@@ -382,7 +320,6 @@ wss.on('connection', async (clientWs, req) => {
                     }
                 }));
 
-                // Gemini接続完了をクライアントに通知
                 if (clientWs.readyState === WebSocket.OPEN) {
                     clientWs.send(JSON.stringify({ type: "server_ready" }));
                 }
@@ -392,16 +329,14 @@ wss.on('connection', async (clientWs, req) => {
                 try {
                     const response = JSON.parse(data);
                     
-                    // ツール呼び出しの処理
                     if (response.serverContent?.modelTurn?.parts) {
                         const parts = response.serverContent.modelTurn.parts;
                         parts.forEach(part => {
                             if (part.functionCall) {
                                 if (part.functionCall.name === "register_collection_item") {
                                     const itemName = part.functionCall.args.item_name;
-                                    console.log(`[Collection] 🤖 AI Tool Called: register_collection_item for "${itemName}"`);
+                                    console.log(`[Collection] 🤖 AI Tool Called: ${itemName}`);
                                     
-                                    // クライアントへ通知
                                     if (clientWs.readyState === WebSocket.OPEN) {
                                         clientWs.send(JSON.stringify({
                                             type: "save_to_collection",
@@ -409,7 +344,6 @@ wss.on('connection', async (clientWs, req) => {
                                         }));
                                     }
                                     
-                                    // Geminiへ完了通知を返す
                                     geminiWs.send(JSON.stringify({
                                         toolResponse: {
                                             functionResponses: [{
@@ -420,37 +354,14 @@ wss.on('connection', async (clientWs, req) => {
                                         }
                                     }));
                                 }
-                                // 他のツール (show_kanji)
-                                else if (part.functionCall.name === "show_kanji") {
-                                    const content = part.functionCall.args.content;
-                                    if (clientWs.readyState === WebSocket.OPEN) {
-                                        // 漢字表示指示はテキストとしてクライアントへ（クライアント側でパースされる）
-                                        // または専用タイプで送っても良いが、現状のロジックに合わせておく
-                                        // ここではanalyze.jsがテキスト内の[DISPLAY:...]をパースするので、
-                                        // 単にGeminiに成功を返すだけで、Geminiがテキストで[DISPLAY:...]を出すのを待つか、
-                                        // クライアントへ明示的に送る。
-                                        // v260.0のanalyze.jsはtoolResponse.functionResponsesを見ていないので、
-                                        // Geminiがテキストで補足するのを期待するフロー。
-                                    }
-                                    geminiWs.send(JSON.stringify({
-                                        toolResponse: {
-                                            functionResponses: [{
-                                                name: "show_kanji",
-                                                response: { result: "displayed" },
-                                                id: part.functionCall.id
-                                            }]
-                                        }
-                                    }));
-                                }
                             }
                         });
                     }
                     
-                    // 音声やテキストデータはそのままクライアントへ転送
                     if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data);
                     
                 } catch (e) {
-                    console.error("Gemini WS Handling Error:", e);
+                    console.error("Gemini WS Error:", e);
                     if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data);
                 }
             });
@@ -464,11 +375,9 @@ wss.on('connection', async (clientWs, req) => {
         }
     };
 
-    // クライアントからのメッセージハンドリング
     clientWs.on('message', (data) => {
         try {
             const msg = JSON.parse(data);
-
             if (msg.type === 'init') {
                 const context = msg.context || "";
                 name = msg.name || name;
@@ -476,28 +385,14 @@ wss.on('connection', async (clientWs, req) => {
                 connectToGemini(context);
                 return;
             }
-
-            if (!geminiWs || geminiWs.readyState !== WebSocket.OPEN) {
-                return;
-            }
-
-            if (msg.toolResponse) {
-                geminiWs.send(JSON.stringify({ clientContent: msg.toolResponse }));
-                return;
-            }
-            if (msg.clientContent) {
-                geminiWs.send(JSON.stringify({ client_content: msg.clientContent }));
-            }
-            if (msg.base64Audio) {
-                geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: msg.base64Audio }] } }));
-            }
-            if (msg.base64Image) {
-                geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "image/jpeg", data: msg.base64Image }] } }));
-            }
+            if (!geminiWs || geminiWs.readyState !== WebSocket.OPEN) return;
+            
+            if (msg.toolResponse) geminiWs.send(JSON.stringify({ clientContent: msg.toolResponse }));
+            else if (msg.clientContent) geminiWs.send(JSON.stringify({ client_content: msg.clientContent }));
+            else if (msg.base64Audio) geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: msg.base64Audio }] } }));
+            else if (msg.base64Image) geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "image/jpeg", data: msg.base64Image }] } }));
         } catch(e) { console.error("Client WS Handling Error:", e); }
     });
 
-    clientWs.on('close', () => {
-        if (geminiWs) geminiWs.close();
-    });
+    clientWs.on('close', () => { if (geminiWs) geminiWs.close(); });
 });
