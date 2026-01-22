@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v242.0: 図鑑強制登録機能追加版) ---
+// --- analyze.js (完全版 v243.0: AI図鑑登録・認識強化版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -376,9 +376,9 @@ window.captureAndSendLiveImage = function() {
         return alert("まずは「おはなしする」でネル先生とつながってにゃ！");
     }
 
-    // ★追加: 連続撮影・送信重複防止（2枚目以降のブロック解除対策）
+    // ★追加: 連続撮影・送信重複防止
     if (window.isLiveImageSending) {
-        return; // 連打防止（メッセージは出さない）
+        return; 
     }
     
     const video = document.getElementById('live-chat-video');
@@ -414,30 +414,8 @@ window.captureAndSendLiveImage = function() {
     thumbCanvas.getContext('2d').drawImage(canvas, 0, 0, tw, th);
     window.lastSentCollectionImage = thumbCanvas.toDataURL('image/jpeg', 0.7);
 
-    // ★★★ 今回の修正ポイント ★★★
-    // AIの応答を待たずに、撮影した時点で強制的に図鑑に登録する
-    if (window.NellMemory) {
-        const timestamp = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        const tempName = `撮影した写真 (${timestamp})`;
-        try {
-            window.NellMemory.addToCollection(currentUser.id, tempName, window.lastSentCollectionImage);
-            console.log("[Collection] ✅ Forced save successful:", tempName);
-            
-            // ユーザーに通知
-            const notif = document.createElement('div');
-            notif.innerText = `📸 図鑑に保存したにゃ！`;
-            notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #4caf50; color:#2e7d32; padding:10px 20px; border-radius:30px; font-weight:bold; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 4px 10px rgba(0,0,0,0.2);";
-            document.body.appendChild(notif);
-            setTimeout(() => notif.remove(), 3000);
-            
-            try{ sfxHirameku.currentTime=0; sfxHirameku.play(); } catch(e){}
-        } catch(e) {
-            console.error("[Collection] Forced save failed:", e);
-        }
-    }
-
     // デバッグログ
-    console.log("[Collection] Snapshot captured and cached.", window.lastSentCollectionImage ? "OK" : "Error");
+    console.log("[Collection] Snapshot captured and cached for AI analysis.");
 
     const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
     
@@ -481,9 +459,9 @@ window.captureAndSendLiveImage = function() {
 
     setTimeout(() => {
         ignoreIncomingAudio = false; 
-        const ts = new Date().getTime(); // 毎回異なるテキストにするためのタイムスタンプ
-        // ★プロンプト強化: 「これ新しい写真だから前の話は忘れて！」と指示
-        sendSilentPrompt(`【緊急画像認識指示 ID:${ts}】\nたった今、新しい画像を送ったにゃ。\n前の会話の流れは一旦忘れて、この画像に写っているものを特定して！\n特定できたら感想を言う前に **必ず** \`register_collection_item\` ツールを実行して！\n「登録した」と嘘をつくのは禁止！`);
+        const ts = new Date().getTime(); 
+        // ★プロンプト強化: 感想よりも「登録ツール呼び出し」を最優先させる指示
+        sendSilentPrompt(`【画像認識・図鑑登録指示 ID:${ts}】\nたった今、新しい画像を送ったにゃ。\n写っているものを**1つ特定**して。\n特定したら、**感想を言う前に必ず** \`register_collection_item\` ツールを実行して図鑑に登録して！\n名前がわからなければ「謎の物体」や見た目の特徴で登録して。\n**絶対にツールを呼ぶこと！**`);
     }, 200); 
 };
 
