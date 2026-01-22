@@ -1,4 +1,4 @@
-// --- ui.js (完全版 v230.0) ---
+// --- ui.js (完全版 v240.0: 図鑑コメント表示対応版) ---
 
 const sfxChime = new Audio('Jpn_sch_chime.mp3');
 const sfxBtn = new Audio('botan1.mp3');
@@ -132,7 +132,7 @@ window.updateProgress = function(p) {
     if (txt) txt.innerText = Math.floor(p); 
 };
 
-// ★追加: 図鑑表示ロジック
+// ★修正: 図鑑表示ロジック (コメント表示追加)
 window.showCollection = async function() {
     if (!currentUser) return;
     const modal = document.getElementById('collection-modal');
@@ -155,25 +155,30 @@ window.showCollection = async function() {
 
     collection.forEach(item => {
         const div = document.createElement('div');
-        div.style.cssText = "background:white; border-radius:10px; padding:8px; box-shadow:0 2px 5px rgba(0,0,0,0.1); text-align:center; border:2px solid #fff176;";
+        div.style.cssText = "background:white; border-radius:10px; padding:8px; box-shadow:0 2px 5px rgba(0,0,0,0.1); text-align:center; border:2px solid #fff176; display:flex; flex-direction:column; align-items:center;";
         
         const img = document.createElement('img');
         img.src = item.image;
-        img.style.cssText = "width:64px; height:64px; object-fit:contain; border-radius:5px; margin-bottom:5px; background:#f5f5f5;";
+        img.style.cssText = "width:80px; height:80px; object-fit:cover; border-radius:5px; margin-bottom:5px; background:#f5f5f5;";
         
         const name = document.createElement('div');
         name.innerText = item.name;
-        name.style.cssText = "font-size:0.8rem; font-weight:bold; color:#555; word-break:break-all; line-height:1.2;";
+        name.style.cssText = "font-size:0.9rem; font-weight:900; color:#333; word-break:break-all; line-height:1.2; margin-bottom:3px;";
         
-        // 日付（おまけ）
+        // ★コメント表示
+        const desc = document.createElement('div');
+        desc.innerText = item.description || "";
+        desc.style.cssText = "font-size:0.75rem; color:#666; word-break:break-all; line-height:1.3; background:#fff9c4; padding:4px; border-radius:5px; width:100%; margin-top:2px;";
+
         const date = document.createElement('div');
         try {
             date.innerText = new Date(item.date).toLocaleDateString();
         } catch(e) { date.innerText = ""; }
-        date.style.cssText = "font-size:0.6rem; color:#aaa; margin-top:2px;";
+        date.style.cssText = "font-size:0.6rem; color:#aaa; margin-top:5px; align-self:flex-end;";
 
         div.appendChild(img);
         div.appendChild(name);
+        if (item.description) div.appendChild(desc);
         div.appendChild(date);
         grid.appendChild(div);
     });

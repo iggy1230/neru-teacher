@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v243.0: 絶対保存・救済システム版) ---
+// --- analyze.js (完全版 v245.0: 全機能統合・図鑑登録修正版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -36,7 +36,7 @@ let liveAudioSources = [];
 let ignoreIncomingAudio = false;
 let currentLiveAudioSource = null;
 
-// ★Liveカメラ用ロックフラグ（2枚目以降対応）
+// ★Liveカメラ用ロックフラグ
 window.isLiveImageSending = false;
 
 // ★図鑑用画像キャッシュ
@@ -916,7 +916,8 @@ async function startLiveChat() {
 
                     if (imageToSave) {
                         try {
-                            await window.NellMemory.addToCollection(currentUser.id, data.itemName, imageToSave);
+                            // ★修正: descriptionを受け取る
+                            await window.NellMemory.addToCollection(currentUser.id, data.itemName, imageToSave, data.description);
                             console.log("[Collection] ✅ Saved to memory successfully.");
                             
                             // UI通知（リッチなポップアップ）

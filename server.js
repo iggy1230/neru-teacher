@@ -1,4 +1,4 @@
-// --- server.js (完全版 v240.0: 図鑑登録・発話トリガー対応版) ---
+// --- server.js (完全版 v241.0: 図鑑コメント保存対応版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -299,7 +299,6 @@ wss.on('connection', async (clientWs, req) => {
             geminiWs = new WebSocket(GEMINI_URL);
             
             geminiWs.on('open', () => {
-                // ★最重要: 画像認識のシステム指示を強化
                 const systemInstructionText = `
                 あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。相手は小学${grade}年生の${name}さん。
 
@@ -313,11 +312,12 @@ wss.on('connection', async (clientWs, req) => {
                 【最重要・絶対遵守：画像認識と図鑑登録】
                 1. **画像が送られてきた時**:
                    - 直前の会話や文脈は全て無視し、**今送られてきた画像に写っている主要な物体**を客観的に特定してください。
-                   - 物体の名前（例: "ハンドソープ", "猫", "鉛筆"）が特定できたら、**感想を言う前に、まず最初に必ずツール \`register_collection_item(item_name)\` を実行してください。**
-                   - 順序: [画像受信] -> [ツール実行] -> [成功確認] -> [「これは〇〇だにゃ！」と発言]
+                   - 物体名と、**「その物体に対する短いコメント（感想や豆知識）」**を考えてください。
+                   - **感想を言う前に、まず最初に必ずツール \`register_collection_item(item_name, description)\` を実行してください。**
+                   - 順序: [画像受信] -> [ツール実行] -> [成功確認] -> [「これは〇〇だにゃ！(descriptionの内容)」と発言]
 
                 2. **ユーザーが「登録して」「保存して」と言った時**:
-                   - もし直前に画像を見ていて、まだ登録していないなら、その名前でツールを実行してください。
+                   - もし直前に画像を見ていて、まだ登録していないなら、その名前とコメントでツールを実行してください。
                    - 画像が見当たらない場合は「写真を見せてくれたら登録するにゃ！」と答えてください。
 
                 【生徒についての記憶】
@@ -337,15 +337,16 @@ wss.on('connection', async (clientWs, req) => {
                             }
                         },
                         {
-                            // ★重要ツール: 図鑑登録
+                            // ★重要ツール: 図鑑登録 (description追加)
                             name: "register_collection_item",
-                            description: "Registers the identified item from the user's camera image into their collection. Call this WHENEVER an image is presented OR the user asks to register.",
+                            description: "Registers the identified item AND a short comment about it. Call this WHENEVER an image is presented.",
                             parameters: {
                                 type: "OBJECT",
                                 properties: { 
-                                    item_name: { type: "STRING", description: "The specific name of the item identified in the image (e.g. 'Hand Soap', 'Smartphone')." } 
+                                    item_name: { type: "STRING", description: "The name of the item (e.g. 'Hand Soap')." },
+                                    description: { type: "STRING", description: "A short, fun comment or fact about the item (e.g. 'It smells like lemons!')." }
                                 },
-                                required: ["item_name"]
+                                required: ["item_name", "description"]
                             }
                         }
                     ]
@@ -383,13 +384,15 @@ wss.on('connection', async (clientWs, req) => {
                                 // ▼ 図鑑登録ツールの呼び出し
                                 if (part.functionCall.name === "register_collection_item") {
                                     const itemName = part.functionCall.args.item_name;
-                                    console.log(`[Collection] 🤖 AI Tool Called: register_collection_item for "${itemName}"`);
+                                    const description = part.functionCall.args.description || "登録したにゃ！"; // description取得
+                                    console.log(`[Collection] 🤖 AI Tool Called: ${itemName} (${description})`);
                                     
                                     // クライアントに保存指令を送る
                                     if (clientWs.readyState === WebSocket.OPEN) {
                                         clientWs.send(JSON.stringify({
                                             type: "save_to_collection",
-                                            itemName: itemName
+                                            itemName: itemName,
+                                            description: description // descriptionも送信
                                         }));
                                     }
                                     
