@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v244.0: AI図鑑登録・プロンプト強化版) ---
+// --- analyze.js (完全版 v245.0: 合言葉タグ検出による図鑑登録) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -201,7 +201,11 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     const targetId = isGameHidden ? 'nell-text' : 'nell-text-game';
     const el = document.getElementById(targetId);
     
-    const displayText = t.replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "");
+    // 表示用テキストのクリーニング（タグを除去）
+    const displayText = t
+        .replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "")
+        .replace(/\[CAPTURE:.*?\]/g, ""); // CAPTUREタグも消す
+
     if (el) el.innerText = displayText;
     
     if (t && t.includes("もぐもぐ")) { try { sfxBori.currentTime = 0; sfxBori.play(); } catch(e){} }
@@ -460,8 +464,8 @@ window.captureAndSendLiveImage = function() {
     setTimeout(() => {
         ignoreIncomingAudio = false; 
         const ts = new Date().getTime(); 
-        // ★プロンプト強化: 感想よりも「登録ツール呼び出し」を最優先させる指示
-        sendSilentPrompt(`【画像認識・図鑑登録指示 ID:${ts}】\nたった今、新しい画像を送ったにゃ。\n写っているものを**1つ特定**して。\n特定したら、**感想を言う前に必ず** \`register_collection_item\` ツールを実行して図鑑に登録して！\n名前がわからなければ「謎の物体」や見た目の特徴で登録して。\n**絶対にツールを呼ぶこと！**`);
+        // ★プロンプト強化: 感想の中に合言葉タグを混ぜさせる
+        sendSilentPrompt(`【画像認識・図鑑登録指示 ID:${ts}】\nたった今、新しい画像を送ったにゃ。\n写っているものを特定して感想を言って。\nその発言の中に必ず『[CAPTURE:アイテム名]』という合言葉を混ぜて！\n例：「これは[CAPTURE:リンゴ]だにゃ！美味しそうだにゃ！」\n**この合言葉がないと図鑑に登録できないから絶対に入れて！**`);
     }, 200); 
 };
 
@@ -964,6 +968,44 @@ async function startLiveChat() {
                                 document.getElementById('inline-whiteboard').classList.remove('hidden');
                                 document.getElementById('whiteboard-content').innerText = content;
                             }
+
+                            // ★★★ 合言葉タグ検出ロジック ★★★
+                            const captureMatch = p.text.match(/\[CAPTURE:(.+?)\]/);
+                            if (captureMatch) {
+                                const itemName = captureMatch[1].trim();
+                                console.log(`[Collection] 📥 Tag detected: ${itemName}`);
+                                
+                                // 画像保存処理
+                                let imageToSave = window.lastSentCollectionImage;
+                                if (!imageToSave) {
+                                    // 救済措置: キャプチャ
+                                    const v = document.getElementById('live-chat-video');
+                                    if (v && v.srcObject && v.srcObject.active) {
+                                        const c = document.createElement('canvas');
+                                        c.width = 150; c.height = 150; 
+                                        const vw = v.videoWidth || 640;
+                                        const vh = v.videoHeight || 480;
+                                        const size = Math.min(vw, vh);
+                                        const sx = (vw - size) / 2;
+                                        const sy = (vh - size) / 2;
+                                        c.getContext('2d').drawImage(v, sx, sy, size, size, 0, 0, 150, 150);
+                                        imageToSave = c.toDataURL('image/jpeg', 0.7);
+                                    }
+                                }
+
+                                if (imageToSave && window.NellMemory) {
+                                    window.NellMemory.addToCollection(currentUser.id, itemName, imageToSave);
+                                    
+                                    // UI通知
+                                    const notif = document.createElement('div');
+                                    notif.innerText = `📖 図鑑に「${itemName}」を登録したにゃ！`;
+                                    notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #00bcd4; color:#006064; padding:15px 25px; border-radius:30px; font-weight:900; z-index:10000; box-shadow:0 10px 25px rgba(0,0,0,0.3); font-size:1.2rem; animation: popIn 0.5s ease;";
+                                    document.body.appendChild(notif);
+                                    setTimeout(() => notif.remove(), 4000);
+                                    try{ sfxHirameku.currentTime=0; sfxHirameku.play(); } catch(e){} 
+                                }
+                            }
+
                             // ★WebSocket接続中は speak=false にしてTTSを呼ばない
                             saveToNellMemory('nell', p.text); 
                             updateNellMessage(p.text, "normal", false, false);

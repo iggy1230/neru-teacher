@@ -1,4 +1,4 @@
-// --- server.js (完全版 v241.0: 図鑑登録ツール強制強化版) ---
+// --- server.js (完全版 v242.0: 合言葉タグ方式による図鑑登録) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -310,43 +310,28 @@ wss.on('connection', async (clientWs, req) => {
                 4. 給食(餌)のカリカリが大好物にゃ。
                 5. とにかく何でも知っているにゃ。
 
-                【最重要：画像認識と図鑑登録の絶対ルール】
-                ユーザーから画像が送信された場合（Image Chunkを受信した場合）：
-                1. **【即座に特定】**: 画像内のメインの物体を特定してください。
-                2. **【ツール実行の強制】**: 物体の名前が特定できたら、感想や「登録する」という発言をする**前に**、
-                   **必ず関数 \`register_collection_item(item_name)\` を実行してください。**
-                3. **【口だけ禁止】**: 実際にこの関数を実行せずに「図鑑に登録したにゃ」「登録しておくにゃ」と発言することは、**重大なエラー**であり固く禁じます。
-                4. 万が一名前がわからない場合でも、「不思議なもの」としてツールを実行してください。
+                【最重要：図鑑登録のルール（合言葉方式）】
+                ユーザーから画像が送られてきて、それが何かわかったら：
+                1. 普通に感想を話してください。（例：「これはiPhoneだにゃ！便利そうだにゃ」）
+                2. **その発言の中に、必ず『[CAPTURE:アイテム名]』という合言葉を混ぜてください。**
+                
+                例：
+                ユーザー：（リンゴの写真を見せる）
+                あなた：「わぁ、真っ赤で美味しそうなリンゴだにゃ！[CAPTURE:リンゴ] デザートに最高だにゃ！」
+
+                ユーザー：（スマホの写真を見せる）
+                あなた：「これはスマホだにゃ。[CAPTURE:スマートフォン] 大事な道具だにゃ！」
+
+                **注意：**
+                - ツール機能は使いません。この合言葉タグを出力するだけでOKです。
+                - 名前がわからないときは見た目の特徴を入れてください（例：[CAPTURE:青くて丸いおもちゃ]）。
 
                 【生徒についての記憶】
                 ${statusContext}
                 `;
 
-                const tools = [{ 
-                    google_search: {},
-                    function_declarations: [
-                        {
-                            name: "show_kanji",
-                            description: "Display a Kanji, word, or math formula on the whiteboard.",
-                            parameters: {
-                                type: "OBJECT",
-                                properties: { content: { type: "STRING" } },
-                                required: ["content"]
-                            }
-                        },
-                        {
-                            name: "register_collection_item",
-                            description: "【MANDATORY】Register the identified item to the user's collection. You MUST call this function whenever the user shows an item via camera.",
-                            parameters: {
-                                type: "OBJECT",
-                                properties: { 
-                                    item_name: { type: "STRING", description: "Name of the item (e.g. 'Apple', 'iPhone', 'TV Remote')" } 
-                                },
-                                required: ["item_name"]
-                            }
-                        }
-                    ]
-                }];
+                // ツール定義は最低限残すが、メインはテキストタグで処理する
+                const tools = [{ google_search: {} }];
 
                 geminiWs.send(JSON.stringify({
                     setup: {
@@ -373,40 +358,8 @@ wss.on('connection', async (clientWs, req) => {
             geminiWs.on('message', (data) => {
                 try {
                     const response = JSON.parse(data);
-                    
-                    if (response.serverContent?.modelTurn?.parts) {
-                        const parts = response.serverContent.modelTurn.parts;
-                        parts.forEach(part => {
-                            if (part.functionCall) {
-                                if (part.functionCall.name === "register_collection_item") {
-                                    const itemName = part.functionCall.args.item_name;
-                                    console.log(`[Collection] 🤖 AI Tool Called: register_collection_item for "${itemName}"`);
-                                    
-                                    // クライアントへ通知
-                                    if (clientWs.readyState === WebSocket.OPEN) {
-                                        clientWs.send(JSON.stringify({
-                                            type: "save_to_collection",
-                                            itemName: itemName
-                                        }));
-                                    }
-                                    
-                                    // AIへ完了通知
-                                    geminiWs.send(JSON.stringify({
-                                        toolResponse: {
-                                            functionResponses: [{
-                                                name: "register_collection_item",
-                                                response: { result: "saved_success" },
-                                                id: part.functionCall.id
-                                            }]
-                                        }
-                                    }));
-                                }
-                            }
-                        });
-                    }
-                    
+                    // Geminiからのメッセージをそのままクライアントへ転送
                     if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data);
-                    
                 } catch (e) {
                     console.error("Gemini WS Handling Error:", e);
                     if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data);
