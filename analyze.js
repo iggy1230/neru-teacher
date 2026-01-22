@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v253.0: ゼロ遅延・強制質問モード版) ---
+// --- analyze.js (完全版 v254.0: 質問先行型・絶対認識版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -201,11 +201,11 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     const el = document.getElementById(targetId);
     
     // 表示用テキストのクリーニング（タグを除去）
-    // AIがタグを口走った場合も、画面表示からは消す
-    let displayText = t.replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "");
-    displayText = displayText.replace(/\[CAPTURE\s*[:：]\s*.*?\]/gi, ""); 
-    displayText = displayText.replace(/【図鑑登録[:：]\s*.*?】/g, ""); // 日本語タグも消す
-    displayText = displayText.replace(/キャプチャー[、,\s]*([^\s。]+)/gi, "$1"); 
+    let displayText = t
+        .replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "")
+        .replace(/\[CAPTURE\s*[:：]\s*.*?\]/gi, "")
+        .replace(/【図鑑登録[:：]\s*.*?】/g, "")
+        .replace(/キャプチャー[、,\s]*([^\s。]+)/gi, "$1"); 
 
     if (el) el.innerText = displayText;
     
@@ -403,6 +403,20 @@ window.captureAndSendLiveImage = function() {
         btn.style.backgroundColor = "#ccc";
     }
 
+    // ★★★ 今回の修正ポイント1: 先に質問を投げつける（画像より先に） ★★★
+    if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
+        console.log("[Collection] 🚀 Sending text-prompt FIRST to pre-empt hallucinations.");
+        liveSocket.send(JSON.stringify({ 
+            clientContent: { 
+                turns: [{ 
+                    role: "user", 
+                    parts: [{ text: "（今から画像を送ります）「これは何ですか？」\n※画像に写っているものを正確に特定し、『【図鑑登録：(名前)】』の形式で名前を出力してください。" }] 
+                }],
+                turnComplete: false // まだターンを終わらせない（画像を続けて送るため）
+            } 
+        }));
+    }
+
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
@@ -420,7 +434,6 @@ window.captureAndSendLiveImage = function() {
     window.lastSentCollectionImage = thumbCanvas.toDataURL('image/jpeg', 0.7);
 
     // ★★★ 先行保存処理 ★★★
-    // 名前はまだわからないので「解析中...」としてとりあえず保存する
     if (window.NellMemory) {
         const timestamp = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         const tempName = `🔍 解析中... (${timestamp})`;
@@ -468,7 +481,8 @@ window.captureAndSendLiveImage = function() {
 
     updateNellMessage("ん？どれどれ…", "thinking", false, false);
     
-    // ★画像送信
+    // ★★★ 今回の修正ポイント2: 画像を即座に送る ★★★
+    // 質問とセットで送ることで「質問への回答として画像を見る」ように誘導
     liveSocket.send(JSON.stringify({ base64Image: base64Data }));
 
     // ★追加: 強制的にロック解除（2秒後）& UI戻し
@@ -480,26 +494,10 @@ window.captureAndSendLiveImage = function() {
         }
         console.log("次の画像送信準備OKにゃ");
     }, 2000);
-
-    // ★★★ 今回の修正ポイント ★★★
-    // タイムラグなしで、即座に「これは何？」とシステムが質問を投げる
-    // 待ってしまうとAIが「無言」に反応して雑談を始めてしまう
+    
     setTimeout(() => {
-        ignoreIncomingAudio = false; 
-        
-        if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
-            console.log("[Collection] 🚀 Sending auto-prompt (NO DELAY) to force identification.");
-            liveSocket.send(JSON.stringify({ 
-                clientContent: { 
-                    turns: [{ 
-                        role: "user", 
-                        parts: [{ text: "（ユーザーが画像を見せました）「これは何？」\n※画像に写っているものを正確に特定し、『【図鑑登録：(名前)】』の形式で名前を出力してください。" }] 
-                    }],
-                    turnComplete: true 
-                } 
-            }));
-        }
-    }, 50); // ほぼ同時（50ms）に送信
+         ignoreIncomingAudio = false; 
+    }, 200);
 };
 
 // ==========================================
@@ -1005,20 +1003,35 @@ async function startLiveChat() {
                                 document.getElementById('whiteboard-content').innerText = content;
                             }
 
-                            // ★★★ 合言葉タグ検出ロジック (強化版) ★★★
-                            // 日本語タグ「【図鑑登録：〇〇】」を優先して探す
+                            // ★★★ 合言葉タグ検出ロジック (強化版: 日本語発言・会話形式にも対応) ★★★
                             let itemName = null;
-                            const captureMatch = p.text.match(/【図鑑登録[:：]\s*(.+?)】/);
-                            if (captureMatch) {
-                                itemName = captureMatch[1].trim();
-                            } else {
-                                // 念のため英語タグも探す
-                                const engMatch = p.text.match(/\[CAPTURE\s*[:：]\s*(.+?)\]/i);
-                                if(engMatch) itemName = engMatch[1].trim();
+                            
+                            // パターン1: [CAPTURE:名前] (正規)
+                            const match1 = p.text.match(/\[CAPTURE\s*[:：]\s*(.+?)\]/i);
+                            if (match1) itemName = match1[1];
+
+                            // パターン2: CAPTURE:名前 (括弧忘れ)
+                            if (!itemName) {
+                                const match2 = p.text.match(/CAPTURE\s*[:：]\s*(.+?)(?:$|\n|。)/i);
+                                if (match2) itemName = match2[1];
+                            }
+
+                            // パターン3: キャプチャー、名前 (口語)
+                            // AIが「キャプチャー、〇〇」と喋ってしまった場合も検出
+                            if (!itemName) {
+                                const match3 = p.text.match(/キャプチャー[、,\s]\s*([^\s。]+)/i);
+                                if (match3) itemName = match3[1];
+                            }
+                            
+                            // パターン4: 【図鑑登録：名前】 (日本語タグ)
+                            if (!itemName) {
+                                const match4 = p.text.match(/【図鑑登録[:：]\s*(.+?)】/);
+                                if(match4) itemName = match4[1];
                             }
 
                             if (itemName) {
-                                console.log(`[Collection] 📥 Tag detected: ${itemName}`);
+                                itemName = itemName.trim();
+                                console.log(`[Collection] 📥 Tag/Speech detected: ${itemName}`);
                                 
                                 if (window.NellMemory) {
                                     // 先行保存した「解析中...」の名前を、AIが特定した名前に更新する
