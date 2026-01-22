@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v241.0: 図鑑登録完全対応版) ---
+// --- analyze.js (完全版 v242.0: 図鑑登録・バッティング解消版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -31,7 +31,7 @@ let connectionTimeout = null;
 let recognition = null;
 let isRecognitionActive = false;
 
-// ★音声ソース管理（二重音声防止用）
+// ★音声ソース管理
 let liveAudioSources = []; 
 let ignoreIncomingAudio = false;
 let currentLiveAudioSource = null;
@@ -164,8 +164,6 @@ async function saveToNellMemory(role, text) {
         "お待たせ！なんでも話してにゃ！", "おいしいにゃ！", "おつかれさまにゃ！"
     ];
     if (trimmed.length <= 1 || ignoreWords.includes(trimmed)) return;
-    
-    // console.log(`【Memory】ログ追加: [${role}] ${trimmed}`);
     chatTranscript += `${role === 'user' ? '生徒' : 'ネル'}: ${trimmed}\n`;
 
     const newItem = { role: role, text: trimmed, time: new Date().toISOString() };
@@ -191,7 +189,6 @@ async function saveToNellMemory(role, text) {
 }
 
 window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false, speak = true) {
-    // ★絶対条件：Live Chat(WebSocket)接続中は、絶対にTTSを再生しない。
     if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
         speak = false;
     }
@@ -353,21 +350,16 @@ function sendSilentPrompt(text) {
 
 // ★完全停止処理: 全ての音声ソースを抹殺する
 function stopAudioPlayback() {
-    // スケジュールされているすべてのWebSocket音声を停止
-    liveAudioSources.forEach(source => {
-        try { source.stop(); } catch(e){}
-    });
-    liveAudioSources = []; // 配列クリア
+    liveAudioSources.forEach(source => { try { source.stop(); } catch(e){} });
+    liveAudioSources = []; 
 
     if (audioContext && audioContext.state === 'running') {
-        // 現在時刻より少し先を指定して、バッファに残った音声を無効化
         nextStartTime = audioContext.currentTime + 0.05;
     }
     window.isNellSpeaking = false;
     if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer);
     if(speakingStartTimer) clearTimeout(speakingStartTimer);
 
-    // TTSが鳴っていた場合も強制キャンセル
     if (window.cancelNellSpeech) window.cancelNellSpeech();
 }
 
@@ -376,9 +368,7 @@ window.captureAndSendLiveImage = function() {
         return alert("まずは「おはなしする」でネル先生とつながってにゃ！");
     }
 
-    // ★追加: 連続撮影・送信重複防止（2枚目以降のブロック解除対策）
     if (window.isLiveImageSending) {
-        console.log("画像送信クールダウン中にゃ...");
         return; // 連打防止
     }
     
@@ -389,6 +379,7 @@ window.captureAndSendLiveImage = function() {
 
     // 1. 強制的に全音声を停止し、フラグを立てる
     stopAudioPlayback();
+    // ★ここ重要: 画像送信中は音声を受け付けないが、送信直後に解除する
     ignoreIncomingAudio = true; 
     
     // ★ロック開始 & UI変更
@@ -399,7 +390,6 @@ window.captureAndSendLiveImage = function() {
         btn.style.backgroundColor = "#ccc";
     }
 
-    // キャプチャ用キャンバス
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
@@ -418,7 +408,6 @@ window.captureAndSendLiveImage = function() {
     // グローバル変数にセット (ツール指令が来たらこれを使う)
     window.lastSentCollectionImage = thumbCanvas.toDataURL('image/jpeg', 0.7);
 
-    // デバッグログ
     console.log("[Collection] Snapshot captured and cached.", window.lastSentCollectionImage ? "OK" : "Error");
 
     const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
@@ -429,6 +418,7 @@ window.captureAndSendLiveImage = function() {
     document.body.appendChild(flash);
     setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
 
+    // プレビュー表示
     const videoContainer = document.getElementById('live-chat-video-container');
     if (videoContainer) {
         const oldPreview = document.getElementById('snapshot-preview-overlay');
@@ -451,6 +441,11 @@ window.captureAndSendLiveImage = function() {
     // ★画像送信
     liveSocket.send(JSON.stringify({ base64Image: base64Data }));
 
+    // ★重要: 送信したらすぐに音声受信ブロックを解除する
+    setTimeout(() => {
+        ignoreIncomingAudio = false; 
+    }, 500);
+
     // ★追加: 強制的にロック解除（2秒後）& UI戻し
     setTimeout(() => {
         window.isLiveImageSending = false;
@@ -461,13 +456,20 @@ window.captureAndSendLiveImage = function() {
         console.log("次の画像送信準備OKにゃ");
     }, 2000);
 
-    // ★プロンプト送信 (少しだけ遅らせて認識させる)
-    setTimeout(() => {
-        ignoreIncomingAudio = false; 
-        const ts = new Date().getTime(); 
-        sendSilentPrompt(`【緊急画像認識指示 ID:${ts}】\nたった今、新しい画像を送ったにゃ。\n前の会話の流れは一旦忘れて、この画像に写っているものを特定して！\n特定できたら感想を言う前に **必ず** \`register_collection_item\` ツールを実行して！\n「登録した」と嘘をつくのは禁止！`);
-    }, 150); 
+    // ★重要: バッティング回避のため、ここでの sendSilentPrompt は削除しました。
+    // AIは System Instruction に従って、画像を受け取ったら自律的に反応します。
 };
+
+// 安全装置: フラグを強制リセットする
+function resetLiveChatFlags() {
+    window.isLiveImageSending = false;
+    ignoreIncomingAudio = false;
+    const btn = document.getElementById('live-camera-btn');
+    if (btn) {
+        btn.innerHTML = "<span>📷</span> これ教えて！（カメラで見せる）";
+        btn.style.backgroundColor = "#4a90e2";
+    }
+}
 
 // ==========================================
 // 7. 宿題分析ロジック (高画質・シンプルリサイズ版)
@@ -1012,13 +1014,8 @@ function stopLiveChat() {
     if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = currentMode === 'simple-chat' ? "#66bb6a" : "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; } 
     liveSocket = null; 
     
-    // カメラボタンのリセット
-    const camBtn = document.getElementById('live-camera-btn');
-    if (camBtn) {
-        camBtn.innerHTML = "<span>📷</span> これ教えて！（カメラで見せる）";
-        camBtn.style.backgroundColor = "#4a90e2";
-    }
-    window.isLiveImageSending = false;
+    // カメラボタンのリセットとフラグの完全初期化
+    resetLiveChatFlags();
 
     const video = document.getElementById('live-chat-video');
     if(video) video.srcObject = null;
@@ -1396,3 +1393,14 @@ window.deleteMemoryItem = async function(index) {
 
     renderMemoryList();
 };
+
+// 安全装置: フラグを強制リセットする
+function resetLiveChatFlags() {
+    window.isLiveImageSending = false;
+    ignoreIncomingAudio = false;
+    const btn = document.getElementById('live-camera-btn');
+    if (btn) {
+        btn.innerHTML = "<span>📷</span> これ教えて！（カメラで見せる）";
+        btn.style.backgroundColor = "#4a90e2";
+    }
+}

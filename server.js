@@ -1,4 +1,4 @@
-// --- server.js (完全版 v238.0: 図鑑登録フロー再構築版) ---
+// --- server.js (完全版 v239.0: 図鑑登録フロー完結版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -317,7 +317,7 @@ wss.on('connection', async (clientWs, req) => {
                 2. **【ツール実行の義務】**: 物体の名前（例: "ハンドソープ", "猫", "鉛筆"）が特定できたら、**感想を言う前に、まず最初に必ずツール \`register_collection_item(item_name)\` を実行してください。**
                 3. **【会話の順序】**: 
                    - 正解手順: [画像受信] -> [ツール実行] -> [成功を確認] -> [「これは〇〇だにゃ！」と発言]
-                   - 禁止手順: [画像受信] -> [「これは〇〇に見えるにゃ」と発言] -> [ツール実行しない] -> 失敗
+                   - 禁止手順: [画像受信] -> [「これは〇〇に見えるにゃ」と発言] -> [ツール実行しない]
 
                 【生徒についての記憶】
                 ${statusContext}
