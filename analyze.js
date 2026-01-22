@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v247.0: 先行保存・後更新方式) ---
+// --- analyze.js (完全版 v248.0: タグ検出強化・デバッグログ追加版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -201,9 +201,10 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     const el = document.getElementById(targetId);
     
     // 表示用テキストのクリーニング（タグを除去）
+    // 正規表現を緩くして、全角コロンやスペースにも対応
     const displayText = t
         .replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "")
-        .replace(/\[CAPTURE:.*?\]/g, ""); // CAPTUREタグも消す
+        .replace(/\[CAPTURE\s*[:：]\s*.*?\]/gi, ""); // CAPTUREタグも消す
 
     if (el) el.innerText = displayText;
     
@@ -482,9 +483,8 @@ window.captureAndSendLiveImage = function() {
     setTimeout(() => {
         ignoreIncomingAudio = false; 
         const ts = new Date().getTime(); 
-        // ★プロンプト強化: 感想の中に合言葉タグを混ぜさせる
-        // 「発音しない」指示を追加
-        sendSilentPrompt(`【画像認識・図鑑登録指示 ID:${ts}】\nたった今、新しい画像を送ったにゃ。\n写っているものを特定して感想を言って。\nその発言の中に必ず『[CAPTURE:アイテム名]』というタグを混ぜて！\n例：「これは[CAPTURE:リンゴ]だにゃ！美味しそうだにゃ！」\n**注意：[CAPTURE:...]の部分は読み上げず、テキストとして出力するだけでいい。**`);
+        // ★プロンプト強化: 「合言葉」ではなく「システム用タグ」として指示し、表記ゆれにも対応しやすい形式を指定
+        sendSilentPrompt(`【画像認識・システム処理指示 ID:${ts}】\nたった今、新しい画像を送ったにゃ。\n写っているものを特定して感想を言って。\nその発言の最後に、必ず **\`[CAPTURE:アイテム名]\`** というシステム用タグを付け加えてください。\n**このタグは絶対に読み上げないでください。** テキストとして出力するだけです。`);
     }, 200); 
 };
 
@@ -981,6 +981,9 @@ async function startLiveChat() {
                         }
                         // Text (Subtitles)
                         if (p.text) { 
+                            // ★デバッグ用: AIの生出力をログに出す
+                            console.log(`[Gemini Text] ${p.text}`);
+
                             const match = p.text.match(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/i);
                             if (match) {
                                 const content = match[1].trim();
@@ -988,9 +991,9 @@ async function startLiveChat() {
                                 document.getElementById('whiteboard-content').innerText = content;
                             }
 
-                            // ★★★ 合言葉タグ検出ロジック ★★★
-                            // CAPTUREタグを発見したら、直近のアイテム名を書き換える
-                            const captureMatch = p.text.match(/\[CAPTURE:(.+?)\]/);
+                            // ★★★ 合言葉タグ検出ロジック (強化版) ★★★
+                            // 全角コロン、スペース許容、大文字小文字無視
+                            const captureMatch = p.text.match(/\[CAPTURE\s*[:：]\s*(.+?)\]/i);
                             if (captureMatch) {
                                 const itemName = captureMatch[1].trim();
                                 console.log(`[Collection] 📥 Tag detected: ${itemName}`);
