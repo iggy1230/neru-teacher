@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v263.0: 関数復元・図鑑登録安定版) ---
+// --- analyze.js (完全版 v263.0: 消失関数復元・図鑑登録安定版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -171,6 +171,17 @@ async function saveToNellMemory(role, text) {
         if (history.length > 50) history.shift(); 
         localStorage.setItem(memoryKey, JSON.stringify(history));
     } catch(e) {}
+    if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) {
+        try {
+            const docRef = db.collection("memories").doc(currentUser.id);
+            const docSnap = await docRef.get();
+            let cloudHistory = docSnap.exists ? (docSnap.data().history || []) : [];
+            if (cloudHistory.length > 0 && cloudHistory[cloudHistory.length - 1].text === trimmed) return;
+            cloudHistory.push(newItem);
+            if (cloudHistory.length > 50) cloudHistory.shift();
+            await docRef.set({ history: cloudHistory, lastUpdated: new Date().toISOString() }, { merge: true });
+        } catch(e) {}
+    }
 }
 
 window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false, speak = true) {
@@ -398,11 +409,13 @@ window.captureAndSendLiveImage = function() {
         console.log(`[Collection] 💾 Pre-saving item: "${tempName}"`);
         try {
             window.NellMemory.addToCollection(currentUser.id, tempName, window.lastSentCollectionImage);
+            
             const notif = document.createElement('div');
             notif.innerText = `📸 写真を撮ったにゃ！`;
             notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #4caf50; color:#2e7d32; padding:10px 20px; border-radius:30px; font-weight:bold; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 4px 10px rgba(0,0,0,0.2);";
             document.body.appendChild(notif);
             setTimeout(() => notif.remove(), 2000);
+            
             try{ sfxHirameku.currentTime=0; sfxHirameku.play(); } catch(e){}
         } catch(e) { console.error("[Collection] ❌ Pre-save failed:", e); }
     }
@@ -433,7 +446,7 @@ window.captureAndSendLiveImage = function() {
 
     updateNellMessage("ん？どれどれ…", "thinking", false, false);
     
-    // サンドイッチ送信 (質問 -> 画像 -> 強制回答)
+    // ★★★ 1ターン完結型送信 ★★★
     if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
         console.log("[Collection] 🚀 Sending bundled turn with image and prompt.");
         liveSocket.send(JSON.stringify({ 
@@ -451,6 +464,7 @@ window.captureAndSendLiveImage = function() {
         }));
     }
 
+    // ★追加: 強制的にロック解除（2秒後）& UI戻し
     setTimeout(() => {
         window.isLiveImageSending = false;
         window.isMicMuted = false;
@@ -856,6 +870,8 @@ async function startLiveChat() {
         
         window.lastSentCollectionImage = null;
         window.isLiveImageSending = false;
+        
+        let latestDetectedName = null;
 
         liveSocket.onopen = () => { 
             liveSocket.send(JSON.stringify({
@@ -881,48 +897,63 @@ async function startLiveChat() {
                     return;
                 }
 
-                // サーバー経由でのツール通知 (save_to_collection)
+                // ツール呼び出し検出
                 if (data.type === "save_to_collection") {
-                    const itemName = data.itemName;
-                    console.log(`[Collection] 📥 Tool Call detected (via Server): ${itemName}`);
-                    
-                    if (window.NellMemory) {
-                        window.NellMemory.updateLatestCollectionItem(currentUser.id, itemName);
-                        
-                        const notif = document.createElement('div');
-                        notif.innerText = `📖 図鑑に「${itemName}」として登録したにゃ！`;
-                        notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #00bcd4; color:#006064; padding:15px 25px; border-radius:30px; font-weight:900; z-index:10000; box-shadow:0 10px 25px rgba(0,0,0,0.3); font-size:1.2rem; animation: popIn 0.5s ease;";
-                        document.body.appendChild(notif);
-                        setTimeout(() => notif.remove(), 4000);
-                        try{ sfxHirameku.currentTime=0; sfxHirameku.play(); } catch(e){} 
-                    }
+                    console.log(`[Collection] 📥 Tool Call detected: ${data.itemName}`);
+                    latestDetectedName = data.itemName;
                 }
                 
                 if (data.serverContent?.modelTurn?.parts) { 
                     data.serverContent.modelTurn.parts.forEach(p => { 
-                        // テキストの場合（字幕用）
                         if (p.text) { 
                             console.log(`[Gemini Raw Text] ${p.text}`);
+                            
                             const match = p.text.match(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/i);
                             if (match) {
                                 const content = match[1].trim();
                                 document.getElementById('inline-whiteboard').classList.remove('hidden');
                                 document.getElementById('whiteboard-content').innerText = content;
                             }
+
+                            // タグ検出（念のため）
+                            let itemName = null;
+                            const matchJP = p.text.match(/【図鑑登録[:：]\s*(.+?)】/);
+                            if (matchJP) itemName = matchJP[1];
+                            else {
+                                const matchRaw = p.text.match(/CAPTURE\s*[:：]\s*(.+?)(?:$|\n|。)/i);
+                                if (matchRaw) itemName = matchRaw[1];
+                            }
                             
-                            // テキストタグ（念のため残す）
-                            const captureMatch = p.text.match(/【図鑑登録[:：]\s*(.+?)】/);
-                            if (captureMatch && window.NellMemory) {
-                                window.NellMemory.updateLatestCollectionItem(currentUser.id, captureMatch[1].trim());
+                            if (itemName) {
+                                itemName = itemName.trim();
+                                console.log(`[Collection] ✅ Matched Tag: "${itemName}"`);
+                                latestDetectedName = itemName;
                             }
 
                             saveToNellMemory('nell', p.text); 
                             updateNellMessage(p.text, "normal", false, false);
                         } 
-                        // 音声データ
                         if (p.inlineData) playLivePcmAudio(p.inlineData.data); 
                     }); 
-                } 
+                }
+
+                // ターン完了時に確定
+                if (data.serverContent && data.serverContent.turnComplete) {
+                    if (latestDetectedName && window.NellMemory) {
+                        console.log(`[Collection] 🔄 Turn Complete. Committing name: ${latestDetectedName}`);
+                        window.NellMemory.updateLatestCollectionItem(currentUser.id, latestDetectedName);
+                        
+                        const notif = document.createElement('div');
+                        notif.innerText = `📖 図鑑に「${latestDetectedName}」として登録したにゃ！`;
+                        notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #00bcd4; color:#006064; padding:15px 25px; border-radius:30px; font-weight:900; z-index:10000; box-shadow:0 10px 25px rgba(0,0,0,0.3); font-size:1.2rem; animation: popIn 0.5s ease;";
+                        document.body.appendChild(notif);
+                        setTimeout(() => notif.remove(), 4000);
+                        try{ sfxHirameku.currentTime=0; sfxHirameku.play(); } catch(e){} 
+                        
+                        latestDetectedName = null;
+                    }
+                }
+
             } catch (e) {} 
         }; 
         
@@ -932,7 +963,7 @@ async function startLiveChat() {
 }
 
 // --------------------------------------------------------
-// ★ ここで stopLiveChat を定義（グローバル代入）
+// ★ グローバル定義: stopLiveChat (ここが重要！)
 // --------------------------------------------------------
 window.stopLiveChat = function() {
     if (window.NellMemory) {
@@ -973,9 +1004,7 @@ window.stopLiveChat = function() {
     document.getElementById('live-chat-video-container').style.display = 'none';
 };
 
-// --------------------------------------------------------
-// 以下の関数も続きます
-// --------------------------------------------------------
+// ... (以下、startMicrophone関数などは既存のコードと同じため省略せず記述) ...
 
 async function startMicrophone() { 
     try { 
@@ -1143,182 +1172,3 @@ function performPerspectiveCrop(sourceCanvas, points) {
     // ★ここで最適化関数を呼ぶ
     return processImageForAI(tempCv).split(',')[1];
 }
-
-// ==========================================
-// 11. 記憶管理 (Memory Manager) UI
-// ==========================================
-
-window.openMemoryManager = async function() {
-    if (!currentUser) return;
-    const modal = document.getElementById('memory-manager-modal');
-    if (modal) {
-        modal.classList.remove('hidden');
-        switchMemoryTab('profile'); // デフォルトはプロフィール
-    }
-};
-
-window.closeMemoryManager = function() {
-    const modal = document.getElementById('memory-manager-modal');
-    if (modal) modal.classList.add('hidden');
-};
-
-window.switchMemoryTab = async function(tab) {
-    const tabProfile = document.getElementById('tab-profile');
-    const tabLogs = document.getElementById('tab-logs');
-    const viewProfile = document.getElementById('memory-view-profile');
-    const viewLogs = document.getElementById('memory-view-logs');
-
-    if (tab === 'profile') {
-        tabProfile.classList.add('active');
-        tabLogs.classList.remove('active');
-        viewProfile.classList.remove('hidden');
-        viewLogs.classList.add('hidden');
-        await renderProfile();
-    } else {
-        tabProfile.classList.remove('active');
-        tabLogs.classList.add('active');
-        viewProfile.classList.add('hidden');
-        viewLogs.classList.remove('hidden');
-        await renderMemoryList();
-    }
-};
-
-// プロフィール描画
-window.renderProfile = async function() {
-    const container = document.getElementById('profile-container');
-    if (!container || !window.NellMemory) return;
-    container.innerHTML = '<p style="text-align:center;">読み込み中にゃ...</p>';
-
-    const profile = await window.NellMemory.getUserProfile(currentUser.id);
-    container.innerHTML = '';
-
-    if (!profile) {
-        container.innerHTML = '<p>まだデータがないにゃ。</p>';
-        return;
-    }
-
-    const createSection = (title, icon, items, key) => {
-        if (!items || items.length === 0) return '';
-        let tagsHtml = items.map((item, idx) => `
-            <div class="profile-tag">
-                ${item}
-                <button class="profile-tag-delete" onclick="deleteProfileItem('${key}', ${idx})">×</button>
-            </div>
-        `).join('');
-        return `
-            <div class="profile-section">
-                <div class="profile-title">${icon} ${title}</div>
-                <div class="profile-tags">${tagsHtml}</div>
-            </div>
-        `;
-    };
-
-    let html = "";
-    
-    // 基本情報
-    if (profile.nickname || profile.birthday) {
-        html += `<div class="profile-section"><div class="profile-title">👤 基本情報</div><div style="font-size:0.9rem; padding:5px;">`;
-        if (profile.nickname) html += `あだ名: <b>${profile.nickname}</b><br>`;
-        if (profile.birthday) html += `誕生日: <b>${profile.birthday}</b>`;
-        html += `</div></div>`;
-    }
-
-    html += createSection("好きなもの", "💖", profile.likes, "likes");
-    html += createSection("苦手なこと", "💦", profile.weaknesses, "weaknesses");
-    html += createSection("頑張ったこと", "🏆", profile.achievements, "achievements");
-    
-    if (profile.last_topic) {
-        html += `<div class="profile-section"><div class="profile-title">💬 前回の話題</div><div style="font-size:0.9rem; padding:5px; background:#f5f5f5; border-radius:5px;">${profile.last_topic}</div></div>`;
-    }
-
-    if (html === "") {
-        html = '<p style="text-align:center; color:#999;">まだ真っ白だにゃ。</p>';
-    }
-
-    container.innerHTML = html;
-};
-
-// プロフィール項目削除
-window.deleteProfileItem = async function(key, index) {
-    if (!confirm("この情報を削除するにゃ？")) return;
-    
-    const profile = await window.NellMemory.getUserProfile(currentUser.id);
-    if (profile[key] && Array.isArray(profile[key])) {
-        profile[key].splice(index, 1);
-        await window.NellMemory.saveUserProfile(currentUser.id, profile);
-        renderProfile(); // 再描画
-    }
-};
-
-window.renderMemoryList = async function() {
-    const container = document.getElementById('memory-list-container');
-    if (!container) return;
-    container.innerHTML = '<p style="text-align:center;">読み込み中にゃ...</p>';
-
-    // データの取得
-    let history = [];
-    const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
-    
-    try {
-        history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
-    } catch(e) {}
-
-    // Firestoreからも取得
-    if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) {
-        try {
-            const doc = await db.collection("memories").doc(currentUser.id).get();
-            if (doc.exists) {
-                history = doc.data().history || [];
-            }
-        } catch(e) { console.error("Memory Fetch Error:", e); }
-    }
-
-    container.innerHTML = '';
-    if (history.length === 0) {
-        container.innerHTML = '<p style="text-align:center; color:#999;">まだ会話ログがないにゃ</p>';
-        return;
-    }
-
-    // 新しい順に表示
-    for (let i = history.length - 1; i >= 0; i--) {
-        const item = history[i];
-        const div = document.createElement('div');
-        div.className = 'memory-item';
-        
-        const roleLabel = item.role === 'user' ? 'キミ' : 'ネル先生';
-        const roleClass = item.role === 'user' ? 'memory-role-user' : 'memory-role-nell';
-        
-        div.innerHTML = `
-            <div style="flex:1;">
-                <div class="memory-meta ${roleClass}">${roleLabel} (${new Date(item.time).toLocaleTimeString()})</div>
-                <div class="memory-text">${item.text}</div>
-            </div>
-            <button onclick="deleteMemoryItem(${i})" class="delete-mem-btn">削除</button>
-        `;
-        container.appendChild(div);
-    }
-};
-
-window.deleteMemoryItem = async function(index) {
-    if (!confirm("このログを削除するにゃ？")) return;
-    
-    const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
-    let history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
-    
-    if (index >= 0 && index < history.length) {
-        history.splice(index, 1);
-    }
-    
-    localStorage.setItem(memoryKey, JSON.stringify(history));
-    
-    if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) {
-        try {
-            await db.collection("memories").doc(currentUser.id).set({
-                history: history,
-                lastUpdated: new Date().toISOString()
-            }, { merge: true });
-        } catch(e) { console.error("Memory Delete Sync Error:", e); }
-    }
-
-    renderMemoryList();
-};
