@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v237.0: 連続撮影対応・タイムスタンプ付与版) ---
+// --- analyze.js (完全版 v239.0: 割り込み緩和＆Liveカメラ修正版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -35,6 +35,9 @@ let isRecognitionActive = false;
 let liveAudioSources = []; 
 let ignoreIncomingAudio = false;
 let currentLiveAudioSource = null;
+
+// ★Liveカメラ用ロックフラグ（2枚目以降対応）
+window.isLiveImageSending = false;
 
 // ★図鑑用画像キャッシュ
 window.lastSentCollectionImage = null;
@@ -372,6 +375,12 @@ window.captureAndSendLiveImage = function() {
     if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) {
         return alert("まずは「おはなしする」でネル先生とつながってにゃ！");
     }
+
+    // ★追加: 連続撮影・送信重複防止（2枚目以降のブロック解除対策）
+    if (window.isLiveImageSending) {
+        console.log("画像送信クールダウン中にゃ...");
+        return; // 連打防止
+    }
     
     const video = document.getElementById('live-chat-video');
     if (!video || !video.srcObject || !video.srcObject.active) {
@@ -382,6 +391,9 @@ window.captureAndSendLiveImage = function() {
     stopAudioPlayback();
     ignoreIncomingAudio = true; 
     
+    // ★ロック開始
+    window.isLiveImageSending = true;
+
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
@@ -428,9 +440,15 @@ window.captureAndSendLiveImage = function() {
 
     updateNellMessage("ん？どれどれ…", "thinking", false, false);
     
-    // ★修正ポイント: 画像を「先」に送り、少し待ってから「タイムスタンプ付きの指示」を送る。
-    // これにより、AIは毎回新しいリクエストとして認識し、必ず応答するようになる。
+    // ★画像送信
     liveSocket.send(JSON.stringify({ base64Image: base64Data }));
+
+    // ★追加: 強制的にロック解除（3秒後）
+    // これにより、AIが返答中であっても次の撮影が可能になる
+    setTimeout(() => {
+        window.isLiveImageSending = false;
+        console.log("次の画像送信準備OKにゃ");
+    }, 3000);
 
     setTimeout(() => {
         ignoreIncomingAudio = false; 
@@ -821,17 +839,23 @@ async function startLiveChat() {
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:'; 
         let statusSummary = `${currentUser.name}さんは今、お話しにきたにゃ。カリカリは${currentUser.karikari}個持ってるにゃ。`; 
         
-        const url = `${wsProto}//${location.host}?grade=${currentUser.grade}&name=${encodeURIComponent(currentUser.name)}&context=${encodeURIComponent(statusSummary + "\n" + memoryContext)}`; 
+        // ★修正: contextはURLに含めず、初期化メッセージで送る（URL長制限対策）
+        const url = `${wsProto}//${location.host}?grade=${currentUser.grade}&name=${encodeURIComponent(currentUser.name)}`; 
+        
         liveSocket = new WebSocket(url); 
         liveSocket.binaryType = "blob"; 
         connectionTimeout = setTimeout(() => { if (liveSocket && liveSocket.readyState !== WebSocket.OPEN) { updateNellMessage("なかなかつながらないにゃ…", "thinking", false); stopLiveChat(); } }, 10000); 
         
         liveSocket.onopen = () => { 
-            clearTimeout(connectionTimeout); 
-            if(btn) { btn.innerText = "📞 つながった！(終了)"; btn.style.background = "#ff5252"; btn.disabled = false; } 
-            updateNellMessage("お待たせ！なんでも話してにゃ！", "happy", false, false); 
-            isRecognitionActive = true; 
-            startMicrophone(); 
+            // ★即座に初期化メッセージを送信
+            liveSocket.send(JSON.stringify({
+                type: "init",
+                name: currentUser.name,
+                grade: currentUser.grade,
+                context: statusSummary + "\n" + memoryContext
+            }));
+            
+            // isRecognitionActive = true; // server_readyを待つためここではまだtrueにしない
         }; 
         
         liveSocket.onmessage = async (event) => { 
@@ -839,6 +863,16 @@ async function startLiveChat() {
                 let rawData = event.data;
                 if (rawData instanceof Blob) rawData = await rawData.text();
                 const data = JSON.parse(rawData);
+
+                // ★サーバーからの準備完了信号を受信
+                if (data.type === "server_ready") {
+                    clearTimeout(connectionTimeout); 
+                    if(btn) { btn.innerText = "📞 つながった！(終了)"; btn.style.background = "#ff5252"; btn.disabled = false; } 
+                    updateNellMessage("お待たせ！なんでも話してにゃ！", "happy", false, false); 
+                    isRecognitionActive = true; 
+                    startMicrophone(); 
+                    return;
+                }
 
                 // ★追加: 図鑑登録指令の受信処理 (完全版 v232.0 救済措置付き)
                 if (data.type === "save_to_collection") {
@@ -975,24 +1009,24 @@ async function startMicrophone() {
             recognition.interimResults = true; 
             recognition.lang = 'ja-JP'; 
             
-            // ★スマート割り込み機能 (相槌無視)
+            // ★スマート割り込み機能 (相槌無視 + 10文字以上/特定ワード)
             recognition.onresult = (event) => { 
                 let currentText = "";
                 for (let i = event.resultIndex; i < event.results.length; ++i) {
                     currentText += event.results[i][0].transcript;
                 }
-                
-                const aizuchi = [
-                    "うん", "はい", "へー", "そう", "あ", "え", "ん", "うんうん", "はいはい", 
-                    "そっか", "なるほど", "えっと", "すごい", "ほんと", "わかった", "ありがとう", 
-                    "マジ", "うそ", "へえ", "ふーん", "それで", "オッケー", "OK"
-                ];
                 const cleanText = currentText.trim();
                 
-                // ネル先生が話していて、かつユーザーの発言が短すぎず、相槌でもない場合のみ停止
+                // 停止キーワード
+                const stopKeywords = ["違う", "ちがう", "待って", "まって", "ストップ", "やめて", "うるさい", "静か", "しずか"];
+                
+                // ネル先生が話していて、かつユーザーの発言がある場合
                 if (window.isNellSpeaking && cleanText.length > 0) {
-                    if (cleanText.length >= 3 && !aizuchi.includes(cleanText)) {
-                        console.log(`【Audio】割り込み検知: "${cleanText}" -> 停止`);
+                    const isLongEnough = cleanText.length >= 10;
+                    const isStopCommand = stopKeywords.some(w => cleanText.includes(w));
+
+                    if (isLongEnough || isStopCommand) {
+                        console.log(`【Audio】割り込み検知(緩和版): "${cleanText}" -> 停止`);
                         stopAudioPlayback();
                     }
                 }
