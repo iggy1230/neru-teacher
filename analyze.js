@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v255.0: 画像先行送信・確実反応版) ---
+// --- analyze.js (完全版 v256.0: サンドイッチ送信・絶対認識版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -201,11 +201,11 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     const el = document.getElementById(targetId);
     
     // 表示用テキストのクリーニング（タグを除去）
-    let displayText = t
-        .replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "")
-        .replace(/\[CAPTURE\s*[:：]\s*.*?\]/gi, "")
-        .replace(/【図鑑登録[:：]\s*.*?】/g, "")
-        .replace(/キャプチャー[、,\s]*([^\s。]+)/gi, "$1"); 
+    // AIがタグを口走った場合も、画面表示からは消す
+    let displayText = t.replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "");
+    displayText = displayText.replace(/\[CAPTURE\s*[:：]\s*.*?\]/gi, ""); 
+    displayText = displayText.replace(/【図鑑登録[:：]\s*.*?】/g, ""); 
+    displayText = displayText.replace(/キャプチャー[、,\s]*([^\s。]+)/gi, "$1"); 
 
     if (el) el.innerText = displayText;
     
@@ -467,25 +467,33 @@ window.captureAndSendLiveImage = function() {
 
     updateNellMessage("ん？どれどれ…", "thinking", false, false);
     
-    // ★★★ 今回の修正ポイント1: 画像を送信 ★★★
-    liveSocket.send(JSON.stringify({ base64Image: base64Data }));
+    // ★★★ 今回の修正ポイント: サンドイッチ送信作戦 ★★★
+    if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
+        // 1. まず「画像を送るよ」と宣言 (ターンは終わらせない)
+        liveSocket.send(JSON.stringify({ 
+            clientContent: { 
+                turns: [{ role: "user", parts: [{ text: "（今から画像を送ります...）" }] }],
+                turnComplete: false 
+            } 
+        }));
 
-    // ★★★ 今回の修正ポイント2: 0.1秒後に質問を送信 (turnComplete: true) ★★★
-    // 「画像が先、質問が後」の順序を守ることで、AIが画像を文脈として認識する
-    setTimeout(() => {
-        if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
-            console.log("[Collection] 🚀 Sending text-prompt AFTER image to trigger response.");
+        // 2. 画像を送る
+        liveSocket.send(JSON.stringify({ base64Image: base64Data }));
+
+        // 3. すぐに「これ何？」と質問してターンを終了させる (100ms程度の微遅延で順序保証)
+        setTimeout(() => {
+            console.log("[Collection] 🚀 Sending final trigger prompt.");
             liveSocket.send(JSON.stringify({ 
                 clientContent: { 
                     turns: [{ 
                         role: "user", 
-                        parts: [{ text: "（今送った画像について）「これは何ですか？」\n※画像に写っているものを正確に特定し、『【図鑑登録：(名前)】』の形式で名前を出力してください。" }] 
+                        parts: [{ text: "（画像を送りました）これは何ですか？『【図鑑登録：(名前)】』の形式で名前を教えて！" }] 
                     }],
-                    turnComplete: true // ここで初めてターン終了＝回答生成開始
+                    turnComplete: true // ここで初めてAIに回答権を渡す
                 } 
             }));
-        }
-    }, 100); // 画像送信の直後(100ms)に送る
+        }, 100);
+    }
 
     // ★追加: 強制的にロック解除（2秒後）& UI戻し
     setTimeout(() => {
@@ -499,7 +507,7 @@ window.captureAndSendLiveImage = function() {
     
     setTimeout(() => {
          ignoreIncomingAudio = false; 
-    }, 200);
+    }, 300);
 };
 
 // ==========================================
@@ -1019,7 +1027,6 @@ async function startLiveChat() {
                             }
 
                             // パターン3: キャプチャー、名前 (口語)
-                            // AIが「キャプチャー、〇〇」と喋ってしまった場合も検出
                             if (!itemName) {
                                 const match3 = p.text.match(/キャプチャー[、,\s]\s*([^\s。]+)/i);
                                 if (match3) itemName = match3[1];
