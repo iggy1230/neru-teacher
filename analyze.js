@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v262.0: ツール連動・サンドイッチ送信・絶対認識版) ---
+// --- analyze.js (完全版 v263.0: 消失関数復元・安定動作版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -38,7 +38,6 @@ let currentLiveAudioSource = null;
 
 // ★Liveカメラ用ロックフラグ
 window.isLiveImageSending = false;
-// ★マイクミュートフラグ（システム発言優先用）
 window.isMicMuted = false;
 
 // ★図鑑用画像キャッシュ
@@ -222,7 +221,13 @@ window.selectMode = function(m) {
     ids.forEach(id => { const el = document.getElementById(id); if (el) el.classList.add('hidden'); });
     const backBtn = document.getElementById('main-back-btn');
     if (backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = backToLobby; }
-    stopLiveChat(); gameRunning = false;
+    
+    // 安全に stopLiveChat を呼び出す（ここがエラーの原因だった）
+    if (typeof window.stopLiveChat === 'function') {
+        window.stopLiveChat();
+    }
+    
+    gameRunning = false;
     const icon = document.querySelector('.nell-avatar-wrap img'); if(icon) icon.src = defaultIcon;
     document.getElementById('mini-karikari-display').classList.remove('hidden'); updateMiniKarikari();
     
@@ -372,10 +377,7 @@ window.captureAndSendLiveImage = function() {
         return alert("まずは「おはなしする」でネル先生とつながってにゃ！");
     }
 
-    // ★追加: 連続撮影・送信重複防止
-    if (window.isLiveImageSending) {
-        return; 
-    }
+    if (window.isLiveImageSending) return; 
     
     const video = document.getElementById('live-chat-video');
     if (!video || !video.srcObject || !video.srcObject.active) {
@@ -413,7 +415,7 @@ window.captureAndSendLiveImage = function() {
     thumbCanvas.getContext('2d').drawImage(canvas, 0, 0, tw, th);
     window.lastSentCollectionImage = thumbCanvas.toDataURL('image/jpeg', 0.7);
 
-    // ★★★ 先行保存処理 ★★★
+    // ★★★ 先行保存処理 (ログ付き) ★★★
     if (window.NellMemory) {
         const timestamp = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         const tempName = `🔍 解析中... (${timestamp})`;
@@ -962,7 +964,53 @@ async function startLiveChat() {
     } catch (e) { stopLiveChat(); } 
 }
 
-// ... (以下、startMicrophone関数などはv260.0と同じため省略せず記述) ...
+// --------------------------------------------------------
+// ★ ここで stopLiveChat を定義（グローバル代入）
+// --------------------------------------------------------
+window.stopLiveChat = function() {
+    if (window.NellMemory) {
+        if (chatTranscript && chatTranscript.length > 10) {
+            console.log(`【Memory】更新開始 (ログ長: ${chatTranscript.length})`);
+            window.NellMemory.updateProfileFromChat(currentUser.id, chatTranscript);
+        } else {
+            console.log("【Memory】会話が短いため更新スキップ");
+        }
+    }
+
+    isRecognitionActive = false; 
+    if (connectionTimeout) clearTimeout(connectionTimeout); 
+    if (recognition) try{recognition.stop()}catch(e){} 
+    if (mediaStream) mediaStream.getTracks().forEach(t=>t.stop()); 
+    if (workletNode) { workletNode.port.postMessage('stop'); workletNode.disconnect(); } 
+    if (liveSocket) liveSocket.close(); 
+    if (audioContext && audioContext.state !== 'closed') audioContext.close(); 
+    window.isNellSpeaking = false; 
+    if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer); 
+    if(speakingStartTimer) clearTimeout(speakingStartTimer); 
+    
+    // UIのリセット処理
+    const btnId = currentMode === 'simple-chat' ? 'mic-btn-simple' : 'mic-btn';
+    const btn = document.getElementById(btnId);
+    if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = currentMode === 'simple-chat' ? "#66bb6a" : "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; } 
+    liveSocket = null; 
+    
+    // カメラボタンのリセット
+    const camBtn = document.getElementById('live-camera-btn');
+    if (camBtn) {
+        camBtn.innerHTML = "<span>📷</span> これ教えて！（カメラで見せる）";
+        camBtn.style.backgroundColor = "#4a90e2";
+    }
+    window.isLiveImageSending = false;
+    window.isMicMuted = false; 
+
+    const video = document.getElementById('live-chat-video');
+    if(video) video.srcObject = null;
+    document.getElementById('live-chat-video-container').style.display = 'none';
+};
+
+// --------------------------------------------------------
+// 以下の関数も続きます
+// --------------------------------------------------------
 
 async function startMicrophone() { 
     try { 
