@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v240.0: ロック短縮＆ボタン表示改善版) ---
+// --- analyze.js (完全版 v241.0: 図鑑登録完全対応版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -39,7 +39,7 @@ let currentLiveAudioSource = null;
 // ★Liveカメラ用ロックフラグ（2枚目以降対応）
 window.isLiveImageSending = false;
 
-// ★図鑑用画像キャッシュ
+// ★図鑑用画像キャッシュ (超重要: 送信した画像をここに保持し、ツール指令が来たらこれを使う)
 window.lastSentCollectionImage = null;
 
 // ゲーム・Cropper関連
@@ -378,7 +378,8 @@ window.captureAndSendLiveImage = function() {
 
     // ★追加: 連続撮影・送信重複防止（2枚目以降のブロック解除対策）
     if (window.isLiveImageSending) {
-        return; // 連打防止（メッセージは出さない）
+        console.log("画像送信クールダウン中にゃ...");
+        return; // 連打防止
     }
     
     const video = document.getElementById('live-chat-video');
@@ -398,13 +399,14 @@ window.captureAndSendLiveImage = function() {
         btn.style.backgroundColor = "#ccc";
     }
 
+    // キャプチャ用キャンバス
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     
-    // ★図鑑用にサムネイルを作成してキャッシュ
+    // ★図鑑用にサムネイルを作成してキャッシュ (150px)
     const thumbCanvas = document.createElement('canvas');
     const thumbSize = 150; 
     let tw = canvas.width, th = canvas.height;
@@ -412,6 +414,8 @@ window.captureAndSendLiveImage = function() {
     else { tw *= thumbSize / th; th = thumbSize; }
     thumbCanvas.width = tw; thumbCanvas.height = th;
     thumbCanvas.getContext('2d').drawImage(canvas, 0, 0, tw, th);
+    
+    // グローバル変数にセット (ツール指令が来たらこれを使う)
     window.lastSentCollectionImage = thumbCanvas.toDataURL('image/jpeg', 0.7);
 
     // デバッグログ
@@ -457,12 +461,12 @@ window.captureAndSendLiveImage = function() {
         console.log("次の画像送信準備OKにゃ");
     }, 2000);
 
+    // ★プロンプト送信 (少しだけ遅らせて認識させる)
     setTimeout(() => {
         ignoreIncomingAudio = false; 
-        const ts = new Date().getTime(); // 毎回異なるテキストにするためのタイムスタンプ
-        // ★プロンプト強化: 「これ新しい写真だから前の話は忘れて！」と指示
+        const ts = new Date().getTime(); 
         sendSilentPrompt(`【緊急画像認識指示 ID:${ts}】\nたった今、新しい画像を送ったにゃ。\n前の会話の流れは一旦忘れて、この画像に写っているものを特定して！\n特定できたら感想を言う前に **必ず** \`register_collection_item\` ツールを実行して！\n「登録した」と嘘をつくのは禁止！`);
-    }, 200); 
+    }, 150); 
 };
 
 // ==========================================

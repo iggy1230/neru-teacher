@@ -1,4 +1,4 @@
-// --- server.js (完全版 v238.0: 画像認識プロンプト強化版) ---
+// --- server.js (完全版 v238.0: 図鑑登録フロー再構築版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -92,7 +92,7 @@ app.post('/synthesize', async (req, res) => {
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
-        // ★MODEL指定: 記憶更新は高速なFlashで十分 (gemini-2.0-flash-exp)
+        // ★MODEL指定: 記憶更新 (gemini-2.0-flash-exp)
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp", 
             generationConfig: { responseMimeType: "application/json" }
@@ -151,7 +151,7 @@ app.post('/update-memory', async (req, res) => {
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, name } = req.body;
-        // ★MODEL指定: 宿題分析は最高精度の gemini-2.5-pro (ユーザー指定)
+        // ★MODEL指定: 宿題分析 (gemini-2.5-pro)
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.5-pro", 
             generationConfig: { responseMimeType: "application/json", temperature: 0.0 }
@@ -231,7 +231,7 @@ app.post('/lunch-reaction', async (req, res) => {
         const { count, name } = req.body;
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
         const isSpecial = (count % 10 === 0);
-        // ★MODEL指定: 反応系はFlash (gemini-2.0-flash-exp)
+        // ★MODEL指定: 反応系 (gemini-2.0-flash-exp)
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         
         let prompt = isSpecial 
@@ -255,7 +255,7 @@ app.post('/lunch-reaction', async (req, res) => {
 app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;
-        // ★MODEL指定: 反応系はFlash (gemini-2.0-flash-exp)
+        // ★MODEL指定: 反応系 (gemini-2.0-flash-exp)
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         let prompt = "";
         let mood = "excited";
@@ -283,16 +283,12 @@ const wss = new WebSocketServer({ server });
 
 wss.on('connection', async (clientWs, req) => {
     const params = parse(req.url, true).query;
-    // URL長制限対策: ここでは最低限の情報のみ取得し、メインの情報は 'init' メッセージで受け取る
     let grade = params.grade || "1";
     let name = decodeURIComponent(params.name || "生徒");
-    // context は受け取らない
 
     let geminiWs = null;
 
-    // Geminiへ接続する関数
     const connectToGemini = (statusContext) => {
-        // 現在日時
         const now = new Date();
         const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'Asia/Tokyo' };
         const todayStr = now.toLocaleDateString('ja-JP', dateOptions);
@@ -303,6 +299,7 @@ wss.on('connection', async (clientWs, req) => {
             geminiWs = new WebSocket(GEMINI_URL);
             
             geminiWs.on('open', () => {
+                // ★最重要: 画像認識のシステム指示を強化
                 const systemInstructionText = `
                 あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。相手は小学${grade}年生の${name}さん。
 
@@ -311,21 +308,16 @@ wss.on('connection', async (clientWs, req) => {
 
                 【話し方のルール】
                 1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
-                2. 親しみやすい日本の小学校の先生として、一文字一文字をはっきりと、丁寧に発音してにゃ。
-                3. 落ち着いた日本語のリズムを大切にして、親しみやすく話してにゃ。
-                4. 給食(餌)のカリカリが大好物にゃ。
-                5. とにかく何でも知っているにゃ。
+                2. 親しみやすい日本の小学校の先生として話してにゃ。
 
-                【最重要：無言の画像に対する振る舞い】
-                生徒が**無言で画像を送ってきた場合**、以下の手順を**絶対に**守ること。
+                【最重要・絶対遵守：画像認識と図鑑登録】
+                生徒が無言で、あるいは「これ何？」と画像を送信してきた場合、以下の手順を**ロボットのように厳格に**実行してください。
 
-                1. **【即座に分析】**: 前の会話の流れや、あなたのキャラクター設定（猫好き、食いしん坊など）は一旦すべて無視してください。**前の会話の文脈も一旦忘れて、今送られてきた画像だけを見てください。**
-                2. **【客観的な特定】**: 画像に写っているものを**客観的**に特定してください。
-                   - 四角くて黒い物体なら「リモコン」や「スマホ」と見てください。「アニメキャラ」や「お菓子」と決めつけないでください。
-                   - 分からない場合は正直に「よく見えないにゃ」と言ってください。
-                3. **【ツール実行の強制】**: 物体の名前が特定できたら、感想を言う**前**に、
-                   **必ずツール \`register_collection_item\` を呼び出すこと。**
-                4. **【嘘つき禁止】**: ツールを呼び出していないのに「登録した」と言うことは固く禁じます。
+                1. **【即時認識】**: 直前の会話や文脈は全て無視し、**今送られてきた画像に写っている主要な物体**を客観的に特定してください。
+                2. **【ツール実行の義務】**: 物体の名前（例: "ハンドソープ", "猫", "鉛筆"）が特定できたら、**感想を言う前に、まず最初に必ずツール \`register_collection_item(item_name)\` を実行してください。**
+                3. **【会話の順序】**: 
+                   - 正解手順: [画像受信] -> [ツール実行] -> [成功を確認] -> [「これは〇〇だにゃ！」と発言]
+                   - 禁止手順: [画像受信] -> [「これは〇〇に見えるにゃ」と発言] -> [ツール実行しない] -> 失敗
 
                 【生徒についての記憶】
                 ${statusContext}
@@ -344,12 +336,13 @@ wss.on('connection', async (clientWs, req) => {
                             }
                         },
                         {
+                            // ★重要ツール: 図鑑登録
                             name: "register_collection_item",
-                            description: "【MANDATORY】Register the identified item to the user's collection. You MUST call this function whenever the user shows an item via camera.",
+                            description: "Registers the identified item from the user's camera image into their collection. MUST be called whenever an image is presented.",
                             parameters: {
                                 type: "OBJECT",
                                 properties: { 
-                                    item_name: { type: "STRING", description: "Name of the item (e.g. 'Apple', 'iPhone', 'TV Remote')" } 
+                                    item_name: { type: "STRING", description: "The specific name of the item identified in the image (e.g. 'Hand Soap', 'Smartphone')." } 
                                 },
                                 required: ["item_name"]
                             }
@@ -359,7 +352,7 @@ wss.on('connection', async (clientWs, req) => {
 
                 geminiWs.send(JSON.stringify({
                     setup: {
-                        // ★MODEL指定: リアルタイム会話はFlash-Exp (gemini-2.0-flash-exp)
+                        // ★MODEL指定: リアルタイム会話 (gemini-2.0-flash-exp)
                         model: "models/gemini-2.0-flash-exp",
                         generationConfig: { 
                             responseModalities: ["AUDIO"], 
@@ -373,7 +366,6 @@ wss.on('connection', async (clientWs, req) => {
                     }
                 }));
 
-                // Gemini接続完了をクライアントに通知
                 if (clientWs.readyState === WebSocket.OPEN) {
                     clientWs.send(JSON.stringify({ type: "server_ready" }));
                 }
@@ -387,10 +379,12 @@ wss.on('connection', async (clientWs, req) => {
                         const parts = response.serverContent.modelTurn.parts;
                         parts.forEach(part => {
                             if (part.functionCall) {
+                                // ▼ 図鑑登録ツールの呼び出し
                                 if (part.functionCall.name === "register_collection_item") {
                                     const itemName = part.functionCall.args.item_name;
                                     console.log(`[Collection] 🤖 AI Tool Called: register_collection_item for "${itemName}"`);
                                     
+                                    // クライアントに保存指令を送る
                                     if (clientWs.readyState === WebSocket.OPEN) {
                                         clientWs.send(JSON.stringify({
                                             type: "save_to_collection",
@@ -398,6 +392,7 @@ wss.on('connection', async (clientWs, req) => {
                                         }));
                                     }
                                     
+                                    // Geminiに成功を通知
                                     geminiWs.send(JSON.stringify({
                                         toolResponse: {
                                             functionResponses: [{
@@ -429,12 +424,10 @@ wss.on('connection', async (clientWs, req) => {
         }
     };
 
-    // クライアントからのメッセージハンドリング
     clientWs.on('message', (data) => {
         try {
             const msg = JSON.parse(data);
 
-            // ★ 初期化メッセージ受信時にGeminiへ接続
             if (msg.type === 'init') {
                 const context = msg.context || "";
                 name = msg.name || name;
@@ -443,7 +436,6 @@ wss.on('connection', async (clientWs, req) => {
                 return;
             }
 
-            // Gemini未接続時のガード
             if (!geminiWs || geminiWs.readyState !== WebSocket.OPEN) {
                 return;
             }
