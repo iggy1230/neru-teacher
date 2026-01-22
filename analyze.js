@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v264.0: 記憶ボタン修正・機能完全版) ---
+// --- analyze.js (完全版 v263.1: 図鑑登録・無言撮影・全機能統合版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -25,7 +25,7 @@ let workletNode = null;
 let stopSpeakingTimer = null;
 let speakingStartTimer = null;
 let currentTtsSource = null;
-let chatTranscript = ""; 
+let chatTranscript = ""; // 会話ログ蓄積用
 let nextStartTime = 0;
 let connectionTimeout = null;
 let recognition = null;
@@ -110,7 +110,9 @@ window.addEventListener('DOMContentLoaded', () => {
     if (startCamBtn) startCamBtn.onclick = startHomeworkWebcam;
 });
 
-// ... (startHomeworkWebcam等は変更なし) ...
+// ==========================================
+// 2. 宿題用カメラ機能 (標準分析用)
+// ==========================================
 
 async function startHomeworkWebcam() {
     const modal = document.getElementById('camera-modal');
@@ -150,6 +152,10 @@ function closeHomeworkCamera() {
     if (modal) modal.classList.add('hidden');
 }
 
+// ==========================================
+// 3. 記憶・メッセージ管理
+// ==========================================
+
 async function saveToNellMemory(role, text) {
     if (!currentUser || !currentUser.id) return;
     const trimmed = text.trim();
@@ -177,6 +183,7 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     const targetId = isGameHidden ? 'nell-text' : 'nell-text-game';
     const el = document.getElementById(targetId);
     
+    // 表示用テキストのクリーニング
     let displayText = t.replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "");
     
     if (el) el.innerText = displayText;
@@ -192,6 +199,10 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     }
 };
 
+// ==========================================
+// 4. モード選択 & UI制御
+// ==========================================
+
 window.selectMode = function(m) {
     currentMode = m; 
     if (typeof switchScreen === 'function') switchScreen('screen-main'); 
@@ -200,6 +211,7 @@ window.selectMode = function(m) {
     const backBtn = document.getElementById('main-back-btn');
     if (backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = backToLobby; }
     
+    // 安全に stopLiveChat を呼び出す
     if (typeof window.stopLiveChat === 'function') {
         window.stopLiveChat();
     }
@@ -222,8 +234,6 @@ window.selectMode = function(m) {
     else { const subjectView = document.getElementById('subject-selection-view'); if (subjectView) subjectView.classList.remove('hidden'); updateNellMessage("どの教科にするのかにゃ？", "normal", false); }
 };
 
-// ... (以下、タイマーやクロッパーなどは変更なしだが省略せず記載) ...
-
 window.setSubject = function(s) { 
     currentSubject = s; 
     const icon = document.querySelector('.nell-avatar-wrap img'); if(icon&&subjectImages[s]){icon.src=subjectImages[s].base; icon.onerror=()=>{icon.src=defaultIcon;};} 
@@ -237,6 +247,10 @@ window.setSubject = function(s) {
 };
 
 window.setAnalyzeMode = function(type) { analysisType = 'precision'; };
+
+// ==========================================
+// 5. ネル先生タイマー
+// ==========================================
 
 window.setTimer = function(minutes) {
     if (studyTimerRunning) return;
@@ -323,6 +337,10 @@ function sendSilentPrompt(text) {
     }));
 }
 
+// ==========================================
+// 6. 「これ見て！」カメラ機能 & 音声割り込み
+// ==========================================
+
 function stopAudioPlayback() {
     liveAudioSources.forEach(source => { try { source.stop(); } catch(e){} });
     liveAudioSources = [];
@@ -337,13 +355,17 @@ window.captureAndSendLiveImage = function() {
     if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) {
         return alert("まずは「おはなしする」でネル先生とつながってにゃ！");
     }
+
     if (window.isLiveImageSending) return; 
     
     const video = document.getElementById('live-chat-video');
-    if (!video || !video.srcObject || !video.srcObject.active) return alert("カメラが動いてないにゃ...");
+    if (!video || !video.srcObject || !video.srcObject.active) {
+        return alert("カメラが動いてないにゃ...。一度「おはなしする」を終了して、もう一度つなぎ直してみてにゃ。");
+    }
 
     stopAudioPlayback();
     ignoreIncomingAudio = true; 
+    
     window.isLiveImageSending = true;
     const btn = document.getElementById('live-camera-btn');
     if (btn) {
@@ -351,6 +373,7 @@ window.captureAndSendLiveImage = function() {
         btn.style.backgroundColor = "#ccc";
     }
 
+    // マイクミュート
     window.isMicMuted = true;
 
     const canvas = document.createElement('canvas');
@@ -368,19 +391,22 @@ window.captureAndSendLiveImage = function() {
     thumbCanvas.getContext('2d').drawImage(canvas, 0, 0, tw, th);
     window.lastSentCollectionImage = thumbCanvas.toDataURL('image/jpeg', 0.7);
 
-    // 先行保存
+    // 先行保存（解析中...）
     if (window.NellMemory) {
         const timestamp = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         const tempName = `🔍 解析中... (${timestamp})`;
+        console.log(`[Collection] 💾 Pre-saving item: "${tempName}"`);
         try {
             window.NellMemory.addToCollection(currentUser.id, tempName, window.lastSentCollectionImage);
+            
             const notif = document.createElement('div');
             notif.innerText = `📸 写真を撮ったにゃ！`;
             notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #4caf50; color:#2e7d32; padding:10px 20px; border-radius:30px; font-weight:bold; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 4px 10px rgba(0,0,0,0.2);";
             document.body.appendChild(notif);
             setTimeout(() => notif.remove(), 2000);
+            
             try{ sfxHirameku.currentTime=0; sfxHirameku.play(); } catch(e){}
-        } catch(e) { console.error("[Collection] Pre-save failed:", e); }
+        } catch(e) { console.error("[Collection] ❌ Pre-save failed:", e); }
     }
 
     const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
@@ -409,7 +435,9 @@ window.captureAndSendLiveImage = function() {
 
     updateNellMessage("ん？どれどれ…", "thinking", false, false);
     
+    // サンドイッチ送信 (質問 + 画像 + ツール強制)
     if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
+        console.log("[Collection] 🚀 Sending bundled turn with image and prompt.");
         liveSocket.send(JSON.stringify({ 
             clientContent: { 
                 turns: [{ 
@@ -428,14 +456,21 @@ window.captureAndSendLiveImage = function() {
     setTimeout(() => {
         window.isLiveImageSending = false;
         window.isMicMuted = false;
+        console.log("[Audio] 🎤 Mic unmuted.");
+        
         if (btn) {
             btn.innerHTML = "<span>📷</span> これ教えて！（カメラで見せる）";
             btn.style.backgroundColor = "#4a90e2";
         }
+        console.log("次の画像送信準備OKにゃ");
     }, 3000);
     
     setTimeout(() => { ignoreIncomingAudio = false; }, 300);
 };
+
+// ==========================================
+// 7. 宿題分析ロジック (高画質・シンプルリサイズ版)
+// ==========================================
 
 window.startAnalysis = async function(b64) {
     if (isAnalyzing) return;
@@ -513,6 +548,10 @@ window.startAnalysis = async function(b64) {
 };
 
 function cleanupAnalysis() { isAnalyzing = false; sfxBunseki.pause(); if(typeof analysisTimers !== 'undefined' && analysisTimers) { analysisTimers.forEach(t => clearTimeout(t)); analysisTimers = []; } }
+
+// ==========================================
+// 8. ヒント & 採点UI
+// ==========================================
 
 window.startHint = function(id) {
     if (window.initAudioContext) window.initAudioContext().catch(e=>{});
@@ -605,6 +644,7 @@ window.revealAnswer = function() {
     updateNellMessage(`答えは「${displayAnswer}」だにゃ！`, "gentle", false); 
 };
 
+// --- リスト生成 (配列対応版) ---
 function createProblemItem(p, mode) {
     const isGradeMode = (mode === 'grade');
     let markHtml = "", bgStyle = "background:white;";
@@ -677,6 +717,7 @@ window.renderProblemSelection = function() {
     const btn = document.querySelector('#problem-selection-view button.orange-btn'); if (btn) { btn.disabled = false; btn.innerText = "✨ ぜんぶわかったにゃ！"; } 
 };
 
+// --- 採点ロジック (配列対応) ---
 function normalizeAnswer(str) { if (!str) return ""; let normalized = str.trim().replace(/[\u30a1-\u30f6]/g, m => String.fromCharCode(m.charCodeAt(0) - 0x60)); return normalized; }
 function isMatch(student, correctString) { const s = normalizeAnswer(student); const options = normalizeAnswer(correctString).split('|'); return options.some(opt => opt === s); }
 
@@ -853,7 +894,7 @@ async function startLiveChat() {
                 if (data.serverContent?.modelTurn?.parts) { 
                     data.serverContent.modelTurn.parts.forEach(p => { 
                         if (p.text) { 
-                            // console.log(`[Gemini Raw Text] ${p.text}`);
+                            console.log(`[Gemini Raw Text] ${p.text}`);
                             
                             const match = p.text.match(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/i);
                             if (match) {
@@ -862,18 +903,32 @@ async function startLiveChat() {
                                 document.getElementById('whiteboard-content').innerText = content;
                             }
 
-                            // タグ検出
+                            // タグ検出（バッファに保存）
                             let itemName = null;
+                            let detectedPattern = "";
+
                             const matchJP = p.text.match(/【図鑑登録[:：]\s*(.+?)】/);
-                            if (matchJP) itemName = matchJP[1];
-                            else {
-                                const matchRaw = p.text.match(/CAPTURE\s*[:：]\s*(.+?)(?:$|\n|。)/i);
-                                if (matchRaw) itemName = matchRaw[1];
+                            if (matchJP) { itemName = matchJP[1]; detectedPattern = "JP Tag"; }
+
+                            if (!itemName) {
+                                const matchEN = p.text.match(/\[CAPTURE\s*[:：]\s*(.+?)\]/i);
+                                if(matchEN) { itemName = matchEN[1]; detectedPattern = "EN Tag"; }
                             }
                             
+                            if (!itemName) {
+                                const matchRaw = p.text.match(/CAPTURE\s*[:：]\s*(.+?)(?:$|\n|。)/i);
+                                if (matchRaw) { itemName = matchRaw[1]; detectedPattern = "Raw CAPTURE"; }
+                            }
+                            
+                            // 口語パターン
+                            if (!itemName) {
+                                const matchSpeech = p.text.match(/(?:図鑑登録|キャプチャー)[、,，\s]\s*([^\s。]+)/i);
+                                if (matchSpeech) { itemName = matchSpeech[1]; detectedPattern = "Speech Pattern"; }
+                            }
+
                             if (itemName) {
                                 itemName = itemName.trim();
-                                console.log(`[Collection] ✅ Matched Tag: "${itemName}"`);
+                                console.log(`[Collection] ✅ Matched! Pattern: "${detectedPattern}", Item: "${itemName}"`);
                                 latestDetectedName = itemName;
                             }
 
@@ -884,7 +939,7 @@ async function startLiveChat() {
                     }); 
                 }
 
-                // ターン完了時に確定
+                // ターン完了時に確定処理
                 if (data.serverContent && data.serverContent.turnComplete) {
                     if (latestDetectedName && window.NellMemory) {
                         console.log(`[Collection] 🔄 Turn Complete. Committing name: ${latestDetectedName}`);
