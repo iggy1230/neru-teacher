@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v245.0: 全機能統合・図鑑登録修正版) ---
+// --- analyze.js (完全版 v246.0: 会話ログ保存修正版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -36,7 +36,7 @@ let liveAudioSources = [];
 let ignoreIncomingAudio = false;
 let currentLiveAudioSource = null;
 
-// ★Liveカメラ用ロックフラグ
+// ★Liveカメラ用ロックフラグ（2枚目以降対応）
 window.isLiveImageSending = false;
 
 // ★図鑑用画像キャッシュ
@@ -163,24 +163,37 @@ async function saveToNellMemory(role, text) {
         "ok", "OK", "接続中...", "読み込み中...",
         "お待たせ！なんでも話してにゃ！", "おいしいにゃ！", "おつかれさまにゃ！"
     ];
+    // 短すぎる相槌などは保存しない
     if (trimmed.length <= 1 || ignoreWords.includes(trimmed)) return;
+    
+    // AIのコンテキスト（短期記憶）に追加
     chatTranscript += `${role === 'user' ? '生徒' : 'ネル'}: ${trimmed}\n`;
 
+    // ログ保存用オブジェクト
     const newItem = { role: role, text: trimmed, time: new Date().toISOString() };
+    
+    // LocalStorageへの保存 (UI表示用)
     try {
         const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
         let history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
+        
+        // 重複排除 (直前と同じ発言なら保存しない)
         if (history.length > 0 && history[history.length - 1].text === trimmed) return;
+        
         history.push(newItem);
-        if (history.length > 50) history.shift(); 
+        if (history.length > 50) history.shift(); // 最新50件保持
         localStorage.setItem(memoryKey, JSON.stringify(history));
     } catch(e) {}
+
+    // Firestoreへの保存 (クラウド同期)
     if (currentUser.isGoogleUser && typeof db !== 'undefined' && db !== null) {
         try {
             const docRef = db.collection("memories").doc(currentUser.id);
             const docSnap = await docRef.get();
             let cloudHistory = docSnap.exists ? (docSnap.data().history || []) : [];
+            
             if (cloudHistory.length > 0 && cloudHistory[cloudHistory.length - 1].text === trimmed) return;
+            
             cloudHistory.push(newItem);
             if (cloudHistory.length > 50) cloudHistory.shift();
             await docRef.set({ history: cloudHistory, lastUpdated: new Date().toISOString() }, { merge: true });
@@ -969,6 +982,7 @@ async function startLiveChat() {
                                 document.getElementById('whiteboard-content').innerText = content;
                             }
                             // ★WebSocket接続中は speak=false にしてTTSを呼ばない
+                            // ★重要: 会話ログに保存する
                             saveToNellMemory('nell', p.text); 
                             updateNellMessage(p.text, "normal", false, false);
                         } 
@@ -982,134 +996,6 @@ async function startLiveChat() {
         liveSocket.onclose = () => stopLiveChat(); 
         liveSocket.onerror = () => stopLiveChat(); 
     } catch (e) { stopLiveChat(); } 
-}
-
-function stopLiveChat() { 
-    // ★追加: 会話終了時に記憶を更新する
-    if (window.NellMemory) {
-        if (chatTranscript && chatTranscript.length > 10) {
-            console.log(`【Memory】更新開始 (ログ長: ${chatTranscript.length})`);
-            window.NellMemory.updateProfileFromChat(currentUser.id, chatTranscript);
-        } else {
-            console.log("【Memory】会話が短いため更新スキップ");
-        }
-    }
-
-    isRecognitionActive = false; 
-    if (connectionTimeout) clearTimeout(connectionTimeout); 
-    if (recognition) try{recognition.stop()}catch(e){} 
-    if (mediaStream) mediaStream.getTracks().forEach(t=>t.stop()); 
-    if (workletNode) { workletNode.port.postMessage('stop'); workletNode.disconnect(); } 
-    if (liveSocket) liveSocket.close(); 
-    if (audioContext && audioContext.state !== 'closed') audioContext.close(); 
-    window.isNellSpeaking = false; 
-    if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer); 
-    if(speakingStartTimer) clearTimeout(speakingStartTimer); 
-    
-    // UIのリセット処理
-    const btnId = currentMode === 'simple-chat' ? 'mic-btn-simple' : 'mic-btn';
-    const btn = document.getElementById(btnId);
-    if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = currentMode === 'simple-chat' ? "#66bb6a" : "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; } 
-    liveSocket = null; 
-    
-    // カメラボタンのリセットとフラグの完全初期化
-    resetLiveChatFlags();
-
-    const video = document.getElementById('live-chat-video');
-    if(video) video.srcObject = null;
-    document.getElementById('live-chat-video-container').style.display = 'none';
-}
-
-async function startMicrophone() { 
-    try { 
-        if ('webkitSpeechRecognition' in window) { 
-            recognition = new webkitSpeechRecognition(); 
-            recognition.continuous = true; 
-            recognition.interimResults = true; 
-            recognition.lang = 'ja-JP'; 
-            
-            // ★スマート割り込み機能 (相槌無視 + 10文字以上/特定ワード)
-            recognition.onresult = (event) => { 
-                let currentText = "";
-                for (let i = event.resultIndex; i < event.results.length; ++i) {
-                    currentText += event.results[i][0].transcript;
-                }
-                const cleanText = currentText.trim();
-                
-                // 停止キーワード
-                const stopKeywords = ["違う", "ちがう", "待って", "まって", "ストップ", "やめて", "うるさい", "静か", "しずか"];
-                
-                // ネル先生が話していて、かつユーザーの発言がある場合
-                if (window.isNellSpeaking && cleanText.length > 0) {
-                    const isLongEnough = cleanText.length >= 10;
-                    const isStopCommand = stopKeywords.some(w => cleanText.includes(w));
-
-                    if (isLongEnough || isStopCommand) {
-                        console.log(`【Audio】割り込み検知(緩和版): "${cleanText}" -> 停止`);
-                        stopAudioPlayback();
-                    }
-                }
-
-                let interim = ''; 
-                for (let i = event.resultIndex; i < event.results.length; ++i) { 
-                    if (event.results[i].isFinal) { 
-                        const userText = event.results[i][0].transcript;
-                        saveToNellMemory('user', userText); 
-                        
-                        const txtId = currentMode === 'simple-chat' ? 'user-speech-text-simple' : 'user-speech-text';
-                        const el = document.getElementById(txtId); 
-                        if(el) el.innerText = userText; 
-                    } else interim += event.results[i][0].transcript; 
-                } 
-            }; 
-            recognition.onend = () => { if (isRecognitionActive && liveSocket && liveSocket.readyState === WebSocket.OPEN) try{recognition.start()}catch(e){} }; 
-            recognition.start(); 
-        } 
-        
-        const useVideo = (currentMode === 'chat');
-        
-        mediaStream = await navigator.mediaDevices.getUserMedia({ 
-            audio: { sampleRate: 16000, channelCount: 1 }, 
-            video: useVideo ? { facingMode: "environment" } : false 
-        }); 
-        
-        if (useVideo) {
-            const video = document.getElementById('live-chat-video');
-            if (video) {
-                video.srcObject = mediaStream;
-                video.play();
-                document.getElementById('live-chat-video-container').style.display = 'block';
-            }
-        }
-
-        const processorCode = `class PcmProcessor extends AudioWorkletProcessor { constructor() { super(); this.bufferSize = 2048; this.buffer = new Float32Array(this.bufferSize); this.index = 0; } process(inputs, outputs, parameters) { const input = inputs[0]; if (input.length > 0) { const channel = input[0]; for (let i = 0; i < channel.length; i++) { this.buffer[this.index++] = channel[i]; if (this.index >= this.bufferSize) { this.port.postMessage(this.buffer); this.index = 0; } } } return true; } } registerProcessor('pcm-processor', PcmProcessor);`; 
-        const blob = new Blob([processorCode], { type: 'application/javascript' }); 
-        await audioContext.audioWorklet.addModule(URL.createObjectURL(blob)); 
-        const source = audioContext.createMediaStreamSource(mediaStream); 
-        workletNode = new AudioWorkletNode(audioContext, 'pcm-processor'); 
-        source.connect(workletNode); 
-        workletNode.port.onmessage = (event) => { 
-            if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return; 
-            const downsampled = downsampleBuffer(event.data, audioContext.sampleRate, 16000); 
-            liveSocket.send(JSON.stringify({ base64Audio: arrayBufferToBase64(floatTo16BitPCM(downsampled)) })); 
-        }; 
-    } catch(e) {
-        console.warn("Camera failed or not needed, trying audio only:", e);
-        try {
-            mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1 } });
-            const processorCode = `class PcmProcessor extends AudioWorkletProcessor { constructor() { super(); this.bufferSize = 2048; this.buffer = new Float32Array(this.bufferSize); this.index = 0; } process(inputs, outputs, parameters) { const input = inputs[0]; if (input.length > 0) { const channel = input[0]; for (let i = 0; i < channel.length; i++) { this.buffer[this.index++] = channel[i]; if (this.index >= this.bufferSize) { this.port.postMessage(this.buffer); this.index = 0; } } } return true; } } registerProcessor('pcm-processor', PcmProcessor);`; 
-            const blob = new Blob([processorCode], { type: 'application/javascript' }); 
-            await audioContext.audioWorklet.addModule(URL.createObjectURL(blob)); 
-            const source = audioContext.createMediaStreamSource(mediaStream); 
-            workletNode = new AudioWorkletNode(audioContext, 'pcm-processor'); 
-            source.connect(workletNode); 
-            workletNode.port.onmessage = (event) => { 
-                if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return; 
-                const downsampled = downsampleBuffer(event.data, audioContext.sampleRate, 16000); 
-                liveSocket.send(JSON.stringify({ base64Audio: arrayBufferToBase64(floatTo16BitPCM(downsampled)) })); 
-            };
-        } catch(ex) { alert("マイクも使えないみたいだにゃ..."); }
-    } 
 }
 
 // ★完全停止処理: 全ての音声ソースを抹殺する
