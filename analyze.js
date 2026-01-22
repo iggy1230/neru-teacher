@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v252.0: 強制質問＆タグ検知強化版) ---
+// --- analyze.js (完全版 v253.0: ゼロ遅延・強制質問モード版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -201,9 +201,11 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     const el = document.getElementById(targetId);
     
     // 表示用テキストのクリーニング（タグを除去）
-    let displayText = t
-        .replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "")
-        .replace(/【図鑑登録[:：]\s*.*?】/g, ""); // 新しいタグ形式を削除
+    // AIがタグを口走った場合も、画面表示からは消す
+    let displayText = t.replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "");
+    displayText = displayText.replace(/\[CAPTURE\s*[:：]\s*.*?\]/gi, ""); 
+    displayText = displayText.replace(/【図鑑登録[:：]\s*.*?】/g, ""); // 日本語タグも消す
+    displayText = displayText.replace(/キャプチャー[、,\s]*([^\s。]+)/gi, "$1"); 
 
     if (el) el.innerText = displayText;
     
@@ -418,6 +420,7 @@ window.captureAndSendLiveImage = function() {
     window.lastSentCollectionImage = thumbCanvas.toDataURL('image/jpeg', 0.7);
 
     // ★★★ 先行保存処理 ★★★
+    // 名前はまだわからないので「解析中...」としてとりあえず保存する
     if (window.NellMemory) {
         const timestamp = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         const tempName = `🔍 解析中... (${timestamp})`;
@@ -479,23 +482,24 @@ window.captureAndSendLiveImage = function() {
     }, 2000);
 
     // ★★★ 今回の修正ポイント ★★★
-    // 0.5秒後に、ユーザーの代わりに「これは何？」とシステムが質問を投げる
+    // タイムラグなしで、即座に「これは何？」とシステムが質問を投げる
+    // 待ってしまうとAIが「無言」に反応して雑談を始めてしまう
     setTimeout(() => {
         ignoreIncomingAudio = false; 
         
         if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
-            console.log("[Collection] 🚀 Sending auto-prompt to simulate user question.");
+            console.log("[Collection] 🚀 Sending auto-prompt (NO DELAY) to force identification.");
             liveSocket.send(JSON.stringify({ 
                 clientContent: { 
                     turns: [{ 
                         role: "user", 
-                        parts: [{ text: "（画像を送りました）これは何ですか？『【図鑑登録：(名前)】』の形式で名前を教えて！" }] 
+                        parts: [{ text: "（ユーザーが画像を見せました）「これは何？」\n※画像に写っているものを正確に特定し、『【図鑑登録：(名前)】』の形式で名前を出力してください。" }] 
                     }],
                     turnComplete: true 
                 } 
             }));
         }
-    }, 500); 
+    }, 50); // ほぼ同時（50ms）に送信
 };
 
 // ==========================================
@@ -1002,10 +1006,18 @@ async function startLiveChat() {
                             }
 
                             // ★★★ 合言葉タグ検出ロジック (強化版) ★★★
-                            // 全角コロン、スペース許容、大文字小文字無視
+                            // 日本語タグ「【図鑑登録：〇〇】」を優先して探す
+                            let itemName = null;
                             const captureMatch = p.text.match(/【図鑑登録[:：]\s*(.+?)】/);
                             if (captureMatch) {
-                                const itemName = captureMatch[1].trim();
+                                itemName = captureMatch[1].trim();
+                            } else {
+                                // 念のため英語タグも探す
+                                const engMatch = p.text.match(/\[CAPTURE\s*[:：]\s*(.+?)\]/i);
+                                if(engMatch) itemName = engMatch[1].trim();
+                            }
+
+                            if (itemName) {
                                 console.log(`[Collection] 📥 Tag detected: ${itemName}`);
                                 
                                 if (window.NellMemory) {
