@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v241.0: 割り込み緩和＆連続撮影対応版) ---
+// --- analyze.js (完全版 v242.0: 図鑑強制登録機能追加版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -413,6 +413,28 @@ window.captureAndSendLiveImage = function() {
     thumbCanvas.width = tw; thumbCanvas.height = th;
     thumbCanvas.getContext('2d').drawImage(canvas, 0, 0, tw, th);
     window.lastSentCollectionImage = thumbCanvas.toDataURL('image/jpeg', 0.7);
+
+    // ★★★ 今回の修正ポイント ★★★
+    // AIの応答を待たずに、撮影した時点で強制的に図鑑に登録する
+    if (window.NellMemory) {
+        const timestamp = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const tempName = `撮影した写真 (${timestamp})`;
+        try {
+            window.NellMemory.addToCollection(currentUser.id, tempName, window.lastSentCollectionImage);
+            console.log("[Collection] ✅ Forced save successful:", tempName);
+            
+            // ユーザーに通知
+            const notif = document.createElement('div');
+            notif.innerText = `📸 図鑑に保存したにゃ！`;
+            notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #4caf50; color:#2e7d32; padding:10px 20px; border-radius:30px; font-weight:bold; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 4px 10px rgba(0,0,0,0.2);";
+            document.body.appendChild(notif);
+            setTimeout(() => notif.remove(), 3000);
+            
+            try{ sfxHirameku.currentTime=0; sfxHirameku.play(); } catch(e){}
+        } catch(e) {
+            console.error("[Collection] Forced save failed:", e);
+        }
+    }
 
     // デバッグログ
     console.log("[Collection] Snapshot captured and cached.", window.lastSentCollectionImage ? "OK" : "Error");
