@@ -329,7 +329,7 @@ wss.on('connection', async (clientWs, req) => {
                    (例：「これはリンゴだにゃ！」「どれどれ…見てみるにゃ！」など)
                    無言でツールだけを実行することは絶対に避けてください。
                 
-                2. **画像の特定と登録**: 画像内の物体を特定し、「これは○○だにゃ！」と反応した上で、必ずツール \`register_collection_item(item_name)\` を実行してください。
+                2. **画像の特定と登録**: 画像内の物体を特定し、「これは○○だにゃ！」と反応した上で、必ずツール \`(item_name)\` を実行してください。
 
                 【生徒についての記憶】
                 ${statusContext}
@@ -350,7 +350,7 @@ wss.on('connection', async (clientWs, req) => {
                                 }
                             },
                             {
-                                name: "register_collection_item",
+                                name: "",
                                 description: "【MANDATORY】Register the identified item to the user's collection. You MUST call this function whenever the user shows an item via camera.",
                                 parameters: {
                                     type: "OBJECT",
@@ -420,9 +420,9 @@ wss.on('connection', async (clientWs, req) => {
                             // 3. ツール呼び出し
                             const call = part.functionCall || part.function_call;
                             if (call) {
-                                if (call.name === "register_collection_item") {
+                                if (call.name === "") {
                                     const itemName = call.args.item_name;
-                                    console.log(`[Collection] 🤖 AI Tool Called: register_collection_item for "${itemName}"`);
+                                    console.log(`[Collection] 🤖 AI Tool Called:  for "${itemName}"`);
                                     
                                     if (clientWs.readyState === WebSocket.OPEN) {
                                         clientWs.send(JSON.stringify({
@@ -434,7 +434,7 @@ wss.on('connection', async (clientWs, req) => {
                                     geminiWs.send(JSON.stringify({
                                         toolResponse: {
                                             functionResponses: [{
-                                                name: "register_collection_item",
+                                                name: "",
                                                 response: { result: "saved_success" },
                                                 id: call.id
                                             }]
