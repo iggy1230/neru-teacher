@@ -46,6 +46,15 @@
         .live-chat-video-elem {
             width: 100%; height: 100%; object-fit: cover;
         }
+
+        /* 埋め込みチャットセクション用スタイル */
+        .embedded-chat-box {
+            margin-top: 20px;
+            padding: 15px;
+            border: 2px dashed #8bc34a;
+            border-radius: 15px;
+            background: #f1f8e9;
+        }
     </style>
 </head>
 <body>
@@ -63,7 +72,7 @@
             <div class="title-btn-container">
                 <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
             </div>
-            <div class="version-tag">Build: v264.0-SimpleCam</div>
+            <div class="version-tag">Build: v265.0-EmbeddedChat</div>
         </section>
 
         <!-- 1. 校門 (ユーザー選択) -->
@@ -125,7 +134,6 @@
                 <button onclick="showGame()" class="main-btn yellow-btn">🎮 カリカリ・キャッチ</button>
                 <button onclick="selectMode('simple-chat')" class="main-btn green-btn">🎤 こじんめんだん</button>
                 <button onclick="selectMode('chat')" class="main-btn" style="background:#5c6bc0; box-shadow: 0 4px 0 #3949ab;">👩‍🏫 ネル先生の個別指導</button>
-                <!-- ★追加: 図鑑ボタン -->
                 <button onclick="showCollection()" class="main-btn" style="background:#00bcd4; box-shadow: 0 4px 0 #0097a7;">📖 ネル先生に見せたもの図鑑</button>
                 
                 <button onclick="selectMode('lunch')" class="main-btn pink-btn">🍽️ おいしい給食</button>
@@ -207,6 +215,25 @@
                         </div>
                     </div>
 
+                    <!-- ★埋め込み型こじんめんだん（教えて・採点・復習モード用） -->
+                    <div id="embedded-chat-section" class="embedded-chat-box hidden">
+                        <h4 style="text-align:center; margin:0 0 10px 0; color:#558b2f;">👩‍🏫 ネル先生に質問する</h4>
+                        
+                        <div style="text-align:center;">
+                            <button id="mic-btn-embedded" class="camera-btn-large" style="background:#8bc34a; box-shadow:0 6px 0 #689f38; font-size:1rem; padding:15px;" onclick="startLiveChat('embedded')">🎤 質問する</button>
+                            
+                            <button id="live-camera-btn-embedded" class="mini-cam-btn" style="background:#66bb6a; box-shadow:0 4px 0 #33691e; margin-top:10px;" onclick="captureAndSendLiveImage('embedded')">
+                                <span>📝</span> 画面を見せて質問
+                            </button>
+
+                            <div id="live-chat-video-container-embedded" class="live-chat-video-wrapper" style="margin-top:10px;">
+                                <video id="live-chat-video-embedded" class="live-chat-video-elem" autoplay playsinline muted></video>
+                            </div>
+
+                            <p id="user-speech-text-embedded" style="margin-top:10px; font-weight:bold; min-height:1.2em; font-size:0.9rem; color:#333;">...</p>
+                        </div>
+                    </div>
+
                     <!-- チャットモード（個別指導：多機能版） -->
                     <div id="chat-view" class="hidden">
                         <div class="glass-card" style="text-align:center; padding:15px;">
@@ -241,7 +268,7 @@
                         </div>
                     </div>
 
-                    <!-- チャットモード（こじんめんだん：シンプル版＋質問カメラ） -->
+                    <!-- チャットモード（こじんめんだん：シンプル版） -->
                     <div id="simple-chat-view" class="hidden">
                         <div class="glass-card" style="text-align:center; padding:20px;">
                             <p style="font-size:0.9rem; color:#666;">マイクを押して話しかけてね</p>
@@ -367,7 +394,7 @@
         </div>
     </div>
 
-    <!-- ★追加: 図鑑（コレクション）表示モーダル -->
+    <!-- 図鑑（コレクション）表示モーダル -->
     <div id="collection-modal" class="memory-modal-overlay hidden">
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4;"> <!-- 黄色っぽい背景で図鑑感 -->
             <h3 style="text-align:center; margin:0 0 15px 0; color:#f57f17;">📖 見せたもの図鑑</h3>

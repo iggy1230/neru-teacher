@@ -1,4 +1,4 @@
-// --- server.js (完全版 v264.0: こじんめんだんカメラ機能・図鑑除外対応) ---
+// --- server.js (完全版 v265.0: 埋め込みチャット対応) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -330,7 +330,7 @@ wss.on('connection', async (clientWs, req) => {
 
                 // ★モードによるシステムプロンプトの切り替え
                 if (mode === 'simple-chat') {
-                    // simple-chat (こじんめんだん) の場合: 勉強質問モード
+                    // simple-chat (こじんめんだん/学習モード) の場合
                     systemInstructionText += `
                     【最重要: 画像への対応ルール（勉強質問モード）】
                     ユーザーから画像が送信された場合：
