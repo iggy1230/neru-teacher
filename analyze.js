@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v263.1: 図鑑登録・無言撮影・全機能統合版) ---
+// --- analyze.js (完全版 v264.0: プロトコル完全準拠・受信強化版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -827,72 +827,15 @@ function endGame(c) { gameRunning = false; if(gameAnimId)cancelAnimationFrame(ga
 // 10. WebSocket (Live Chat)
 // ==========================================
 
+// ★修正: startLiveChat で AudioContext を確実に再開する
 async function startLiveChat() { 
-    // 1. どのボタンが押されたか判定
     const btnId = currentMode === 'simple-chat' ? 'mic-btn-simple' : 'mic-btn';
     const btn = document.getElementById(btnId);
-    
-    // すでに動いていたら止める
-    if (liveSocket) { 
-        stopLiveChat(); 
-        return; 
-    } 
-
+    if (liveSocket) { stopLiveChat(); return; } 
     try { 
-        // 2. 音声再生の準備（ブラウザのロック解除）
-        if (!audioContext) {
-            audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-        }
-        await audioContext.resume();
-        console.log("🔊 音声エンジン準備OK:", audioContext.state);
-
-        // 3. 画面表示の更新
         updateNellMessage("ネル先生を呼んでるにゃ…", "thinking", false); 
-        if (btn) btn.disabled = true; 
+        if(btn) btn.disabled = true; 
         
-        // 4. 記憶の読み込み（エラー回避付き）
-        let memoryContext = "";
-        try {
-            if (window.NellMemory && typeof currentUser !== 'undefined' && currentUser) {
-                memoryContext = await window.NellMemory.generateContextString(currentUser.id);
-            }
-        } catch (memErr) {
-            console.warn("記憶の読み込みに失敗したけど続行するにゃ:", memErr);
-        }
-
-        // 5. 接続開始
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        liveSocket = new WebSocket(`${protocol}//${window.location.host}`);
-
-        // 接続した瞬間の処理
-        liveSocket.onopen = () => {
-            console.log("🚀 Server Connected");
-            liveSocket.send(JSON.stringify({
-                type: 'init',
-                name: typeof currentUser !== 'undefined' ? currentUser.name : "生徒",
-                grade: typeof currentUser !== 'undefined' ? currentUser.grade : "1",
-                context: memoryContext
-            }));
-            startMicSending(); // マイク開始
-        };
-
-        // メッセージ受信処理
-        liveSocket.onmessage = async (event) => {
-            // 前にお伝えした「受信リセット版」のコードがここに入ります
-            handleLiveMessage(event); 
-        };
-
-        liveSocket.onclose = () => {
-            console.log("❌ Server Disconnected");
-            stopLiveChat();
-        };
-
-    } catch (err) { 
-        console.error("接続エラーだにゃ:", err);
-        if (btn) btn.disabled = false;
-        updateNellMessage("接続に失敗したにゃ…", "sad");
-    }
-}        
         let memoryContext = "";
         if (window.NellMemory) {
             memoryContext = await window.NellMemory.generateContextString(currentUser.id);
@@ -900,9 +843,13 @@ async function startLiveChat() {
         
         chatTranscript = ""; 
         
-        if (window.initAudioContext) await window.initAudioContext(); 
-        audioContext = new (window.AudioContext || window.webkitAudioContext)(); 
-        await audioContext.resume(); 
+        // ★修正: AudioContextの確実な初期化と再開
+        if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+        }
+        if (audioContext.state === 'suspended') {
+            await audioContext.resume();
+        }
         nextStartTime = audioContext.currentTime; 
         
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:'; 
@@ -928,114 +875,82 @@ async function startLiveChat() {
             }));
         }; 
         
-        // analyze.js の liveSocket.onmessage を以下の「全方位対応型」に差し替え
-liveSocket.onmessage = async (event) => {
-    try {
-        let rawData = event.data;
-        if (rawData instanceof Blob) rawData = await rawData.text();
-        const data = JSON.parse(rawData);
+        // ★修正: onmessage を受信強化版に差し替え
+        liveSocket.onmessage = async (event) => {
+            try {
+                let rawData = event.data;
+                if (rawData instanceof Blob) rawData = await rawData.text();
+                const data = JSON.parse(rawData);
 
-        // 1. 接続完了
-        if (data.type === "server_ready") {
-            console.log("✅ ネル先生と接続完了！");
-            return;
-        }
+                // 1. 接続完了
+                if (data.type === "server_ready") {
+                    clearTimeout(connectionTimeout); 
+                    if(btn) { btn.innerText = "📞 つながった！(終了)"; btn.style.background = "#ff5252"; btn.disabled = false; } 
+                    updateNellMessage("お待たせ！なんでも話してにゃ！", "happy", false, false); 
+                    isRecognitionActive = true; 
+                    startMicrophone(); 
+                    console.log("✅ ネル先生と接続完了！");
+                    return;
+                }
 
-        // 2. Geminiからのコンテンツ処理 (server_content を探す)
-        const serverContent = data.server_content || data.serverContent;
-        if (!serverContent) return;
-
-        // モデルのターン（返答）がある場合
-        const modelTurn = serverContent.model_turn || serverContent.modelTurn;
-        if (modelTurn && modelTurn.parts) {
-            for (const part of modelTurn.parts) {
-                
-                // --- 音声再生 (inline_data) ---
-                const inlineData = part.inline_data || part.inlineData;
-                if (inlineData && inlineData.data) {
-                    const pcmData = base64ToPtr(inlineData.data);
-                    if (audioContext && workletNode) {
-                        workletNode.port.postMessage(pcmData);
-                        window.isNellSpeaking = true;
+                // 2. Geminiからのコンテンツ処理 (スネークケース / キャメルケース対応)
+                const serverContent = data.server_content || data.serverContent;
+                if (!serverContent) {
+                    // ツール呼び出し検出 (クライアント側への通知)
+                    if (data.type === "save_to_collection") {
+                        console.log(`[Collection] 📥 Tool Call detected: ${data.itemName}`);
+                        latestDetectedName = data.itemName;
                     }
+                    return;
                 }
 
-                // --- 字幕表示 (text) ---
-                if (part.text) {
-                    console.log("ネル先生の言葉:", part.text);
-                    showSubtitle(part.text); // 字幕関数を呼び出し
-                }
-            }
-        }
+                // モデルのターン（返答）がある場合
+                const modelTurn = serverContent.model_turn || serverContent.modelTurn;
+                if (modelTurn && modelTurn.parts) {
+                    for (const part of modelTurn.parts) {
+                        
+                        // --- 音声再生 (inline_data / inlineData) ---
+                        const inlineData = part.inline_data || part.inlineData;
+                        if (inlineData && inlineData.data) {
+                            playLivePcmAudio(inlineData.data);
+                        }
 
-        // 3. 割り込み処理
-        if (serverContent.interrupted) {
-            console.log("⚠️ 割り込み発生");
-            if (workletNode) workletNode.port.postMessage(new Int16Array(0));
-            window.isNellSpeaking = false;
-        }
-
-    } catch (e) {
-        console.error("解析エラー:", e);
-    }
-};
-
-                // ツール呼び出し検出（バッファに保存）
-                if (data.type === "save_to_collection") {
-                    console.log(`[Collection] 📥 Tool Call detected: ${data.itemName}`);
-                    latestDetectedName = data.itemName;
-                }
-                
-                if (data.serverContent?.modelTurn?.parts) { 
-                    data.serverContent.modelTurn.parts.forEach(p => { 
-                        if (p.text) { 
-                            console.log(`[Gemini Raw Text] ${p.text}`);
+                        // --- 字幕表示 (text) ---
+                        if (part.text) {
+                            console.log("ネル先生の言葉:", part.text);
                             
-                            const match = p.text.match(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/i);
+                            // タグ検出・処理
+                            const match = part.text.match(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/i);
                             if (match) {
                                 const content = match[1].trim();
                                 document.getElementById('inline-whiteboard').classList.remove('hidden');
                                 document.getElementById('whiteboard-content').innerText = content;
                             }
-
-                            // タグ検出（バッファに保存）
+                            
+                            // 名前検出（図鑑用）
                             let itemName = null;
-                            let detectedPattern = "";
-
-                            const matchJP = p.text.match(/【図鑑登録[:：]\s*(.+?)】/);
-                            if (matchJP) { itemName = matchJP[1]; detectedPattern = "JP Tag"; }
-
+                            const matchJP = part.text.match(/【図鑑登録[:：]\s*(.+?)】/);
+                            if (matchJP) itemName = matchJP[1];
                             if (!itemName) {
-                                const matchEN = p.text.match(/\[CAPTURE\s*[:：]\s*(.+?)\]/i);
-                                if(matchEN) { itemName = matchEN[1]; detectedPattern = "EN Tag"; }
+                                const matchEN = part.text.match(/\[CAPTURE\s*[:：]\s*(.+?)\]/i);
+                                if(matchEN) itemName = matchEN[1];
                             }
-                            
-                            if (!itemName) {
-                                const matchRaw = p.text.match(/CAPTURE\s*[:：]\s*(.+?)(?:$|\n|。)/i);
-                                if (matchRaw) { itemName = matchRaw[1]; detectedPattern = "Raw CAPTURE"; }
-                            }
-                            
-                            // 口語パターン
-                            if (!itemName) {
-                                const matchSpeech = p.text.match(/(?:図鑑登録|キャプチャー)[、,，\s]\s*([^\s。]+)/i);
-                                if (matchSpeech) { itemName = matchSpeech[1]; detectedPattern = "Speech Pattern"; }
-                            }
+                            if (itemName) latestDetectedName = itemName.trim();
 
-                            if (itemName) {
-                                itemName = itemName.trim();
-                                console.log(`[Collection] ✅ Matched! Pattern: "${detectedPattern}", Item: "${itemName}"`);
-                                latestDetectedName = itemName;
-                            }
-
-                            saveToNellMemory('nell', p.text); 
-                            updateNellMessage(p.text, "normal", false, false);
-                        } 
-                        if (p.inlineData) playLivePcmAudio(p.inlineData.data); 
-                    }); 
+                            saveToNellMemory('nell', part.text); 
+                            updateNellMessage(part.text, "normal", false, false);
+                        }
+                    }
                 }
 
-                // ターン完了時に確定処理
-                if (data.serverContent && data.serverContent.turnComplete) {
+                // 3. 割り込み発生時の処理
+                if (serverContent.interrupted) {
+                    console.log("⚠️ 割り込み発生");
+                    stopAudioPlayback(); // 既存の停止関数
+                }
+
+                // ターン完了時に確定処理 (図鑑登録)
+                if (serverContent.turn_complete || serverContent.turnComplete) {
                     if (latestDetectedName && window.NellMemory) {
                         console.log(`[Collection] 🔄 Turn Complete. Committing name: ${latestDetectedName}`);
                         window.NellMemory.updateLatestCollectionItem(currentUser.id, latestDetectedName);
@@ -1051,8 +966,10 @@ liveSocket.onmessage = async (event) => {
                     }
                 }
 
-            } catch (e) {} 
-        }; 
+            } catch (e) {
+                console.error("解析エラー:", e);
+            }
+        };
         
         liveSocket.onclose = () => stopLiveChat(); 
         liveSocket.onerror = () => stopLiveChat(); 
@@ -1060,7 +977,7 @@ liveSocket.onmessage = async (event) => {
 }
 
 // --------------------------------------------------------
-// ★ グローバル定義: stopLiveChat (これが欠けていた関数)
+// ★ グローバル定義: stopLiveChat
 // --------------------------------------------------------
 window.stopLiveChat = function() {
     if (window.NellMemory) {
@@ -1101,7 +1018,6 @@ window.stopLiveChat = function() {
     document.getElementById('live-chat-video-container').style.display = 'none';
 };
 
-// ... (以下、startMicrophone関数などは既存のコードと同じため省略せず記述) ...
 async function startMicrophone() { 
     try { 
         if ('webkitSpeechRecognition' in window) { 
