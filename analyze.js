@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v265.0: リアルタイム字幕 & 音声同時再生) ---
+// --- analyze.js (完全版 v266.0: 音声優先・軽量字幕対応) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -199,33 +199,32 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     }
 };
 
-// ★ 新機能: リアルタイム字幕表示
-let subtitleTimer = null;
+// ★ 新機能: 軽量字幕表示
+let subtitleClearTimer = null;
 function showSubtitle(text) {
     // タグ除去
     let displayText = text.replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "");
     displayText = displayText.replace(/【.*?】/g, "").replace(/\[CAPTURE.*?\]/gi, "").trim();
     if (!displayText) return;
 
-    let el = document.getElementById('nell-subtitle');
+    let el = document.getElementById('nell-subtitle-layer');
     if (!el) {
         el = document.createElement('div');
-        el.id = 'nell-subtitle';
-        // ピンクで可愛くデザイン
-        el.style.cssText = "position:fixed; bottom:130px; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.9); border:3px solid #ff8fa3; color:#333; padding:12px 24px; border-radius:30px; z-index:10000; font-size:1.3rem; font-weight:bold; box-shadow:0 4px 15px rgba(0,0,0,0.1); pointer-events:none; transition:opacity 0.3s; max-width:85%; text-align:center; min-width:200px;";
+        el.id = 'nell-subtitle-layer';
+        el.style.cssText = "position:fixed; bottom:140px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.7); color:white; padding:8px 16px; border-radius:15px; z-index:9999; font-size:1.1rem; pointer-events:none; transition:opacity 0.2s; max-width:80%; text-align:center;";
         document.body.appendChild(el);
     }
-    
-    // テキストを追加（ストリーミングなので追記）
-    el.innerText += displayText; 
+
+    // 届いたテキストを追記
+    el.innerText += displayText;
     el.style.opacity = "1";
 
-    // 一定時間更新がなければ消す
-    if (subtitleTimer) clearTimeout(subtitleTimer);
-    subtitleTimer = setTimeout(() => {
+    // 3秒間次のテキストが来なければ消す
+    clearTimeout(subtitleClearTimer);
+    subtitleClearTimer = setTimeout(() => {
         el.style.opacity = "0";
-        setTimeout(() => { el.innerText = ""; }, 300);
-    }, 4000);
+        setTimeout(() => { el.innerText = ""; }, 200);
+    }, 3000);
 }
 
 // ==========================================
@@ -899,6 +898,7 @@ async function startLiveChat() {
             }));
         }; 
         
+        // ★修正: 音声優先 & 軽量字幕ロジック
         liveSocket.onmessage = async (event) => { 
             try { 
                 let rawData = event.data;
@@ -922,44 +922,54 @@ async function startLiveChat() {
                 
                 if (data.serverContent?.modelTurn?.parts) { 
                     const parts = data.serverContent.modelTurn.parts;
+                    
                     for (const part of parts) {
-                        // --- テキスト処理 (字幕 & ログ) ---
-                        if (part.text) { 
-                            console.log(`[Gemini Raw Text] ${part.text}`);
-                            
-                            const match = part.text.match(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/i);
-                            if (match) {
-                                const content = match[1].trim();
-                                document.getElementById('inline-whiteboard').classList.remove('hidden');
-                                document.getElementById('whiteboard-content').innerText = content;
-                            }
-
-                            // タグ検出（バッファに保存）
-                            let itemName = null;
-                            const matchJP = part.text.match(/【図鑑登録[:：]\s*(.+?)】/);
-                            if (matchJP) itemName = matchJP[1];
-                            if (!itemName) {
-                                const matchEN = part.text.match(/\[CAPTURE\s*[:：]\s*(.+?)\]/i);
-                                if(matchEN) itemName = matchEN[1];
-                            }
-                            if (!itemName) {
-                                const matchRaw = part.text.match(/CAPTURE\s*[:：]\s*(.+?)(?:$|\n|。)/i);
-                                if (matchRaw) itemName = matchRaw[1];
-                            }
-                            
-                            if (itemName) {
-                                itemName = itemName.trim();
-                                latestDetectedName = itemName;
-                            }
-
-                            // 字幕表示 (リアルタイム)
-                            showSubtitle(part.text);
-                        } 
-                        
-                        // --- 音声処理 ---
-                        if (part.inlineData) {
+                        // --- 【最優先：音声処理】 ---
+                        if (part.inlineData && part.inlineData.mimeType.includes("audio")) {
                             playLivePcmAudio(part.inlineData.data);
                         }
+
+                        // --- 【次優先：テキスト処理（字幕 & ログ）】 ---
+                        // 音声処理を止めないようtry-catchで囲む
+                        if (part.text) { 
+                            try {
+                                console.log(`[Gemini Raw Text] ${part.text}`);
+                                
+                                const match = part.text.match(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/i);
+                                if (match) {
+                                    const content = match[1].trim();
+                                    document.getElementById('inline-whiteboard').classList.remove('hidden');
+                                    document.getElementById('whiteboard-content').innerText = content;
+                                }
+
+                                // タグ検出（バッファに保存）
+                                let itemName = null;
+                                const matchJP = part.text.match(/【図鑑登録[:：]\s*(.+?)】/);
+                                if (matchJP) itemName = matchJP[1];
+                                if (!itemName) {
+                                    const matchEN = part.text.match(/\[CAPTURE\s*[:：]\s*(.+?)\]/i);
+                                    if(matchEN) itemName = matchEN[1];
+                                }
+                                if (!itemName) {
+                                    const matchRaw = part.text.match(/CAPTURE\s*[:：]\s*(.+?)(?:$|\n|。)/i);
+                                    if (matchRaw) itemName = matchRaw[1];
+                                }
+                                
+                                if (itemName) {
+                                    itemName = itemName.trim();
+                                    latestDetectedName = itemName;
+                                }
+
+                                // 軽量字幕表示 (リアルタイム)
+                                showSubtitle(part.text);
+                                
+                                // ログにも保存
+                                chatTranscript += part.text;
+
+                            } catch (err) {
+                                console.warn("字幕処理エラー（無視）:", err);
+                            }
+                        } 
                     }
                 }
 
@@ -980,7 +990,12 @@ async function startLiveChat() {
                     }
                 }
 
-            } catch (e) {} 
+                // 割り込み処理
+                if (data.serverContent && data.serverContent.interrupted) {
+                    stopAudioPlayback();
+                }
+
+            } catch (e) { console.error("WS Message Error:", e); } 
         }; 
         
         liveSocket.onclose = () => stopLiveChat(); 
