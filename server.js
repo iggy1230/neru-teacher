@@ -1,4 +1,4 @@
-// --- server.js (完全版 v262.0: 図鑑登録ツール・全機能統合版) ---
+// --- server.js (完全版 v264.0: テキスト・音声同時配信対応) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -368,10 +368,11 @@ wss.on('connection', async (clientWs, req) => {
 
                 geminiWs.send(JSON.stringify({
                     setup: {
-                        // ★MODEL指定: リアルタイム会話はFlash-Exp (固定)
+                        // ★MODEL指定: リアルタイム会話はFlash-Exp
                         model: "models/gemini-2.0-flash-exp",
                         generationConfig: { 
-                            responseModalities: ["AUDIO"], 
+                            // ★修正ポイント: AUDIOとTEXTを両方受け取る設定に変更
+                            responseModalities: ["AUDIO", "TEXT"], 
                             speech_config: { 
                                 voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }, 
                                 language_code: "ja-JP" 
@@ -423,15 +424,6 @@ wss.on('connection', async (clientWs, req) => {
                                 // 他のツール (show_kanji)
                                 else if (part.functionCall.name === "show_kanji") {
                                     const content = part.functionCall.args.content;
-                                    if (clientWs.readyState === WebSocket.OPEN) {
-                                        // 漢字表示指示はテキストとしてクライアントへ（クライアント側でパースされる）
-                                        // または専用タイプで送っても良いが、現状のロジックに合わせておく
-                                        // ここではanalyze.jsがテキスト内の[DISPLAY:...]をパースするので、
-                                        // 単にGeminiに成功を返すだけで、Geminiがテキストで[DISPLAY:...]を出すのを待つか、
-                                        // クライアントへ明示的に送る。
-                                        // v260.0のanalyze.jsはtoolResponse.functionResponsesを見ていないので、
-                                        // Geminiがテキストで補足するのを期待するフロー。
-                                    }
                                     geminiWs.send(JSON.stringify({
                                         toolResponse: {
                                             functionResponses: [{

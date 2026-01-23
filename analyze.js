@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v263.1: 図鑑登録・無言撮影・全機能統合版) ---
+// --- analyze.js (完全版 v264.0: リアルタイム字幕 & 音声同時再生) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -198,6 +198,41 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
         if (textForSpeech.length > 0) await speakNell(textForSpeech, mood);
     }
 };
+
+// ★ 新機能: リアルタイム字幕表示
+let subtitleTimer = null;
+function showSubtitle(text) {
+    // タグ除去
+    let displayText = text.replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "");
+    displayText = displayText.replace(/【.*?】/g, "").replace(/\[CAPTURE.*?\]/gi, "").trim();
+    if (!displayText) return;
+
+    let el = document.getElementById('neru-subtitle');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'neru-subtitle';
+        el.style.cssText = "position:fixed; bottom:140px; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.9); color:#333; padding:10px 20px; border-radius:20px; border:2px solid #ff85a1; z-index:10000; font-size:1.1rem; font-weight:bold; pointer-events:none; transition: opacity 0.3s; max-width:90%; text-align:center; box-shadow:0 4px 10px rgba(0,0,0,0.1);";
+        document.body.appendChild(el);
+    }
+    
+    // テキストを追加（ストリーミングなので追記）
+    el.innerText += displayText; 
+    el.style.opacity = "1";
+
+    // 吹き出し（会話ログ）にも反映
+    updateNellMessage(el.innerText, "normal", false, false);
+
+    // 一定時間更新がなければ消す
+    if (subtitleTimer) clearTimeout(subtitleTimer);
+    subtitleTimer = setTimeout(() => {
+        el.style.opacity = "0";
+        // 会話ログ保存（一連の発言が終わったとみなす）
+        if (el.innerText.length > 0) {
+            saveToNellMemory('nell', el.innerText);
+        }
+        setTimeout(() => { el.innerText = ""; }, 300);
+    }, 3000);
+}
 
 // ==========================================
 // 4. モード選択 & UI制御
@@ -892,11 +927,13 @@ async function startLiveChat() {
                 }
                 
                 if (data.serverContent?.modelTurn?.parts) { 
-                    data.serverContent.modelTurn.parts.forEach(p => { 
-                        if (p.text) { 
-                            console.log(`[Gemini Raw Text] ${p.text}`);
+                    const parts = data.serverContent.modelTurn.parts;
+                    for (const part of parts) {
+                        // --- テキスト処理 (字幕 & ログ) ---
+                        if (part.text) { 
+                            console.log(`[Gemini Raw Text] ${part.text}`);
                             
-                            const match = p.text.match(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/i);
+                            const match = part.text.match(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/i);
                             if (match) {
                                 const content = match[1].trim();
                                 document.getElementById('inline-whiteboard').classList.remove('hidden');
@@ -905,38 +942,31 @@ async function startLiveChat() {
 
                             // タグ検出（バッファに保存）
                             let itemName = null;
-                            let detectedPattern = "";
-
-                            const matchJP = p.text.match(/【図鑑登録[:：]\s*(.+?)】/);
-                            if (matchJP) { itemName = matchJP[1]; detectedPattern = "JP Tag"; }
-
+                            const matchJP = part.text.match(/【図鑑登録[:：]\s*(.+?)】/);
+                            if (matchJP) itemName = matchJP[1];
                             if (!itemName) {
-                                const matchEN = p.text.match(/\[CAPTURE\s*[:：]\s*(.+?)\]/i);
-                                if(matchEN) { itemName = matchEN[1]; detectedPattern = "EN Tag"; }
+                                const matchEN = part.text.match(/\[CAPTURE\s*[:：]\s*(.+?)\]/i);
+                                if(matchEN) itemName = matchEN[1];
+                            }
+                            if (!itemName) {
+                                const matchRaw = part.text.match(/CAPTURE\s*[:：]\s*(.+?)(?:$|\n|。)/i);
+                                if (matchRaw) itemName = matchRaw[1];
                             }
                             
-                            if (!itemName) {
-                                const matchRaw = p.text.match(/CAPTURE\s*[:：]\s*(.+?)(?:$|\n|。)/i);
-                                if (matchRaw) { itemName = matchRaw[1]; detectedPattern = "Raw CAPTURE"; }
-                            }
-                            
-                            // 口語パターン
-                            if (!itemName) {
-                                const matchSpeech = p.text.match(/(?:図鑑登録|キャプチャー)[、,，\s]\s*([^\s。]+)/i);
-                                if (matchSpeech) { itemName = matchSpeech[1]; detectedPattern = "Speech Pattern"; }
-                            }
-
                             if (itemName) {
                                 itemName = itemName.trim();
-                                console.log(`[Collection] ✅ Matched! Pattern: "${detectedPattern}", Item: "${itemName}"`);
                                 latestDetectedName = itemName;
                             }
 
-                            saveToNellMemory('nell', p.text); 
-                            updateNellMessage(p.text, "normal", false, false);
+                            // 字幕表示 (リアルタイム)
+                            showSubtitle(part.text);
                         } 
-                        if (p.inlineData) playLivePcmAudio(p.inlineData.data); 
-                    }); 
+                        
+                        // --- 音声処理 ---
+                        if (part.inlineData) {
+                            playLivePcmAudio(part.inlineData.data);
+                        }
+                    }
                 }
 
                 // ターン完了時に確定処理
