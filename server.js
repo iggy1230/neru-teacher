@@ -1,4 +1,4 @@
-// --- server.js (完全版 v265.0: 音声・字幕パイプライン確立版) ---
+// --- server.js (完全版 v264.0: こじんめんだんカメラ機能・図鑑除外対応) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -92,7 +92,7 @@ app.post('/synthesize', async (req, res) => {
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
-        // ★MODEL指定: 記憶更新は高速なFlashで十分
+        // ★MODEL指定: 記憶更新は高速なFlashで統一 (gemini-2.0-flash-exp)
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp", 
             generationConfig: { responseMimeType: "application/json" }
@@ -161,7 +161,7 @@ app.post('/update-memory', async (req, res) => {
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, name } = req.body;
-        // ★MODEL指定: 宿題分析は最高精度の gemini-2.5-pro (確定)
+        // ★MODEL指定: 宿題分析は最高精度の gemini-2.5-pro (固定)
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.5-pro", 
             generationConfig: { responseMimeType: "application/json", temperature: 0.0 }
@@ -241,7 +241,7 @@ app.post('/lunch-reaction', async (req, res) => {
         const { count, name } = req.body;
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
         const isSpecial = (count % 10 === 0);
-        // ★MODEL指定: 反応系はFlash
+        // ★MODEL指定: 反応系はFlash (gemini-2.0-flash-exp)
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         
         let prompt = isSpecial 
@@ -265,7 +265,7 @@ app.post('/lunch-reaction', async (req, res) => {
 app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;
-        // ★MODEL指定: 反応系はFlash
+        // ★MODEL指定: 反応系はFlash (gemini-2.0-flash-exp)
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         let prompt = "";
         let mood = "excited";
@@ -295,6 +295,7 @@ wss.on('connection', async (clientWs, req) => {
     const params = parse(req.url, true).query;
     let grade = params.grade || "1";
     let name = decodeURIComponent(params.name || "生徒");
+    let mode = params.mode || "chat"; // ★追加: モード受け取り
 
     let geminiWs = null;
 
@@ -310,7 +311,7 @@ wss.on('connection', async (clientWs, req) => {
             geminiWs = new WebSocket(GEMINI_URL);
             
             geminiWs.on('open', () => {
-                const systemInstructionText = `
+                let systemInstructionText = `
                 あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。相手は小学${grade}年生の${name}さん。
 
                 【重要：現在の時刻設定】
@@ -323,17 +324,34 @@ wss.on('connection', async (clientWs, req) => {
                 4. 給食(餌)のカリカリが大好物にゃ。
                 5. とにかく何でも知っているにゃ。
 
-                【最重要：図鑑登録と会話のルール】
-                ユーザーから画像が送信された場合、または会話をする場合：
-                1. **【重要】ツールを呼び出す前に、必ず人間向けの発話テキストを1文出力してください。**
-                   (例：「これはリンゴだにゃ！」「どれどれ…見てみるにゃ！」など)
-                   無言でツールだけを実行することは絶対に避けてください。
-                
-                2. **画像の特定と登録**: 画像内の物体を特定し、「これは○○だにゃ！」と反応した上で、必ずツール \`(item_name)\` を実行してください。
-
                 【生徒についての記憶】
                 ${statusContext}
                 `;
+
+                // ★モードによるシステムプロンプトの切り替え
+                if (mode === 'simple-chat') {
+                    // simple-chat (こじんめんだん) の場合: 勉強質問モード
+                    systemInstructionText += `
+                    【最重要: 画像への対応ルール（勉強質問モード）】
+                    ユーザーから画像が送信された場合：
+                    1. それは「勉強の問題」や「教えてほしい画像」です。
+                    2. 画像の内容を詳しく解析し、子供にもわかるように優しく、丁寧に教えてください。
+                    3. **図鑑登録ツールは使用しないでください。**
+                    `;
+                } else {
+                    // chat (個別指導) の場合: 図鑑登録モード
+                    systemInstructionText += `
+                    【最重要：図鑑登録のルール】
+                    ユーザーから画像が送信された場合（Image Chunkを受信した場合）：
+                    1. **画像の特定**: 画像内の物体を客観的に特定し、「これは○○だにゃ！」と明るく反応してください。
+                    2. **【ツール実行の義務】**: 感想を言うのと同時に、**必ずツール \`register_collection_item(item_name)\` を実行してください。**
+                    
+                    **厳守事項:**
+                    - 口で名前を言うだけではダメです。必ずツールを呼んでシステムに名前を渡してください。
+                    - 名前が明確でない場合でも、見た目の特徴（例：「青い丸いもの」）を引数にしてツールを実行してください。
+                    - ユーザーが「登録して」と言わなくても、画像を見たら自動的に登録ツールを回してください。
+                    `;
+                }
 
                 // ツール定義
                 const tools = [
@@ -350,8 +368,8 @@ wss.on('connection', async (clientWs, req) => {
                                 }
                             },
                             {
-                                name: "",
-                                description: "【MANDATORY】Register the identified item to the user's collection. You MUST call this function whenever the user shows an item via camera.",
+                                name: "register_collection_item",
+                                description: "Register the identified item to the user's collection. Call this function when user shows an item via camera in Zukan mode.",
                                 parameters: {
                                     type: "OBJECT",
                                     properties: { 
@@ -364,22 +382,19 @@ wss.on('connection', async (clientWs, req) => {
                     }
                 ];
 
-                // ★修正: responseModalities で TEXT と AUDIO を明示
                 geminiWs.send(JSON.stringify({
                     setup: {
+                        // ★MODEL指定: リアルタイム会話はFlash-Exp (gemini-2.0-flash-exp) 固定
                         model: "models/gemini-2.0-flash-exp",
                         generationConfig: { 
-                            responseModalities: ["TEXT", "AUDIO"], 
-                            speechConfig: { 
-                                voiceConfig: { 
-                                    prebuiltVoiceConfig: { voiceName: "Aoede" } 
-                                } 
+                            responseModalities: ["AUDIO"], 
+                            speech_config: { 
+                                voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }, 
+                                language_code: "ja-JP" 
                             } 
                         }, 
                         tools: tools,
-                        systemInstruction: {
-                            parts: [{ text: systemInstructionText }]
-                        }
+                        systemInstruction: { parts: [{ text: systemInstructionText }] }
                     }
                 }));
 
@@ -393,37 +408,16 @@ wss.on('connection', async (clientWs, req) => {
                 try {
                     const response = JSON.parse(data);
                     
-                    // ★重要: クライアントへのデータ転送パイプライン
-                    // raw dataも転送しつつ、明示的なイベントも送る
-                    
-                    if (response.serverContent?.modelTurn?.parts || response.server_content?.model_turn?.parts) {
-                        const parts = response.serverContent?.modelTurn?.parts || response.server_content?.model_turn?.parts;
-                        
+                    // ツール呼び出しの処理
+                    if (response.serverContent?.modelTurn?.parts) {
+                        const parts = response.serverContent.modelTurn.parts;
                         parts.forEach(part => {
-                            // 1. テキスト (字幕)
-                            if (part.text && clientWs.readyState === WebSocket.OPEN) {
-                                clientWs.send(JSON.stringify({
-                                    type: "text",
-                                    text: part.text
-                                }));
-                            }
-
-                            // 2. 音声 (inlineData)
-                            const inlineData = part.inlineData || part.inline_data;
-                            if (inlineData && inlineData.mimeType?.startsWith("audio/") && clientWs.readyState === WebSocket.OPEN) {
-                                clientWs.send(JSON.stringify({
-                                    type: "audio",
-                                    audio: inlineData.data
-                                }));
-                            }
-
-                            // 3. ツール呼び出し
-                            const call = part.functionCall || part.function_call;
-                            if (call) {
-                                if (call.name === "") {
-                                    const itemName = call.args.item_name;
-                                    console.log(`[Collection] 🤖 AI Tool Called:  for "${itemName}"`);
+                            if (part.functionCall) {
+                                if (part.functionCall.name === "register_collection_item") {
+                                    const itemName = part.functionCall.args.item_name;
+                                    console.log(`[Collection] 🤖 AI Tool Called: register_collection_item for "${itemName}"`);
                                     
+                                    // クライアントへ通知
                                     if (clientWs.readyState === WebSocket.OPEN) {
                                         clientWs.send(JSON.stringify({
                                             type: "save_to_collection",
@@ -431,24 +425,29 @@ wss.on('connection', async (clientWs, req) => {
                                         }));
                                     }
                                     
+                                    // Geminiへ完了通知を返す
                                     geminiWs.send(JSON.stringify({
                                         toolResponse: {
                                             functionResponses: [{
-                                                name: "",
+                                                name: "register_collection_item",
                                                 response: { result: "saved_success" },
-                                                id: call.id
+                                                id: part.functionCall.id
                                             }]
                                         }
                                     }));
                                 }
-                                else if (call.name === "show_kanji") {
-                                    // 漢字はテキスト解析側で処理済み
+                                // 他のツール (show_kanji)
+                                else if (part.functionCall.name === "show_kanji") {
+                                    const content = part.functionCall.args.content;
+                                    if (clientWs.readyState === WebSocket.OPEN) {
+                                        // analyze.js側で[DISPLAY:...]をパースするため、ここではGeminiに成功を返すのみ
+                                    }
                                     geminiWs.send(JSON.stringify({
                                         toolResponse: {
                                             functionResponses: [{
                                                 name: "show_kanji",
                                                 response: { result: "displayed" },
-                                                id: call.id
+                                                id: part.functionCall.id
                                             }]
                                         }
                                     }));
@@ -456,8 +455,8 @@ wss.on('connection', async (clientWs, req) => {
                             }
                         });
                     }
-
-                    // Raw Dataも念のため転送 (analyze.jsの既存ロジック用)
+                    
+                    // 音声やテキストデータはそのままクライアントへ転送
                     if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data);
                     
                 } catch (e) {
@@ -484,6 +483,7 @@ wss.on('connection', async (clientWs, req) => {
                 const context = msg.context || "";
                 name = msg.name || name;
                 grade = msg.grade || grade;
+                mode = msg.mode || mode; // ★モード更新
                 connectToGemini(context);
                 return;
             }
@@ -500,24 +500,10 @@ wss.on('connection', async (clientWs, req) => {
                 geminiWs.send(JSON.stringify({ client_content: msg.clientContent }));
             }
             if (msg.base64Audio) {
-                geminiWs.send(JSON.stringify({ 
-                    realtimeInput: { 
-                        mediaChunks: [{ 
-                            mimeType: "audio/pcm;rate=16000", 
-                            data: msg.base64Audio 
-                        }] 
-                    } 
-                }));
+                geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: msg.base64Audio }] } }));
             }
             if (msg.base64Image) {
-                geminiWs.send(JSON.stringify({ 
-                    realtimeInput: { 
-                        mediaChunks: [{ 
-                            mimeType: "image/jpeg", 
-                            data: msg.base64Image 
-                        }] 
-                    } 
-                }));
+                geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "image/jpeg", data: msg.base64Image }] } }));
             }
         } catch(e) { console.error("Client WS Handling Error:", e); }
     });

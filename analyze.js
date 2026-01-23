@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v265.1: 音声機能ライフサイクル修正版) ---
+// --- analyze.js (完全版 v264.0: こじんめんだんカメラ機能・図鑑除外対応) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -358,7 +358,10 @@ window.captureAndSendLiveImage = function() {
 
     if (window.isLiveImageSending) return; 
     
-    const video = document.getElementById('live-chat-video');
+    // モードに応じてビデオIDを切り替え
+    const videoId = (currentMode === 'simple-chat') ? 'live-chat-video-simple' : 'live-chat-video';
+    const video = document.getElementById(videoId);
+
     if (!video || !video.srcObject || !video.srcObject.active) {
         return alert("カメラが動いてないにゃ...。一度「おはなしする」を終了して、もう一度つなぎ直してみてにゃ。");
     }
@@ -367,7 +370,11 @@ window.captureAndSendLiveImage = function() {
     ignoreIncomingAudio = true; 
     
     window.isLiveImageSending = true;
-    const btn = document.getElementById('live-camera-btn');
+    
+    // ボタン表示切り替え
+    const btnId = (currentMode === 'simple-chat') ? 'live-camera-btn-simple' : 'live-camera-btn';
+    const btn = document.getElementById(btnId);
+
     if (btn) {
         btn.innerHTML = "<span>📡</span> 送信中にゃ...";
         btn.style.backgroundColor = "#ccc";
@@ -382,31 +389,41 @@ window.captureAndSendLiveImage = function() {
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     
-    const thumbCanvas = document.createElement('canvas');
-    const thumbSize = 150; 
-    let tw = canvas.width, th = canvas.height;
-    if (tw > th) { th *= thumbSize / tw; tw = thumbSize; }
-    else { tw *= thumbSize / th; th = thumbSize; }
-    thumbCanvas.width = tw; thumbCanvas.height = th;
-    thumbCanvas.getContext('2d').drawImage(canvas, 0, 0, tw, th);
-    window.lastSentCollectionImage = thumbCanvas.toDataURL('image/jpeg', 0.7);
+    // 図鑑登録用の先行保存処理（通常モードのみ）
+    if (currentMode !== 'simple-chat') {
+        const thumbCanvas = document.createElement('canvas');
+        const thumbSize = 150; 
+        let tw = canvas.width, th = canvas.height;
+        if (tw > th) { th *= thumbSize / tw; tw = thumbSize; }
+        else { tw *= thumbSize / th; th = thumbSize; }
+        thumbCanvas.width = tw; thumbCanvas.height = th;
+        thumbCanvas.getContext('2d').drawImage(canvas, 0, 0, tw, th);
+        window.lastSentCollectionImage = thumbCanvas.toDataURL('image/jpeg', 0.7);
 
-    // 先行保存（解析中...）
-    if (window.NellMemory) {
-        const timestamp = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        const tempName = `🔍 解析中... (${timestamp})`;
-        console.log(`[Collection] 💾 Pre-saving item: "${tempName}"`);
-        try {
-            window.NellMemory.addToCollection(currentUser.id, tempName, window.lastSentCollectionImage);
-            
-            const notif = document.createElement('div');
-            notif.innerText = `📸 写真を撮ったにゃ！`;
-            notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #4caf50; color:#2e7d32; padding:10px 20px; border-radius:30px; font-weight:bold; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 4px 10px rgba(0,0,0,0.2);";
-            document.body.appendChild(notif);
-            setTimeout(() => notif.remove(), 2000);
-            
-            try{ sfxHirameku.currentTime=0; sfxHirameku.play(); } catch(e){}
-        } catch(e) { console.error("[Collection] ❌ Pre-save failed:", e); }
+        // 先行保存（解析中...）
+        if (window.NellMemory) {
+            const timestamp = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const tempName = `🔍 解析中... (${timestamp})`;
+            console.log(`[Collection] 💾 Pre-saving item: "${tempName}"`);
+            try {
+                window.NellMemory.addToCollection(currentUser.id, tempName, window.lastSentCollectionImage);
+                
+                const notif = document.createElement('div');
+                notif.innerText = `📸 写真を撮ったにゃ！`;
+                notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #4caf50; color:#2e7d32; padding:10px 20px; border-radius:30px; font-weight:bold; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 4px 10px rgba(0,0,0,0.2);";
+                document.body.appendChild(notif);
+                setTimeout(() => notif.remove(), 2000);
+                
+                try{ sfxHirameku.currentTime=0; sfxHirameku.play(); } catch(e){}
+            } catch(e) { console.error("[Collection] ❌ Pre-save failed:", e); }
+        }
+    } else {
+        // simple-chatの場合の演出
+        const notif = document.createElement('div');
+        notif.innerText = `📝 問題を送ったにゃ！`;
+        notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #8bc34a; color:#558b2f; padding:10px 20px; border-radius:30px; font-weight:bold; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 4px 10px rgba(0,0,0,0.2);";
+        document.body.appendChild(notif);
+        setTimeout(() => notif.remove(), 2000);
     }
 
     const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
@@ -416,7 +433,9 @@ window.captureAndSendLiveImage = function() {
     document.body.appendChild(flash);
     setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
 
-    const videoContainer = document.getElementById('live-chat-video-container');
+    const containerId = (currentMode === 'simple-chat') ? 'live-chat-video-container-simple' : 'live-chat-video-container';
+    const videoContainer = document.getElementById(containerId);
+    
     if (videoContainer) {
         const oldPreview = document.getElementById('snapshot-preview-overlay');
         if(oldPreview) oldPreview.remove();
@@ -435,17 +454,27 @@ window.captureAndSendLiveImage = function() {
 
     updateNellMessage("ん？どれどれ…", "thinking", false, false);
     
-    // サンドイッチ送信 (質問 + 画像 + ツール強制)
+    // サンドイッチ送信 (質問 + 画像 + ツール強制または解除)
     if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
-        console.log("[Collection] 🚀 Sending bundled turn with image and prompt.");
+        console.log(`[Collection] 🚀 Sending image. Mode: ${currentMode}`);
+        
+        let promptText = "";
+        
+        if (currentMode === 'simple-chat') {
+            // 図鑑登録しない（勉強質問用）
+            promptText = "（ユーザーが勉強の問題や画像を見せました）この画像の内容を詳しく、子供にもわかるように丁寧に教えてください。図鑑登録は不要です。";
+        } else {
+            // 通常の図鑑登録モード
+            promptText = "（ユーザーが画像を見せました）これなぁに？ この画像に写っている一番はっきりした物体を特定して。必ず `register_collection_item` ツールを実行して名前を登録してください。";
+        }
+
         liveSocket.send(JSON.stringify({ 
             clientContent: { 
                 turns: [{ 
                     role: "user", 
                     parts: [
-                        { text: "（ユーザーが画像を見せました）これなぁに？ この画像に写っている一番はっきりした物体を特定して。" },
-                        { inlineData: { mime_type: "image/jpeg", data: base64Data } },
-                        { text: "必ず `register_collection_item` ツールを実行して名前を登録してください。" }
+                        { text: promptText },
+                        { inlineData: { mime_type: "image/jpeg", data: base64Data } }
                     ]
                 }],
                 turnComplete: true
@@ -459,8 +488,13 @@ window.captureAndSendLiveImage = function() {
         console.log("[Audio] 🎤 Mic unmuted.");
         
         if (btn) {
-            btn.innerHTML = "<span>📷</span> これ教えて！（カメラで見せる）";
-            btn.style.backgroundColor = "#4a90e2";
+            if (currentMode === 'simple-chat') {
+                btn.innerHTML = "<span>📝</span> 問題をみせて教えてもらう";
+                btn.style.backgroundColor = "#8bc34a";
+            } else {
+                btn.innerHTML = "<span>📷</span> これ教えて！（カメラで見せる）";
+                btn.style.backgroundColor = "#4a90e2";
+            }
         }
         console.log("次の画像送信準備OKにゃ");
     }, 3000);
@@ -827,7 +861,6 @@ function endGame(c) { gameRunning = false; if(gameAnimId)cancelAnimationFrame(ga
 // 10. WebSocket (Live Chat)
 // ==========================================
 
-// ★修正: startLiveChat で AudioContext の確実な再起動を行う
 async function startLiveChat() { 
     const btnId = currentMode === 'simple-chat' ? 'mic-btn-simple' : 'mic-btn';
     const btn = document.getElementById(btnId);
@@ -843,19 +876,16 @@ async function startLiveChat() {
         
         chatTranscript = ""; 
         
-        // ★修正: AudioContextが閉じていたら（またはnullなら）新規作成
-        if (!audioContext || audioContext.state === 'closed') {
-            audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-        }
-        if (audioContext.state === 'suspended') {
-            await audioContext.resume();
-        }
+        if (window.initAudioContext) await window.initAudioContext(); 
+        audioContext = new (window.AudioContext || window.webkitAudioContext)(); 
+        await audioContext.resume(); 
         nextStartTime = audioContext.currentTime; 
         
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:'; 
         let statusSummary = `${currentUser.name}さんは今、お話しにきたにゃ。カリカリは${currentUser.karikari}個持ってるにゃ。`; 
         
-        const url = `${wsProto}//${location.host}?grade=${currentUser.grade}&name=${encodeURIComponent(currentUser.name)}`; 
+        // ★修正: modeパラメータを追加してサーバーに送信
+        const url = `${wsProto}//${location.host}?grade=${currentUser.grade}&name=${encodeURIComponent(currentUser.name)}&mode=${currentMode}`; 
         
         liveSocket = new WebSocket(url); 
         liveSocket.binaryType = "blob"; 
@@ -871,12 +901,13 @@ async function startLiveChat() {
                 type: "init",
                 name: currentUser.name,
                 grade: currentUser.grade,
-                context: statusSummary + "\n" + memoryContext
+                context: statusSummary + "\n" + memoryContext,
+                mode: currentMode // 追加
             }));
         }; 
         
-        liveSocket.onmessage = async (event) => {
-            try {
+        liveSocket.onmessage = async (event) => { 
+            try { 
                 let rawData = event.data;
                 if (rawData instanceof Blob) rawData = await rawData.text();
                 const data = JSON.parse(rawData);
@@ -887,40 +918,67 @@ async function startLiveChat() {
                     updateNellMessage("お待たせ！なんでも話してにゃ！", "happy", false, false); 
                     isRecognitionActive = true; 
                     startMicrophone(); 
-                    console.log("✅ ネル先生と接続完了！");
                     return;
                 }
 
-                if (data.type === "text") {
-                    console.log("ネル先生の言葉:", data.text);
-                    const match = data.text.match(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/i);
-                    if (match) {
-                        const content = match[1].trim();
-                        document.getElementById('inline-whiteboard').classList.remove('hidden');
-                        document.getElementById('whiteboard-content').innerText = content;
-                    }
-
-                    saveToNellMemory('nell', data.text);
-                    updateNellMessage(data.text, "normal", false, false);
-                }
-                
-                else if (data.type === "audio") {
-                    playLivePcmAudio(data.audio);
-                }
-                
-                else if (data.type === "save_to_collection") {
+                // ツール呼び出し検出（バッファに保存）
+                if (data.type === "save_to_collection") {
                     console.log(`[Collection] 📥 Tool Call detected: ${data.itemName}`);
                     latestDetectedName = data.itemName;
                 }
+                
+                if (data.serverContent?.modelTurn?.parts) { 
+                    data.serverContent.modelTurn.parts.forEach(p => { 
+                        if (p.text) { 
+                            console.log(`[Gemini Raw Text] ${p.text}`);
+                            
+                            const match = p.text.match(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/i);
+                            if (match) {
+                                const content = match[1].trim();
+                                document.getElementById('inline-whiteboard').classList.remove('hidden');
+                                document.getElementById('whiteboard-content').innerText = content;
+                            }
 
-                const serverContent = data.serverContent || data.server_content;
-                if (serverContent && serverContent.interrupted) {
-                    console.log("⚠️ 割り込み発生");
-                    stopAudioPlayback();
+                            // タグ検出（バッファに保存）
+                            let itemName = null;
+                            let detectedPattern = "";
+
+                            const matchJP = p.text.match(/【図鑑登録[:：]\s*(.+?)】/);
+                            if (matchJP) { itemName = matchJP[1]; detectedPattern = "JP Tag"; }
+
+                            if (!itemName) {
+                                const matchEN = p.text.match(/\[CAPTURE\s*[:：]\s*(.+?)\]/i);
+                                if(matchEN) { itemName = matchEN[1]; detectedPattern = "EN Tag"; }
+                            }
+                            
+                            if (!itemName) {
+                                const matchRaw = p.text.match(/CAPTURE\s*[:：]\s*(.+?)(?:$|\n|。)/i);
+                                if (matchRaw) { itemName = matchRaw[1]; detectedPattern = "Raw CAPTURE"; }
+                            }
+                            
+                            // 口語パターン
+                            if (!itemName) {
+                                const matchSpeech = p.text.match(/(?:図鑑登録|キャプチャー)[、,，\s]\s*([^\s。]+)/i);
+                                if (matchSpeech) { itemName = matchSpeech[1]; detectedPattern = "Speech Pattern"; }
+                            }
+
+                            if (itemName) {
+                                itemName = itemName.trim();
+                                console.log(`[Collection] ✅ Matched! Pattern: "${detectedPattern}", Item: "${itemName}"`);
+                                latestDetectedName = itemName;
+                            }
+
+                            saveToNellMemory('nell', p.text); 
+                            updateNellMessage(p.text, "normal", false, false);
+                        } 
+                        if (p.inlineData) playLivePcmAudio(p.inlineData.data); 
+                    }); 
                 }
 
-                if (serverContent && (serverContent.turn_complete || serverContent.turnComplete)) {
-                    if (latestDetectedName && window.NellMemory) {
+                // ターン完了時に確定処理
+                if (data.serverContent && data.serverContent.turnComplete) {
+                    // simple-chatの場合は保存しない、またはサーバー側で制御済みだが念のため
+                    if (latestDetectedName && window.NellMemory && currentMode !== 'simple-chat') {
                         console.log(`[Collection] 🔄 Turn Complete. Committing name: ${latestDetectedName}`);
                         window.NellMemory.updateLatestCollectionItem(currentUser.id, latestDetectedName);
                         
@@ -935,10 +993,8 @@ async function startLiveChat() {
                     }
                 }
 
-            } catch (e) {
-                console.error("解析エラー:", e);
-            }
-        };
+            } catch (e) {} 
+        }; 
         
         liveSocket.onclose = () => stopLiveChat(); 
         liveSocket.onerror = () => stopLiveChat(); 
@@ -946,7 +1002,7 @@ async function startLiveChat() {
 }
 
 // --------------------------------------------------------
-// ★ グローバル定義: stopLiveChat (修正版)
+// ★ グローバル定義: stopLiveChat
 // --------------------------------------------------------
 window.stopLiveChat = function() {
     if (window.NellMemory) {
@@ -962,19 +1018,9 @@ window.stopLiveChat = function() {
     if (connectionTimeout) clearTimeout(connectionTimeout); 
     if (recognition) try{recognition.stop()}catch(e){} 
     if (mediaStream) mediaStream.getTracks().forEach(t=>t.stop()); 
-    if (workletNode) { 
-        workletNode.port.postMessage('stop'); 
-        workletNode.disconnect(); 
-        workletNode = null; 
-    } 
+    if (workletNode) { workletNode.port.postMessage('stop'); workletNode.disconnect(); } 
     if (liveSocket) liveSocket.close(); 
-    
-    // ★重要: AudioContext を閉じた後に null にして完全リセット
-    if (audioContext) {
-        if (audioContext.state !== 'closed') audioContext.close(); 
-        audioContext = null; 
-    }
-    
+    if (audioContext && audioContext.state !== 'closed') audioContext.close(); 
     window.isNellSpeaking = false; 
     if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer); 
     if(speakingStartTimer) clearTimeout(speakingStartTimer); 
@@ -984,20 +1030,32 @@ window.stopLiveChat = function() {
     if (btn) { btn.innerText = "🎤 おはなしする"; btn.style.background = currentMode === 'simple-chat' ? "#66bb6a" : "#ff85a1"; btn.disabled = false; btn.onclick = startLiveChat; } 
     liveSocket = null; 
     
+    // カメラボタンのリセット
     const camBtn = document.getElementById('live-camera-btn');
     if (camBtn) {
         camBtn.innerHTML = "<span>📷</span> これ教えて！（カメラで見せる）";
         camBtn.style.backgroundColor = "#4a90e2";
     }
+    const camBtnSimple = document.getElementById('live-camera-btn-simple');
+    if (camBtnSimple) {
+        camBtnSimple.innerHTML = "<span>📝</span> 問題をみせて教えてもらう";
+        camBtnSimple.style.backgroundColor = "#8bc34a";
+    }
+
     window.isLiveImageSending = false;
     window.isMicMuted = false; 
 
+    // ビデオ要素のリセット (両方)
     const video = document.getElementById('live-chat-video');
     if(video) video.srcObject = null;
     document.getElementById('live-chat-video-container').style.display = 'none';
+
+    const videoSimple = document.getElementById('live-chat-video-simple');
+    if(videoSimple) videoSimple.srcObject = null;
+    document.getElementById('live-chat-video-container-simple').style.display = 'none';
 };
 
-// ★修正: startMicrophone での多重登録エラー防止
+// ... (以下、startMicrophone関数などは既存のコードと同じため省略せず記述) ...
 async function startMicrophone() { 
     try { 
         if ('webkitSpeechRecognition' in window) { 
@@ -1038,31 +1096,28 @@ async function startMicrophone() {
             recognition.start(); 
         } 
         
-        const useVideo = (currentMode === 'chat');
+        // ★修正: どちらのモードでもビデオを使用可能にする
+        const useVideo = (currentMode === 'chat' || currentMode === 'simple-chat');
         mediaStream = await navigator.mediaDevices.getUserMedia({ 
             audio: { sampleRate: 16000, channelCount: 1 }, 
             video: useVideo ? { facingMode: "environment" } : false 
         }); 
         
         if (useVideo) {
-            const video = document.getElementById('live-chat-video');
+            // モードに応じたビデオ要素にストリームを割り当て
+            const videoId = (currentMode === 'simple-chat') ? 'live-chat-video-simple' : 'live-chat-video';
+            const containerId = (currentMode === 'simple-chat') ? 'live-chat-video-container-simple' : 'live-chat-video-container';
+            const video = document.getElementById(videoId);
             if (video) {
                 video.srcObject = mediaStream;
                 video.play();
-                document.getElementById('live-chat-video-container').style.display = 'block';
+                document.getElementById(containerId).style.display = 'block';
             }
         }
 
-        // AudioWorkletの登録 (エラー回避のための try-catch 追加)
-        try {
-            const processorCode = `class PcmProcessor extends AudioWorkletProcessor { constructor() { super(); this.bufferSize = 2048; this.buffer = new Float32Array(this.bufferSize); this.index = 0; } process(inputs, outputs, parameters) { const input = inputs[0]; if (input.length > 0) { const channel = input[0]; for (let i = 0; i < channel.length; i++) { this.buffer[this.index++] = channel[i]; if (this.index >= this.bufferSize) { this.port.postMessage(this.buffer); this.index = 0; } } } return true; } } registerProcessor('pcm-processor', PcmProcessor);`; 
-            const blob = new Blob([processorCode], { type: 'application/javascript' }); 
-            await audioContext.audioWorklet.addModule(URL.createObjectURL(blob)); 
-        } catch (e) {
-            // すでに登録されている場合などは無視して続行
-            console.log("AudioWorklet addModule skipped or failed:", e);
-        }
-
+        const processorCode = `class PcmProcessor extends AudioWorkletProcessor { constructor() { super(); this.bufferSize = 2048; this.buffer = new Float32Array(this.bufferSize); this.index = 0; } process(inputs, outputs, parameters) { const input = inputs[0]; if (input.length > 0) { const channel = input[0]; for (let i = 0; i < channel.length; i++) { this.buffer[this.index++] = channel[i]; if (this.index >= this.bufferSize) { this.port.postMessage(this.buffer); this.index = 0; } } } return true; } } registerProcessor('pcm-processor', PcmProcessor);`; 
+        const blob = new Blob([processorCode], { type: 'application/javascript' }); 
+        await audioContext.audioWorklet.addModule(URL.createObjectURL(blob)); 
         const source = audioContext.createMediaStreamSource(mediaStream); 
         workletNode = new AudioWorkletNode(audioContext, 'pcm-processor'); 
         source.connect(workletNode); 
@@ -1076,14 +1131,9 @@ async function startMicrophone() {
         console.warn("Camera failed or not needed, trying audio only:", e);
         try {
             mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1 } });
-            
-            // AudioWorklet (Retry)
-            try {
-                const processorCode = `class PcmProcessor extends AudioWorkletProcessor { constructor() { super(); this.bufferSize = 2048; this.buffer = new Float32Array(this.bufferSize); this.index = 0; } process(inputs, outputs, parameters) { const input = inputs[0]; if (input.length > 0) { const channel = input[0]; for (let i = 0; i < channel.length; i++) { this.buffer[this.index++] = channel[i]; if (this.index >= this.bufferSize) { this.port.postMessage(this.buffer); this.index = 0; } } } return true; } } registerProcessor('pcm-processor', PcmProcessor);`; 
-                const blob = new Blob([processorCode], { type: 'application/javascript' }); 
-                await audioContext.audioWorklet.addModule(URL.createObjectURL(blob)); 
-            } catch(e) { console.log("Retry addModule skipped:", e); }
-
+            const processorCode = `class PcmProcessor extends AudioWorkletProcessor { constructor() { super(); this.bufferSize = 2048; this.buffer = new Float32Array(this.bufferSize); this.index = 0; } process(inputs, outputs, parameters) { const input = inputs[0]; if (input.length > 0) { const channel = input[0]; for (let i = 0; i < channel.length; i++) { this.buffer[this.index++] = channel[i]; if (this.index >= this.bufferSize) { this.port.postMessage(this.buffer); this.index = 0; } } } return true; } } registerProcessor('pcm-processor', PcmProcessor);`; 
+            const blob = new Blob([processorCode], { type: 'application/javascript' }); 
+            await audioContext.audioWorklet.addModule(URL.createObjectURL(blob)); 
             const source = audioContext.createMediaStreamSource(mediaStream); 
             workletNode = new AudioWorkletNode(audioContext, 'pcm-processor'); 
             source.connect(workletNode); 
