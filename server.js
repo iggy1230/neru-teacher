@@ -1,4 +1,4 @@
-// --- server.js (完全版 v267.0: プロトコル完全準拠版) ---
+// --- server.js (完全版 v268.0: キャメルケース・プロトコル完全準拠版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -161,7 +161,7 @@ app.post('/update-memory', async (req, res) => {
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, name } = req.body;
-        // ★MODEL指定: 宿題分析は最高精度の gemini-2.5-pro (固定)
+        // ★MODEL指定: 宿題分析は最高精度の gemini-2.5-pro
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.5-pro", 
             generationConfig: { responseMimeType: "application/json", temperature: 0.0 }
@@ -371,18 +371,16 @@ wss.on('connection', async (clientWs, req) => {
                         // ★MODEL指定: リアルタイム会話はFlash-Exp
                         model: "models/gemini-2.0-flash-exp",
                         
-                        // ★重要修正: キー名をスネークケースに変更 (Google公式仕様)
-                        generation_config: { 
-                            response_modalities: ["TEXT", "AUDIO"], 
-                            speech_config: { 
-                                voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }, 
-                                language_code: "ja-JP" 
+                        // ★重要: Gemini APIのRequestはキャメルケース (camelCase) 必須
+                        generationConfig: { 
+                            responseModalities: ["TEXT", "AUDIO"], 
+                            speechConfig: { 
+                                voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } }, 
+                                languageCode: "ja-JP" 
                             } 
                         },
-                        
-                        // ★重要修正: tools はそのまま配列でOKだが、systemInstructionもスネークケースへ
                         tools: tools,
-                        system_instruction: { parts: [{ text: systemInstructionText }] }
+                        systemInstruction: { parts: [{ text: systemInstructionText }] }
                     }
                 }));
 
@@ -396,7 +394,7 @@ wss.on('connection', async (clientWs, req) => {
                 try {
                     const response = JSON.parse(data);
                     
-                    // ★重要修正: サーバー側での受信もスネークケース/キャメルケース両対応に
+                    // レスポンスはスネークケースやキャメルケースが混在する可能性があるため、両方チェック
                     const serverContent = response.serverContent || response.server_content;
                     
                     if (serverContent) {
@@ -404,9 +402,9 @@ wss.on('connection', async (clientWs, req) => {
                         if (modelTurn?.parts) {
                             const parts = modelTurn.parts;
                             parts.forEach(part => {
-                                if (part.functionCall || part.function_call) {
-                                    const call = part.functionCall || part.function_call;
-                                    
+                                // 関数呼び出しチェック (functionCall / function_call)
+                                const call = part.functionCall || part.function_call;
+                                if (call) {
                                     if (call.name === "register_collection_item") {
                                         const itemName = call.args.item_name;
                                         console.log(`[Collection] 🤖 AI Tool Called: register_collection_item for "${itemName}"`);
@@ -419,10 +417,10 @@ wss.on('connection', async (clientWs, req) => {
                                             }));
                                         }
                                         
-                                        // Geminiへ完了通知
+                                        // Geminiへ完了通知 (キャメルケース推奨)
                                         geminiWs.send(JSON.stringify({
-                                            tool_response: { // スネークケース
-                                                function_responses: [{ // スネークケース
+                                            toolResponse: {
+                                                functionResponses: [{
                                                     name: "register_collection_item",
                                                     response: { result: "saved_success" },
                                                     id: call.id
@@ -433,8 +431,8 @@ wss.on('connection', async (clientWs, req) => {
                                     else if (call.name === "show_kanji") {
                                         const content = call.args.content;
                                         geminiWs.send(JSON.stringify({
-                                            tool_response: {
-                                                function_responses: [{
+                                            toolResponse: {
+                                                functionResponses: [{
                                                     name: "show_kanji",
                                                     response: { result: "displayed" },
                                                     id: call.id
@@ -482,19 +480,19 @@ wss.on('connection', async (clientWs, req) => {
                 return;
             }
 
-            // クライアントからのデータ送信もスネークケースを意識
+            // クライアントからのデータ転送 (キャメルケース)
             if (msg.toolResponse) {
-                geminiWs.send(JSON.stringify({ tool_response: msg.toolResponse }));
+                geminiWs.send(JSON.stringify({ toolResponse: msg.toolResponse }));
                 return;
             }
             if (msg.clientContent) {
-                geminiWs.send(JSON.stringify({ client_content: msg.clientContent }));
+                geminiWs.send(JSON.stringify({ clientContent: msg.clientContent }));
             }
             if (msg.base64Audio) {
-                geminiWs.send(JSON.stringify({ realtime_input: { media_chunks: [{ mime_type: "audio/pcm;rate=16000", data: msg.base64Audio }] } }));
+                geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: msg.base64Audio }] } }));
             }
             if (msg.base64Image) {
-                geminiWs.send(JSON.stringify({ realtime_input: { media_chunks: [{ mime_type: "image/jpeg", data: msg.base64Image }] } }));
+                geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "image/jpeg", data: msg.base64Image }] } }));
             }
         } catch(e) { console.error("Client WS Handling Error:", e); }
     });

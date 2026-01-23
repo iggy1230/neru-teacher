@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v267.0: プロトコル完全準拠・音声優先版) ---
+// --- analyze.js (完全版 v268.0: Blob対応・受信堅牢化版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -898,11 +898,14 @@ async function startLiveChat() {
             }));
         }; 
         
-        // ★修正: スネークケース/キャメルケース両対応ロジック
+        // ★修正: Blob対応 & 受信堅牢化 & 音声優先ロジック
         liveSocket.onmessage = async (event) => { 
             try { 
                 let rawData = event.data;
-                if (rawData instanceof Blob) rawData = await rawData.text();
+                // Blobの場合はテキストに変換
+                if (rawData instanceof Blob) {
+                    rawData = await rawData.text();
+                }
                 const data = JSON.parse(rawData);
 
                 if (data.type === "server_ready") {
