@@ -1,4 +1,4 @@
-// --- server.js (完全版 v266.0: 音声優先・軽量化対応) ---
+// --- server.js (完全版 v267.0: プロトコル完全準拠版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -92,6 +92,7 @@ app.post('/synthesize', async (req, res) => {
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
+        // ★MODEL指定: 記憶更新は高速なFlashで十分
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp", 
             generationConfig: { responseMimeType: "application/json" }
@@ -128,6 +129,8 @@ app.post('/update-memory', async (req, res) => {
 
         const result = await model.generateContent(prompt);
         let text = result.response.text();
+        
+        // JSONパースエラー対策
         text = text.replace(/```json/g, '').replace(/```/g, '').trim();
         
         let newProfile;
@@ -135,11 +138,17 @@ app.post('/update-memory', async (req, res) => {
             newProfile = JSON.parse(text);
         } catch (e) {
             const match = text.match(/\{[\s\S]*\}/);
-            if (match) newProfile = JSON.parse(match[0]);
-            else throw new Error("Invalid JSON structure");
+            if (match) {
+                newProfile = JSON.parse(match[0]);
+            } else {
+                throw new Error("Invalid JSON structure");
+            }
         }
 
-        if (Array.isArray(newProfile)) newProfile = newProfile[0];
+        if (Array.isArray(newProfile)) {
+            newProfile = newProfile[0];
+        }
+
         res.json(newProfile);
 
     } catch (error) {
@@ -152,7 +161,7 @@ app.post('/update-memory', async (req, res) => {
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, name } = req.body;
-        // ★MODEL指定: 宿題分析は最高精度の gemini-2.5-pro
+        // ★MODEL指定: 宿題分析は最高精度の gemini-2.5-pro (固定)
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.5-pro", 
             generationConfig: { responseMimeType: "application/json", temperature: 0.0 }
@@ -232,6 +241,7 @@ app.post('/lunch-reaction', async (req, res) => {
         const { count, name } = req.body;
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
         const isSpecial = (count % 10 === 0);
+        // ★MODEL指定: 反応系はFlash
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         
         let prompt = isSpecial 
@@ -255,6 +265,7 @@ app.post('/lunch-reaction', async (req, res) => {
 app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;
+        // ★MODEL指定: 反応系はFlash
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         let prompt = "";
         let mood = "excited";
@@ -287,6 +298,7 @@ wss.on('connection', async (clientWs, req) => {
 
     let geminiWs = null;
 
+    // Geminiへ接続する関数
     const connectToGemini = (statusContext) => {
         const now = new Date();
         const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'Asia/Tokyo' };
@@ -325,6 +337,7 @@ wss.on('connection', async (clientWs, req) => {
                 ${statusContext}
                 `;
 
+                // ツール定義
                 const tools = [
                     { google_search: {} },
                     {
@@ -355,20 +368,25 @@ wss.on('connection', async (clientWs, req) => {
 
                 geminiWs.send(JSON.stringify({
                     setup: {
+                        // ★MODEL指定: リアルタイム会話はFlash-Exp
                         model: "models/gemini-2.0-flash-exp",
-                        generationConfig: { 
-                            // ★テキストと音声の両方を有効化
-                            responseModalities: ["TEXT", "AUDIO"], 
+                        
+                        // ★重要修正: キー名をスネークケースに変更 (Google公式仕様)
+                        generation_config: { 
+                            response_modalities: ["TEXT", "AUDIO"], 
                             speech_config: { 
                                 voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }, 
                                 language_code: "ja-JP" 
                             } 
-                        }, 
+                        },
+                        
+                        // ★重要修正: tools はそのまま配列でOKだが、systemInstructionもスネークケースへ
                         tools: tools,
-                        systemInstruction: { parts: [{ text: systemInstructionText }] }
+                        system_instruction: { parts: [{ text: systemInstructionText }] }
                     }
                 }));
 
+                // Gemini接続完了をクライアントに通知
                 if (clientWs.readyState === WebSocket.OPEN) {
                     clientWs.send(JSON.stringify({ type: "server_ready" }));
                 }
@@ -378,47 +396,58 @@ wss.on('connection', async (clientWs, req) => {
                 try {
                     const response = JSON.parse(data);
                     
-                    if (response.serverContent?.modelTurn?.parts) {
-                        const parts = response.serverContent.modelTurn.parts;
-                        parts.forEach(part => {
-                            if (part.functionCall) {
-                                if (part.functionCall.name === "register_collection_item") {
-                                    const itemName = part.functionCall.args.item_name;
-                                    console.log(`[Collection] 🤖 AI Tool Called: register_collection_item for "${itemName}"`);
+                    // ★重要修正: サーバー側での受信もスネークケース/キャメルケース両対応に
+                    const serverContent = response.serverContent || response.server_content;
+                    
+                    if (serverContent) {
+                        const modelTurn = serverContent.modelTurn || serverContent.model_turn;
+                        if (modelTurn?.parts) {
+                            const parts = modelTurn.parts;
+                            parts.forEach(part => {
+                                if (part.functionCall || part.function_call) {
+                                    const call = part.functionCall || part.function_call;
                                     
-                                    if (clientWs.readyState === WebSocket.OPEN) {
-                                        clientWs.send(JSON.stringify({
-                                            type: "save_to_collection",
-                                            itemName: itemName
+                                    if (call.name === "register_collection_item") {
+                                        const itemName = call.args.item_name;
+                                        console.log(`[Collection] 🤖 AI Tool Called: register_collection_item for "${itemName}"`);
+                                        
+                                        // クライアントへ通知
+                                        if (clientWs.readyState === WebSocket.OPEN) {
+                                            clientWs.send(JSON.stringify({
+                                                type: "save_to_collection",
+                                                itemName: itemName
+                                            }));
+                                        }
+                                        
+                                        // Geminiへ完了通知
+                                        geminiWs.send(JSON.stringify({
+                                            tool_response: { // スネークケース
+                                                function_responses: [{ // スネークケース
+                                                    name: "register_collection_item",
+                                                    response: { result: "saved_success" },
+                                                    id: call.id
+                                                }]
+                                            }
                                         }));
                                     }
-                                    
-                                    geminiWs.send(JSON.stringify({
-                                        toolResponse: {
-                                            functionResponses: [{
-                                                name: "register_collection_item",
-                                                response: { result: "saved_success" },
-                                                id: part.functionCall.id
-                                            }]
-                                        }
-                                    }));
+                                    else if (call.name === "show_kanji") {
+                                        const content = call.args.content;
+                                        geminiWs.send(JSON.stringify({
+                                            tool_response: {
+                                                function_responses: [{
+                                                    name: "show_kanji",
+                                                    response: { result: "displayed" },
+                                                    id: call.id
+                                                }]
+                                            }
+                                        }));
+                                    }
                                 }
-                                else if (part.functionCall.name === "show_kanji") {
-                                    const content = part.functionCall.args.content;
-                                    geminiWs.send(JSON.stringify({
-                                        toolResponse: {
-                                            functionResponses: [{
-                                                name: "show_kanji",
-                                                response: { result: "displayed" },
-                                                id: part.functionCall.id
-                                            }]
-                                        }
-                                    }));
-                                }
-                            }
-                        });
+                            });
+                        }
                     }
                     
+                    // 音声やテキストデータはそのままクライアントへ転送
                     if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data);
                     
                 } catch (e) {
@@ -436,6 +465,7 @@ wss.on('connection', async (clientWs, req) => {
         }
     };
 
+    // クライアントからのメッセージハンドリング
     clientWs.on('message', (data) => {
         try {
             const msg = JSON.parse(data);
@@ -452,18 +482,19 @@ wss.on('connection', async (clientWs, req) => {
                 return;
             }
 
+            // クライアントからのデータ送信もスネークケースを意識
             if (msg.toolResponse) {
-                geminiWs.send(JSON.stringify({ clientContent: msg.toolResponse }));
+                geminiWs.send(JSON.stringify({ tool_response: msg.toolResponse }));
                 return;
             }
             if (msg.clientContent) {
                 geminiWs.send(JSON.stringify({ client_content: msg.clientContent }));
             }
             if (msg.base64Audio) {
-                geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: msg.base64Audio }] } }));
+                geminiWs.send(JSON.stringify({ realtime_input: { media_chunks: [{ mime_type: "audio/pcm;rate=16000", data: msg.base64Audio }] } }));
             }
             if (msg.base64Image) {
-                geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "image/jpeg", data: msg.base64Image }] } }));
+                geminiWs.send(JSON.stringify({ realtime_input: { media_chunks: [{ mime_type: "image/jpeg", data: msg.base64Image }] } }));
             }
         } catch(e) { console.error("Client WS Handling Error:", e); }
     });
