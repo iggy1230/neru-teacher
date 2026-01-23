@@ -366,21 +366,35 @@ wss.on('connection', async (clientWs, req) => {
                     }
                 ];
 
-                geminiWs.send(JSON.stringify({
-                    setup: {
-                        // ★MODEL指定: リアルタイム会話はFlash-Exp (固定)
-                        model: "models/gemini-2.0-flash-exp",
-                        generationConfig: { 
-                            responseModalities: ["AUDIO"], 
-                            speech_config: { 
-                                voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }, 
-                                language_code: "ja-JP" 
-                            } 
-                        }, 
-                        tools: tools,
-                        systemInstruction: { parts: [{ text: systemInstructionText }] }
-                    }
-                }));
+                // server.js の connectToGemini 関数内、setupメッセージ部分を差し替え
+geminiWs.send(JSON.stringify({
+    setup: {
+        model: "models/gemini-2.0-flash-exp",
+        generationConfig: { 
+            responseModalities: ["TEXT", "AUDIO"], // 音声とテキスト両方を要求
+            speechConfig: { 
+                voiceConfig: { 
+                    prebuiltVoiceConfig: { voiceName: "Aoede" } 
+                } 
+            } 
+        }, 
+        systemInstruction: {
+            parts: [{ text: systemInstructionText }]
+        }
+    }
+}));
+
+// clientWs.on('message') 内の音声転送部分もキャメルケースに修正
+if (msg.base64Audio) {
+    geminiWs.send(JSON.stringify({ 
+        realtimeInput: { 
+            mediaChunks: [{ 
+                mimeType: "audio/pcm;rate=16000", 
+                data: msg.base64Audio 
+            }] 
+        } 
+    }));
+}
 
                 // Gemini接続完了をクライアントに通知
                 if (clientWs.readyState === WebSocket.OPEN) {
