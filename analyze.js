@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v269.0: エラー通知強化版) ---
+// --- analyze.js (完全版 v270.0: WebSocketエラー処理強化版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -993,10 +993,9 @@ async function startLiveChat() {
             console.log("WebSocket Closed:", event.code, event.reason);
             stopLiveChat();
             
-            // 意図しない切断 (エラーコードやタイムアウト)
+            // 正常終了(1000)以外ならエラーメッセージ
             if (event.code !== 1000) { 
                 updateNellMessage("回線が混み合ってて切れちゃったにゃ... 少し待ってからまた話しかけてにゃ。", "thinking", false, false);
-                alert("AIサーバーが混み合っているため切断されました。\nしばらく時間をおいて試してください。");
             }
         };
         

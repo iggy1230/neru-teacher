@@ -1,4 +1,4 @@
-// --- server.js (完全版 v269.0: API負荷分散・安定化版) ---
+// --- server.js (完全版 v270.0: ツール定義修正・安定化版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -92,7 +92,7 @@ app.post('/synthesize', async (req, res) => {
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
-        // ★修正: 負荷分散のため軽量な gemini-1.5-flash に変更
+        // 負荷分散のため軽量な gemini-1.5-flash
         const model = genAI.getGenerativeModel({ 
             model: "gemini-1.5-flash", 
             generationConfig: { responseMimeType: "application/json" }
@@ -161,7 +161,7 @@ app.post('/update-memory', async (req, res) => {
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, name } = req.body;
-        // ★宿題分析は精度重視のため gemini-2.5-pro を維持
+        // 精度重視のため gemini-2.5-pro
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.5-pro", 
             generationConfig: { responseMimeType: "application/json", temperature: 0.0 }
@@ -241,7 +241,7 @@ app.post('/lunch-reaction', async (req, res) => {
         const { count, name } = req.body;
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
         const isSpecial = (count % 10 === 0);
-        // ★修正: 負荷分散のため軽量な gemini-1.5-flash に変更
+        // 負荷分散のため軽量な gemini-1.5-flash
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         
         let prompt = isSpecial 
@@ -265,7 +265,7 @@ app.post('/lunch-reaction', async (req, res) => {
 app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;
-        // ★修正: 負荷分散のため軽量な gemini-1.5-flash に変更
+        // 負荷分散のため軽量な gemini-1.5-flash
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         let prompt = "";
         let mood = "excited";
@@ -338,11 +338,11 @@ wss.on('connection', async (clientWs, req) => {
                 ${statusContext}
                 `;
 
-                // ツール定義
+                // ★重要修正: ツール定義をキャメルケース(functionDeclarations)に変更
                 const tools = [
-                    { google_search: {} },
+                    // { google_search: {} }, // 安定化のため一時的に削除
                     {
-                        function_declarations: [
+                        functionDeclarations: [ // ★ここが修正点
                             {
                                 name: "show_kanji",
                                 description: "Display a Kanji, word, or math formula on the whiteboard.",
@@ -369,10 +369,10 @@ wss.on('connection', async (clientWs, req) => {
 
                 geminiWs.send(JSON.stringify({
                     setup: {
-                        // ★WebSocketはリアルタイム性必須のため gemini-2.0-flash-exp を維持
+                        // WebSocketはリアルタイム性必須のため gemini-2.0-flash-exp
                         model: "models/gemini-2.0-flash-exp",
                         
-                        // ★キャメルケース (camelCase) 必須
+                        // キャメルケース (camelCase) 必須
                         generationConfig: { 
                             responseModalities: ["TEXT", "AUDIO"], 
                             speechConfig: { 
@@ -456,13 +456,16 @@ wss.on('connection', async (clientWs, req) => {
             });
 
             geminiWs.on('error', (e) => {
-                console.error("Gemini WS Error (Rate Limit etc.):", e);
-                // 429エラー等をクライアントに通知する
+                console.error("Gemini WS Error:", e);
+                // エラー内容をクライアントに伝える
                 if (clientWs.readyState === WebSocket.OPEN) {
-                    clientWs.close(1011, "Gemini Server Error");
+                    clientWs.close(1011, "Gemini Error");
                 }
             });
-            geminiWs.on('close', () => console.log("Gemini WS Closed"));
+            geminiWs.on('close', (code, reason) => {
+                console.log(`Gemini WS Closed: ${code} ${reason}`);
+                if (clientWs.readyState === WebSocket.OPEN) clientWs.close(1000, "Gemini Closed");
+            });
 
         } catch(e) { 
             console.error("Gemini Connection Error:", e);
