@@ -74,7 +74,7 @@ Code
         <div class="title-btn-container">
             <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
         </div>
-        <div class="version-tag">Build: v266.0-TreasureBook</div>
+        <div class="version-tag">Build: v267.0-StableButtons</div>
     </section>
 
     <!-- 1. 校門 (ユーザー選択) -->
@@ -155,6 +155,7 @@ Code
             <div class="nell-chat">
                 <div class="nell-avatar-wrap">
                     <img src="nell-normal.png" class="nell-img" id="nell-face">
+                    <!-- ハートエフェクト用のコンテナ (ポインターイベント無効化済み) -->
                     <div id="heart-container" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;"></div>
                 </div>
                 <div class="chat-bubble"><p id="nell-text"></p></div>
@@ -239,7 +240,7 @@ Code
                         <!-- 図鑑ボタンをここに移動 -->
                         <button onclick="showCollection()" class="main-btn" style="background:#00bcd4; box-shadow: 0 4px 0 #0097a7; margin-bottom: 15px;">📖 お宝図鑑をみる</button>
 
-                        <!-- ネル先生タイマー (そのまま維持) -->
+                        <!-- ネル先生タイマー -->
                         <div class="timer-box">
                             <div style="font-size:0.8rem; margin-bottom:5px;">⏱️ ネル先生タイマー</div>
                             <div id="study-timer" class="timer-display">00:00</div>
