@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v265.0: 受信強化・AudioContext再開版) ---
+// --- analyze.js (完全版 v265.1: 音声機能ライフサイクル修正版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -827,7 +827,7 @@ function endGame(c) { gameRunning = false; if(gameAnimId)cancelAnimationFrame(ga
 // 10. WebSocket (Live Chat)
 // ==========================================
 
-// ★修正: startLiveChat で AudioContext を確実に再開する
+// ★修正: startLiveChat で AudioContext の確実な再起動を行う
 async function startLiveChat() { 
     const btnId = currentMode === 'simple-chat' ? 'mic-btn-simple' : 'mic-btn';
     const btn = document.getElementById(btnId);
@@ -843,8 +843,8 @@ async function startLiveChat() {
         
         chatTranscript = ""; 
         
-        // ★修正: AudioContextの確実な初期化と再開
-        if (!audioContext) {
+        // ★修正: AudioContextが閉じていたら（またはnullなら）新規作成
+        if (!audioContext || audioContext.state === 'closed') {
             audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
         }
         if (audioContext.state === 'suspended') {
@@ -875,14 +875,12 @@ async function startLiveChat() {
             }));
         }; 
         
-        // ★修正: onmessage を受信強化版に差し替え
         liveSocket.onmessage = async (event) => {
             try {
                 let rawData = event.data;
                 if (rawData instanceof Blob) rawData = await rawData.text();
                 const data = JSON.parse(rawData);
 
-                // 1. 接続完了
                 if (data.type === "server_ready") {
                     clearTimeout(connectionTimeout); 
                     if(btn) { btn.innerText = "📞 つながった！(終了)"; btn.style.background = "#ff5252"; btn.disabled = false; } 
@@ -893,11 +891,8 @@ async function startLiveChat() {
                     return;
                 }
 
-                // 2. データ受信処理 (イベント駆動型)
                 if (data.type === "text") {
                     console.log("ネル先生の言葉:", data.text);
-                    
-                    // タグ検出・処理
                     const match = data.text.match(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/i);
                     if (match) {
                         const content = match[1].trim();
@@ -918,17 +913,12 @@ async function startLiveChat() {
                     latestDetectedName = data.itemName;
                 }
 
-                // Raw Data (analyze.jsの既存割り込み判定などはサーバー側で処理済みだが念のため)
-                // このロジックではserver.js側でinterruptを検知してないので、
-                // 必要ならserver.jsのRawData転送で補完するか、analyze.jsでRawDataも受ける
-                // 今回は server.js が最後に raw data も送っているので、そちらもケアする
                 const serverContent = data.serverContent || data.server_content;
                 if (serverContent && serverContent.interrupted) {
                     console.log("⚠️ 割り込み発生");
                     stopAudioPlayback();
                 }
 
-                // ターン完了時に確定処理 (図鑑登録)
                 if (serverContent && (serverContent.turn_complete || serverContent.turnComplete)) {
                     if (latestDetectedName && window.NellMemory) {
                         console.log(`[Collection] 🔄 Turn Complete. Committing name: ${latestDetectedName}`);
@@ -956,7 +946,7 @@ async function startLiveChat() {
 }
 
 // --------------------------------------------------------
-// ★ グローバル定義: stopLiveChat
+// ★ グローバル定義: stopLiveChat (修正版)
 // --------------------------------------------------------
 window.stopLiveChat = function() {
     if (window.NellMemory) {
@@ -972,9 +962,19 @@ window.stopLiveChat = function() {
     if (connectionTimeout) clearTimeout(connectionTimeout); 
     if (recognition) try{recognition.stop()}catch(e){} 
     if (mediaStream) mediaStream.getTracks().forEach(t=>t.stop()); 
-    if (workletNode) { workletNode.port.postMessage('stop'); workletNode.disconnect(); } 
+    if (workletNode) { 
+        workletNode.port.postMessage('stop'); 
+        workletNode.disconnect(); 
+        workletNode = null; 
+    } 
     if (liveSocket) liveSocket.close(); 
-    if (audioContext && audioContext.state !== 'closed') audioContext.close(); 
+    
+    // ★重要: AudioContext を閉じた後に null にして完全リセット
+    if (audioContext) {
+        if (audioContext.state !== 'closed') audioContext.close(); 
+        audioContext = null; 
+    }
+    
     window.isNellSpeaking = false; 
     if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer); 
     if(speakingStartTimer) clearTimeout(speakingStartTimer); 
@@ -997,6 +997,7 @@ window.stopLiveChat = function() {
     document.getElementById('live-chat-video-container').style.display = 'none';
 };
 
+// ★修正: startMicrophone での多重登録エラー防止
 async function startMicrophone() { 
     try { 
         if ('webkitSpeechRecognition' in window) { 
@@ -1052,9 +1053,16 @@ async function startMicrophone() {
             }
         }
 
-        const processorCode = `class PcmProcessor extends AudioWorkletProcessor { constructor() { super(); this.bufferSize = 2048; this.buffer = new Float32Array(this.bufferSize); this.index = 0; } process(inputs, outputs, parameters) { const input = inputs[0]; if (input.length > 0) { const channel = input[0]; for (let i = 0; i < channel.length; i++) { this.buffer[this.index++] = channel[i]; if (this.index >= this.bufferSize) { this.port.postMessage(this.buffer); this.index = 0; } } } return true; } } registerProcessor('pcm-processor', PcmProcessor);`; 
-        const blob = new Blob([processorCode], { type: 'application/javascript' }); 
-        await audioContext.audioWorklet.addModule(URL.createObjectURL(blob)); 
+        // AudioWorkletの登録 (エラー回避のための try-catch 追加)
+        try {
+            const processorCode = `class PcmProcessor extends AudioWorkletProcessor { constructor() { super(); this.bufferSize = 2048; this.buffer = new Float32Array(this.bufferSize); this.index = 0; } process(inputs, outputs, parameters) { const input = inputs[0]; if (input.length > 0) { const channel = input[0]; for (let i = 0; i < channel.length; i++) { this.buffer[this.index++] = channel[i]; if (this.index >= this.bufferSize) { this.port.postMessage(this.buffer); this.index = 0; } } } return true; } } registerProcessor('pcm-processor', PcmProcessor);`; 
+            const blob = new Blob([processorCode], { type: 'application/javascript' }); 
+            await audioContext.audioWorklet.addModule(URL.createObjectURL(blob)); 
+        } catch (e) {
+            // すでに登録されている場合などは無視して続行
+            console.log("AudioWorklet addModule skipped or failed:", e);
+        }
+
         const source = audioContext.createMediaStreamSource(mediaStream); 
         workletNode = new AudioWorkletNode(audioContext, 'pcm-processor'); 
         source.connect(workletNode); 
@@ -1068,9 +1076,14 @@ async function startMicrophone() {
         console.warn("Camera failed or not needed, trying audio only:", e);
         try {
             mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1 } });
-            const processorCode = `class PcmProcessor extends AudioWorkletProcessor { constructor() { super(); this.bufferSize = 2048; this.buffer = new Float32Array(this.bufferSize); this.index = 0; } process(inputs, outputs, parameters) { const input = inputs[0]; if (input.length > 0) { const channel = input[0]; for (let i = 0; i < channel.length; i++) { this.buffer[this.index++] = channel[i]; if (this.index >= this.bufferSize) { this.port.postMessage(this.buffer); this.index = 0; } } } return true; } } registerProcessor('pcm-processor', PcmProcessor);`; 
-            const blob = new Blob([processorCode], { type: 'application/javascript' }); 
-            await audioContext.audioWorklet.addModule(URL.createObjectURL(blob)); 
+            
+            // AudioWorklet (Retry)
+            try {
+                const processorCode = `class PcmProcessor extends AudioWorkletProcessor { constructor() { super(); this.bufferSize = 2048; this.buffer = new Float32Array(this.bufferSize); this.index = 0; } process(inputs, outputs, parameters) { const input = inputs[0]; if (input.length > 0) { const channel = input[0]; for (let i = 0; i < channel.length; i++) { this.buffer[this.index++] = channel[i]; if (this.index >= this.bufferSize) { this.port.postMessage(this.buffer); this.index = 0; } } } return true; } } registerProcessor('pcm-processor', PcmProcessor);`; 
+                const blob = new Blob([processorCode], { type: 'application/javascript' }); 
+                await audioContext.audioWorklet.addModule(URL.createObjectURL(blob)); 
+            } catch(e) { console.log("Retry addModule skipped:", e); }
+
             const source = audioContext.createMediaStreamSource(mediaStream); 
             workletNode = new AudioWorkletNode(audioContext, 'pcm-processor'); 
             source.connect(workletNode); 
