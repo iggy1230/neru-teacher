@@ -1,4 +1,4 @@
-// --- ui.js (完全版 v263.1: 記憶管理機能実装・図鑑統合版) ---
+// --- ui.js (完全版 v272.0: UIロジック・図鑑・記憶管理) ---
 
 const sfxChime = new Audio('Jpn_sch_chime.mp3');
 const sfxBtn = new Audio('botan1.mp3');
@@ -6,7 +6,10 @@ const sfxBtn = new Audio('botan1.mp3');
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
 
-// 画面切り替え関数
+// ==========================================
+// 画面切り替え & 共通処理
+// ==========================================
+
 window.switchScreen = function(to) {
     document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
     const target = document.getElementById(to);
@@ -21,6 +24,7 @@ window.switchScreen = function(to) {
 window.startApp = function() {
     try { sfxChime.currentTime = 0; sfxChime.play(); } catch(e){}
     switchScreen('screen-gate');
+    // ブラウザの自動再生ポリシー対策（ユーザー操作時にAudioContextを一度触っておく）
     if (window.initAudioContext) window.initAudioContext();
 };
 
@@ -37,6 +41,12 @@ window.backToGate = function() {
 
 window.backToLobby = function(suppressGreeting = false) {
     switchScreen('screen-lobby');
+    
+    // Live Chatなどが動いていたら停止
+    if (typeof window.stopLiveChat === 'function') {
+        window.stopLiveChat();
+    }
+
     const shouldGreet = (typeof suppressGreeting === 'boolean') ? !suppressGreeting : true;
     if (shouldGreet && typeof currentUser !== 'undefined' && currentUser) {
         if (typeof updateNellMessage === 'function') {
@@ -67,6 +77,7 @@ window.renderAttendance = function() {
     grid.style.padding = "5px";
     grid.innerHTML = ""; 
     
+    // ヘッダー（月切り替え）
     const header = document.createElement('div');
     header.style = "grid-column: span 7; display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; font-weight: bold; font-size: 1rem; padding: 0 5px;";
     header.innerHTML = `<button onclick="changeCalendarMonth(-1)" class="mini-teach-btn" style="width:30px; height:30px; font-size:1rem; margin:0; display:flex; align-items:center; justify-content:center;">◀</button><span style="flex: 1; text-align: center;">${year}年 ${month + 1}月</span><button onclick="changeCalendarMonth(1)" class="mini-teach-btn" style="width:30px; height:30px; font-size:1rem; margin:0; display:flex; align-items:center; justify-content:center;">▶</button>`;
@@ -117,7 +128,7 @@ window.changeCalendarMonth = function(diff) {
 };
 
 // ==========================================
-// プログレスバー
+// プログレスバー (宿題分析用)
 // ==========================================
 
 window.updateProgress = function(p) { 
@@ -140,6 +151,7 @@ window.showCollection = async function() {
     modal.classList.remove('hidden');
     grid.innerHTML = '<p style="width:100%; text-align:center;">読み込み中にゃ...</p>';
 
+    // Memory.js から最新データを取得
     const profile = await window.NellMemory.getUserProfile(currentUser.id);
     const collection = profile.collection || [];
 
@@ -198,7 +210,7 @@ window.closeCollection = function() {
 };
 
 // ==========================================
-// ★ 記憶管理 (Memory Manager)
+// 記憶管理 (Memory Manager)
 // ==========================================
 
 window.openMemoryManager = function() {
@@ -338,14 +350,12 @@ function renderLogView(container) {
 }
 
 // ==========================================
-// 初期化イベント
+// ボタンクリック時のSE設定
 // ==========================================
-
-document.addEventListener('click', () => { 
-    if (window.initAudioContext) window.initAudioContext().catch(e => console.log("Audio Init:", e)); 
-}, { once: true });
-
 document.addEventListener('click', (e) => { 
+    // 音声コンテキストの初期化（ポリシー対策）
+    if (window.initAudioContext) window.initAudioContext().catch(e => console.log("Audio Init:", e));
+
     if (e.target.classList && e.target.classList.contains('main-btn') && !e.target.disabled) { 
         if (!e.target.classList.contains('title-start-btn') && !e.target.onclick?.toString().includes('null')) { 
             try { sfxBtn.currentTime = 0; sfxBtn.play(); } catch(err) {} 
