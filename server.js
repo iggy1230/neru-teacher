@@ -1,4 +1,4 @@
-// --- server.js (完全版 v265.0: 埋め込みチャット対応) ---
+// --- server.js (完全版 v266.0: お宝図鑑対応) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -339,7 +339,7 @@ wss.on('connection', async (clientWs, req) => {
                     3. **図鑑登録ツールは使用しないでください。**
                     `;
                 } else {
-                    // chat (個別指導) の場合: 図鑑登録モード
+                    // chat (お宝図鑑) の場合: 図鑑登録モード
                     systemInstructionText += `
                     【最重要：図鑑登録のルール】
                     ユーザーから画像が送信された場合（Image Chunkを受信した場合）：

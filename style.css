@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v196.0) --- */
+/* --- style.css (完全版 v266.0) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -776,20 +776,25 @@ button { font-family: inherit; }
     stroke-dasharray: 5;
 }
 
-/* 記憶管理モーダル */
+/* 記憶管理モーダル & Flexbox修正 */
 .memory-modal-overlay {
     position: fixed; top: 0; left: 0; width: 100%; height: 100%;
     background: rgba(0,0,0,0.6); z-index: 9999;
     display: flex; align-items: center; justify-content: center;
 }
 .memory-modal-content {
-    background: #fff; width: 90%; max-width: 500px; max-height: 80vh;
+    background: #fff; width: 90%; max-width: 500px; 
+    max-height: 80vh; /* 高さ制限 */
+    height: 80vh; /* 固定高さにして内部スクロールを強制 */
     border-radius: 15px; padding: 20px;
-    display: flex; flex-direction: column;
+    display: flex; flex-direction: column; /* 縦並び */
     box-shadow: 0 5px 15px rgba(0,0,0,0.3);
 }
 .memory-list {
-    flex: 1; overflow-y: auto; margin: 15px 0;
+    /* 親のflexコンテナ内で伸縮し、スクロール可能にする */
+    flex: 1; 
+    overflow-y: auto; 
+    margin: 15px 0;
     border: 1px solid #eee; border-radius: 8px; padding: 10px;
     background: #fafafa;
 }
