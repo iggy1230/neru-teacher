@@ -828,22 +828,71 @@ function endGame(c) { gameRunning = false; if(gameAnimId)cancelAnimationFrame(ga
 // ==========================================
 
 async function startLiveChat() { 
+    // 1. どのボタンが押されたか判定
     const btnId = currentMode === 'simple-chat' ? 'mic-btn-simple' : 'mic-btn';
     const btn = document.getElementById(btnId);
-    if (liveSocket) { stopLiveChat(); return; } 
+    
+    // すでに動いていたら止める
+    if (liveSocket) { 
+        stopLiveChat(); 
+        return; 
+    } 
+
     try { 
-        // --- 🎤 ここから追加：音声の準備 ---
+        // 2. 音声再生の準備（ブラウザのロック解除）
         if (!audioContext) {
             audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
         }
-        // ブラウザの音ブロックを解除（ボタンを押したこの瞬間しか解除できません）
         await audioContext.resume();
-        console.log("🔊 音声エンジンの準備ができましたにゃ！ 状態:", audioContext.state);
-        // --- ここまで追加 ---
+        console.log("🔊 音声エンジン準備OK:", audioContext.state);
 
+        // 3. 画面表示の更新
         updateNellMessage("ネル先生を呼んでるにゃ…", "thinking", false); 
-        if(btn) btn.disabled = true;
+        if (btn) btn.disabled = true; 
         
+        // 4. 記憶の読み込み（エラー回避付き）
+        let memoryContext = "";
+        try {
+            if (window.NellMemory && typeof currentUser !== 'undefined' && currentUser) {
+                memoryContext = await window.NellMemory.generateContextString(currentUser.id);
+            }
+        } catch (memErr) {
+            console.warn("記憶の読み込みに失敗したけど続行するにゃ:", memErr);
+        }
+
+        // 5. 接続開始
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        liveSocket = new WebSocket(`${protocol}//${window.location.host}`);
+
+        // 接続した瞬間の処理
+        liveSocket.onopen = () => {
+            console.log("🚀 Server Connected");
+            liveSocket.send(JSON.stringify({
+                type: 'init',
+                name: typeof currentUser !== 'undefined' ? currentUser.name : "生徒",
+                grade: typeof currentUser !== 'undefined' ? currentUser.grade : "1",
+                context: memoryContext
+            }));
+            startMicSending(); // マイク開始
+        };
+
+        // メッセージ受信処理
+        liveSocket.onmessage = async (event) => {
+            // 前にお伝えした「受信リセット版」のコードがここに入ります
+            handleLiveMessage(event); 
+        };
+
+        liveSocket.onclose = () => {
+            console.log("❌ Server Disconnected");
+            stopLiveChat();
+        };
+
+    } catch (err) { 
+        console.error("接続エラーだにゃ:", err);
+        if (btn) btn.disabled = false;
+        updateNellMessage("接続に失敗したにゃ…", "sad");
+    }
+}        
         let memoryContext = "";
         if (window.NellMemory) {
             memoryContext = await window.NellMemory.generateContextString(currentUser.id);
