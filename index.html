@@ -72,7 +72,7 @@
             <div class="title-btn-container">
                 <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
             </div>
-            <div class="version-tag">Build: v267.0-Complete</div>
+            <div class="version-tag">Build: v268.0-TimerMove</div>
         </section>
 
         <!-- 1. 校門 (ユーザー選択) -->
@@ -153,7 +153,7 @@
                 <div class="nell-chat">
                     <div class="nell-avatar-wrap">
                         <img src="nell-normal.png" class="nell-img" id="nell-face">
-                        <!-- ハートエフェクト用のコンテナ (ポインターイベント無効化済み) -->
+                        <!-- ハートエフェクト用のコンテナ -->
                         <div id="heart-container" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;"></div>
                     </div>
                     <div class="chat-bubble"><p id="nell-text"></p></div>
@@ -192,7 +192,21 @@
                         <p id="thinking-status">考え中... <span id="progress-percent">0</span>%</p>
                     </div>
 
+                    <!-- 問題選択（教えてネル先生）画面 -->
                     <div id="problem-selection-view" class="hidden">
+                        <!-- ★タイマーをここに配置 -->
+                        <div class="timer-box">
+                            <div style="font-size:0.8rem; margin-bottom:5px;">⏱️ ネル先生タイマー</div>
+                            <div id="study-timer" class="timer-display">00:00</div>
+                            <div class="timer-controls">
+                                <button onclick="setTimer(1)" class="timer-btn">+1分</button>
+                                <button onclick="setTimer(10)" class="timer-btn">+10分</button>
+                                <button onclick="setTimer(30)" class="timer-btn">+30分</button>
+                                <button onclick="resetTimer()" class="timer-btn" style="background:#b0bec5;">リセット</button>
+                            </div>
+                            <button id="timer-toggle-btn" onclick="toggleTimer()" class="main-btn pink-btn" style="margin-top:10px; width:100%;">スタート！</button>
+                        </div>
+
                         <div class="problem-selection-card">
                             <div class="problem-scroll-area" id="transcribed-problem-list"></div>
                             <div style="text-align:center; margin-top:20px;">
@@ -237,19 +251,6 @@
                             
                             <!-- 図鑑ボタン -->
                             <button onclick="showCollection()" class="main-btn" style="background:#00bcd4; box-shadow: 0 4px 0 #0097a7; margin-bottom: 15px;">📖 お宝図鑑をみる</button>
-
-                            <!-- ネル先生タイマー -->
-                            <div class="timer-box">
-                                <div style="font-size:0.8rem; margin-bottom:5px;">⏱️ ネル先生タイマー</div>
-                                <div id="study-timer" class="timer-display">00:00</div>
-                                <div class="timer-controls">
-                                    <button onclick="setTimer(1)" class="timer-btn">+1分</button>
-                                    <button onclick="setTimer(10)" class="timer-btn">+10分</button>
-                                    <button onclick="setTimer(30)" class="timer-btn">+30分</button>
-                                    <button onclick="resetTimer()" class="timer-btn" style="background:#b0bec5;">リセット</button>
-                                </div>
-                                <button id="timer-toggle-btn" onclick="toggleTimer()" class="main-btn pink-btn" style="margin-top:10px; width:100%;">スタート！</button>
-                            </div>
 
                             <button id="mic-btn" class="camera-btn-large" style="background:#ff85a1; box-shadow:none; margin-top:15px;" onclick="startLiveChat()">🎤 おはなしする</button>
                             
@@ -366,24 +367,21 @@
         </div>
     </div>
 
-    <!-- 記憶管理モーダル (タブ付き + Flex修正) -->
+    <!-- 記憶管理モーダル -->
     <div id="memory-manager-modal" class="memory-modal-overlay hidden">
         <div class="memory-modal-content">
             <h3 style="text-align:center; margin:0 0 10px 0; flex-shrink: 0;">🧠 記憶の整理</h3>
             
-            <!-- タブ -->
             <div style="display:flex; gap:10px; margin-bottom:15px; border-bottom:2px solid #eee; padding-bottom:5px; flex-shrink: 0;">
                 <button class="memory-tab active" onclick="switchMemoryTab('profile')" id="tab-profile">ネル先生のメモ帳</button>
                 <button class="memory-tab" onclick="switchMemoryTab('logs')" id="tab-logs">会話ログ</button>
             </div>
 
-            <!-- プロフィール表示エリア (Flexでスクロール制御) -->
             <div id="memory-view-profile" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
                 <p style="font-size:0.8rem; color:#666; flex-shrink: 0;">ネル先生が覚えているキミのことだにゃ。</p>
                 <div id="profile-container" class="memory-list" style="flex: 1; overflow-y: auto;"></div>
             </div>
 
-            <!-- 会話ログ表示エリア -->
             <div id="memory-view-logs" class="hidden" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
                 <p style="font-size:0.8rem; color:#666; flex-shrink: 0;">直近の会話ログだにゃ。</p>
                 <div id="memory-list-container" class="memory-list" style="flex: 1; overflow-y: auto;"></div>
@@ -395,13 +393,9 @@
 
     <!-- 図鑑（コレクション）表示モーダル -->
     <div id="collection-modal" class="memory-modal-overlay hidden">
-        <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4;"> <!-- 黄色っぽい背景で図鑑感 -->
+        <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4;">
             <h3 style="text-align:center; margin:0 0 15px 0; color:#f57f17; flex-shrink: 0;">📖 お宝図鑑</h3>
-            
-            <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap:10px; flex: 1; overflow-y:auto; padding:5px;">
-                <!-- ここにJSでアイテムが生成されます -->
-            </div>
-
+            <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap:10px; flex: 1; overflow-y:auto; padding:5px;"></div>
             <div style="text-align:center; margin-top:15px; flex-shrink: 0;">
                 <button onclick="closeCollection()" class="main-btn gray-btn" style="width:auto; padding:10px 30px;">閉じる</button>
             </div>
@@ -409,7 +403,6 @@
     </div>
 
     <!-- Firebase設定・ロジック読み込み -->
-    <!-- ★重要: memory.js は user.js より先に読み込む -->
     <script src="firebase-config.js"></script>
     <script src="memory.js"></script> 
     <script src="audio.js"></script>

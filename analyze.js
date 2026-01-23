@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v267.0: ボタン不具合修正・関数順序整理版) ---
+// --- analyze.js (完全版 v268.0: タイマー移動・スクロール位置復元) ---
 
 // ==========================================
 // 1. 最重要：UI操作・モード選択関数 (必ず最初に定義)
@@ -51,7 +51,7 @@ let studyTimerInterval = null;
 let studyTimerRunning = false;
 let studyTimerCheck = 0; 
 
-// ★ここが修正ポイント: selectModeを最優先で定義
+// selectModeを最優先で定義
 window.selectMode = function(m) {
     try {
         console.log(`[UI] selectMode called: ${m}`);
@@ -62,7 +62,6 @@ window.selectMode = function(m) {
             window.switchScreen('screen-main'); 
         } else {
             console.error("[UI] switchScreen not found!");
-            // フォールバック: 手動で切り替え
             document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
             document.getElementById('screen-main').classList.remove('hidden');
         }
@@ -76,7 +75,6 @@ window.selectMode = function(m) {
         const backBtn = document.getElementById('main-back-btn');
         if (backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = window.backToLobby; }
         
-        // チャット終了処理を安全に呼び出し
         if (typeof window.stopLiveChat === 'function') {
             window.stopLiveChat();
         }
@@ -93,7 +91,7 @@ window.selectMode = function(m) {
         if (m === 'chat') { 
             document.getElementById('chat-view').classList.remove('hidden'); 
             window.updateNellMessage("お宝を見せてにゃ！", "excited", false); 
-            updateTimerDisplay();
+            // chatモードにはタイマー表示しない（index.htmlで移動済み）
         } 
         else if (m === 'simple-chat') {
             document.getElementById('simple-chat-view').classList.remove('hidden');
@@ -847,7 +845,51 @@ window.checkOneProblem = function(id) {
 
 function updateMarkDisplay(id, isCorrect) { const container = document.getElementById(`grade-item-${id}`); const markElem = document.getElementById(`mark-${id}`); if (container && markElem) { if (isCorrect) { markElem.innerText = "⭕"; markElem.style.color = "#ff5252"; container.style.backgroundColor = "#fff5f5"; } else { markElem.innerText = "❌"; markElem.style.color = "#4a90e2"; container.style.backgroundColor = "#f0f8ff"; } } }
 window.updateGradingMessage = function() { let correctCount = 0; transcribedProblems.forEach(p => { if (p.is_correct) correctCount++; }); const scoreRate = correctCount / (transcribedProblems.length || 1); if (scoreRate === 1.0) updateNellMessage(`全問正解だにゃ！天才だにゃ〜！！`, "excited", false); else if (scoreRate >= 0.5) updateNellMessage(`あと${transcribedProblems.length - correctCount}問！直してみるにゃ！`, "happy", false); else updateNellMessage(`間違ってても大丈夫！入力し直してみて！`, "gentle", false); };
-window.backToProblemSelection = function() { document.getElementById('final-view').classList.add('hidden'); document.getElementById('hint-detail-container').classList.add('hidden'); document.getElementById('chalkboard').classList.add('hidden'); document.getElementById('answer-display-area').classList.add('hidden'); if (currentMode === 'grade') showGradingView(); else { renderProblemSelection(); updateNellMessage("他も見るにゃ？", "normal", false); } const backBtn = document.getElementById('main-back-btn'); if(backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = backToLobby; } };
+
+// ★修正: リストに戻る際、スクロール位置を復元する
+window.backToProblemSelection = function() { 
+    // 画面の非表示化
+    document.getElementById('final-view').classList.add('hidden'); 
+    document.getElementById('hint-detail-container').classList.add('hidden'); 
+    document.getElementById('chalkboard').classList.add('hidden'); 
+    document.getElementById('answer-display-area').classList.add('hidden'); 
+    
+    // モードに応じたリストの再描画
+    if (currentMode === 'grade') {
+        showGradingView(); 
+    } else { 
+        renderProblemSelection(); 
+        updateNellMessage("他も見るにゃ？", "normal", false); 
+    } 
+    
+    const backBtn = document.getElementById('main-back-btn'); 
+    if(backBtn) { 
+        backBtn.classList.remove('hidden'); 
+        backBtn.onclick = backToLobby; 
+    } 
+
+    // ★スクロール位置の復元処理
+    if (selectedProblem && selectedProblem.id) {
+        // DOMの描画完了を待つために少し遅延させる
+        setTimeout(() => {
+            const targetId = `grade-item-${selectedProblem.id}`;
+            const targetElement = document.getElementById(targetId);
+            if (targetElement) {
+                targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                
+                // 視覚的なフィードバック（一瞬ハイライト）
+                const originalBg = targetElement.style.backgroundColor;
+                targetElement.style.transition = "background-color 0.3s";
+                targetElement.style.backgroundColor = "#fff9c4"; // 薄い黄色でハイライト
+                
+                setTimeout(() => {
+                    targetElement.style.backgroundColor = originalBg; // 元に戻す
+                }, 800);
+            }
+        }, 100);
+    }
+};
+
 window.pressThanks = function() { window.backToProblemSelection(); };
 window.finishGrading = async function(btnElement) { if(btnElement) { btnElement.disabled = true; btnElement.innerText = "採点完了！"; } if (currentUser) { currentUser.karikari += 100; saveAndSync(); updateMiniKarikari(); showKarikariEffect(100); } await updateNellMessage("よくがんばったにゃ！カリカリ100個あげる！", "excited", false); setTimeout(() => { if(typeof backToLobby === 'function') backToLobby(true); }, 3000); };
 window.pressAllSolved = function(btnElement) { if(btnElement) { btnElement.disabled = true; btnElement.innerText = "すごい！"; } if (currentUser) { currentUser.karikari += 100; saveAndSync(); showKarikariEffect(100); updateMiniKarikari(); updateNellMessage("よくがんばったにゃ！カリカリ100個あげるにゃ！", "excited", false).then(() => { setTimeout(() => { if(typeof backToLobby === 'function') backToLobby(true); }, 3000); }); } };
