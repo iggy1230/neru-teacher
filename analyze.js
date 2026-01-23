@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v268.0: Blob対応・受信堅牢化版) ---
+// --- analyze.js (完全版 v269.0: エラー通知強化版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -988,8 +988,24 @@ async function startLiveChat() {
             } catch (e) { console.error("WS Message Error:", e); } 
         }; 
         
-        liveSocket.onclose = () => stopLiveChat(); 
-        liveSocket.onerror = () => stopLiveChat(); 
+        // ★修正: 切断時フィードバック
+        liveSocket.onclose = (event) => {
+            console.log("WebSocket Closed:", event.code, event.reason);
+            stopLiveChat();
+            
+            // 意図しない切断 (エラーコードやタイムアウト)
+            if (event.code !== 1000) { 
+                updateNellMessage("回線が混み合ってて切れちゃったにゃ... 少し待ってからまた話しかけてにゃ。", "thinking", false, false);
+                alert("AIサーバーが混み合っているため切断されました。\nしばらく時間をおいて試してください。");
+            }
+        };
+        
+        liveSocket.onerror = (e) => {
+            console.error("WebSocket Error:", e);
+            stopLiveChat();
+            updateNellMessage("エラーが発生したにゃ...", "thinking", false, false);
+        };
+
     } catch (e) { stopLiveChat(); } 
 }
 

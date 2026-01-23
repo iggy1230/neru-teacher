@@ -1,4 +1,4 @@
-// --- server.js (完全版 v268.0: キャメルケース・プロトコル完全準拠版) ---
+// --- server.js (完全版 v269.0: API負荷分散・安定化版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -92,9 +92,9 @@ app.post('/synthesize', async (req, res) => {
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
-        // ★MODEL指定: 記憶更新は高速なFlashで十分
+        // ★修正: 負荷分散のため軽量な gemini-1.5-flash に変更
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.0-flash-exp", 
+            model: "gemini-1.5-flash", 
             generationConfig: { responseMimeType: "application/json" }
         });
 
@@ -161,7 +161,7 @@ app.post('/update-memory', async (req, res) => {
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, name } = req.body;
-        // ★MODEL指定: 宿題分析は最高精度の gemini-2.5-pro
+        // ★宿題分析は精度重視のため gemini-2.5-pro を維持
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.5-pro", 
             generationConfig: { responseMimeType: "application/json", temperature: 0.0 }
@@ -241,8 +241,8 @@ app.post('/lunch-reaction', async (req, res) => {
         const { count, name } = req.body;
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
         const isSpecial = (count % 10 === 0);
-        // ★MODEL指定: 反応系はFlash
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+        // ★修正: 負荷分散のため軽量な gemini-1.5-flash に変更
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         
         let prompt = isSpecial 
             ? `あなたは猫の「ネル先生」。生徒の「${name}さん」から記念すべき${count}個目の給食（カリカリ）をもらいました！
@@ -265,8 +265,8 @@ app.post('/lunch-reaction', async (req, res) => {
 app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;
-        // ★MODEL指定: 反応系はFlash
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+        // ★修正: 負荷分散のため軽量な gemini-1.5-flash に変更
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         let prompt = "";
         let mood = "excited";
 
@@ -310,6 +310,7 @@ wss.on('connection', async (clientWs, req) => {
             geminiWs = new WebSocket(GEMINI_URL);
             
             geminiWs.on('open', () => {
+                console.log(`[Gemini WS] Connected for user: ${name}`);
                 const systemInstructionText = `
                 あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。相手は小学${grade}年生の${name}さん。
 
@@ -368,10 +369,10 @@ wss.on('connection', async (clientWs, req) => {
 
                 geminiWs.send(JSON.stringify({
                     setup: {
-                        // ★MODEL指定: リアルタイム会話はFlash-Exp
+                        // ★WebSocketはリアルタイム性必須のため gemini-2.0-flash-exp を維持
                         model: "models/gemini-2.0-flash-exp",
                         
-                        // ★重要: Gemini APIのRequestはキャメルケース (camelCase) 必須
+                        // ★キャメルケース (camelCase) 必須
                         generationConfig: { 
                             responseModalities: ["TEXT", "AUDIO"], 
                             speechConfig: { 
@@ -454,7 +455,13 @@ wss.on('connection', async (clientWs, req) => {
                 }
             });
 
-            geminiWs.on('error', (e) => console.error("Gemini WS Error:", e));
+            geminiWs.on('error', (e) => {
+                console.error("Gemini WS Error (Rate Limit etc.):", e);
+                // 429エラー等をクライアントに通知する
+                if (clientWs.readyState === WebSocket.OPEN) {
+                    clientWs.close(1011, "Gemini Server Error");
+                }
+            });
             geminiWs.on('close', () => console.log("Gemini WS Closed"));
 
         } catch(e) { 
