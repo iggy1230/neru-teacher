@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v264.0: プロトコル完全準拠・受信強化版) ---
+// --- analyze.js (完全版 v265.0: 受信強化・AudioContext再開版) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -893,64 +893,43 @@ async function startLiveChat() {
                     return;
                 }
 
-                // 2. Geminiからのコンテンツ処理 (スネークケース / キャメルケース対応)
-                const serverContent = data.server_content || data.serverContent;
-                if (!serverContent) {
-                    // ツール呼び出し検出 (クライアント側への通知)
-                    if (data.type === "save_to_collection") {
-                        console.log(`[Collection] 📥 Tool Call detected: ${data.itemName}`);
-                        latestDetectedName = data.itemName;
+                // 2. データ受信処理 (イベント駆動型)
+                if (data.type === "text") {
+                    console.log("ネル先生の言葉:", data.text);
+                    
+                    // タグ検出・処理
+                    const match = data.text.match(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/i);
+                    if (match) {
+                        const content = match[1].trim();
+                        document.getElementById('inline-whiteboard').classList.remove('hidden');
+                        document.getElementById('whiteboard-content').innerText = content;
                     }
-                    return;
+
+                    saveToNellMemory('nell', data.text);
+                    updateNellMessage(data.text, "normal", false, false);
+                }
+                
+                else if (data.type === "audio") {
+                    playLivePcmAudio(data.audio);
+                }
+                
+                else if (data.type === "save_to_collection") {
+                    console.log(`[Collection] 📥 Tool Call detected: ${data.itemName}`);
+                    latestDetectedName = data.itemName;
                 }
 
-                // モデルのターン（返答）がある場合
-                const modelTurn = serverContent.model_turn || serverContent.modelTurn;
-                if (modelTurn && modelTurn.parts) {
-                    for (const part of modelTurn.parts) {
-                        
-                        // --- 音声再生 (inline_data / inlineData) ---
-                        const inlineData = part.inline_data || part.inlineData;
-                        if (inlineData && inlineData.data) {
-                            playLivePcmAudio(inlineData.data);
-                        }
-
-                        // --- 字幕表示 (text) ---
-                        if (part.text) {
-                            console.log("ネル先生の言葉:", part.text);
-                            
-                            // タグ検出・処理
-                            const match = part.text.match(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/i);
-                            if (match) {
-                                const content = match[1].trim();
-                                document.getElementById('inline-whiteboard').classList.remove('hidden');
-                                document.getElementById('whiteboard-content').innerText = content;
-                            }
-                            
-                            // 名前検出（図鑑用）
-                            let itemName = null;
-                            const matchJP = part.text.match(/【図鑑登録[:：]\s*(.+?)】/);
-                            if (matchJP) itemName = matchJP[1];
-                            if (!itemName) {
-                                const matchEN = part.text.match(/\[CAPTURE\s*[:：]\s*(.+?)\]/i);
-                                if(matchEN) itemName = matchEN[1];
-                            }
-                            if (itemName) latestDetectedName = itemName.trim();
-
-                            saveToNellMemory('nell', part.text); 
-                            updateNellMessage(part.text, "normal", false, false);
-                        }
-                    }
-                }
-
-                // 3. 割り込み発生時の処理
-                if (serverContent.interrupted) {
+                // Raw Data (analyze.jsの既存割り込み判定などはサーバー側で処理済みだが念のため)
+                // このロジックではserver.js側でinterruptを検知してないので、
+                // 必要ならserver.jsのRawData転送で補完するか、analyze.jsでRawDataも受ける
+                // 今回は server.js が最後に raw data も送っているので、そちらもケアする
+                const serverContent = data.serverContent || data.server_content;
+                if (serverContent && serverContent.interrupted) {
                     console.log("⚠️ 割り込み発生");
-                    stopAudioPlayback(); // 既存の停止関数
+                    stopAudioPlayback();
                 }
 
                 // ターン完了時に確定処理 (図鑑登録)
-                if (serverContent.turn_complete || serverContent.turnComplete) {
+                if (serverContent && (serverContent.turn_complete || serverContent.turnComplete)) {
                     if (latestDetectedName && window.NellMemory) {
                         console.log(`[Collection] 🔄 Turn Complete. Committing name: ${latestDetectedName}`);
                         window.NellMemory.updateLatestCollectionItem(currentUser.id, latestDetectedName);

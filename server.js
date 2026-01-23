@@ -1,4 +1,4 @@
-// --- server.js (完全版 v264.0: プロトコル完全準拠版) ---
+// --- server.js (完全版 v265.0: 音声・字幕パイプライン確立版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -323,15 +323,13 @@ wss.on('connection', async (clientWs, req) => {
                 4. 給食(餌)のカリカリが大好物にゃ。
                 5. とにかく何でも知っているにゃ。
 
-                【最重要：図鑑登録のルール】
-                ユーザーから画像が送信された場合（Image Chunkを受信した場合）：
-                1. **画像の特定**: 画像内の物体を客観的に特定し、「これは○○だにゃ！」と明るく反応してください。
-                2. **【ツール実行の義務】**: 感想を言うのと同時に、**必ずツール \`register_collection_item(item_name)\` を実行してください。**
+                【最重要：図鑑登録と会話のルール】
+                ユーザーから画像が送信された場合、または会話をする場合：
+                1. **【重要】ツールを呼び出す前に、必ず人間向けの発話テキストを1文出力してください。**
+                   (例：「これはリンゴだにゃ！」「どれどれ…見てみるにゃ！」など)
+                   無言でツールだけを実行することは絶対に避けてください。
                 
-                **厳守事項:**
-                - 口で名前を言うだけではダメです。必ずツールを呼んでシステムに名前を渡してください。
-                - 名前が明確でない場合でも、見た目の特徴（例：「青い丸いもの」）を引数にしてツールを実行してください。
-                - ユーザーが「登録して」と言わなくても、画像を見たら自動的に登録ツールを回してください。
+                2. **画像の特定と登録**: 画像内の物体を特定し、「これは○○だにゃ！」と反応した上で、必ずツール \`register_collection_item(item_name)\` を実行してください。
 
                 【生徒についての記憶】
                 ${statusContext}
@@ -366,12 +364,12 @@ wss.on('connection', async (clientWs, req) => {
                     }
                 ];
 
-                // ★修正点: キー名をキャメルケースにし、公式プロトコルに完全準拠させる
+                // ★修正: responseModalities で TEXT と AUDIO を明示
                 geminiWs.send(JSON.stringify({
                     setup: {
                         model: "models/gemini-2.0-flash-exp",
                         generationConfig: { 
-                            responseModalities: ["TEXT", "AUDIO"], // ★修正: テキストと音声両方を要求
+                            responseModalities: ["TEXT", "AUDIO"], 
                             speechConfig: { 
                                 voiceConfig: { 
                                     prebuiltVoiceConfig: { voiceName: "Aoede" } 
@@ -395,12 +393,33 @@ wss.on('connection', async (clientWs, req) => {
                 try {
                     const response = JSON.parse(data);
                     
-                    // ツール呼び出しの処理
+                    // ★重要: クライアントへのデータ転送パイプライン
+                    // raw dataも転送しつつ、明示的なイベントも送る
+                    
                     if (response.serverContent?.modelTurn?.parts || response.server_content?.model_turn?.parts) {
                         const parts = response.serverContent?.modelTurn?.parts || response.server_content?.model_turn?.parts;
+                        
                         parts.forEach(part => {
-                            if (part.functionCall || part.function_call) {
-                                const call = part.functionCall || part.function_call;
+                            // 1. テキスト (字幕)
+                            if (part.text && clientWs.readyState === WebSocket.OPEN) {
+                                clientWs.send(JSON.stringify({
+                                    type: "text",
+                                    text: part.text
+                                }));
+                            }
+
+                            // 2. 音声 (inlineData)
+                            const inlineData = part.inlineData || part.inline_data;
+                            if (inlineData && inlineData.mimeType?.startsWith("audio/") && clientWs.readyState === WebSocket.OPEN) {
+                                clientWs.send(JSON.stringify({
+                                    type: "audio",
+                                    audio: inlineData.data
+                                }));
+                            }
+
+                            // 3. ツール呼び出し
+                            const call = part.functionCall || part.function_call;
+                            if (call) {
                                 if (call.name === "register_collection_item") {
                                     const itemName = call.args.item_name;
                                     console.log(`[Collection] 🤖 AI Tool Called: register_collection_item for "${itemName}"`);
@@ -423,6 +442,7 @@ wss.on('connection', async (clientWs, req) => {
                                     }));
                                 }
                                 else if (call.name === "show_kanji") {
+                                    // 漢字はテキスト解析側で処理済み
                                     geminiWs.send(JSON.stringify({
                                         toolResponse: {
                                             functionResponses: [{
@@ -436,8 +456,8 @@ wss.on('connection', async (clientWs, req) => {
                             }
                         });
                     }
-                    
-                    // 音声やテキストデータはそのままクライアントへ転送
+
+                    // Raw Dataも念のため転送 (analyze.jsの既存ロジック用)
                     if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data);
                     
                 } catch (e) {
@@ -479,7 +499,6 @@ wss.on('connection', async (clientWs, req) => {
             if (msg.clientContent) {
                 geminiWs.send(JSON.stringify({ client_content: msg.clientContent }));
             }
-            // ★修正点: 音声データ送信時のキーを realtimeInput / mediaChunks に修正
             if (msg.base64Audio) {
                 geminiWs.send(JSON.stringify({ 
                     realtimeInput: { 
