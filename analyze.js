@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v264.0: リアルタイム字幕 & 音声同時再生) ---
+// --- analyze.js (完全版 v265.0: リアルタイム字幕 & 音声同時再生) ---
 
 // ==========================================
 // 1. グローバル変数 & 初期化
@@ -207,11 +207,12 @@ function showSubtitle(text) {
     displayText = displayText.replace(/【.*?】/g, "").replace(/\[CAPTURE.*?\]/gi, "").trim();
     if (!displayText) return;
 
-    let el = document.getElementById('neru-subtitle');
+    let el = document.getElementById('nell-subtitle');
     if (!el) {
         el = document.createElement('div');
-        el.id = 'neru-subtitle';
-        el.style.cssText = "position:fixed; bottom:140px; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.9); color:#333; padding:10px 20px; border-radius:20px; border:2px solid #ff85a1; z-index:10000; font-size:1.1rem; font-weight:bold; pointer-events:none; transition: opacity 0.3s; max-width:90%; text-align:center; box-shadow:0 4px 10px rgba(0,0,0,0.1);";
+        el.id = 'nell-subtitle';
+        // ピンクで可愛くデザイン
+        el.style.cssText = "position:fixed; bottom:130px; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.9); border:3px solid #ff8fa3; color:#333; padding:12px 24px; border-radius:30px; z-index:10000; font-size:1.3rem; font-weight:bold; box-shadow:0 4px 15px rgba(0,0,0,0.1); pointer-events:none; transition:opacity 0.3s; max-width:85%; text-align:center; min-width:200px;";
         document.body.appendChild(el);
     }
     
@@ -219,19 +220,12 @@ function showSubtitle(text) {
     el.innerText += displayText; 
     el.style.opacity = "1";
 
-    // 吹き出し（会話ログ）にも反映
-    updateNellMessage(el.innerText, "normal", false, false);
-
     // 一定時間更新がなければ消す
     if (subtitleTimer) clearTimeout(subtitleTimer);
     subtitleTimer = setTimeout(() => {
         el.style.opacity = "0";
-        // 会話ログ保存（一連の発言が終わったとみなす）
-        if (el.innerText.length > 0) {
-            saveToNellMemory('nell', el.innerText);
-        }
         setTimeout(() => { el.innerText = ""; }, 300);
-    }, 3000);
+    }, 4000);
 }
 
 // ==========================================

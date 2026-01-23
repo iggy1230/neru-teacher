@@ -1,4 +1,4 @@
-// --- server.js (完全版 v264.0: テキスト・音声同時配信対応) ---
+// --- server.js (完全版 v265.0: テキスト・音声完全同時対応) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -368,10 +368,9 @@ wss.on('connection', async (clientWs, req) => {
 
                 geminiWs.send(JSON.stringify({
                     setup: {
-                        // ★MODEL指定: リアルタイム会話はFlash-Exp
                         model: "models/gemini-2.0-flash-exp",
                         generationConfig: { 
-                            // ★修正ポイント: AUDIOとTEXTを両方受け取る設定に変更
+                            // ★テキストと音声の両方を要求
                             responseModalities: ["AUDIO", "TEXT"], 
                             speech_config: { 
                                 voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }, 
