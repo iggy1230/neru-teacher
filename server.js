@@ -1,4 +1,4 @@
-// --- server.js (完全版 v277.0: チャット機能HTTP統一・画像対応) ---
+// --- server.js (完全版 v278.0: チャット応答の構造化・板書分離) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -92,7 +92,6 @@ app.post('/synthesize', async (req, res) => {
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
-        // ★MODEL指定: その他はFlash-Exp
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp", 
             generationConfig: { responseMimeType: "application/json" }
@@ -281,28 +280,30 @@ app.post('/identify-item', async (req, res) => {
 // --- ★ HTTPチャット会話 (お宝図鑑・埋め込みチャット共用) ---
 app.post('/chat-dialogue', async (req, res) => {
     try {
-        const { text, name, image } = req.body; // 画像対応
-        // ★MODEL指定: その他はFlash-Exp
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+        const { text, name, image } = req.body;
+        // ★MODEL指定: その他はFlash-Exp (JSONモード有効化)
+        const model = genAI.getGenerativeModel({ 
+            model: "gemini-2.0-flash-exp",
+            generationConfig: { responseMimeType: "application/json" }
+        });
 
         let prompt = `
         あなたは猫の「ネル先生」です。相手は「${name}」さん。
-        以下のユーザーの発言に対して、親しみやすく、子供にもわかるように答えてください。
+        以下のユーザーの発言（または画像）に対して、子供にもわかるように答えてください。
+
+        【出力フォーマット (JSON)】
+        必ず以下のJSON形式で出力してください。
+        {
+            "speech": "ネル先生のセリフ。語尾は必ず「にゃ」や「だにゃ」。親しみやすく。",
+            "board": "黒板に書く内容。ここには**セリフや口調を含めない**こと。数式、答え、漢字、箇条書きの解説など、学習に必要な情報のみを簡潔に書く。該当するものがない場合は空文字で良い。"
+        }
         
-        【ルール】
-        - 語尾は必ず「にゃ」や「だにゃ」をつける。
-        - 相手を褒めたり、共感したりする優しい口調で。
-        - 30文字〜60文字程度で簡潔に。
+        ユーザー発言: ${text}
         `;
 
-        // 画像付き質問への対応
         if (image) {
-             prompt += `
-             ユーザーから画像が送られました。この画像の内容について、子供の質問に答えるように解説してください。
-             `;
+             prompt += `\n（画像が添付されています。画像の内容について解説してください）`;
         }
-
-        prompt += `\nユーザー発言: ${text}`;
 
         let result;
         if (image) {
@@ -314,12 +315,22 @@ app.post('/chat-dialogue', async (req, res) => {
              result = await model.generateContent(prompt);
         }
         
-        const reply = result.response.text().trim();
-        res.json({ reply: reply });
+        const responseText = result.response.text().trim();
+        // JSONパース
+        let jsonResponse;
+        try {
+            const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+            jsonResponse = JSON.parse(cleanText);
+        } catch (e) {
+            // パース失敗時のフォールバック
+            jsonResponse = { speech: responseText, board: "" };
+        }
+        
+        res.json(jsonResponse);
 
     } catch (error) {
         console.error("Chat API Error:", error);
-        res.status(500).json({ reply: "ごめん、ちょっと聞こえなかったにゃ。" });
+        res.status(500).json({ speech: "ごめん、ちょっと聞こえなかったにゃ。", board: "" });
     }
 });
 

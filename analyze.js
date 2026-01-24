@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v277.1: カメラ起動修正・黒板表示対応) ---
+// --- analyze.js (完全版 v278.0: チャット板書分離対応) ---
 
 // ==========================================
 // 1. 最重要：UI操作・モード選択関数
@@ -193,13 +193,21 @@ function startAlwaysOnListening() {
             
             if(res.ok) {
                 const data = await res.json();
-                await window.updateNellMessage(data.reply, "normal", true, true);
                 
-                // 音声会話の結果も黒板に出す（見やすさのため）
+                // ★修正: JSONレスポンス (speechとboardを分離)
+                const speechText = data.speech || data.reply || "ごめんにゃ、よくわからなかったにゃ"; // 後方互換
+                await window.updateNellMessage(speechText, "normal", true, true);
+                
                 const embedBoard = document.getElementById('embedded-chalkboard');
-                if (embedBoard && data.reply) {
-                    embedBoard.innerText = data.reply;
-                    embedBoard.classList.remove('hidden');
+                if (embedBoard) {
+                    if (data.board && data.board.trim() !== "") {
+                        embedBoard.innerText = data.board;
+                        embedBoard.classList.remove('hidden');
+                    } else {
+                        // 板書がない場合は既存のものを消すか維持するかだが、
+                        // 質問が変われば消すのが自然
+                        // embedBoard.classList.add('hidden'); // 必要ならコメントアウト解除
+                    }
                 }
             }
         } catch(e) {
@@ -293,7 +301,6 @@ window.startPreviewCamera = async function(videoId = 'live-chat-video', containe
 
     } catch (e) {
         console.warn("[Preview] Camera init failed:", e);
-        // カメラがない場合のアラートは控えめに（埋め込みで自動起動するため）
     }
 };
 
@@ -804,13 +811,14 @@ async function captureAndSendLiveImageHttp() {
         if (!res.ok) throw new Error("Server response not ok");
         const data = await res.json();
         
-        // 音声回答
-        await window.updateNellMessage(data.reply, "happy", true, true);
+        // ★修正: JSONレスポンスのspeechとboardを適切に処理
+        const speechText = data.speech || data.reply || "教えてあげるにゃ！";
+        await window.updateNellMessage(speechText, "happy", true, true);
         
-        // ★黒板に回答テキストを表示
+        // 黒板に回答テキストを表示
         const embedBoard = document.getElementById('embedded-chalkboard');
-        if (embedBoard) {
-            embedBoard.innerText = data.reply;
+        if (embedBoard && data.board && data.board.trim() !== "") {
+            embedBoard.innerText = data.board;
             embedBoard.classList.remove('hidden');
         }
 
