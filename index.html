@@ -62,7 +62,7 @@
             <div class="title-btn-container">
                 <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
             </div>
-            <div class="version-tag">Build: v275.2-HTTP-Chat</div>
+            <div class="version-tag">Build: v276.3-Fix-Upload</div>
         </section>
 
         <!-- 1. 校門 (ユーザー選択) -->
@@ -127,7 +127,6 @@
                 <button onclick="showGame()" class="main-btn yellow-btn">🎮 カリカリ・キャッチ</button>
                 <button onclick="selectMode('simple-chat')" class="main-btn green-btn">🎤 こじんめんだん</button>
                 
-                <!-- 名称変更: 個別指導 -> お宝図鑑 -->
                 <button onclick="selectMode('chat')" class="main-btn" style="background:#5c6bc0; box-shadow: 0 4px 0 #3949ab;">💎 ネル先生のお宝図鑑</button>
                 
                 <button onclick="selectMode('lunch')" class="main-btn pink-btn">🍽️ おいしい給食</button>
@@ -173,8 +172,9 @@
                         <div class="upload-buttons-container">
                             <button id="start-webcam-btn" class="camera-btn-large" style="background:#ff9800;">📹 アプリで撮影</button>
                             <div style="display:flex; gap:10px;">
-                                <label class="camera-btn-large" style="flex:1;">📷 標準カメラ<input type="file" id="student-photo-input-camera" accept="image/*" style="display:none;"></label>
-                                <label class="camera-btn-large" style="flex:1; background:#4a90e2;">📁 アルバム<input type="file" id="student-photo-input-album" accept="image/*" style="display:none;"></label>
+                                <!-- ★修正: IDを入学手続き用と区別して一意にする -->
+                                <label class="camera-btn-large" style="flex:1;">📷 標準カメラ<input type="file" id="hw-input-camera" accept="image/*" style="display:none;"></label>
+                                <label class="camera-btn-large" style="flex:1; background:#4a90e2;">📁 アルバム<input type="file" id="hw-input-album" accept="image/*" style="display:none;"></label>
                             </div>
                         </div>
                     </div>
