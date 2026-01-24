@@ -19,24 +19,8 @@
     
     <style>
         .hidden { display: none !important; }
-        .timer-box {
-            background: #fff; border: 3px solid #ff85a1; border-radius: 15px;
-            padding: 10px; margin: 10px 0; text-align: center;
-        }
-        .timer-display { font-size: 2rem; font-weight: 900; color: #333; font-family: monospace; }
-        .timer-controls { display: flex; justify-content: center; gap: 5px; margin-top: 5px; flex-wrap: wrap; }
-        .timer-btn {
-            background: #ffb74d; color: white; border: none; padding: 8px 12px;
-            border-radius: 20px; font-weight: bold; cursor: pointer; font-size: 0.9rem;
-        }
-        .mini-cam-btn {
-            background: #4a90e2; color: white; border: none; padding: 12px 15px;
-            border-radius: 20px; font-weight: bold; cursor: pointer; width: 100%;
-            margin-top: 10px; box-shadow: 0 4px 0 #2a609e; display: flex;
-            align-items: center; justify-content: center; gap: 8px;
-        }
-        .mini-cam-btn:active { transform: translateY(2px); box-shadow: 0 2px 0 #2a609e; }
         
+        /* ライブチャット用ビデオ表示 */
         .live-chat-video-wrapper {
             width: 100%; max-width: 320px; aspect-ratio: 4/3;
             border-radius: 10px; overflow: hidden;
@@ -61,8 +45,14 @@
     <canvas id="hanamaru-canvas"></canvas>
     <canvas id="deco-canvas" style="display:none;"></canvas>
     
+    <!-- カリカリ表示（右上） -->
     <div id="mini-karikari-display" class="mini-karikari-display hidden">
         <span>🍖</span><span id="mini-karikari-count">0</span>
+    </div>
+
+    <!-- ★追加: 常駐ミニタイマー（左上） -->
+    <div id="mini-timer-display" class="mini-timer-display hidden" onclick="openTimerModal()">
+        <span>⏱️</span> <span id="mini-timer-text">00:00</span>
     </div>
 
     <div id="app-container">
@@ -72,7 +62,7 @@
             <div class="title-btn-container">
                 <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
             </div>
-            <div class="version-tag">Build: v268.0-TimerMove</div>
+            <div class="version-tag">Build: v269.0-GlobalTimer</div>
         </section>
 
         <!-- 1. 校門 (ユーザー選択) -->
@@ -128,6 +118,9 @@
             </div>
             <div class="karikari-counter">🍖 カリカリ: <span id="karikari-count">0</span></div>
             <div class="lobby-menu">
+                <!-- ★ここにタイマーボタンを追加 -->
+                <button onclick="openTimerModal()" class="main-btn pink-btn" style="background:#ff7043; box-shadow: 0 4px 0 #d84315;">⏱️ ネル先生タイマー</button>
+
                 <button onclick="selectMode('explain')" class="main-btn blue-btn">💡 教えてネル先生</button>
                 <button onclick="selectMode('grade')" class="main-btn red-btn">💯 採点ネル先生</button>
                 <button onclick="selectMode('review')" class="main-btn orange-btn">🔥 復習ノート</button>
@@ -153,7 +146,7 @@
                 <div class="nell-chat">
                     <div class="nell-avatar-wrap">
                         <img src="nell-normal.png" class="nell-img" id="nell-face">
-                        <!-- ハートエフェクト用のコンテナ -->
+                        <!-- ハートエフェクト用のコンテナ (ポインターイベント無効化済み) -->
                         <div id="heart-container" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;"></div>
                     </div>
                     <div class="chat-bubble"><p id="nell-text"></p></div>
@@ -192,21 +185,7 @@
                         <p id="thinking-status">考え中... <span id="progress-percent">0</span>%</p>
                     </div>
 
-                    <!-- 問題選択（教えてネル先生）画面 -->
                     <div id="problem-selection-view" class="hidden">
-                        <!-- ★タイマーをここに配置 -->
-                        <div class="timer-box">
-                            <div style="font-size:0.8rem; margin-bottom:5px;">⏱️ ネル先生タイマー</div>
-                            <div id="study-timer" class="timer-display">00:00</div>
-                            <div class="timer-controls">
-                                <button onclick="setTimer(1)" class="timer-btn">+1分</button>
-                                <button onclick="setTimer(10)" class="timer-btn">+10分</button>
-                                <button onclick="setTimer(30)" class="timer-btn">+30分</button>
-                                <button onclick="resetTimer()" class="timer-btn" style="background:#b0bec5;">リセット</button>
-                            </div>
-                            <button id="timer-toggle-btn" onclick="toggleTimer()" class="main-btn pink-btn" style="margin-top:10px; width:100%;">スタート！</button>
-                        </div>
-
                         <div class="problem-selection-card">
                             <div class="problem-scroll-area" id="transcribed-problem-list"></div>
                             <div style="text-align:center; margin-top:20px;">
@@ -367,21 +346,24 @@
         </div>
     </div>
 
-    <!-- 記憶管理モーダル -->
+    <!-- 記憶管理モーダル (タブ付き + Flex修正) -->
     <div id="memory-manager-modal" class="memory-modal-overlay hidden">
         <div class="memory-modal-content">
             <h3 style="text-align:center; margin:0 0 10px 0; flex-shrink: 0;">🧠 記憶の整理</h3>
             
+            <!-- タブ -->
             <div style="display:flex; gap:10px; margin-bottom:15px; border-bottom:2px solid #eee; padding-bottom:5px; flex-shrink: 0;">
                 <button class="memory-tab active" onclick="switchMemoryTab('profile')" id="tab-profile">ネル先生のメモ帳</button>
                 <button class="memory-tab" onclick="switchMemoryTab('logs')" id="tab-logs">会話ログ</button>
             </div>
 
+            <!-- プロフィール表示エリア (Flexでスクロール制御) -->
             <div id="memory-view-profile" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
                 <p style="font-size:0.8rem; color:#666; flex-shrink: 0;">ネル先生が覚えているキミのことだにゃ。</p>
                 <div id="profile-container" class="memory-list" style="flex: 1; overflow-y: auto;"></div>
             </div>
 
+            <!-- 会話ログ表示エリア -->
             <div id="memory-view-logs" class="hidden" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
                 <p style="font-size:0.8rem; color:#666; flex-shrink: 0;">直近の会話ログだにゃ。</p>
                 <div id="memory-list-container" class="memory-list" style="flex: 1; overflow-y: auto;"></div>
@@ -393,16 +375,45 @@
 
     <!-- 図鑑（コレクション）表示モーダル -->
     <div id="collection-modal" class="memory-modal-overlay hidden">
-        <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4;">
+        <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4;"> <!-- 黄色っぽい背景で図鑑感 -->
             <h3 style="text-align:center; margin:0 0 15px 0; color:#f57f17; flex-shrink: 0;">📖 お宝図鑑</h3>
-            <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap:10px; flex: 1; overflow-y:auto; padding:5px;"></div>
+            
+            <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap:10px; flex: 1; overflow-y:auto; padding:5px;">
+                <!-- ここにJSでアイテムが生成されます -->
+            </div>
+
             <div style="text-align:center; margin-top:15px; flex-shrink: 0;">
                 <button onclick="closeCollection()" class="main-btn gray-btn" style="width:auto; padding:10px 30px;">閉じる</button>
             </div>
         </div>
     </div>
 
+    <!-- ★追加: タイマーモーダル -->
+    <div id="timer-modal" class="memory-modal-overlay hidden">
+        <div class="memory-modal-content" style="height: auto; max-height: auto;">
+            <h3 style="text-align:center; margin:0 0 10px 0; color:#ff7043;">⏱️ ネル先生タイマー</h3>
+            
+            <div class="timer-box" style="margin: 0; box-shadow: none; border: none;">
+                <div id="modal-timer-display" class="timer-display" style="font-size: 3rem;">00:00</div>
+                
+                <div class="timer-controls" style="margin-top: 15px;">
+                    <button onclick="setTimer(1)" class="timer-btn">+1分</button>
+                    <button onclick="setTimer(10)" class="timer-btn">+10分</button>
+                    <button onclick="setTimer(30)" class="timer-btn">+30分</button>
+                    <button onclick="resetTimer()" class="timer-btn" style="background:#b0bec5;">リセット</button>
+                </div>
+                
+                <button id="timer-toggle-btn" onclick="toggleTimer()" class="main-btn pink-btn" style="margin-top:20px; width:100%;">スタート！</button>
+            </div>
+
+            <div style="text-align:center; margin-top:15px;">
+                <button onclick="closeTimerModal()" class="main-btn gray-btn" style="width:auto; padding:10px 30px;">閉じる</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Firebase設定・ロジック読み込み -->
+    <!-- ★重要: memory.js は user.js より先に読み込む -->
     <script src="firebase-config.js"></script>
     <script src="memory.js"></script> 
     <script src="audio.js"></script>

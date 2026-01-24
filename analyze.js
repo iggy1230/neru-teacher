@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v268.0: タイマー移動・スクロール位置復元) ---
+// --- analyze.js (完全版 v269.0: 常駐型タイマー統合版) ---
 
 // ==========================================
 // 1. 最重要：UI操作・モード選択関数 (必ず最初に定義)
@@ -83,6 +83,9 @@ window.selectMode = function(m) {
         const icon = document.querySelector('.nell-avatar-wrap img'); 
         if(icon) icon.src = "nell-normal.png";
         
+        // ミニタイマーの表示制御 (既に走っている場合は表示したまま)
+        // ここではあえて操作しない（常に表示）
+        
         const miniKarikari = document.getElementById('mini-karikari-display');
         if(miniKarikari) miniKarikari.classList.remove('hidden');
         if(typeof updateMiniKarikari === 'function') updateMiniKarikari();
@@ -91,7 +94,6 @@ window.selectMode = function(m) {
         if (m === 'chat') { 
             document.getElementById('chat-view').classList.remove('hidden'); 
             window.updateNellMessage("お宝を見せてにゃ！", "excited", false); 
-            // chatモードにはタイマー表示しない（index.htmlで移動済み）
         } 
         else if (m === 'simple-chat') {
             document.getElementById('simple-chat-view').classList.remove('hidden');
@@ -274,7 +276,20 @@ window.setSubject = function(s) {
 
 window.setAnalyzeMode = function(type) { analysisType = 'precision'; };
 
-// タイマー
+// ==========================================
+// ★ タイマー関連 (New: 常駐型)
+// ==========================================
+
+// モーダル制御
+window.openTimerModal = function() {
+    document.getElementById('timer-modal').classList.remove('hidden');
+    updateTimerDisplay(); // 開いたときに表示更新
+};
+
+window.closeTimerModal = function() {
+    document.getElementById('timer-modal').classList.add('hidden');
+};
+
 window.setTimer = function(minutes) {
     if (studyTimerRunning) return;
     studyTimerValue += minutes * 60;
@@ -291,29 +306,31 @@ window.resetTimer = function() {
     studyTimerValue = 0;
     studyTimerCheck = 0;
     updateTimerDisplay();
+    // リセット時はミニ表示を消す
+    document.getElementById('mini-timer-display').classList.add('hidden');
 };
 
 window.toggleTimer = function() {
-    if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) {
-        alert("タイマーの応援を聞くには、先に「🎤 おはなしする」ボタンを押してネル先生とつながってにゃ！");
-        return;
-    }
-
     if (studyTimerRunning) {
+        // 停止処理
         clearInterval(studyTimerInterval);
         studyTimerRunning = false;
         document.getElementById('timer-toggle-btn').innerText = "再開する";
         document.getElementById('timer-toggle-btn').className = "main-btn blue-btn";
     } else {
+        // 開始処理
         if (studyTimerValue <= 0) return alert("時間をセットしてにゃ！");
+        
         studyTimerRunning = true;
         studyTimerCheck = 0;
         document.getElementById('timer-toggle-btn').innerText = "一時停止";
         document.getElementById('timer-toggle-btn').className = "main-btn gray-btn";
         
-        if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
-            sendSilentPrompt("勉強タイマーをスタートしたよ。短く応援して。");
-        }
+        // ミニタイマーを表示
+        document.getElementById('mini-timer-display').classList.remove('hidden');
+        
+        // モーダルを閉じる
+        closeTimerModal();
 
         studyTimerInterval = setInterval(() => {
             if (studyTimerValue > 0) {
@@ -321,6 +338,7 @@ window.toggleTimer = function() {
                 studyTimerCheck++;
                 updateTimerDisplay();
                 
+                // 5分ごとの通知
                 if (studyTimerCheck >= 300) {
                     studyTimerCheck = 0;
                     if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
@@ -328,26 +346,40 @@ window.toggleTimer = function() {
                     }
                 }
             } else {
+                // 終了
                 clearInterval(studyTimerInterval);
                 studyTimerRunning = false;
                 document.getElementById('timer-toggle-btn').innerText = "スタート！";
                 document.getElementById('timer-toggle-btn').className = "main-btn pink-btn";
                 try { sfxChime.play(); } catch(e){}
+                
                 if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
                     sendSilentPrompt("タイマー終了！たくさん褒めて！");
                 } else {
-                    updateNellMessage("時間だにゃ！おつかれさまにゃ！", "excited", false);
+                    alert("時間だにゃ！おつかれさまにゃ！");
                 }
+                
+                // 終了したらミニタイマーを隠す
+                document.getElementById('mini-timer-display').classList.add('hidden');
+                // モーダルを開いて結果を見せる
+                openTimerModal();
             }
         }, 1000);
     }
 };
 
 function updateTimerDisplay() {
-    const el = document.getElementById('study-timer');
     const m = Math.floor(studyTimerValue / 60).toString().padStart(2, '0');
     const s = (studyTimerValue % 60).toString().padStart(2, '0');
-    if(el) el.innerText = `${m}:${s}`;
+    const timeStr = `${m}:${s}`;
+    
+    // モーダル内の表示
+    const modalDisplay = document.getElementById('modal-timer-display');
+    if(modalDisplay) modalDisplay.innerText = timeStr;
+    
+    // ミニ表示
+    const miniDisplay = document.getElementById('mini-timer-text');
+    if(miniDisplay) miniDisplay.innerText = timeStr;
 }
 
 function sendSilentPrompt(text) {
