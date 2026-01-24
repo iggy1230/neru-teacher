@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v275.1: お宝図鑑HTTP化・画像加工・全機能統合版) ---
+// --- analyze.js (完全版 v275.2: お宝図鑑HTTP化・画像加工・HTTPチャット・全機能統合版) ---
 
 // ==========================================
 // 1. 最重要：UI操作・モード選択関数
@@ -307,6 +307,60 @@ window.captureAndIdentifyItem = async function() {
             btn.disabled = false;
         }
     }
+};
+
+// ★追加: HTTP会話機能 (WebSocketを使わないチャット)
+window.startHttpChat = function() {
+    const btn = document.getElementById('http-mic-btn');
+    if(btn) { btn.disabled = true; btn.style.backgroundColor = "#ccc"; btn.innerText = "👂 聞いてるにゃ..."; }
+    
+    // 音声認識開始
+    if (!('webkitSpeechRecognition' in window)) {
+        alert("このブラウザは音声認識に対応していないにゃ…");
+        if(btn) { btn.disabled = false; btn.style.backgroundColor = "#ff85a1"; btn.innerText = "🎤 おはなしする"; }
+        return;
+    }
+
+    const recognition = new webkitSpeechRecognition();
+    recognition.lang = 'ja-JP';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = async (event) => {
+        const text = event.results[0][0].transcript;
+        if(btn) { btn.innerText = "🤔 考え中にゃ..."; }
+        
+        try {
+            const res = await fetch('/chat-dialogue', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: text, name: currentUser ? currentUser.name : "生徒" })
+            });
+            if(res.ok) {
+                const data = await res.json();
+                window.updateNellMessage(data.reply, "normal", true, true);
+            }
+        } catch(e) {
+            window.updateNellMessage("ごめん、よく聞こえなかったにゃ。", "thinking", false, true);
+        }
+        
+        if(btn) { btn.disabled = false; btn.style.backgroundColor = "#ff85a1"; btn.innerText = "🎤 おはなしする"; }
+    };
+
+    recognition.onerror = (e) => {
+        console.error("Speech Error:", e);
+        if(btn) { btn.disabled = false; btn.style.backgroundColor = "#ff85a1"; btn.innerText = "🎤 おはなしする"; }
+    };
+    
+    recognition.onend = () => {
+        setTimeout(() => {
+             if(btn && btn.disabled && btn.innerText === "👂 聞いてるにゃ...") {
+                 btn.disabled = false; btn.style.backgroundColor = "#ff85a1"; btn.innerText = "🎤 おはなしする";
+             }
+        }, 1000);
+    };
+
+    recognition.start();
 };
 
 // ==========================================

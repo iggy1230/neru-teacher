@@ -1,4 +1,4 @@
-// --- ui.js (完全版 v275.1: お宝図鑑詳細ビュー・全機能統合版) ---
+// --- ui.js (完全版 v275.2: 図鑑デザイン適正化版) ---
 
 const sfxChime = new Audio('Jpn_sch_chime.mp3');
 const sfxBtn = new Audio('botan1.mp3');
@@ -131,7 +131,7 @@ window.updateProgress = function(p) {
 };
 
 // ==========================================
-// ★ 図鑑 (Collection) - 2画面構成 (一覧 / 詳細)
+// ★ 図鑑 (Collection) - デザイン修正版
 // ==========================================
 
 // 一覧を表示
@@ -144,7 +144,7 @@ window.showCollection = async function() {
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 80vh; display: flex; flex-direction: column;">
             <h3 style="text-align:center; margin:0 0 15px 0; color:#f57f17; flex-shrink: 0;">📖 お宝図鑑</h3>
-            <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap:10px; flex: 1; overflow-y:auto; padding:5px;">
+            <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap:15px; flex: 1; overflow-y:auto; padding:10px;">
                 <p style="width:100%; text-align:center;">読み込み中にゃ...</p>
             </div>
             <div style="text-align:center; margin-top:15px; flex-shrink: 0;">
@@ -164,20 +164,25 @@ window.showCollection = async function() {
         return;
     }
 
-    // アイテム生成 (縦長になりすぎないよう調整済み)
+    // アイテム生成 (適切なサイズに修正: アスペクト比を固定)
     collection.forEach((item, index) => {
         const div = document.createElement('div');
-        div.style.cssText = "background:white; border-radius:10px; padding:5px; box-shadow:0 2px 5px rgba(0,0,0,0.1); text-align:center; border:2px solid #fff176; position:relative; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; min-height:120px; transition:transform 0.1s;";
+        // ★修正: aspect-ratioを設定し、縦長になりすぎないようにする
+        div.style.cssText = "background:white; border-radius:12px; padding:8px; box-shadow:0 3px 6px rgba(0,0,0,0.15); text-align:center; border:2px solid #fff176; position:relative; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center; aspect-ratio: 0.85; transition:transform 0.1s;";
         
         div.onclick = () => window.showCollectionDetail(item, index); // 詳細へ遷移
+        div.onmousedown = () => div.style.transform = "scale(0.95)";
+        div.onmouseup = () => div.style.transform = "scale(1.0)";
 
         const img = document.createElement('img');
         img.src = item.image;
-        img.style.cssText = "width:90%; aspect-ratio:1; object-fit:contain; border-radius:5px; margin-bottom:5px; background:#fafafa;";
+        // 画像は枠内に収める
+        img.style.cssText = "width:100%; height:auto; max-height:75%; object-fit:contain; margin-bottom:5px; filter:drop-shadow(0 2px 2px rgba(0,0,0,0.1));";
         
         const name = document.createElement('div');
         name.innerText = item.name;
-        name.style.cssText = "font-size:0.8rem; font-weight:bold; color:#555; width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:0 5px;";
+        // テキストは2行まで許容
+        name.style.cssText = "font-size:0.8rem; font-weight:bold; color:#555; width:100%; line-height:1.2; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;";
 
         div.appendChild(img);
         div.appendChild(name);
@@ -191,7 +196,6 @@ window.showCollectionDetail = function(item, index) {
     if (!modal) return;
 
     const dateStr = item.date ? new Date(item.date).toLocaleDateString() : "";
-    // 解説がない場合のフォールバック
     const description = item.description || "（ネル先生の解説はまだないみたいだにゃ…）";
 
     modal.innerHTML = `
@@ -202,21 +206,23 @@ window.showCollectionDetail = function(item, index) {
                 <button onclick="deleteCollectionItem(${index})" class="mini-teach-btn" style="background:#ff5252;">削除</button>
             </div>
             
-            <div style="flex:1; overflow-y:auto; background:white; border-radius:10px; padding:15px; box-shadow:inset 0 0 10px rgba(0,0,0,0.05);">
-                <img src="${item.image}" style="width:100%; max-height:250px; object-fit:contain; border-radius:10px; margin-bottom:15px; border:2px solid #eee;">
+            <div style="flex:1; overflow-y:auto; background:white; border-radius:10px; padding:20px; box-shadow:inset 0 0 10px rgba(0,0,0,0.05);">
+                <div style="text-align:center; margin-bottom:15px;">
+                    <img src="${item.image}" style="width:100%; max-width:280px; height:auto; object-fit:contain; border-radius:50%; border:5px solid #ffd700; box-shadow:0 4px 10px rgba(0,0,0,0.2);">
+                </div>
                 
-                <div style="font-size:1.5rem; font-weight:900; color:#e65100; text-align:center; margin-bottom:10px; border-bottom:2px dashed #ffcc80; padding-bottom:10px;">
+                <div style="font-size:1.6rem; font-weight:900; color:#e65100; text-align:center; margin-bottom:15px; border-bottom:2px dashed #ffcc80; padding-bottom:10px;">
                     ${item.name}
                 </div>
                 
-                <div style="background:#fff3e0; padding:15px; border-radius:10px; position:relative;">
-                    <div style="position:absolute; top:-10px; left:10px; background:#ff9800; color:white; font-size:0.7rem; padding:2px 8px; border-radius:10px; font-weight:bold;">ネル先生の解説</div>
-                    <p style="margin:5px 0 0 0; font-size:1rem; line-height:1.6; color:#5d4037;">
+                <div style="background:#fff3e0; padding:15px; border-radius:10px; position:relative; border:2px solid #ffe0b2;">
+                    <div style="position:absolute; top:-12px; left:15px; background:#ff9800; color:white; font-size:0.8rem; padding:2px 10px; border-radius:15px; font-weight:bold; box-shadow:0 2px 4px rgba(0,0,0,0.1);">ネル先生の解説</div>
+                    <p style="margin:10px 0 0 0; font-size:1rem; line-height:1.6; color:#5d4037;">
                         ${description}
                     </p>
                 </div>
                 
-                <div style="text-align:right; font-size:0.7rem; color:#aaa; margin-top:10px;">
+                <div style="text-align:right; font-size:0.7rem; color:#aaa; margin-top:15px;">
                     発見日: ${dateStr}
                 </div>
             </div>
