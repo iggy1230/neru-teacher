@@ -1,4 +1,4 @@
-// --- server.js (完全版 v273.0: お宝図鑑HTTP化・全機能統合版) ---
+// --- server.js (完全版 v274.1: 全コード収録) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -69,7 +69,7 @@ function getSubjectInstructions(subject) {
 // API Endpoints
 // ==========================================
 
-// --- TTS ---
+// --- TTS (Text-to-Speech) ---
 app.post('/synthesize', async (req, res) => {
     try {
         if (!ttsClient) throw new Error("TTS Not Ready");
@@ -88,7 +88,7 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- Memory Update (gemini-2.0-flash-exp) ---
+// --- Memory Update (Gemini 2.0 Flash) ---
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
@@ -128,8 +128,6 @@ app.post('/update-memory', async (req, res) => {
 
         const result = await model.generateContent(prompt);
         let text = result.response.text();
-        
-        // JSONパースエラー対策
         text = text.replace(/```json/g, '').replace(/```/g, '').trim();
         
         let newProfile;
@@ -156,7 +154,7 @@ app.post('/update-memory', async (req, res) => {
     }
 });
 
-// --- Analyze (宿題分析: gemini-2.5-pro) ---
+// --- Analyze (宿題分析: Gemini 2.5 Pro) ---
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, name } = req.body;
@@ -234,7 +232,7 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
-// --- ★追加: お宝図鑑用 単発画像解析API (gemini-2.0-flash-exp) ---
+// --- お宝図鑑用 画像解析API (Gemini 2.0 Flash) ---
 app.post('/identify-item', async (req, res) => {
     try {
         const { image, name } = req.body;
@@ -247,14 +245,17 @@ app.post('/identify-item', async (req, res) => {
         あなたは猫の教育AI「ネル先生」です。相手は「${name || '生徒'}」さん。
         送られてきた画像を解析し、以下のJSON形式で応答してください。
 
+        【重要：ネル先生のキャラクター設定】
+        - 語尾は必ず「にゃ」や「だにゃ」をつける。
+        - **猫の視点**で人間界の道具を解釈する独特な感性を持っている。
+        - 解説は**ユーモアと愛嬌**たっぷりに、子供が笑ってしまうような内容にする。
+
+        【出力フォーマット (JSON)】
         {
-            "itemName": "画像の中の主要な物体の名前（短く、図鑑登録用）",
-            "text": "その物体についての子供向けの明るい解説（30文字程度、語尾は『にゃ』）"
+            "itemName": "画像の中の主要な物体の名前（短く）",
+            "description": "その物体についてのネル先生のユニークで面白い解説（60文字以内）。猫視点での勘違いや、独自の使い方の提案などを含める。",
+            "speechText": "『これは（itemName）だにゃ！（description）』という形式の読み上げ用セリフ。必ず『これは〇〇だにゃ！』から始める。"
         }
-        
-        例:
-        画像: りんご
-        応答: {"itemName": "りんご", "text": "真っ赤で美味しそうなりんごだにゃ！シャキシャキして甘いにゃ〜。"}
         `;
 
         const result = await model.generateContent([
@@ -263,7 +264,6 @@ app.post('/identify-item', async (req, res) => {
         ]);
 
         const responseText = result.response.text();
-        // JSONクリーンアップ
         const cleanText = responseText.replace(/```json|```/g, '').trim();
         const json = JSON.parse(cleanText);
         
@@ -271,11 +271,11 @@ app.post('/identify-item', async (req, res) => {
 
     } catch (error) {
         console.error("Identify Error:", error);
-        res.status(500).json({ error: "解析失敗", text: "よく見えなかったにゃ…もう一回見せてにゃ？", itemName: null });
+        res.status(500).json({ error: "解析失敗", speechText: "よく見えなかったにゃ…もう一回見せてにゃ？", itemName: null });
     }
 });
 
-// --- 4. 給食反応 (gemini-2.0-flash-exp) ---
+// --- 給食反応 (Gemini 2.0 Flash) ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
         const { count, name } = req.body;
@@ -300,7 +300,7 @@ app.post('/lunch-reaction', async (req, res) => {
     } catch { res.json({ reply: "おいしいにゃ！", isSpecial: false }); }
 });
 
-// --- 3. ゲーム反応 (gemini-2.0-flash-exp) ---
+// --- ゲーム反応 (Gemini 2.0 Flash) ---
 app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;
@@ -326,7 +326,9 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// --- WebSocket (Chat for simple-chat/embedded) ---
+// ==========================================
+// WebSocket (Chat for simple-chat/embedded)
+// ==========================================
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', async (clientWs, req) => {
@@ -335,9 +337,9 @@ wss.on('connection', async (clientWs, req) => {
     let name = decodeURIComponent(params.name || "生徒");
     let mode = params.mode || "simple-chat";
 
-    // お宝図鑑(chat)モードではWebSocketは使わない想定だが、接続された場合は切断
+    // お宝図鑑(chat)モードではWebSocketは使わない。
+    // クライアントが間違えて接続してきた場合は切断する。
     if (mode === 'chat') { 
-        console.log("[WS] Chat mode detected. Closing WS (using HTTP instead).");
         clientWs.close();
         return;
     }
@@ -379,8 +381,7 @@ wss.on('connection', async (clientWs, req) => {
                 ${statusContext}
                 `;
 
-                // ツール定義 (simple-chat用)
-                // 図鑑登録(register_collection_item)は除外
+                // ツール定義 (simple-chat用: register_collection_itemは不要)
                 const tools = [
                     { google_search: {} },
                     {
@@ -403,7 +404,7 @@ wss.on('connection', async (clientWs, req) => {
                         // ★MODEL指定: リアルタイム会話はFlash-Exp (gemini-2.0-flash-exp) 固定
                         model: "models/gemini-2.0-flash-exp",
                         generationConfig: { 
-                            responseModalities: ["AUDIO"], // 音声会話モード
+                            responseModalities: ["AUDIO"], // WebSocketでは音声会話を行う
                             speech_config: { 
                                 voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }, 
                                 language_code: "ja-JP" 

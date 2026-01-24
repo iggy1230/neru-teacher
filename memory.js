@@ -1,4 +1,4 @@
-// --- memory.js (完全版 v263.0: 先行保存・後更新・削除対応版) ---
+// --- memory.js (完全版 v274.1: 解説文保存対応) ---
 
 (function(global) {
     const Memory = {};
@@ -104,9 +104,9 @@
         return context;
     };
 
-    // 図鑑にアイテムを追加（先行保存用）
-    Memory.addToCollection = async function(userId, itemName, imageBase64) {
-        console.log(`[Memory] addToCollection called. Name: ${itemName}`);
+    // 図鑑にアイテムを追加 (解説文対応)
+    Memory.addToCollection = async function(userId, itemName, imageBase64, description = "") {
+        console.log(`[Memory] addToCollection: ${itemName}`);
         try {
             const profile = await Memory.getUserProfile(userId);
             if (!profile.collection) profile.collection = [];
@@ -114,7 +114,8 @@
             const newItem = {
                 name: itemName,
                 image: imageBase64,
-                date: new Date().toISOString()
+                date: new Date().toISOString(),
+                description: description // 解説を保存
             };
 
             // 先頭に追加（常に最新がindex 0）
@@ -132,31 +133,18 @@
         }
     };
 
-    // ★ 最新の図鑑アイテムの名前を更新する（AI解析完了後用）
+    // 最新の図鑑アイテムの名前を更新する（旧互換・WebSocket用）
     Memory.updateLatestCollectionItem = async function(userId, newName) {
-        console.log(`[Memory] updateLatestCollectionItem called. New Name: ${newName}`);
+        // v274以降はHTTPで一括登録するため基本的に不要だが、互換性維持
         try {
             const profile = await Memory.getUserProfile(userId);
-            
-            if (!profile.collection || profile.collection.length === 0) {
-                console.warn("[Memory] Collection is empty! Cannot update name.");
-                return;
-            }
-
-            // 最新（配列の先頭）を取得して名前を更新
-            const latest = profile.collection[0];
-            const oldName = latest.name;
-            latest.name = newName;
-            
-            console.log(`[Memory] Renaming item: "${oldName}" -> "${newName}"`);
-            
+            if (!profile.collection || profile.collection.length === 0) return;
+            profile.collection[0].name = newName;
             await Memory.saveUserProfile(userId, profile);
-        } catch (e) {
-            console.error("[Memory] Update Item Name Error:", e);
-        }
+        } catch (e) {}
     };
 
-    // ★ 図鑑からアイテムを削除する
+    // 図鑑からアイテムを削除する
     Memory.deleteFromCollection = async function(userId, index) {
         try {
             const profile = await Memory.getUserProfile(userId);

@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v273.3: 全機能完全収録・関数欠落修正版) ---
+// --- analyze.js (完全版 v274.1: お宝図鑑HTTP化・面白解説対応・全機能統合版) ---
 
 // ==========================================
 // 1. 最重要：UI操作・モード選択関数
@@ -63,7 +63,7 @@ window.selectMode = function(m) {
         console.log(`[UI] selectMode called: ${m}`);
         currentMode = m; 
         
-        // 画面切り替え
+        // 画面切り替え (ui.jsの関数)
         if (typeof window.switchScreen === 'function') {
             window.switchScreen('screen-main'); 
         } else {
@@ -152,7 +152,7 @@ async function startPreviewCamera() {
                 audio: false 
             });
         } catch(e) {
-            // フォールバック
+            // フォールバック: フロントカメラ
             previewStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
         }
         
@@ -228,15 +228,19 @@ window.captureAndIdentifyItem = async function() {
 
         const data = await res.json();
         
-        // 結果表示 & 読み上げ
-        if (data.text) {
-            window.updateNellMessage(data.text, "happy", true, true); // save=true, speak=true
+        // 結果表示 & 読み上げ (speechText優先)
+        if (data.speechText) {
+            window.updateNellMessage(data.speechText, "happy", true, true);
+        } else if (data.text) {
+            window.updateNellMessage(data.text, "happy", true, true); 
         }
 
-        // 図鑑登録
+        // 図鑑登録 (解説付き)
         if (data.itemName && window.NellMemory) {
             console.log(`[Collection] Registering: ${data.itemName}`);
-            window.NellMemory.addToCollection(currentUser.id, data.itemName, fullDataUrl);
+            const description = data.description || "（解説はないにゃ）";
+            
+            await window.NellMemory.addToCollection(currentUser.id, data.itemName, fullDataUrl, description);
             
             const notif = document.createElement('div');
             notif.innerText = `📖 図鑑に「${data.itemName}」を登録したにゃ！`;
@@ -1076,7 +1080,6 @@ window.renderProblemSelection = function() {
 // 採点ロジック
 function normalizeAnswer(str) { if (!str) return ""; let normalized = str.trim().replace(/[\u30a1-\u30f6]/g, m => String.fromCharCode(m.charCodeAt(0) - 0x60)); return normalized; }
 function isMatch(student, correctString) { const s = normalizeAnswer(student); const options = normalizeAnswer(correctString).split('|'); return options.some(opt => opt === s); }
-
 window.checkMultiAnswer = function(id, event) {
     if (window.isComposing) return;
     const problem = transcribedProblems.find(p => p.id === id);
@@ -1088,7 +1091,6 @@ window.checkMultiAnswer = function(id, event) {
     if(window.gradingTimer) clearTimeout(window.gradingTimer);
     window.gradingTimer = setTimeout(() => { _performCheckMultiAnswer(id); }, 1000);
 };
-
 function _performCheckMultiAnswer(id) {
     const problem = transcribedProblems.find(p => p.id === id); if (!problem) return;
     const userValues = problem.student_answer; 
@@ -1109,7 +1111,6 @@ function _performCheckMultiAnswer(id) {
     if (allCorrect) { try { sfxMaru.currentTime = 0; sfxMaru.play(); } catch(e){} } 
     else if (userValues.some(v => v.trim().length > 0)) { try { sfxBatu.currentTime = 0; sfxBatu.play(); } catch(e){} }
 }
-
 window.checkAnswerDynamically = function(id, inputElem, event) { 
     if (window.isComposing) return;
     const problem = transcribedProblems.find(p => p.id === id);
@@ -1118,7 +1119,6 @@ window.checkAnswerDynamically = function(id, inputElem, event) {
     if(window.gradingTimer) clearTimeout(window.gradingTimer);
     window.gradingTimer = setTimeout(() => { _performCheckAnswerDynamically(id, val); }, 1000);
 };
-
 function _performCheckAnswerDynamically(id, val) {
     const problem = transcribedProblems.find(p => p.id === id); if (!problem) return;
     const correctVal = Array.isArray(problem.correct_answer) ? problem.correct_answer[0] : problem.correct_answer;
@@ -1129,7 +1129,6 @@ function _performCheckAnswerDynamically(id, val) {
     if (isCorrect) { try { sfxMaru.currentTime = 0; sfxMaru.play(); } catch(e){} } 
     else if (val.trim().length > 0) { try { sfxBatu.currentTime = 0; sfxBatu.play(); } catch(e){} }
 }
-
 window.checkOneProblem = function(id) { 
     const problem = transcribedProblems.find(p => p.id === id); if (!problem) return; 
     const correctList = Array.isArray(problem.correct_answer) ? problem.correct_answer : [problem.correct_answer];
@@ -1158,7 +1157,6 @@ window.checkOneProblem = function(id) {
         else { markElem.innerText = "❌"; markElem.style.color = "#4a90e2"; container.style.backgroundColor = "#f0f8ff"; updateNellMessage("おしい！もう一回考えてみて！", "gentle", false); } 
     } 
 };
-
 function updateMarkDisplay(id, isCorrect) { const container = document.getElementById(`grade-item-${id}`); const markElem = document.getElementById(`mark-${id}`); if (container && markElem) { if (isCorrect) { markElem.innerText = "⭕"; markElem.style.color = "#ff5252"; container.style.backgroundColor = "#fff5f5"; } else { markElem.innerText = "❌"; markElem.style.color = "#4a90e2"; container.style.backgroundColor = "#f0f8ff"; } } }
 window.updateGradingMessage = function() { let correctCount = 0; transcribedProblems.forEach(p => { if (p.is_correct) correctCount++; }); const scoreRate = correctCount / (transcribedProblems.length || 1); if (scoreRate === 1.0) updateNellMessage(`全問正解だにゃ！天才だにゃ〜！！`, "excited", false); else if (scoreRate >= 0.5) updateNellMessage(`あと${transcribedProblems.length - correctCount}問！直してみるにゃ！`, "happy", false); else updateNellMessage(`間違ってても大丈夫！入力し直してみて！`, "gentle", false); };
 
@@ -1171,7 +1169,6 @@ window.backToProblemSelection = function() {
     if (currentMode === 'grade') showGradingView(); else { renderProblemSelection(); updateNellMessage("他も見るにゃ？", "normal", false); } 
     const backBtn = document.getElementById('main-back-btn'); 
     if(backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = backToLobby; } 
-    
     if (selectedProblem && selectedProblem.id) {
         setTimeout(() => {
             const targetId = `grade-item-${selectedProblem.id}`;

@@ -1,4 +1,4 @@
-// --- ui.js (完全版 v263.1: 記憶管理機能実装・図鑑統合版) ---
+// --- ui.js (完全版 v274.1: お宝図鑑詳細ビュー対応) ---
 
 const sfxChime = new Audio('Jpn_sch_chime.mp3');
 const sfxBtn = new Audio('botan1.mp3');
@@ -128,41 +128,45 @@ window.updateProgress = function(p) {
 };
 
 // ==========================================
-// 図鑑 (Collection)
+// ★ 図鑑 (Collection) - 2画面構成
 // ==========================================
 
+// 一覧を表示
 window.showCollection = async function() {
     if (!currentUser) return;
     const modal = document.getElementById('collection-modal');
-    const grid = document.getElementById('collection-grid');
-    if (!modal || !grid) return;
-
+    if (!modal) return;
+    
+    // コンテナ初期化（一覧モード）
+    modal.innerHTML = `
+        <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 80vh; display: flex; flex-direction: column;">
+            <h3 style="text-align:center; margin:0 0 15px 0; color:#f57f17; flex-shrink: 0;">📖 お宝図鑑</h3>
+            <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap:10px; flex: 1; overflow-y:auto; padding:5px;">
+                <p style="width:100%; text-align:center;">読み込み中にゃ...</p>
+            </div>
+            <div style="text-align:center; margin-top:15px; flex-shrink: 0;">
+                <button onclick="closeCollection()" class="main-btn gray-btn" style="width:auto; padding:10px 30px;">閉じる</button>
+            </div>
+        </div>
+    `;
     modal.classList.remove('hidden');
-    grid.innerHTML = '<p style="width:100%; text-align:center;">読み込み中にゃ...</p>';
 
     const profile = await window.NellMemory.getUserProfile(currentUser.id);
     const collection = profile.collection || [];
-
+    const grid = document.getElementById('collection-grid');
     grid.innerHTML = '';
     
     if (collection.length === 0) {
-        grid.innerHTML = '<p style="width:100%; text-align:center; color:#888;">まだ何もないにゃ。<br>「個別指導」でカメラを見せてにゃ！</p>';
+        grid.innerHTML = '<p style="width:100%; text-align:center; color:#888;">まだ何もないにゃ。<br>「ネル先生のお宝図鑑」でカメラを見せてにゃ！</p>';
         return;
     }
 
+    // アイテム生成
     collection.forEach((item, index) => {
         const div = document.createElement('div');
-        div.style.cssText = "background:white; border-radius:10px; padding:8px; box-shadow:0 2px 5px rgba(0,0,0,0.1); text-align:center; border:2px solid #fff176; position:relative;";
+        div.style.cssText = "background:white; border-radius:10px; padding:8px; box-shadow:0 2px 5px rgba(0,0,0,0.1); text-align:center; border:2px solid #fff176; position:relative; cursor:pointer; transition:transform 0.1s;";
         
-        // 削除ボタン (×)
-        const delBtn = document.createElement('button');
-        delBtn.innerText = "×";
-        delBtn.style.cssText = "position:absolute; top:-8px; right:-8px; background:#ff5252; color:white; border:2px solid white; border-radius:50%; width:24px; height:24px; font-weight:bold; cursor:pointer; font-size:14px; line-height:1; padding:0; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 4px rgba(0,0,0,0.2);";
-        delBtn.onclick = (e) => {
-            e.stopPropagation();
-            window.deleteCollectionItem(index);
-        };
-        div.appendChild(delBtn);
+        div.onclick = () => window.showCollectionDetail(item, index); // 詳細へ遷移
 
         const img = document.createElement('img');
         img.src = item.image;
@@ -170,26 +174,62 @@ window.showCollection = async function() {
         
         const name = document.createElement('div');
         name.innerText = item.name;
-        name.style.cssText = "font-size:0.8rem; font-weight:bold; color:#555; word-break:break-all; line-height:1.2; min-height:1.2em;";
-        
-        const date = document.createElement('div');
-        try {
-            date.innerText = new Date(item.date).toLocaleDateString();
-        } catch(e) { date.innerText = ""; }
-        date.style.cssText = "font-size:0.6rem; color:#aaa; margin-top:2px;";
+        name.style.cssText = "font-size:0.8rem; font-weight:bold; color:#555; word-break:break-all; line-height:1.2; min-height:1.2em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;";
 
         div.appendChild(img);
         div.appendChild(name);
-        div.appendChild(date);
         grid.appendChild(div);
     });
 };
 
+// 詳細画面を表示
+window.showCollectionDetail = function(item, index) {
+    const modal = document.getElementById('collection-modal');
+    if (!modal) return;
+
+    const dateStr = item.date ? new Date(item.date).toLocaleDateString() : "";
+    const description = item.description || "（ネル先生の解説はまだないみたいだにゃ…）";
+
+    modal.innerHTML = `
+        <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 80vh; display: flex; flex-direction: column;">
+            <div style="flex-shrink:0; display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <button onclick="showCollection()" class="mini-teach-btn" style="background:#8d6e63;">← 戻る</button>
+                <h3 style="margin:0; color:#f57f17; font-size:1.1rem;">お宝データ</h3>
+                <button onclick="deleteCollectionItem(${index})" class="mini-teach-btn" style="background:#ff5252;">削除</button>
+            </div>
+            
+            <div style="flex:1; overflow-y:auto; background:white; border-radius:10px; padding:15px; box-shadow:inset 0 0 10px rgba(0,0,0,0.05);">
+                <img src="${item.image}" style="width:100%; max-height:250px; object-fit:contain; border-radius:10px; margin-bottom:15px; border:2px solid #eee;">
+                
+                <div style="font-size:1.5rem; font-weight:900; color:#e65100; text-align:center; margin-bottom:10px; border-bottom:2px dashed #ffcc80; padding-bottom:10px;">
+                    ${item.name}
+                </div>
+                
+                <div style="background:#fff3e0; padding:15px; border-radius:10px; position:relative;">
+                    <div style="position:absolute; top:-10px; left:10px; background:#ff9800; color:white; font-size:0.7rem; padding:2px 8px; border-radius:10px; font-weight:bold;">ネル先生の解説</div>
+                    <p style="margin:5px 0 0 0; font-size:1rem; line-height:1.6; color:#5d4037;">
+                        ${description}
+                    </p>
+                </div>
+                
+                <div style="text-align:right; font-size:0.7rem; color:#aaa; margin-top:10px;">
+                    発見日: ${dateStr}
+                </div>
+            </div>
+            
+            <div style="text-align:center; margin-top:10px; flex-shrink:0;">
+                <button onclick="closeCollection()" class="main-btn gray-btn" style="width:auto; padding:8px 30px; font-size:0.9rem;">閉じる</button>
+            </div>
+        </div>
+    `;
+};
+
 window.deleteCollectionItem = async function(index) {
-    if (!confirm("本当にこの写真を削除するにゃ？")) return;
-    await window.NellMemory.deleteFromCollection(currentUser.id, index);
-    // 削除後に再描画
-    window.showCollection();
+    if (!confirm("本当にこのお宝を削除するにゃ？")) return;
+    if (window.NellMemory && currentUser) {
+        await window.NellMemory.deleteFromCollection(currentUser.id, index);
+        window.showCollection(); // 一覧に戻る
+    }
 };
 
 window.closeCollection = function() {
