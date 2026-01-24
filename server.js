@@ -1,4 +1,4 @@
-// --- server.js (完全版 v266.0: お宝図鑑対応) ---
+// --- server.js (完全版 v271.0: お宝図鑑モードTTS化) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -295,7 +295,7 @@ wss.on('connection', async (clientWs, req) => {
     const params = parse(req.url, true).query;
     let grade = params.grade || "1";
     let name = decodeURIComponent(params.name || "生徒");
-    let mode = params.mode || "chat"; // ★追加: モード受け取り
+    let mode = params.mode || "chat"; 
 
     let geminiWs = null;
 
@@ -328,9 +328,9 @@ wss.on('connection', async (clientWs, req) => {
                 ${statusContext}
                 `;
 
-                // ★モードによるシステムプロンプトの切り替え
+                // モードによるシステムプロンプトの切り替え
                 if (mode === 'simple-chat') {
-                    // simple-chat (こじんめんだん/学習モード) の場合
+                    // simple-chat (こじんめんだん/学習モード)
                     systemInstructionText += `
                     【最重要: 画像への対応ルール（勉強質問モード）】
                     ユーザーから画像が送信された場合：
@@ -339,7 +339,7 @@ wss.on('connection', async (clientWs, req) => {
                     3. **図鑑登録ツールは使用しないでください。**
                     `;
                 } else {
-                    // chat (お宝図鑑) の場合: 図鑑登録モード
+                    // chat (お宝図鑑) 
                     systemInstructionText += `
                     【最重要：図鑑登録のルール】
                     ユーザーから画像が送信された場合（Image Chunkを受信した場合）：
@@ -382,12 +382,16 @@ wss.on('connection', async (clientWs, req) => {
                     }
                 ];
 
+                // ★修正: chatモード（お宝図鑑）の場合はテキスト応答のみにする
+                const isTextMode = (mode === 'chat');
+                const responseModalities = isTextMode ? ["TEXT"] : ["AUDIO"];
+
                 geminiWs.send(JSON.stringify({
                     setup: {
                         // ★MODEL指定: リアルタイム会話はFlash-Exp (gemini-2.0-flash-exp) 固定
                         model: "models/gemini-2.0-flash-exp",
                         generationConfig: { 
-                            responseModalities: ["AUDIO"], 
+                            responseModalities: responseModalities, // ★動的に変更
                             speech_config: { 
                                 voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }, 
                                 language_code: "ja-JP" 
@@ -483,7 +487,7 @@ wss.on('connection', async (clientWs, req) => {
                 const context = msg.context || "";
                 name = msg.name || name;
                 grade = msg.grade || grade;
-                mode = msg.mode || mode; // ★モード更新
+                mode = msg.mode || mode; 
                 connectToGemini(context);
                 return;
             }

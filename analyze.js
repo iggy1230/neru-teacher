@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v270.0: タイマー音声通知追加) ---
+// --- analyze.js (完全版 v271.0: お宝図鑑TTS化対応) ---
 
 // ==========================================
 // 1. 最重要：UI操作・モード選択関数 (必ず最初に定義)
@@ -82,9 +82,6 @@ window.selectMode = function(m) {
         gameRunning = false;
         const icon = document.querySelector('.nell-avatar-wrap img'); 
         if(icon) icon.src = "nell-normal.png";
-        
-        // ミニタイマーの表示制御 (既に走っている場合は表示したまま)
-        // ここではあえて操作しない（常に表示）
         
         const miniKarikari = document.getElementById('mini-karikari-display');
         if(miniKarikari) miniKarikari.classList.remove('hidden');
@@ -238,7 +235,8 @@ async function saveToNellMemory(role, text) {
 }
 
 window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false, speak = true) {
-    if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
+    // ★修正: chatモード以外はWebSocket中は話さない。chatモードはTTS許可。
+    if (liveSocket && liveSocket.readyState === WebSocket.OPEN && currentMode !== 'chat') {
         speak = false;
     }
 
@@ -277,7 +275,7 @@ window.setSubject = function(s) {
 window.setAnalyzeMode = function(type) { analysisType = 'precision'; };
 
 // ==========================================
-// ★ タイマー関連 (New: 常駐型 + 音声通知)
+// ★ タイマー関連 (常駐型 + 音声通知)
 // ==========================================
 
 // モーダル制御
@@ -338,7 +336,7 @@ window.toggleTimer = function() {
                 studyTimerCheck++;
                 updateTimerDisplay();
                 
-                // ★追加: 残り時間の音声通知ロジック (10分, 5分, 3分, 1分)
+                // 残り時間の音声通知ロジック (10分, 5分, 3分, 1分)
                 if (studyTimerValue === 600) {
                     window.updateNellMessage("10分前だにゃ〜。お茶でも飲んで落ち着くにゃ。", "gentle", false, true);
                 } else if (studyTimerValue === 300) {
@@ -357,7 +355,7 @@ window.toggleTimer = function() {
                 document.getElementById('timer-toggle-btn').className = "main-btn pink-btn";
                 try { sfxChime.play(); } catch(e){}
                 
-                // ★追加: 終了時のコメント
+                // 終了時のコメント
                 window.updateNellMessage("時間だにゃ！お疲れ様だにゃ〜。さ、ゆっくり休むにゃ。", "happy", false, true);
                 
                 // 終了したらミニタイマーを隠す
