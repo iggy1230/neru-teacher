@@ -1,4 +1,4 @@
-// --- memory.js (完全版 v274.1: 解説文保存対応) ---
+// --- memory.js (完全版 v276.1: 図鑑保存数修正版) ---
 
 (function(global) {
     const Memory = {};
@@ -46,7 +46,7 @@
         // 既存ユーザーにcollectionがない場合の補完
         const defaultProfile = Memory.createEmptyProfile();
         if (!profile) return defaultProfile;
-        if (!profile.collection) profile.collection = [];
+        if (!Array.isArray(profile.collection)) profile.collection = []; // 配列であることを保証
 
         return profile;
     };
@@ -104,47 +104,40 @@
         return context;
     };
 
-    // 図鑑にアイテムを追加 (解説文対応)
+    // 図鑑にアイテムを追加
     Memory.addToCollection = async function(userId, itemName, imageBase64, description = "") {
         console.log(`[Memory] addToCollection: ${itemName}`);
         try {
             const profile = await Memory.getUserProfile(userId);
-            if (!profile.collection) profile.collection = [];
+            
+            // 配列の再確認
+            if (!Array.isArray(profile.collection)) {
+                profile.collection = [];
+            }
             
             const newItem = {
                 name: itemName,
                 image: imageBase64,
                 date: new Date().toISOString(),
-                description: description // 解説を保存
+                description: description 
             };
 
-            // 先頭に追加（常に最新がindex 0）
+            // 先頭に追加
             profile.collection.unshift(newItem); 
 
-            // 容量制限（最新30件）
-            if (profile.collection.length > 30) {
-                profile.collection = profile.collection.slice(0, 30);
+            // 容量制限（50件まで保持）
+            if (profile.collection.length > 50) {
+                profile.collection = profile.collection.slice(0, 50);
             }
 
             await Memory.saveUserProfile(userId, profile);
-            console.log(`[Memory] Collection added successfully.`);
+            console.log(`[Memory] Collection added. Total items: ${profile.collection.length}`);
         } catch (e) {
             console.error("[Memory] Add Collection Error:", e);
         }
     };
-
-    // 最新の図鑑アイテムの名前を更新する（旧互換・WebSocket用）
-    Memory.updateLatestCollectionItem = async function(userId, newName) {
-        // v274以降はHTTPで一括登録するため基本的に不要だが、互換性維持
-        try {
-            const profile = await Memory.getUserProfile(userId);
-            if (!profile.collection || profile.collection.length === 0) return;
-            profile.collection[0].name = newName;
-            await Memory.saveUserProfile(userId, profile);
-        } catch (e) {}
-    };
-
-    // 図鑑からアイテムを削除する
+    
+    // アイテム削除
     Memory.deleteFromCollection = async function(userId, index) {
         try {
             const profile = await Memory.getUserProfile(userId);
@@ -154,10 +147,10 @@
                 await Memory.saveUserProfile(userId, profile);
                 console.log(`[Memory] Deleted item: ${deletedName}`);
             }
-        } catch(e) {
-            console.error("[Memory] Delete Error:", e);
-        }
+        } catch(e) { console.error("[Memory] Delete Error:", e); }
     };
+    
+    Memory.updateLatestCollectionItem = async function(userId, newName) {};
 
     global.NellMemory = Memory;
 })(window);
