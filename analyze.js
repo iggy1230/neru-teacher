@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v280.2: ログ抑制版) ---
+// --- analyze.js (完全版 v281.0: タイマーコメント更新) ---
 
 // ==========================================
 // 1. 最重要：UI操作・モード選択関数
@@ -727,21 +727,27 @@ window.toggleTimer = function() {
         document.getElementById('timer-toggle-btn').className = "main-btn gray-btn";
         document.getElementById('mini-timer-display').classList.remove('hidden');
         closeTimerModal();
+        
+        // ★ここに追加: タイマー開始メッセージ
+        window.updateNellMessage("今からネル先生が時間を計ってやるにゃ", "normal", false, true);
+
         studyTimerInterval = setInterval(() => {
             if (studyTimerValue > 0) {
                 studyTimerValue--;
                 studyTimerCheck++;
                 updateTimerDisplay();
+                // ★ここを修正
                 if (studyTimerValue === 600) window.updateNellMessage("10分前だにゃ〜。お茶でも飲んで落ち着くにゃ。", "gentle", false, true);
                 else if (studyTimerValue === 300) window.updateNellMessage("あと5分。一歩ずつ、一歩ずつだにゃ〜。", "normal", false, true);
                 else if (studyTimerValue === 180) window.updateNellMessage("3分前。深呼吸して、もうひと踏ん張りだにゃ。", "excited", false, true);
-                else if (studyTimerValue === 60) window.updateNellMessage("あと1分だにゃ。最後までボクが見守ってるにゃ。", "excited", false, true);
+                else if (studyTimerValue === 60) window.updateNellMessage("あと1分だにゃ。最後までネル先生が見守ってるにゃ。", "excited", false, true);
             } else {
                 clearInterval(studyTimerInterval);
                 studyTimerRunning = false;
                 document.getElementById('timer-toggle-btn').innerText = "スタート！";
                 document.getElementById('timer-toggle-btn').className = "main-btn pink-btn";
                 try { sfxChime.play(); } catch(e){}
+                // ★ここを修正
                 window.updateNellMessage("時間だにゃ！お疲れ様だにゃ〜。さ、ゆっくり休むにゃ。", "happy", false, true);
                 document.getElementById('mini-timer-display').classList.add('hidden');
                 openTimerModal();
