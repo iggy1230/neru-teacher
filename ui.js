@@ -1,4 +1,4 @@
-// --- ui.js (完全版 v275.2: 図鑑デザイン適正化版) ---
+// --- ui.js (完全版 v277.1: ロビー停止処理追加) ---
 
 const sfxChime = new Audio('Jpn_sch_chime.mp3');
 const sfxBtn = new Audio('botan1.mp3');
@@ -40,6 +40,12 @@ window.backToGate = function() {
 
 window.backToLobby = function(suppressGreeting = false) {
     switchScreen('screen-lobby');
+    
+    // ★追加: ロビーに戻ったら機能停止
+    if (typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
+    if (typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera();
+    if (typeof window.stopLiveChat === 'function') window.stopLiveChat();
+
     const shouldGreet = (typeof suppressGreeting === 'boolean') ? !suppressGreeting : true;
     if (shouldGreet && typeof currentUser !== 'undefined' && currentUser) {
         if (typeof updateNellMessage === 'function') {
@@ -164,10 +170,9 @@ window.showCollection = async function() {
         return;
     }
 
-    // アイテム生成 (適切なサイズに修正: アスペクト比を固定)
+    // アイテム生成
     collection.forEach((item, index) => {
         const div = document.createElement('div');
-        // ★修正: aspect-ratioを設定し、縦長になりすぎないようにする
         div.style.cssText = "background:white; border-radius:12px; padding:8px; box-shadow:0 3px 6px rgba(0,0,0,0.15); text-align:center; border:2px solid #fff176; position:relative; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center; aspect-ratio: 0.85; transition:transform 0.1s;";
         
         div.onclick = () => window.showCollectionDetail(item, index); // 詳細へ遷移
@@ -176,12 +181,10 @@ window.showCollection = async function() {
 
         const img = document.createElement('img');
         img.src = item.image;
-        // 画像は枠内に収める
         img.style.cssText = "width:100%; height:auto; max-height:75%; object-fit:contain; margin-bottom:5px; filter:drop-shadow(0 2px 2px rgba(0,0,0,0.1));";
         
         const name = document.createElement('div');
         name.innerText = item.name;
-        // テキストは2行まで許容
         name.style.cssText = "font-size:0.8rem; font-weight:bold; color:#555; width:100%; line-height:1.2; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;";
 
         div.appendChild(img);

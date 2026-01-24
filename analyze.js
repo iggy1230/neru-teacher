@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v277.0: 常時聞き取り範囲拡大・HTTP画像送信対応) ---
+// --- analyze.js (完全版 v277.1: カメラ起動修正・黒板表示対応) ---
 
 // ==========================================
 // 1. 最重要：UI操作・モード選択関数
@@ -58,7 +58,7 @@ let studyTimerInterval = null;
 let studyTimerRunning = false;
 let studyTimerCheck = 0; 
 
-// プレビューカメラ用 (お宝図鑑専用)
+// プレビューカメラ用
 let previewStream = null;
 
 // ★ selectMode
@@ -82,6 +82,13 @@ window.selectMode = function(m) {
             if (el) el.classList.add('hidden'); 
         });
         
+        // 黒板リセット
+        const embedBoard = document.getElementById('embedded-chalkboard');
+        if (embedBoard) {
+            embedBoard.innerText = "";
+            embedBoard.classList.add('hidden');
+        }
+
         // 戻るボタン
         const backBtn = document.getElementById('main-back-btn');
         if (backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = window.backToLobby; }
@@ -104,8 +111,8 @@ window.selectMode = function(m) {
             // お宝図鑑モード
             document.getElementById('chat-view').classList.remove('hidden'); 
             window.updateNellMessage("お宝を見せてにゃ！お話もできるにゃ！", "excited", false); 
-            // カメラ即時起動
-            startPreviewCamera();
+            // カメラ即時起動 (お宝用)
+            startPreviewCamera('live-chat-video', 'live-chat-video-container');
             // 常時聞き取り開始
             startAlwaysOnListening();
         } 
@@ -120,7 +127,8 @@ window.selectMode = function(m) {
         else if (m === 'review') { 
             renderMistakeSelection(); 
             document.getElementById('embedded-chat-section').classList.remove('hidden'); 
-            // 復習モードでも常時聞き取り開始
+            // 復習モードでも常時聞き取り＆カメラ起動
+            startPreviewCamera('live-chat-video-embedded', 'live-chat-video-container-embedded');
             startAlwaysOnListening();
         } 
         else { 
@@ -129,7 +137,8 @@ window.selectMode = function(m) {
             window.updateNellMessage("どの教科にするのかにゃ？", "normal", false); 
             if (m === 'explain' || m === 'grade') {
                 document.getElementById('embedded-chat-section').classList.remove('hidden');
-                // 解説・採点モードでも常時聞き取り開始
+                // 解説・採点モードでも常時聞き取り＆カメラ起動
+                startPreviewCamera('live-chat-video-embedded', 'live-chat-video-container-embedded');
                 startAlwaysOnListening();
             }
         }
@@ -185,6 +194,13 @@ function startAlwaysOnListening() {
             if(res.ok) {
                 const data = await res.json();
                 await window.updateNellMessage(data.reply, "normal", true, true);
+                
+                // 音声会話の結果も黒板に出す（見やすさのため）
+                const embedBoard = document.getElementById('embedded-chalkboard');
+                if (embedBoard && data.reply) {
+                    embedBoard.innerText = data.reply;
+                    embedBoard.classList.remove('hidden');
+                }
             }
         } catch(e) {
             console.error("Chat Error:", e);
@@ -250,12 +266,13 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
 };
 
 // ==========================================
-// 2. お宝図鑑専用 (HTTPベース)
+// 2. カメラ機能 (プレビュー・HTTP送信共通)
 // ==========================================
 
-async function startPreviewCamera() {
-    const video = document.getElementById('live-chat-video');
-    const container = document.getElementById('live-chat-video-container');
+// 引数でIDを指定できるように拡張
+window.startPreviewCamera = async function(videoId = 'live-chat-video', containerId = 'live-chat-video-container') {
+    const video = document.getElementById(videoId);
+    const container = document.getElementById(containerId);
     if (!video || !container) return;
 
     try {
@@ -276,20 +293,25 @@ async function startPreviewCamera() {
 
     } catch (e) {
         console.warn("[Preview] Camera init failed:", e);
-        alert("カメラが使えないにゃ…。");
+        // カメラがない場合のアラートは控えめに（埋め込みで自動起動するため）
     }
-}
+};
 
-function stopPreviewCamera() {
+window.stopPreviewCamera = function() {
     if (previewStream) {
         previewStream.getTracks().forEach(t => t.stop());
         previewStream = null;
     }
-    const video = document.getElementById('live-chat-video');
-    if (video) video.srcObject = null;
-    const container = document.getElementById('live-chat-video-container');
-    if (container) container.style.display = 'none';
-}
+    // 全ての可能性のあるビデオ要素を停止
+    ['live-chat-video', 'live-chat-video-embedded'].forEach(vid => {
+        const v = document.getElementById(vid);
+        if(v) v.srcObject = null;
+    });
+    ['live-chat-video-container', 'live-chat-video-container-embedded'].forEach(cid => {
+        const c = document.getElementById(cid);
+        if(c) c.style.display = 'none';
+    });
+};
 
 // ★修正: お宝画像加工処理（サイズ縮小 320px & JPEG圧縮）
 function createTreasureImage(sourceCanvas) {
@@ -734,7 +756,7 @@ window.captureAndSendLiveImage = function(context = 'main') {
     setTimeout(() => { ignoreIncomingAudio = false; }, 300);
 };
 
-// ★追加: 埋め込みチャット用 HTTP画像送信
+// ★追加: 埋め込みチャット用 HTTP画像送信 (黒板表示対応)
 async function captureAndSendLiveImageHttp() {
     if (window.isLiveImageSending) return;
     
@@ -774,14 +796,23 @@ async function captureAndSendLiveImageHttp() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 image: base64Data,
-                text: "この画像について教えてください。", // 画像用プロンプト
+                text: "この問題を教えてください。", // 質問コンテキストを明確化
                 name: currentUser ? currentUser.name : "生徒"
             })
         });
 
         if (!res.ok) throw new Error("Server response not ok");
         const data = await res.json();
+        
+        // 音声回答
         await window.updateNellMessage(data.reply, "happy", true, true);
+        
+        // ★黒板に回答テキストを表示
+        const embedBoard = document.getElementById('embedded-chalkboard');
+        if (embedBoard) {
+            embedBoard.innerText = data.reply;
+            embedBoard.classList.remove('hidden');
+        }
 
     } catch(e) {
         console.error("HTTP Image Error:", e);
@@ -840,17 +871,13 @@ window.stopLiveChat = function() {
     const videoSimple = document.getElementById('live-chat-video-simple');
     if(videoSimple) videoSimple.srcObject = null;
     document.getElementById('live-chat-video-container-simple').style.display = 'none';
-
-    // embeddedのvideoは常時使うのでここでは停止しないほうがいいが、プレビューだけ消す
-    // stopPreviewCameraが別途あるのでそちらに任せるか、ここで止めるか。
-    // selectMode切り替え時に止めるのでここではsimple-chat用のみ停止。
 };
 
 async function startLiveChat(context = 'main') { 
     // simple-chatのみWebSocketを使用
     if (context === 'main' && currentMode === 'simple-chat') context = 'simple';
     
-    if (context !== 'simple') return; // embeddedはHTTP化されたのでここには来ないはずだが念のため
+    if (context !== 'simple') return;
 
     activeChatContext = context;
     const btnId = 'mic-btn-simple';
