@@ -1,4 +1,4 @@
-// --- server.js (完全版 v278.0: チャット応答の構造化・板書分離) ---
+// --- server.js (完全版 v280.0: 日時認識・Google検索対応) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -281,21 +281,32 @@ app.post('/identify-item', async (req, res) => {
 app.post('/chat-dialogue', async (req, res) => {
     try {
         const { text, name, image } = req.body;
-        // ★MODEL指定: その他はFlash-Exp (JSONモード有効化)
+        
+        // 現在日時を取得
+        const now = new Date();
+        const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' };
+        const currentDateTime = now.toLocaleString('ja-JP', dateOptions);
+
+        // ★MODEL指定: その他はFlash-Exp (JSONモード有効化 + Google検索ツール)
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp",
-            generationConfig: { responseMimeType: "application/json" }
+            generationConfig: { responseMimeType: "application/json" },
+            tools: [{ google_search: {} }] // Google検索ツールを追加
         });
 
         let prompt = `
         あなたは猫の「ネル先生」です。相手は「${name}」さん。
         以下のユーザーの発言（または画像）に対して、子供にもわかるように答えてください。
 
+        【重要：現在の状況】
+        - **現在は ${currentDateTime} です。**
+        - **わからないことや最新の情報が必要な場合は、提供されたGoogle検索ツールを使って調べてください。**
+
         【出力フォーマット (JSON)】
         必ず以下のJSON形式で出力してください。
         {
             "speech": "ネル先生のセリフ。語尾は必ず「にゃ」や「だにゃ」。親しみやすく。",
-            "board": "黒板に書く内容。ここには**セリフや口調を含めない**こと。数式、答え、漢字、箇条書きの解説など、学習に必要な情報のみを簡潔に書く。該当するものがない場合は空文字で良い。"
+            "board": "黒板に書く内容。ここには**セリフや口調を含めない**こと。数式、答え、漢字、箇条書きの解説、検索結果の要約など、学習に必要な情報のみを簡潔に書く。該当するものがない場合は空文字で良い。"
         }
         
         ユーザー発言: ${text}
