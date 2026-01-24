@@ -1,4 +1,4 @@
-// --- server.js (完全版 v276.3: モデル厳格統一・宿題バグ修正) ---
+// --- server.js (完全版 v277.0: チャット機能HTTP統一・画像対応) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -278,14 +278,14 @@ app.post('/identify-item', async (req, res) => {
     }
 });
 
-// --- ★ HTTPチャット会話 (お宝図鑑用) ---
+// --- ★ HTTPチャット会話 (お宝図鑑・埋め込みチャット共用) ---
 app.post('/chat-dialogue', async (req, res) => {
     try {
-        const { text, name } = req.body;
+        const { text, name, image } = req.body; // 画像対応
         // ★MODEL指定: その他はFlash-Exp
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
 
-        const prompt = `
+        let prompt = `
         あなたは猫の「ネル先生」です。相手は「${name}」さん。
         以下のユーザーの発言に対して、親しみやすく、子供にもわかるように答えてください。
         
@@ -293,13 +293,28 @@ app.post('/chat-dialogue', async (req, res) => {
         - 語尾は必ず「にゃ」や「だにゃ」をつける。
         - 相手を褒めたり、共感したりする優しい口調で。
         - 30文字〜60文字程度で簡潔に。
-        
-        ユーザー発言: ${text}
         `;
 
-        const result = await model.generateContent(prompt);
-        const reply = result.response.text().trim();
+        // 画像付き質問への対応
+        if (image) {
+             prompt += `
+             ユーザーから画像が送られました。この画像の内容について、子供の質問に答えるように解説してください。
+             `;
+        }
+
+        prompt += `\nユーザー発言: ${text}`;
+
+        let result;
+        if (image) {
+             result = await model.generateContent([
+                prompt,
+                { inlineData: { mime_type: "image/jpeg", data: image } }
+            ]);
+        } else {
+             result = await model.generateContent(prompt);
+        }
         
+        const reply = result.response.text().trim();
         res.json({ reply: reply });
 
     } catch (error) {

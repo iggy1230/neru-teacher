@@ -62,7 +62,7 @@
             <div class="title-btn-container">
                 <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
             </div>
-            <div class="version-tag">Build: v276.3-Fix-Upload</div>
+            <div class="version-tag">Build: v277.0-HTTP-Chat-Unified</div>
         </section>
 
         <!-- 1. 校門 (ユーザー選択) -->
@@ -172,7 +172,6 @@
                         <div class="upload-buttons-container">
                             <button id="start-webcam-btn" class="camera-btn-large" style="background:#ff9800;">📹 アプリで撮影</button>
                             <div style="display:flex; gap:10px;">
-                                <!-- ★修正: IDを入学手続き用と区別して一意にする -->
                                 <label class="camera-btn-large" style="flex:1;">📷 標準カメラ<input type="file" id="hw-input-camera" accept="image/*" style="display:none;"></label>
                                 <label class="camera-btn-large" style="flex:1; background:#4a90e2;">📁 アルバム<input type="file" id="hw-input-album" accept="image/*" style="display:none;"></label>
                             </div>
@@ -210,15 +209,18 @@
                         </div>
                     </div>
 
-                    <!-- 埋め込み型こじんめんだん -->
+                    <!-- 埋め込み型こじんめんだん (HTTP版) -->
                     <div id="embedded-chat-section" class="embedded-chat-box hidden">
                         <h4 style="text-align:center; margin:0 0 10px 0; color:#558b2f;">👩‍🏫 ネル先生に質問する</h4>
                         <div style="text-align:center;">
-                            <button id="mic-btn-embedded" class="camera-btn-large" style="background:#8bc34a; box-shadow:0 6px 0 #689f38; font-size:1rem; padding:15px;" onclick="startLiveChat('embedded')">🎤 質問する</button>
+                            <!-- 常時聞き取りのためマイクボタンは削除 -->
+                            <p style="font-size:0.8rem; color:#666; margin-bottom:10px;">（ネル先生はいつでも聞いてるにゃ）</p>
+
                             <button id="live-camera-btn-embedded" class="mini-cam-btn" style="background:#66bb6a; box-shadow:0 4px 0 #33691e; margin-top:10px;" onclick="captureAndSendLiveImage('embedded')"><span>📝</span> 画面を見せて質問</button>
                             <div id="live-chat-video-container-embedded" class="live-chat-video-wrapper" style="margin-top:10px;">
                                 <video id="live-chat-video-embedded" class="live-chat-video-elem" autoplay playsinline muted></video>
                             </div>
+                            <!-- 音声認識結果の表示エリア -->
                             <p id="user-speech-text-embedded" style="margin-top:10px; font-weight:bold; min-height:1.2em; font-size:0.9rem; color:#333;">...</p>
                         </div>
                     </div>
@@ -231,8 +233,7 @@
                             <!-- 図鑑ボタン -->
                             <button onclick="showCollection()" class="main-btn" style="background:#00bcd4; box-shadow: 0 4px 0 #0097a7; margin-bottom: 20px;">📖 お宝図鑑をみる</button>
 
-                            <!-- HTTPチャット用マイクボタン -->
-                            <button id="http-mic-btn" class="camera-btn-large" style="background:#ff85a1; box-shadow:none; margin-bottom:15px;" onclick="startHttpChat()">🎤 おはなしする</button>
+                            <!-- 「おはなしする」ボタンは廃止済み -->
                             
                             <!-- 「これ見て！」カメラボタン -->
                             <button id="live-camera-btn" class="mini-cam-btn" onclick="captureAndIdentifyItem()" style="padding: 25px; font-size: 1.1rem; background: #ff85a1; box-shadow: 0 6px 0 #c25e76;">
