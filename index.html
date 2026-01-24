@@ -62,7 +62,7 @@
             <div class="title-btn-container">
                 <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
             </div>
-            <div class="version-tag">Build: v270.0-TimerVoice</div>
+            <div class="version-tag">Build: v273.0-HTTP-Chat</div>
         </section>
 
         <!-- 1. 校門 (ユーザー選択) -->
@@ -118,18 +118,13 @@
             </div>
             <div class="karikari-counter">🍖 カリカリ: <span id="karikari-count">0</span></div>
             <div class="lobby-menu">
-                <!-- タイマーボタン -->
                 <button onclick="openTimerModal()" class="main-btn pink-btn" style="background:#ff7043; box-shadow: 0 4px 0 #d84315;">⏱️ ネル先生タイマー</button>
-
                 <button onclick="selectMode('explain')" class="main-btn blue-btn">💡 教えてネル先生</button>
                 <button onclick="selectMode('grade')" class="main-btn red-btn">💯 採点ネル先生</button>
                 <button onclick="selectMode('review')" class="main-btn orange-btn">🔥 復習ノート</button>
                 <button onclick="showGame()" class="main-btn yellow-btn">🎮 カリカリ・キャッチ</button>
                 <button onclick="selectMode('simple-chat')" class="main-btn green-btn">🎤 こじんめんだん</button>
-                
-                <!-- 個別指導 -> お宝図鑑 -->
                 <button onclick="selectMode('chat')" class="main-btn" style="background:#5c6bc0; box-shadow: 0 4px 0 #3949ab;">💎 ネル先生のお宝図鑑</button>
-                
                 <button onclick="selectMode('lunch')" class="main-btn pink-btn">🍽️ おいしい給食</button>
                 <button onclick="showAttendance()" class="main-btn purple-btn">📅 出席簿をみる</button>
                 <button onclick="openMemoryManager()" class="main-btn gray-btn" style="background:#607d8b; border:none; box-shadow:0 4px 0 #455a64;">🧠 記憶を整理する</button>
@@ -146,7 +141,6 @@
                 <div class="nell-chat">
                     <div class="nell-avatar-wrap">
                         <img src="nell-normal.png" class="nell-img" id="nell-face">
-                        <!-- ハートエフェクト用のコンテナ -->
                         <div id="heart-container" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;"></div>
                     </div>
                     <div class="chat-bubble"><p id="nell-text"></p></div>
@@ -223,27 +217,22 @@
                         </div>
                     </div>
 
-                    <!-- チャットモード（お宝図鑑：多機能版） -->
+                    <!-- チャットモード（お宝図鑑：HTTP版） -->
                     <div id="chat-view" class="hidden">
                         <div class="glass-card" style="text-align:center; padding:15px;">
                             <p style="font-size:0.9rem; color:#666;">お宝を見せて、図鑑に登録するにゃ！</p>
                             
-                            <!-- 図鑑ボタン -->
-                            <button onclick="showCollection()" class="main-btn" style="background:#00bcd4; box-shadow: 0 4px 0 #0097a7; margin-bottom: 15px;">📖 お宝図鑑をみる</button>
+                            <button onclick="showCollection()" class="main-btn" style="background:#00bcd4; box-shadow: 0 4px 0 #0097a7; margin-bottom: 20px;">📖 お宝図鑑をみる</button>
 
-                            <button id="mic-btn" class="camera-btn-large" style="background:#ff85a1; box-shadow:none; margin-top:15px;" onclick="startLiveChat()">🎤 おはなしする</button>
-                            
-                            <!-- 「これ見て！」カメラボタン -->
-                            <button id="live-camera-btn" class="mini-cam-btn" onclick="captureAndSendLiveImage()">
-                                <span>📷</span> お宝を見せる（図鑑登録）
+                            <!-- カメラボタン (WebSocket廃止に伴いこれ一つに集約) -->
+                            <button id="live-camera-btn" class="mini-cam-btn" onclick="captureAndIdentifyItem()" style="padding: 25px; font-size: 1.1rem; background: #ff85a1; box-shadow: 0 6px 0 #c25e76;">
+                                <span style="font-size: 1.5rem;">📷</span> お宝を見せる（図鑑登録）
                             </button>
                             
                             <!-- カメラプレビュー -->
-                            <div id="live-chat-video-container" class="live-chat-video-wrapper">
+                            <div id="live-chat-video-container" class="live-chat-video-wrapper" style="margin-top:15px;">
                                 <video id="live-chat-video" class="live-chat-video-elem" autoplay playsinline muted></video>
                             </div>
-                            
-                            <p id="user-speech-text" style="margin-top:15px; font-weight:bold; min-height:1.5em;">...</p>
                         </div>
                     </div>
 
@@ -252,17 +241,12 @@
                         <div class="glass-card" style="text-align:center; padding:20px;">
                             <p style="font-size:0.9rem; color:#666;">マイクを押して話しかけてね</p>
                             <button id="mic-btn-simple" class="camera-btn-large" style="background:#66bb6a; box-shadow:none;" onclick="startLiveChat()">🎤 おはなしする</button>
-                            
-                            <!-- 「これ教えて！」カメラボタン -->
                             <button id="live-camera-btn-simple" class="mini-cam-btn" onclick="captureAndSendLiveImage()" style="background:#8bc34a; box-shadow:0 4px 0 #689f38;">
                                 <span>📝</span> 問題をみせて教えてもらう
                             </button>
-
-                            <!-- カメラプレビュー -->
                             <div id="live-chat-video-container-simple" class="live-chat-video-wrapper">
                                 <video id="live-chat-video-simple" class="live-chat-video-elem" autoplay playsinline muted></video>
                             </div>
-
                             <p id="user-speech-text-simple" style="margin-top:15px; font-weight:bold; min-height:1.5em;">...</p>
                         </div>
                     </div>
@@ -372,20 +356,16 @@
 
     <!-- 図鑑（コレクション）表示モーダル -->
     <div id="collection-modal" class="memory-modal-overlay hidden">
-        <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4;"> <!-- 黄色っぽい背景で図鑑感 -->
+        <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4;">
             <h3 style="text-align:center; margin:0 0 15px 0; color:#f57f17; flex-shrink: 0;">📖 お宝図鑑</h3>
-            
-            <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap:10px; flex: 1; overflow-y:auto; padding:5px;">
-                <!-- ここにJSでアイテムが生成されます -->
-            </div>
-
+            <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap:10px; flex: 1; overflow-y:auto; padding:5px;"></div>
             <div style="text-align:center; margin-top:15px; flex-shrink: 0;">
                 <button onclick="closeCollection()" class="main-btn gray-btn" style="width:auto; padding:10px 30px;">閉じる</button>
             </div>
         </div>
     </div>
 
-    <!-- ★追加: タイマーモーダル -->
+    <!-- タイマーモーダル -->
     <div id="timer-modal" class="memory-modal-overlay hidden">
         <div class="memory-modal-content" style="height: auto; max-height: auto;">
             <h3 style="text-align:center; margin:0 0 10px 0; color:#ff7043;">⏱️ ネル先生タイマー</h3>
@@ -409,8 +389,6 @@
         </div>
     </div>
 
-    <!-- Firebase設定・ロジック読み込み -->
-    <!-- ★重要: memory.js は user.js より先に読み込む -->
     <script src="firebase-config.js"></script>
     <script src="memory.js"></script> 
     <script src="audio.js"></script>
