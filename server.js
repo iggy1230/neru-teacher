@@ -1,4 +1,4 @@
-// --- server.js (完全版 v280.1: 検索ツールとJSONモードの競合修正) ---
+// --- server.js (完全版 v280.2: エラー回避・記憶保存強化) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -92,9 +92,9 @@ app.post('/synthesize', async (req, res) => {
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
+        // ★修正: JSONモードは使用せず、テキスト抽出で対応（エラー回避）
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.0-flash-exp", 
-            generationConfig: { responseMimeType: "application/json" }
+            model: "gemini-2.0-flash-exp"
         });
 
         const prompt = `
@@ -116,6 +116,7 @@ app.post('/update-memory', async (req, res) => {
         6. **collection**: 図鑑データは変更せず、そのまま維持すること（サーバー側では変更しない）。
 
         【出力フォーマット】
+        必ず以下のJSON形式の文字列だけを出力してください。
         {
             "nickname": "...",
             "birthday": "...",
@@ -127,20 +128,21 @@ app.post('/update-memory', async (req, res) => {
         `;
 
         const result = await model.generateContent(prompt);
-        let text = result.response.text();
-        
-        text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+        const responseText = result.response.text();
         
         let newProfile;
         try {
-            newProfile = JSON.parse(text);
-        } catch (e) {
-            const match = text.match(/\{[\s\S]*\}/);
-            if (match) {
-                newProfile = JSON.parse(match[0]);
-            } else {
-                throw new Error("Invalid JSON structure");
+            // ★修正: JSON抽出ロジックを強化（Markdown除去など）
+            let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+            const firstBrace = cleanText.indexOf('{');
+            const lastBrace = cleanText.lastIndexOf('}');
+            if (firstBrace !== -1 && lastBrace !== -1) {
+                cleanText = cleanText.substring(firstBrace, lastBrace + 1);
             }
+            newProfile = JSON.parse(cleanText);
+        } catch (e) {
+            console.error("JSON Parse Error in update-memory:", responseText);
+            throw new Error("無効な JSON 構造");
         }
 
         if (Array.isArray(newProfile)) {
@@ -282,15 +284,14 @@ app.post('/chat-dialogue', async (req, res) => {
     try {
         const { text, name, image } = req.body;
         
-        // 現在日時を取得
         const now = new Date();
         const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' };
         const currentDateTime = now.toLocaleString('ja-JP', dateOptions);
 
-        // ★修正: Search Toolを使うため、JSON Mode (responseMimeType: "application/json") を削除
+        // ★修正: Search Toolを使うため、JSON Mode (responseMimeType) を削除し、手動パースで対応
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp",
-            // generationConfig: { responseMimeType: "application/json" }, // ← 削除
+            // generationConfig: { responseMimeType: "application/json" }, // ← 検索ツールと競合するため削除
             tools: [{ google_search: {} }] 
         });
 
@@ -328,11 +329,10 @@ app.post('/chat-dialogue', async (req, res) => {
         
         const responseText = result.response.text().trim();
         
-        // ★修正: 厳格なJSONモードではないため、テキストからJSONを抽出する処理を強化
+        // ★修正: JSON抽出ロジックの強化
         let jsonResponse;
         try {
             let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            // 最初の中括弧と最後の中括弧を探して抽出
             const firstBrace = cleanText.indexOf('{');
             const lastBrace = cleanText.lastIndexOf('}');
             if (firstBrace !== -1 && lastBrace !== -1) {
@@ -341,7 +341,7 @@ app.post('/chat-dialogue', async (req, res) => {
             jsonResponse = JSON.parse(cleanText);
         } catch (e) {
             console.warn("JSON Parse Fallback:", responseText);
-            // パース失敗時のフォールバック (そのままセリフとして扱う)
+            // パース失敗時のフォールバック
             jsonResponse = { speech: responseText, board: "" };
         }
         
