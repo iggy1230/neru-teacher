@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v274.1: お宝図鑑HTTP化・面白解説対応・全機能統合版) ---
+// --- analyze.js (完全版 v275.1: お宝図鑑HTTP化・画像加工・全機能統合版) ---
 
 // ==========================================
 // 1. 最重要：UI操作・モード選択関数
@@ -177,6 +177,48 @@ function stopPreviewCamera() {
     if (container) container.style.display = 'none';
 }
 
+// ★ お宝画像加工処理（簡易背景除去・円形トリミング）
+function createTreasureImage(sourceCanvas) {
+    const size = Math.min(sourceCanvas.width, sourceCanvas.height);
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    
+    // 中央トリミング位置計算
+    const sx = (sourceCanvas.width - size) / 2;
+    const sy = (sourceCanvas.height - size) / 2;
+    
+    // 背景を白にする
+    ctx.fillStyle = "#ffffff";
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(size/2, size/2, size/2, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+    
+    // 画像描画
+    ctx.drawImage(sourceCanvas, sx, sy, size, size, 0, 0, size, size);
+    ctx.restore();
+    
+    // 金色の枠線を描画
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(size/2, size/2, size/2 - 5, 0, Math.PI * 2);
+    ctx.strokeStyle = '#ffd700'; // Gold
+    ctx.lineWidth = 10;
+    ctx.stroke();
+    ctx.restore();
+    
+    // キラキラエフェクト（簡易）
+    ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+    ctx.beginPath();
+    ctx.arc(size*0.2, size*0.2, size*0.05, 0, Math.PI*2);
+    ctx.fill();
+    
+    return canvas.toDataURL('image/png');
+}
+
 // お宝図鑑の撮影＆解析実行
 window.captureAndIdentifyItem = async function() {
     if (window.isLiveImageSending) return;
@@ -196,14 +238,16 @@ window.captureAndIdentifyItem = async function() {
         btn.disabled = true;
     }
 
-    // 画像キャプチャ
+    // 画像キャプチャ（解析用）
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
-    const fullDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+    
+    // ★加工: 保存用画像（お宝メダル風）
+    const treasureDataUrl = createTreasureImage(canvas);
 
     // シャッター演出
     const flash = document.createElement('div');
@@ -228,19 +272,20 @@ window.captureAndIdentifyItem = async function() {
 
         const data = await res.json();
         
-        // 結果表示 & 読み上げ (speechText優先)
+        // 結果表示 & 読み上げ
         if (data.speechText) {
             window.updateNellMessage(data.speechText, "happy", true, true);
         } else if (data.text) {
             window.updateNellMessage(data.text, "happy", true, true); 
         }
 
-        // 図鑑登録 (解説付き)
+        // 図鑑登録 (加工画像を使用)
         if (data.itemName && window.NellMemory) {
             console.log(`[Collection] Registering: ${data.itemName}`);
             const description = data.description || "（解説はないにゃ）";
             
-            await window.NellMemory.addToCollection(currentUser.id, data.itemName, fullDataUrl, description);
+            // ★加工した画像(treasureDataUrl)を保存
+            await window.NellMemory.addToCollection(currentUser.id, data.itemName, treasureDataUrl, description);
             
             const notif = document.createElement('div');
             notif.innerText = `📖 図鑑に「${data.itemName}」を登録したにゃ！`;
@@ -1159,8 +1204,6 @@ window.checkOneProblem = function(id) {
 };
 function updateMarkDisplay(id, isCorrect) { const container = document.getElementById(`grade-item-${id}`); const markElem = document.getElementById(`mark-${id}`); if (container && markElem) { if (isCorrect) { markElem.innerText = "⭕"; markElem.style.color = "#ff5252"; container.style.backgroundColor = "#fff5f5"; } else { markElem.innerText = "❌"; markElem.style.color = "#4a90e2"; container.style.backgroundColor = "#f0f8ff"; } } }
 window.updateGradingMessage = function() { let correctCount = 0; transcribedProblems.forEach(p => { if (p.is_correct) correctCount++; }); const scoreRate = correctCount / (transcribedProblems.length || 1); if (scoreRate === 1.0) updateNellMessage(`全問正解だにゃ！天才だにゃ〜！！`, "excited", false); else if (scoreRate >= 0.5) updateNellMessage(`あと${transcribedProblems.length - correctCount}問！直してみるにゃ！`, "happy", false); else updateNellMessage(`間違ってても大丈夫！入力し直してみて！`, "gentle", false); };
-
-// スクロール復元
 window.backToProblemSelection = function() { 
     document.getElementById('final-view').classList.add('hidden'); 
     document.getElementById('hint-detail-container').classList.add('hidden'); 
@@ -1183,7 +1226,6 @@ window.backToProblemSelection = function() {
         }, 100);
     }
 };
-
 window.pressThanks = function() { window.backToProblemSelection(); };
 window.finishGrading = async function(btnElement) { if(btnElement) { btnElement.disabled = true; btnElement.innerText = "採点完了！"; } if (currentUser) { currentUser.karikari += 100; saveAndSync(); updateMiniKarikari(); showKarikariEffect(100); } await updateNellMessage("よくがんばったにゃ！カリカリ100個あげる！", "excited", false); setTimeout(() => { if(typeof backToLobby === 'function') backToLobby(true); }, 3000); };
 window.pressAllSolved = function(btnElement) { if(btnElement) { btnElement.disabled = true; btnElement.innerText = "すごい！"; } if (currentUser) { currentUser.karikari += 100; saveAndSync(); showKarikariEffect(100); updateMiniKarikari(); updateNellMessage("よくがんばったにゃ！カリカリ100個あげるにゃ！", "excited", false).then(() => { setTimeout(() => { if(typeof backToLobby === 'function') backToLobby(true); }, 3000); }); } };

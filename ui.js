@@ -1,4 +1,4 @@
-// --- ui.js (完全版 v274.1: お宝図鑑詳細ビュー対応) ---
+// --- ui.js (完全版 v275.1: お宝図鑑詳細ビュー・全機能統合版) ---
 
 const sfxChime = new Audio('Jpn_sch_chime.mp3');
 const sfxBtn = new Audio('botan1.mp3');
@@ -6,7 +6,10 @@ const sfxBtn = new Audio('botan1.mp3');
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
 
-// 画面切り替え関数
+// ==========================================
+// 画面切り替え・基本ナビゲーション
+// ==========================================
+
 window.switchScreen = function(to) {
     document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
     const target = document.getElementById(to);
@@ -128,7 +131,7 @@ window.updateProgress = function(p) {
 };
 
 // ==========================================
-// ★ 図鑑 (Collection) - 2画面構成
+// ★ 図鑑 (Collection) - 2画面構成 (一覧 / 詳細)
 // ==========================================
 
 // 一覧を表示
@@ -161,20 +164,20 @@ window.showCollection = async function() {
         return;
     }
 
-    // アイテム生成
+    // アイテム生成 (縦長になりすぎないよう調整済み)
     collection.forEach((item, index) => {
         const div = document.createElement('div');
-        div.style.cssText = "background:white; border-radius:10px; padding:8px; box-shadow:0 2px 5px rgba(0,0,0,0.1); text-align:center; border:2px solid #fff176; position:relative; cursor:pointer; transition:transform 0.1s;";
+        div.style.cssText = "background:white; border-radius:10px; padding:5px; box-shadow:0 2px 5px rgba(0,0,0,0.1); text-align:center; border:2px solid #fff176; position:relative; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; min-height:120px; transition:transform 0.1s;";
         
         div.onclick = () => window.showCollectionDetail(item, index); // 詳細へ遷移
 
         const img = document.createElement('img');
         img.src = item.image;
-        img.style.cssText = "width:100%; aspect-ratio:1; object-fit:contain; border-radius:5px; margin-bottom:5px; background:#f5f5f5;";
+        img.style.cssText = "width:90%; aspect-ratio:1; object-fit:contain; border-radius:5px; margin-bottom:5px; background:#fafafa;";
         
         const name = document.createElement('div');
         name.innerText = item.name;
-        name.style.cssText = "font-size:0.8rem; font-weight:bold; color:#555; word-break:break-all; line-height:1.2; min-height:1.2em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;";
+        name.style.cssText = "font-size:0.8rem; font-weight:bold; color:#555; width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:0 5px;";
 
         div.appendChild(img);
         div.appendChild(name);
@@ -188,6 +191,7 @@ window.showCollectionDetail = function(item, index) {
     if (!modal) return;
 
     const dateStr = item.date ? new Date(item.date).toLocaleDateString() : "";
+    // 解説がない場合のフォールバック
     const description = item.description || "（ネル先生の解説はまだないみたいだにゃ…）";
 
     modal.innerHTML = `
