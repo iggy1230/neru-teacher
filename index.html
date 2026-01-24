@@ -55,6 +55,38 @@
             font-size: 1.1rem;
             line-height: 1.6;
         }
+
+        /* テキスト質問エリア */
+        .text-question-area {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 15px;
+            align-items: center;
+        }
+        .text-question-input {
+            flex: 1;
+            padding: 10px;
+            border: 2px solid #8bc34a;
+            border-radius: 10px;
+            font-size: 1rem;
+            resize: none;
+            height: 50px;
+        }
+        .text-question-btn {
+            background: #8bc34a;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            padding: 0 15px;
+            height: 50px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 4px 0 #558b2f;
+        }
+        .text-question-btn:active {
+            transform: translateY(2px);
+            box-shadow: 0 2px 0 #558b2f;
+        }
     </style>
 </head>
 <body>
@@ -78,7 +110,7 @@
             <div class="title-btn-container">
                 <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
             </div>
-            <div class="version-tag">Build: v277.1-Fix-Camera-Chalkboard</div>
+            <div class="version-tag">Build: v279.0-Manual-Camera</div>
         </section>
 
         <!-- 1. 校門 (ユーザー選択) -->
@@ -231,7 +263,14 @@
                         <div style="text-align:center;">
                             <p style="font-size:0.8rem; color:#666; margin-bottom:10px;">（ネル先生はいつでも聞いてるにゃ）</p>
 
-                            <button id="live-camera-btn-embedded" class="mini-cam-btn" style="background:#66bb6a; box-shadow:0 4px 0 #33691e; margin-top:10px;" onclick="captureAndSendLiveImage('embedded')"><span>📝</span> 画面を見せて質問</button>
+                            <!-- テキスト質問エリア -->
+                            <div class="text-question-area">
+                                <textarea id="embedded-text-input" class="text-question-input" placeholder="ここに書いて質問"></textarea>
+                                <button onclick="sendEmbeddedText()" class="text-question-btn">送信</button>
+                            </div>
+
+                            <!-- カメラ質問ボタン -->
+                            <button id="live-camera-btn-embedded" class="mini-cam-btn" style="background:#66bb6a; box-shadow:0 4px 0 #33691e; margin-top:10px;" onclick="toggleEmbeddedCamera()"><span>📷</span> カメラで見せて質問</button>
                             
                             <div id="live-chat-video-container-embedded" class="live-chat-video-wrapper" style="margin-top:10px;">
                                 <video id="live-chat-video-embedded" class="live-chat-video-elem" autoplay playsinline muted></video>
@@ -240,7 +279,7 @@
                             <!-- 音声認識結果 -->
                             <p id="user-speech-text-embedded" style="margin-top:10px; font-weight:bold; min-height:1.2em; font-size:0.9rem; color:#333;">...</p>
                             
-                            <!-- ★追加: ネル先生の解説用黒板 -->
+                            <!-- ネル先生の解説用黒板 -->
                             <div id="embedded-chalkboard" class="embedded-chalkboard hidden"></div>
                         </div>
                     </div>
@@ -254,7 +293,7 @@
                             <button onclick="showCollection()" class="main-btn" style="background:#00bcd4; box-shadow: 0 4px 0 #0097a7; margin-bottom: 20px;">📖 お宝図鑑をみる</button>
 
                             <!-- 「これ見て！」カメラボタン -->
-                            <button id="live-camera-btn" class="mini-cam-btn" onclick="captureAndIdentifyItem()" style="padding: 25px; font-size: 1.1rem; background: #ff85a1; box-shadow: 0 6px 0 #c25e76;">
+                            <button id="live-camera-btn" class="mini-cam-btn" onclick="toggleTreasureCamera()" style="padding: 25px; font-size: 1.1rem; background: #ff85a1; box-shadow: 0 6px 0 #c25e76;">
                                 <span style="font-size: 1.5rem;">📷</span> お宝を見せる（図鑑登録）
                             </button>
                             

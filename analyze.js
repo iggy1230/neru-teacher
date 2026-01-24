@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v278.0: チャット板書分離対応) ---
+// --- analyze.js (完全版 v279.0: チャット板書分離対応・カメラ手動化) ---
 
 // ==========================================
 // 1. 最重要：UI操作・モード選択関数
@@ -89,6 +89,10 @@ window.selectMode = function(m) {
             embedBoard.classList.add('hidden');
         }
 
+        // テキスト入力欄リセット
+        const embedInput = document.getElementById('embedded-text-input');
+        if(embedInput) embedInput.value = "";
+
         // 戻るボタン
         const backBtn = document.getElementById('main-back-btn');
         if (backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = window.backToLobby; }
@@ -111,8 +115,7 @@ window.selectMode = function(m) {
             // お宝図鑑モード
             document.getElementById('chat-view').classList.remove('hidden'); 
             window.updateNellMessage("お宝を見せてにゃ！お話もできるにゃ！", "excited", false); 
-            // カメラ即時起動 (お宝用)
-            startPreviewCamera('live-chat-video', 'live-chat-video-container');
+            // カメラは手動起動なのでここでは開始しない
             // 常時聞き取り開始
             startAlwaysOnListening();
         } 
@@ -127,8 +130,7 @@ window.selectMode = function(m) {
         else if (m === 'review') { 
             renderMistakeSelection(); 
             document.getElementById('embedded-chat-section').classList.remove('hidden'); 
-            // 復習モードでも常時聞き取り＆カメラ起動
-            startPreviewCamera('live-chat-video-embedded', 'live-chat-video-container-embedded');
+            // 復習モード: 常時聞き取りのみ開始 (カメラは手動)
             startAlwaysOnListening();
         } 
         else { 
@@ -137,8 +139,7 @@ window.selectMode = function(m) {
             window.updateNellMessage("どの教科にするのかにゃ？", "normal", false); 
             if (m === 'explain' || m === 'grade') {
                 document.getElementById('embedded-chat-section').classList.remove('hidden');
-                // 解説・採点モードでも常時聞き取り＆カメラ起動
-                startPreviewCamera('live-chat-video-embedded', 'live-chat-video-container-embedded');
+                // 解説・採点モード: 常時聞き取りのみ開始 (カメラは手動)
                 startAlwaysOnListening();
             }
         }
@@ -204,9 +205,7 @@ function startAlwaysOnListening() {
                         embedBoard.innerText = data.board;
                         embedBoard.classList.remove('hidden');
                     } else {
-                        // 板書がない場合は既存のものを消すか維持するかだが、
-                        // 質問が変われば消すのが自然
-                        // embedBoard.classList.add('hidden'); // 必要ならコメントアウト解除
+                        // 板書がない場合は維持
                     }
                 }
             }
@@ -301,6 +300,7 @@ window.startPreviewCamera = async function(videoId = 'live-chat-video', containe
 
     } catch (e) {
         console.warn("[Preview] Camera init failed:", e);
+        alert("カメラが使えないにゃ…。");
     }
 };
 
@@ -318,6 +318,97 @@ window.stopPreviewCamera = function() {
         const c = document.getElementById(cid);
         if(c) c.style.display = 'none';
     });
+};
+
+// ★追加: 埋め込みチャットのテキスト送信
+window.sendEmbeddedText = async function() {
+    const input = document.getElementById('embedded-text-input');
+    if (!input) return;
+    const text = input.value.trim();
+    if (!text) return;
+
+    // 音声認識停止（干渉防止）
+    if (isAlwaysListening && continuousRecognition) {
+        try { continuousRecognition.stop(); } catch(e){}
+    }
+
+    const btn = document.querySelector('.text-question-btn');
+    if (btn) { btn.disabled = true; btn.innerText = "送信中..."; }
+
+    try {
+        window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
+        
+        const res = await fetch('/chat-dialogue', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: text, name: currentUser ? currentUser.name : "生徒" })
+        });
+
+        if(res.ok) {
+            const data = await res.json();
+            const speechText = data.speech || data.reply || "教えてあげるにゃ！";
+            await window.updateNellMessage(speechText, "happy", true, true);
+            
+            const embedBoard = document.getElementById('embedded-chalkboard');
+            if (embedBoard && data.board && data.board.trim() !== "") {
+                embedBoard.innerText = data.board;
+                embedBoard.classList.remove('hidden');
+            }
+            input.value = ""; // クリア
+        }
+    } catch(e) {
+        console.error("Text Chat Error:", e);
+        window.updateNellMessage("ごめん、ちょっとわからなかったにゃ。", "thinking", false, true);
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerText = "送信"; }
+        // 聞き取り再開
+        if (isAlwaysListening) {
+             try { continuousRecognition.start(); } catch(e){}
+        }
+    }
+};
+
+// ★追加: 埋め込みカメラのトグル処理
+window.toggleEmbeddedCamera = function() {
+    const videoId = 'live-chat-video-embedded';
+    const containerId = 'live-chat-video-container-embedded';
+    const btnId = 'live-camera-btn-embedded';
+    const btn = document.getElementById(btnId);
+    
+    // プレビュー中かどうか判定 (streamがあるか)
+    if (previewStream && previewStream.active) {
+        // 撮影実行
+        captureAndSendLiveImageHttp();
+    } else {
+        // カメラ起動
+        startPreviewCamera(videoId, containerId).then(() => {
+            if (btn) {
+                btn.innerHTML = "<span>📸</span> 撮影して質問";
+                btn.style.backgroundColor = "#ff5252"; // 撮影色
+            }
+        });
+    }
+};
+
+// ★追加: お宝カメラのトグル処理
+window.toggleTreasureCamera = function() {
+    const videoId = 'live-chat-video';
+    const containerId = 'live-chat-video-container';
+    const btnId = 'live-camera-btn';
+    const btn = document.getElementById(btnId);
+    
+    if (previewStream && previewStream.active) {
+        // 撮影実行
+        captureAndIdentifyItem();
+    } else {
+        // カメラ起動
+        startPreviewCamera(videoId, containerId).then(() => {
+            if (btn) {
+                btn.innerHTML = "<span>📸</span> 撮影する";
+                btn.style.backgroundColor = "#ff5252"; 
+            }
+        });
+    }
 };
 
 // ★修正: お宝画像加工処理（サイズ縮小 320px & JPEG圧縮）
@@ -381,7 +472,6 @@ window.captureAndIdentifyItem = async function() {
 
     window.isLiveImageSending = true;
     const btn = document.getElementById('live-camera-btn');
-    const originalBtnText = btn ? btn.innerHTML : "";
     if (btn) {
         btn.innerHTML = "<span>📡</span> 解析中にゃ...";
         btn.style.backgroundColor = "#ccc";
@@ -446,11 +536,15 @@ window.captureAndIdentifyItem = async function() {
         window.updateNellMessage("よく見えなかったにゃ…もう一回お願いにゃ！", "thinking", false, true);
     } finally {
         window.isLiveImageSending = false;
+        
+        // ★修正: 撮影後はカメラを停止してボタンを元に戻す
+        stopPreviewCamera(); 
         if (btn) {
-            btn.innerHTML = originalBtnText;
+            btn.innerHTML = "<span>📷</span> お宝を見せる（図鑑登録）";
             btn.style.backgroundColor = "#ff85a1"; 
             btn.disabled = false;
         }
+        
         if (isAlwaysListening && currentMode === 'chat') {
             try { continuousRecognition.start(); } catch(e){}
         }
@@ -827,10 +921,14 @@ async function captureAndSendLiveImageHttp() {
         window.updateNellMessage("よく見えなかったにゃ…もう一回お願いにゃ！", "thinking", false, true);
     } finally {
         window.isLiveImageSending = false;
+        
+        // ★修正: 撮影後はカメラを停止してボタンを元に戻す
+        stopPreviewCamera(); 
         if (btn) {
-            btn.innerHTML = "<span>📝</span> 画面を見せて質問";
+            btn.innerHTML = "<span>📷</span> カメラで見せて質問";
             btn.style.backgroundColor = "#66bb6a";
         }
+        
         // 聞き取り再開
         if (isAlwaysListening) {
              try { continuousRecognition.start(); } catch(e){}
