@@ -1,7 +1,3 @@
-### 1. index.html (完全版 v276.0)
-`#chat-view` 内の `#http-mic-btn` を削除しました。
-
-```html
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -43,21 +39,6 @@
             border-radius: 15px;
             background: #f1f8e9;
         }
-
-        /* 聞き耳アニメーション */
-        .listening-indicator {
-            display: inline-block;
-            width: 10px; height: 10px;
-            background-color: #ff5252;
-            border-radius: 50%;
-            margin-left: 5px;
-            animation: pulse-red 1s infinite;
-        }
-        @keyframes pulse-red {
-            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(255, 82, 82, 0.7); }
-            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(255, 82, 82, 0); }
-            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(255, 82, 82, 0); }
-        }
     </style>
 </head>
 <body>
@@ -81,7 +62,7 @@
             <div class="title-btn-container">
                 <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
             </div>
-            <div class="version-tag">Build: v276.0-AlwaysOnChat</div>
+            <div class="version-tag">Build: v275.2-HTTP-Chat</div>
         </section>
 
         <!-- 1. 校門 (ユーザー選択) -->
@@ -165,7 +146,7 @@
                 <div class="nell-chat">
                     <div class="nell-avatar-wrap">
                         <img src="nell-normal.png" class="nell-img" id="nell-face">
-                        <!-- ハートエフェクト用のコンテナ -->
+                        <!-- ハートエフェクト用のコンテナ (ポインターイベント無効化済み) -->
                         <div id="heart-container" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;"></div>
                     </div>
                     <div class="chat-bubble"><p id="nell-text"></p></div>
@@ -192,8 +173,8 @@
                         <div class="upload-buttons-container">
                             <button id="start-webcam-btn" class="camera-btn-large" style="background:#ff9800;">📹 アプリで撮影</button>
                             <div style="display:flex; gap:10px;">
-                                <label class="camera-btn-large" style="flex:1;">📷 標準カメラ<input type="file" id="hw-input-camera" accept="image/*" style="display:none;"></label>
-                                <label class="camera-btn-large" style="flex:1; background:#4a90e2;">📁 アルバム<input type="file" id="hw-input-album" accept="image/*" style="display:none;"></label>
+                                <label class="camera-btn-large" style="flex:1;">📷 標準カメラ<input type="file" id="student-photo-input-camera" accept="image/*" style="display:none;"></label>
+                                <label class="camera-btn-large" style="flex:1; background:#4a90e2;">📁 アルバム<input type="file" id="student-photo-input-album" accept="image/*" style="display:none;"></label>
                             </div>
                         </div>
                     </div>
@@ -242,18 +223,16 @@
                         </div>
                     </div>
 
-                    <!-- チャットモード（お宝図鑑：HTTP常時接続版） -->
+                    <!-- チャットモード（お宝図鑑：HTTP版） -->
                     <div id="chat-view" class="hidden">
                         <div class="glass-card" style="text-align:center; padding:15px;">
-                            <p style="font-size:0.9rem; color:#666;">
-                                お宝を見せて、図鑑に登録するにゃ！<br>
-                                （聞いてるにゃ… <span class="listening-indicator"></span>）
-                            </p>
+                            <p style="font-size:0.9rem; color:#666;">お宝を見せて、図鑑に登録するにゃ！</p>
                             
                             <!-- 図鑑ボタン -->
                             <button onclick="showCollection()" class="main-btn" style="background:#00bcd4; box-shadow: 0 4px 0 #0097a7; margin-bottom: 20px;">📖 お宝図鑑をみる</button>
 
-                            <!-- ★「おはなしする」ボタンは削除されました -->
+                            <!-- HTTPチャット用マイクボタン -->
+                            <button id="http-mic-btn" class="camera-btn-large" style="background:#ff85a1; box-shadow:none; margin-bottom:15px;" onclick="startHttpChat()">🎤 おはなしする</button>
                             
                             <!-- 「これ見て！」カメラボタン -->
                             <button id="live-camera-btn" class="mini-cam-btn" onclick="captureAndIdentifyItem()" style="padding: 25px; font-size: 1.1rem; background: #ff85a1; box-shadow: 0 6px 0 #c25e76;">
@@ -328,109 +307,14 @@
         </section>
     </div>
 
-    <!-- ネル先生のホワイトボード（ポップアップ） -->
-    <div id="inline-whiteboard" class="hidden whiteboard-overlay">
-        <div class="whiteboard-board">
-            <p style="margin:0 0 10px 0; color:#8d6e63; font-weight:bold;">ネル先生のメモ</p>
-            <div id="whiteboard-content" class="whiteboard-text"></div>
-            <button onclick="document.getElementById('inline-whiteboard').classList.add('hidden')" class="close-board-btn">✖ 閉じる</button>
-        </div>
-    </div>
-
     <!-- モーダル類 -->
-    <div id="camera-modal" class="camera-modal hidden">
-        <div class="camera-container">
-            <video id="camera-video" autoplay playsinline></video>
-            <div class="camera-guide-box"><p>枠に合わせてにゃ</p></div>
-        </div>
-        <div class="camera-controls">
-            <button id="camera-cancel-btn" class="main-btn gray-btn" style="width:100px;">やめる</button>
-            <button id="camera-shutter-btn" class="camera-shutter-btn"></button>
-        </div>
-        <canvas id="camera-canvas" style="display:none;"></canvas>
-    </div>
+    <div id="inline-whiteboard" class="hidden whiteboard-overlay"><div class="whiteboard-board"><p style="margin:0 0 10px 0; color:#8d6e63; font-weight:bold;">ネル先生のメモ</p><div id="whiteboard-content" class="whiteboard-text"></div><button onclick="document.getElementById('inline-whiteboard').classList.add('hidden')" class="close-board-btn">✖ 閉じる</button></div></div>
+    <div id="camera-modal" class="camera-modal hidden"><div class="camera-container"><video id="camera-video" autoplay playsinline></video><div class="camera-guide-box"><p>枠に合わせてにゃ</p></div></div><div class="camera-controls"><button id="camera-cancel-btn" class="main-btn gray-btn" style="width:100px;">やめる</button><button id="camera-shutter-btn" class="camera-shutter-btn"></button></div><canvas id="camera-canvas" style="display:none;"></canvas></div>
+    <div id="cropper-modal" class="camera-modal hidden"><div class="cropper-wrapper"><canvas id="crop-canvas"></canvas><svg id="crop-lines" style="position:absolute; top:0; left:0; pointer-events:none; width:100%; height:100%;"></svg><div id="handle-tl" class="crop-handle" style="top:0; left:0;"></div><div id="handle-tr" class="crop-handle" style="top:0; right:0;"></div><div id="handle-br" class="crop-handle" style="bottom:0; right:0;"></div><div id="handle-bl" class="crop-handle" style="bottom:0; left:0;"></div></div><div class="camera-controls"><button id="cropper-cancel-btn" class="main-btn gray-btn" style="width:100px;">やめる</button><button id="cropper-ok-btn" class="main-btn pink-btn" style="width:120px;">決定！</button></div></div>
+    <div id="memory-manager-modal" class="memory-modal-overlay hidden"><div class="memory-modal-content"><h3 style="text-align:center; margin:0 0 10px 0; flex-shrink: 0;">🧠 記憶の整理</h3><div style="display:flex; gap:10px; margin-bottom:15px; border-bottom:2px solid #eee; padding-bottom:5px; flex-shrink: 0;"><button class="memory-tab active" onclick="switchMemoryTab('profile')" id="tab-profile">ネル先生のメモ帳</button><button class="memory-tab" onclick="switchMemoryTab('logs')" id="tab-logs">会話ログ</button></div><div id="memory-view-profile" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;"><p style="font-size:0.8rem; color:#666; flex-shrink: 0;">ネル先生が覚えているキミのことだにゃ。</p><div id="profile-container" class="memory-list" style="flex: 1; overflow-y: auto;"></div></div><div id="memory-view-logs" class="hidden" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;"><p style="font-size:0.8rem; color:#666; flex-shrink: 0;">直近の会話ログだにゃ。</p><div id="memory-list-container" class="memory-list" style="flex: 1; overflow-y: auto;"></div></div><button onclick="closeMemoryManager()" class="main-btn gray-btn" style="margin-top:10px; flex-shrink: 0;">閉じる</button></div></div>
+    <div id="collection-modal" class="memory-modal-overlay hidden"><div class="memory-modal-content" style="max-width: 600px; background:#fff9c4;"><h3 style="text-align:center; margin:0 0 15px 0; color:#f57f17; flex-shrink: 0;">📖 お宝図鑑</h3><div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap:10px; flex: 1; overflow-y:auto; padding:5px;"></div><div style="text-align:center; margin-top:15px; flex-shrink: 0;"><button onclick="closeCollection()" class="main-btn gray-btn" style="width:auto; padding:10px 30px;">閉じる</button></div></div></div>
+    <div id="timer-modal" class="memory-modal-overlay hidden"><div class="memory-modal-content" style="height: auto; max-height: auto;"><h3 style="text-align:center; margin:0 0 10px 0; color:#ff7043;">⏱️ ネル先生タイマー</h3><div class="timer-box" style="margin: 0; box-shadow: none; border: none;"><div id="modal-timer-display" class="timer-display" style="font-size: 3rem;">00:00</div><div class="timer-controls" style="margin-top: 15px;"><button onclick="setTimer(1)" class="timer-btn">+1分</button><button onclick="setTimer(10)" class="timer-btn">+10分</button><button onclick="setTimer(30)" class="timer-btn">+30分</button><button onclick="resetTimer()" class="timer-btn" style="background:#b0bec5;">リセット</button></div><button id="timer-toggle-btn" onclick="toggleTimer()" class="main-btn pink-btn" style="margin-top:20px; width:100%;">スタート！</button></div><div style="text-align:center; margin-top:15px;"><button onclick="closeTimerModal()" class="main-btn gray-btn" style="width:auto; padding:10px 30px;">閉じる</button></div></div></div>
 
-    <div id="cropper-modal" class="camera-modal hidden">
-        <div class="cropper-wrapper">
-            <canvas id="crop-canvas"></canvas>
-            <svg id="crop-lines" style="position:absolute; top:0; left:0; pointer-events:none; width:100%; height:100%;">
-            </svg>
-            <div id="handle-tl" class="crop-handle" style="top:0; left:0;"></div>
-            <div id="handle-tr" class="crop-handle" style="top:0; right:0;"></div>
-            <div id="handle-br" class="crop-handle" style="bottom:0; right:0;"></div>
-            <div id="handle-bl" class="crop-handle" style="bottom:0; left:0;"></div>
-        </div>
-        <div class="camera-controls">
-            <button id="cropper-cancel-btn" class="main-btn gray-btn" style="width:100px;">やめる</button>
-            <button id="cropper-ok-btn" class="main-btn pink-btn" style="width:120px;">決定！</button>
-        </div>
-    </div>
-
-    <!-- 記憶管理モーダル -->
-    <div id="memory-manager-modal" class="memory-modal-overlay hidden">
-        <div class="memory-modal-content">
-            <h3 style="text-align:center; margin:0 0 10px 0; flex-shrink: 0;">🧠 記憶の整理</h3>
-            
-            <div style="display:flex; gap:10px; margin-bottom:15px; border-bottom:2px solid #eee; padding-bottom:5px; flex-shrink: 0;">
-                <button class="memory-tab active" onclick="switchMemoryTab('profile')" id="tab-profile">ネル先生のメモ帳</button>
-                <button class="memory-tab" onclick="switchMemoryTab('logs')" id="tab-logs">会話ログ</button>
-            </div>
-
-            <div id="memory-view-profile" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
-                <p style="font-size:0.8rem; color:#666; flex-shrink: 0;">ネル先生が覚えているキミのことだにゃ。</p>
-                <div id="profile-container" class="memory-list" style="flex: 1; overflow-y: auto;"></div>
-            </div>
-
-            <div id="memory-view-logs" class="hidden" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
-                <p style="font-size:0.8rem; color:#666; flex-shrink: 0;">直近の会話ログだにゃ。</p>
-                <div id="memory-list-container" class="memory-list" style="flex: 1; overflow-y: auto;"></div>
-            </div>
-
-            <button onclick="closeMemoryManager()" class="main-btn gray-btn" style="margin-top:10px; flex-shrink: 0;">閉じる</button>
-        </div>
-    </div>
-
-    <!-- 図鑑（コレクション）表示モーダル -->
-    <div id="collection-modal" class="memory-modal-overlay hidden">
-        <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4;"> <!-- 黄色っぽい背景で図鑑感 -->
-            <h3 style="text-align:center; margin:0 0 15px 0; color:#f57f17; flex-shrink: 0;">📖 お宝図鑑</h3>
-            
-            <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap:10px; flex: 1; overflow-y:auto; padding:5px;">
-                <!-- ここにJSでアイテムが生成されます -->
-            </div>
-
-            <div style="text-align:center; margin-top:15px; flex-shrink: 0;">
-                <button onclick="closeCollection()" class="main-btn gray-btn" style="width:auto; padding:10px 30px;">閉じる</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- ★追加: タイマーモーダル -->
-    <div id="timer-modal" class="memory-modal-overlay hidden">
-        <div class="memory-modal-content" style="height: auto; max-height: auto;">
-            <h3 style="text-align:center; margin:0 0 10px 0; color:#ff7043;">⏱️ ネル先生タイマー</h3>
-            
-            <div class="timer-box" style="margin: 0; box-shadow: none; border: none;">
-                <div id="modal-timer-display" class="timer-display" style="font-size: 3rem;">00:00</div>
-                
-                <div class="timer-controls" style="margin-top: 15px;">
-                    <button onclick="setTimer(1)" class="timer-btn">+1分</button>
-                    <button onclick="setTimer(10)" class="timer-btn">+10分</button>
-                    <button onclick="setTimer(30)" class="timer-btn">+30分</button>
-                    <button onclick="resetTimer()" class="timer-btn" style="background:#b0bec5;">リセット</button>
-                </div>
-                
-                <button id="timer-toggle-btn" onclick="toggleTimer()" class="main-btn pink-btn" style="margin-top:20px; width:100%;">スタート！</button>
-            </div>
-
-            <div style="text-align:center; margin-top:15px;">
-                <button onclick="closeTimerModal()" class="main-btn gray-btn" style="width:auto; padding:10px 30px;">閉じる</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Firebase設定・ロジック読み込み -->
-    <!-- ★重要: memory.js は user.js より先に読み込む -->
     <script src="firebase-config.js"></script>
     <script src="memory.js"></script> 
     <script src="audio.js"></script>
