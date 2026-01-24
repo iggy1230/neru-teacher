@@ -50,7 +50,7 @@
         <span>🍖</span><span id="mini-karikari-count">0</span>
     </div>
 
-    <!-- ★追加: 常駐ミニタイマー（左上） -->
+    <!-- 常駐ミニタイマー（左上） -->
     <div id="mini-timer-display" class="mini-timer-display hidden" onclick="openTimerModal()">
         <span>⏱️</span> <span id="mini-timer-text">00:00</span>
     </div>
@@ -62,7 +62,7 @@
             <div class="title-btn-container">
                 <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
             </div>
-            <div class="version-tag">Build: v269.0-GlobalTimer</div>
+            <div class="version-tag">Build: v270.0-TimerVoice</div>
         </section>
 
         <!-- 1. 校門 (ユーザー選択) -->
@@ -118,7 +118,7 @@
             </div>
             <div class="karikari-counter">🍖 カリカリ: <span id="karikari-count">0</span></div>
             <div class="lobby-menu">
-                <!-- ★ここにタイマーボタンを追加 -->
+                <!-- タイマーボタン -->
                 <button onclick="openTimerModal()" class="main-btn pink-btn" style="background:#ff7043; box-shadow: 0 4px 0 #d84315;">⏱️ ネル先生タイマー</button>
 
                 <button onclick="selectMode('explain')" class="main-btn blue-btn">💡 教えてネル先生</button>
@@ -127,7 +127,7 @@
                 <button onclick="showGame()" class="main-btn yellow-btn">🎮 カリカリ・キャッチ</button>
                 <button onclick="selectMode('simple-chat')" class="main-btn green-btn">🎤 こじんめんだん</button>
                 
-                <!-- 名称変更: 個別指導 -> お宝図鑑 -->
+                <!-- 個別指導 -> お宝図鑑 -->
                 <button onclick="selectMode('chat')" class="main-btn" style="background:#5c6bc0; box-shadow: 0 4px 0 #3949ab;">💎 ネル先生のお宝図鑑</button>
                 
                 <button onclick="selectMode('lunch')" class="main-btn pink-btn">🍽️ おいしい給食</button>
@@ -146,7 +146,7 @@
                 <div class="nell-chat">
                     <div class="nell-avatar-wrap">
                         <img src="nell-normal.png" class="nell-img" id="nell-face">
-                        <!-- ハートエフェクト用のコンテナ (ポインターイベント無効化済み) -->
+                        <!-- ハートエフェクト用のコンテナ -->
                         <div id="heart-container" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;"></div>
                     </div>
                     <div class="chat-bubble"><p id="nell-text"></p></div>
@@ -346,24 +346,21 @@
         </div>
     </div>
 
-    <!-- 記憶管理モーダル (タブ付き + Flex修正) -->
+    <!-- 記憶管理モーダル -->
     <div id="memory-manager-modal" class="memory-modal-overlay hidden">
         <div class="memory-modal-content">
             <h3 style="text-align:center; margin:0 0 10px 0; flex-shrink: 0;">🧠 記憶の整理</h3>
             
-            <!-- タブ -->
             <div style="display:flex; gap:10px; margin-bottom:15px; border-bottom:2px solid #eee; padding-bottom:5px; flex-shrink: 0;">
                 <button class="memory-tab active" onclick="switchMemoryTab('profile')" id="tab-profile">ネル先生のメモ帳</button>
                 <button class="memory-tab" onclick="switchMemoryTab('logs')" id="tab-logs">会話ログ</button>
             </div>
 
-            <!-- プロフィール表示エリア (Flexでスクロール制御) -->
             <div id="memory-view-profile" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
                 <p style="font-size:0.8rem; color:#666; flex-shrink: 0;">ネル先生が覚えているキミのことだにゃ。</p>
                 <div id="profile-container" class="memory-list" style="flex: 1; overflow-y: auto;"></div>
             </div>
 
-            <!-- 会話ログ表示エリア -->
             <div id="memory-view-logs" class="hidden" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;">
                 <p style="font-size:0.8rem; color:#666; flex-shrink: 0;">直近の会話ログだにゃ。</p>
                 <div id="memory-list-container" class="memory-list" style="flex: 1; overflow-y: auto;"></div>

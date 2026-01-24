@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v269.0: 常駐型タイマー統合版) ---
+// --- analyze.js (完全版 v270.0: タイマー音声通知追加) ---
 
 // ==========================================
 // 1. 最重要：UI操作・モード選択関数 (必ず最初に定義)
@@ -277,13 +277,13 @@ window.setSubject = function(s) {
 window.setAnalyzeMode = function(type) { analysisType = 'precision'; };
 
 // ==========================================
-// ★ タイマー関連 (New: 常駐型)
+// ★ タイマー関連 (New: 常駐型 + 音声通知)
 // ==========================================
 
 // モーダル制御
 window.openTimerModal = function() {
     document.getElementById('timer-modal').classList.remove('hidden');
-    updateTimerDisplay(); // 開いたときに表示更新
+    updateTimerDisplay(); 
 };
 
 window.closeTimerModal = function() {
@@ -338,13 +338,17 @@ window.toggleTimer = function() {
                 studyTimerCheck++;
                 updateTimerDisplay();
                 
-                // 5分ごとの通知
-                if (studyTimerCheck >= 300) {
-                    studyTimerCheck = 0;
-                    if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
-                        sendSilentPrompt("5分経ったよ。進み具合を心配したり、褒めたりして。");
-                    }
+                // ★追加: 残り時間の音声通知ロジック (10分, 5分, 3分, 1分)
+                if (studyTimerValue === 600) {
+                    window.updateNellMessage("10分前だにゃ〜。お茶でも飲んで落ち着くにゃ。", "gentle", false, true);
+                } else if (studyTimerValue === 300) {
+                    window.updateNellMessage("あと5分。一歩ずつ、一歩ずつだにゃ〜。", "normal", false, true);
+                } else if (studyTimerValue === 180) {
+                    window.updateNellMessage("3分前。深呼吸して、もうひと踏ん張りだにゃ。", "excited", false, true);
+                } else if (studyTimerValue === 60) {
+                    window.updateNellMessage("あと1分だにゃ。最後までボクが見守ってるにゃ。", "excited", false, true);
                 }
+
             } else {
                 // 終了
                 clearInterval(studyTimerInterval);
@@ -353,11 +357,8 @@ window.toggleTimer = function() {
                 document.getElementById('timer-toggle-btn').className = "main-btn pink-btn";
                 try { sfxChime.play(); } catch(e){}
                 
-                if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
-                    sendSilentPrompt("タイマー終了！たくさん褒めて！");
-                } else {
-                    alert("時間だにゃ！おつかれさまにゃ！");
-                }
+                // ★追加: 終了時のコメント
+                window.updateNellMessage("時間だにゃ！お疲れ様だにゃ〜。さ、ゆっくり休むにゃ。", "happy", false, true);
                 
                 // 終了したらミニタイマーを隠す
                 document.getElementById('mini-timer-display').classList.add('hidden');
