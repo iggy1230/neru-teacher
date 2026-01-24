@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v279.0: チャット板書分離対応・カメラ手動化) ---
+// --- analyze.js (完全版 v280.1: チャット板書分離対応・カメラ手動化) ---
 
 // ==========================================
 // 1. 最重要：UI操作・モード選択関数
@@ -921,9 +921,6 @@ async function captureAndSendLiveImageHttp() {
         window.updateNellMessage("よく見えなかったにゃ…もう一回お願いにゃ！", "thinking", false, true);
     } finally {
         window.isLiveImageSending = false;
-        
-        // ★修正: 撮影後はカメラを停止してボタンを元に戻す
-        stopPreviewCamera(); 
         if (btn) {
             btn.innerHTML = "<span>📷</span> カメラで見せて質問";
             btn.style.backgroundColor = "#66bb6a";

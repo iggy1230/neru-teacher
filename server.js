@@ -1,4 +1,4 @@
-// --- server.js (完全版 v280.0: 日時認識・Google検索対応) ---
+// --- server.js (完全版 v280.1: 検索ツールとJSONモードの競合修正) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -287,11 +287,11 @@ app.post('/chat-dialogue', async (req, res) => {
         const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' };
         const currentDateTime = now.toLocaleString('ja-JP', dateOptions);
 
-        // ★MODEL指定: その他はFlash-Exp (JSONモード有効化 + Google検索ツール)
+        // ★修正: Search Toolを使うため、JSON Mode (responseMimeType: "application/json") を削除
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp",
-            generationConfig: { responseMimeType: "application/json" },
-            tools: [{ google_search: {} }] // Google検索ツールを追加
+            // generationConfig: { responseMimeType: "application/json" }, // ← 削除
+            tools: [{ google_search: {} }] 
         });
 
         let prompt = `
@@ -302,8 +302,8 @@ app.post('/chat-dialogue', async (req, res) => {
         - **現在は ${currentDateTime} です。**
         - **わからないことや最新の情報が必要な場合は、提供されたGoogle検索ツールを使って調べてください。**
 
-        【出力フォーマット (JSON)】
-        必ず以下のJSON形式で出力してください。
+        【出力フォーマット】
+        **必ず以下のJSON形式の文字列だけ**を出力してください。Markdownコードブロックは含んでも構いません。
         {
             "speech": "ネル先生のセリフ。語尾は必ず「にゃ」や「だにゃ」。親しみやすく。",
             "board": "黒板に書く内容。ここには**セリフや口調を含めない**こと。数式、答え、漢字、箇条書きの解説、検索結果の要約など、学習に必要な情報のみを簡潔に書く。該当するものがない場合は空文字で良い。"
@@ -327,13 +327,21 @@ app.post('/chat-dialogue', async (req, res) => {
         }
         
         const responseText = result.response.text().trim();
-        // JSONパース
+        
+        // ★修正: 厳格なJSONモードではないため、テキストからJSONを抽出する処理を強化
         let jsonResponse;
         try {
-            const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+            let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+            // 最初の中括弧と最後の中括弧を探して抽出
+            const firstBrace = cleanText.indexOf('{');
+            const lastBrace = cleanText.lastIndexOf('}');
+            if (firstBrace !== -1 && lastBrace !== -1) {
+                cleanText = cleanText.substring(firstBrace, lastBrace + 1);
+            }
             jsonResponse = JSON.parse(cleanText);
         } catch (e) {
-            // パース失敗時のフォールバック
+            console.warn("JSON Parse Fallback:", responseText);
+            // パース失敗時のフォールバック (そのままセリフとして扱う)
             jsonResponse = { speech: responseText, board: "" };
         }
         
