@@ -1,9 +1,10 @@
-// --- analyze.js (完全版 v276.1: 全機能完全収録・非圧縮版) ---
+// --- analyze.js (完全版 v275.2: お宝図鑑HTTP化・画像加工・HTTPチャット・全機能統合版) ---
 
 // ==========================================
-// 1. グローバル変数 & 初期化
+// 1. 最重要：UI操作・モード選択関数
 // ==========================================
 
+// グローバル変数の定義
 window.currentMode = ''; 
 window.currentSubject = '';
 window.isAnalyzing = false;
@@ -39,10 +40,6 @@ let streamTextBuffer = "";
 let ttsTextBuffer = "";
 let latestDetectedName = null;
 
-// 常時聞き取り用のフラグとインスタンス
-let isAlwaysListening = false;
-let continuousRecognition = null;
-
 // ゲーム・Cropper関連
 let gameCanvas, ctx, ball, paddle, bricks, score, gameRunning = false, gameAnimId = null;
 let cropImg = new Image();
@@ -60,68 +57,13 @@ let studyTimerCheck = 0;
 // プレビューカメラ用 (お宝図鑑専用)
 let previewStream = null;
 
-// 効果音
-const sfxBori = new Audio('boribori.mp3');
-const sfxHit = new Audio('cat1c.mp3');
-const sfxPaddle = new Audio('poka02.mp3'); 
-const sfxOver = new Audio('gameover.mp3');
-const sfxBunseki = new Audio('bunseki.mp3'); 
-sfxBunseki.volume = 0.05; 
-const sfxHirameku = new Audio('hirameku.mp3'); 
-const sfxMaru = new Audio('maru.mp3');
-const sfxBatu = new Audio('batu.mp3');
-const gameHitComments = ["うまいにゃ！", "すごいにゃ！", "さすがにゃ！", "がんばれにゃ！"];
-
-// 画像リソース
-const subjectImages = {
-    'こくご': { base: 'nell-kokugo.png', talk: 'nell-kokugo-talk.png' },
-    'さんすう': { base: 'nell-sansu.png', talk: 'nell-sansu-talk.png' },
-    'りか': { base: 'nell-rika.png', talk: 'nell-rika-talk.png' },
-    'しゃかい': { base: 'nell-shakai.png', talk: 'nell-shakai-talk.png' },
-    'おはなし': { base: 'nell-normal.png', talk: 'nell-talk.png' }
-};
-const defaultIcon = 'nell-normal.png'; 
-const talkIcon = 'nell-talk.png';
-
-// 口パクアニメーション
-function startMouthAnimation() {
-    let toggle = false;
-    setInterval(() => {
-        const img = document.getElementById('nell-face') || document.querySelector('.nell-avatar-wrap img');
-        if (!img) return;
-        let baseImg = defaultIcon;
-        let talkImg = talkIcon;
-        if (currentSubject && subjectImages[currentSubject] && 
-           (currentMode === 'explain' || currentMode === 'grade' || currentMode === 'review')) {
-            baseImg = subjectImages[currentSubject].base;
-            talkImg = subjectImages[currentSubject].talk;
-        }
-        if (window.isNellSpeaking) img.src = toggle ? talkImg : baseImg;
-        else img.src = baseImg;
-        toggle = !toggle;
-    }, 150);
-}
-startMouthAnimation();
-
-window.addEventListener('DOMContentLoaded', () => {
-    const camIn = document.getElementById('hw-input-camera'); 
-    const albIn = document.getElementById('hw-input-album'); 
-    if(camIn) camIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
-    if(albIn) albIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
-    const startCamBtn = document.getElementById('start-webcam-btn');
-    if (startCamBtn) startCamBtn.onclick = startHomeworkWebcam;
-});
-
-// ==========================================
-// 2. モード選択 & UI制御
-// ==========================================
-
+// ★ selectMode
 window.selectMode = function(m) {
     try {
         console.log(`[UI] selectMode called: ${m}`);
         currentMode = m; 
         
-        // 画面切り替え
+        // 画面切り替え (ui.jsの関数)
         if (typeof window.switchScreen === 'function') {
             window.switchScreen('screen-main'); 
         } else {
@@ -129,20 +71,20 @@ window.selectMode = function(m) {
             document.getElementById('screen-main').classList.remove('hidden');
         }
 
-        // 各種ビューリセット
+        // 各種ビューの表示リセット
         const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'simple-chat-view', 'lunch-view', 'grade-sheet-container', 'hint-detail-container', 'embedded-chat-section'];
         ids.forEach(id => { 
             const el = document.getElementById(id); 
             if (el) el.classList.add('hidden'); 
         });
         
+        // 戻るボタン
         const backBtn = document.getElementById('main-back-btn');
         if (backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = window.backToLobby; }
         
-        // クリーンアップ
-        stopAlwaysOnListening();
+        // モード切り替え時は既存の接続/カメラをクリア
         if (typeof window.stopLiveChat === 'function') window.stopLiveChat();
-        stopPreviewCamera(); 
+        stopPreviewCamera(); // お宝図鑑用カメラも停止
         
         gameRunning = false;
         const icon = document.querySelector('.nell-avatar-wrap img'); 
@@ -153,13 +95,13 @@ window.selectMode = function(m) {
         if(miniKarikari) miniKarikari.classList.remove('hidden');
         if(typeof updateMiniKarikari === 'function') updateMiniKarikari();
         
-        // --- モード別処理 ---
+        // --- モード別表示制御 ---
         if (m === 'chat') { 
             // お宝図鑑モード
             document.getElementById('chat-view').classList.remove('hidden'); 
-            window.updateNellMessage("お宝を見せてにゃ！お話もできるにゃ！", "excited", false); 
+            window.updateNellMessage("お宝を見せてにゃ！", "excited", false); 
+            // カメラ即時起動
             startPreviewCamera();
-            startAlwaysOnListening(); // 常時聞き取り開始
         } 
         else if (m === 'simple-chat') {
             // こじんめんだん
@@ -189,100 +131,354 @@ window.selectMode = function(m) {
     }
 };
 
-window.setSubject = function(s) { 
-    currentSubject = s; 
-    const icon = document.querySelector('.nell-avatar-wrap img'); if(icon&&subjectImages[s]){icon.src=subjectImages[s].base; icon.onerror=()=>{icon.src=defaultIcon;};} 
-    document.getElementById('subject-selection-view').classList.add('hidden'); 
-    document.getElementById('upload-controls').classList.remove('hidden'); 
-    updateNellMessage(`${currentSubject}の問題をみせてにゃ！`, "happy", false); 
-    const btnFast = document.getElementById('mode-btn-fast');
-    const btnPrec = document.getElementById('mode-btn-precision');
-    if (btnFast) { btnFast.innerText = "📷 ネル先生に宿題を見せる"; btnFast.className = "main-btn"; btnFast.style.background = "#ff85a1"; btnFast.style.width = "100%"; btnFast.onclick = null; }
-    if (btnPrec) btnPrec.style.display = "none";
+// ==========================================
+// 2. お宝図鑑専用 (HTTPベース)
+// ==========================================
+
+async function startPreviewCamera() {
+    const video = document.getElementById('live-chat-video');
+    const container = document.getElementById('live-chat-video-container');
+    if (!video || !container) return;
+
+    try {
+        if (previewStream) {
+            previewStream.getTracks().forEach(t => t.stop());
+        }
+        
+        // 環境カメラを優先
+        try {
+            previewStream = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: "environment" },
+                audio: false 
+            });
+        } catch(e) {
+            // フォールバック: フロントカメラ
+            previewStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        }
+        
+        video.srcObject = previewStream;
+        await video.play();
+        container.style.display = 'block';
+
+    } catch (e) {
+        console.warn("[Preview] Camera init failed:", e);
+        alert("カメラが使えないにゃ…。設定を確認してにゃ。");
+    }
+}
+
+function stopPreviewCamera() {
+    if (previewStream) {
+        previewStream.getTracks().forEach(t => t.stop());
+        previewStream = null;
+    }
+    const video = document.getElementById('live-chat-video');
+    if (video) video.srcObject = null;
+    const container = document.getElementById('live-chat-video-container');
+    if (container) container.style.display = 'none';
+}
+
+// ★ お宝画像加工処理（簡易背景除去・円形トリミング）
+function createTreasureImage(sourceCanvas) {
+    const size = Math.min(sourceCanvas.width, sourceCanvas.height);
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    
+    // 中央トリミング位置計算
+    const sx = (sourceCanvas.width - size) / 2;
+    const sy = (sourceCanvas.height - size) / 2;
+    
+    // 背景を白にする
+    ctx.fillStyle = "#ffffff";
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(size/2, size/2, size/2, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+    
+    // 画像描画
+    ctx.drawImage(sourceCanvas, sx, sy, size, size, 0, 0, size, size);
+    ctx.restore();
+    
+    // 金色の枠線を描画
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(size/2, size/2, size/2 - 5, 0, Math.PI * 2);
+    ctx.strokeStyle = '#ffd700'; // Gold
+    ctx.lineWidth = 10;
+    ctx.stroke();
+    ctx.restore();
+    
+    // キラキラエフェクト（簡易）
+    ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+    ctx.beginPath();
+    ctx.arc(size*0.2, size*0.2, size*0.05, 0, Math.PI*2);
+    ctx.fill();
+    
+    return canvas.toDataURL('image/png');
+}
+
+// お宝図鑑の撮影＆解析実行
+window.captureAndIdentifyItem = async function() {
+    if (window.isLiveImageSending) return;
+    
+    const video = document.getElementById('live-chat-video');
+    if (!video || !video.srcObject || !video.srcObject.active) {
+        return alert("カメラが動いてないにゃ...。");
+    }
+
+    // UIロック
+    window.isLiveImageSending = true;
+    const btn = document.getElementById('live-camera-btn');
+    const originalBtnText = btn ? btn.innerHTML : "";
+    if (btn) {
+        btn.innerHTML = "<span>📡</span> 解析中にゃ...";
+        btn.style.backgroundColor = "#ccc";
+        btn.disabled = true;
+    }
+
+    // 画像キャプチャ（解析用）
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+    
+    // ★加工: 保存用画像（お宝メダル風）
+    const treasureDataUrl = createTreasureImage(canvas);
+
+    // シャッター演出
+    const flash = document.createElement('div');
+    flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;";
+    document.body.appendChild(flash);
+    setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
+
+    // サーバーへ送信
+    try {
+        window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
+
+        const res = await fetch('/identify-item', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                image: base64Data,
+                name: currentUser ? currentUser.name : "生徒"
+            })
+        });
+
+        if (!res.ok) throw new Error("Server response not ok");
+
+        const data = await res.json();
+        
+        // 結果表示 & 読み上げ
+        if (data.speechText) {
+            window.updateNellMessage(data.speechText, "happy", true, true);
+        } else if (data.text) {
+            window.updateNellMessage(data.text, "happy", true, true); 
+        }
+
+        // 図鑑登録 (加工画像を使用)
+        if (data.itemName && window.NellMemory) {
+            console.log(`[Collection] Registering: ${data.itemName}`);
+            const description = data.description || "（解説はないにゃ）";
+            
+            // ★加工した画像(treasureDataUrl)を保存
+            await window.NellMemory.addToCollection(currentUser.id, data.itemName, treasureDataUrl, description);
+            
+            const notif = document.createElement('div');
+            notif.innerText = `📖 図鑑に「${data.itemName}」を登録したにゃ！`;
+            notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #00bcd4; color:#006064; padding:15px 25px; border-radius:30px; font-weight:900; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 10px 25px rgba(0,0,0,0.3);";
+            document.body.appendChild(notif);
+            setTimeout(() => notif.remove(), 4000);
+            try { sfxHirameku.currentTime=0; sfxHirameku.play(); } catch(e){}
+        }
+
+    } catch (e) {
+        console.error("Identify Error:", e);
+        window.updateNellMessage("よく見えなかったにゃ…もう一回お願いにゃ！", "thinking", false, true);
+    } finally {
+        // UIロック解除
+        window.isLiveImageSending = false;
+        if (btn) {
+            btn.innerHTML = originalBtnText;
+            btn.style.backgroundColor = "#ff85a1"; // 元の色に戻す
+            btn.disabled = false;
+        }
+    }
 };
 
-window.setAnalyzeMode = function(type) { analysisType = 'precision'; };
-
-// ==========================================
-// 3. 常時聞き取り機能 (HTTPチャット用)
-// ==========================================
-
-function startAlwaysOnListening() {
+// ★追加: HTTP会話機能 (WebSocketを使わないチャット)
+window.startHttpChat = function() {
+    const btn = document.getElementById('http-mic-btn');
+    if(btn) { btn.disabled = true; btn.style.backgroundColor = "#ccc"; btn.innerText = "👂 聞いてるにゃ..."; }
+    
+    // 音声認識開始
     if (!('webkitSpeechRecognition' in window)) {
-        console.warn("Speech Recognition not supported.");
+        alert("このブラウザは音声認識に対応していないにゃ…");
+        if(btn) { btn.disabled = false; btn.style.backgroundColor = "#ff85a1"; btn.innerText = "🎤 おはなしする"; }
         return;
     }
 
-    if (continuousRecognition) {
-        try { continuousRecognition.stop(); } catch(e){}
-    }
+    const recognition = new webkitSpeechRecognition();
+    recognition.lang = 'ja-JP';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
 
-    isAlwaysListening = true;
-    continuousRecognition = new webkitSpeechRecognition();
-    continuousRecognition.lang = 'ja-JP';
-    continuousRecognition.interimResults = false;
-    continuousRecognition.maxAlternatives = 1;
-
-    continuousRecognition.onresult = async (event) => {
-        if (window.isNellSpeaking) {
-            console.log("Ignored user input while Nell is speaking.");
-            return;
-        }
-
+    recognition.onresult = async (event) => {
         const text = event.results[0][0].transcript;
-        if (!text || text.trim() === "") return;
+        if(btn) { btn.innerText = "🤔 考え中にゃ..."; }
         
-        console.log(`[User Said] ${text}`);
-        continuousRecognition.stop();
-
         try {
             const res = await fetch('/chat-dialogue', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ text: text, name: currentUser ? currentUser.name : "生徒" })
             });
-            
             if(res.ok) {
                 const data = await res.json();
-                await window.updateNellMessage(data.reply, "normal", true, true);
+                window.updateNellMessage(data.reply, "normal", true, true);
             }
         } catch(e) {
-            console.error("Chat Error:", e);
-        } finally {
-            if (isAlwaysListening && currentMode === 'chat') {
-                try { continuousRecognition.start(); } catch(e){}
-            }
+            window.updateNellMessage("ごめん、よく聞こえなかったにゃ。", "thinking", false, true);
         }
+        
+        if(btn) { btn.disabled = false; btn.style.backgroundColor = "#ff85a1"; btn.innerText = "🎤 おはなしする"; }
     };
 
-    continuousRecognition.onend = () => {
-        if (isAlwaysListening && currentMode === 'chat' && !window.isNellSpeaking) {
-            try { continuousRecognition.start(); } catch(e){}
-        }
+    recognition.onerror = (e) => {
+        console.error("Speech Error:", e);
+        if(btn) { btn.disabled = false; btn.style.backgroundColor = "#ff85a1"; btn.innerText = "🎤 おはなしする"; }
+    };
+    
+    recognition.onend = () => {
+        setTimeout(() => {
+             if(btn && btn.disabled && btn.innerText === "👂 聞いてるにゃ...") {
+                 btn.disabled = false; btn.style.backgroundColor = "#ff85a1"; btn.innerText = "🎤 おはなしする";
+             }
+        }, 1000);
     };
 
-    continuousRecognition.onerror = (e) => {
-        console.error("Rec Error:", e);
-        if (isAlwaysListening && currentMode === 'chat') {
-            setTimeout(() => {
-                try { continuousRecognition.start(); } catch(e){}
-            }, 1000);
-        }
-    };
+    recognition.start();
+};
 
-    try { continuousRecognition.start(); } catch(e) { console.log("Rec start failed", e); }
+// ==========================================
+// 3. その他共通機能
+// ==========================================
+
+// 音声関連定数
+const sfxBori = new Audio('boribori.mp3');
+const sfxHit = new Audio('cat1c.mp3');
+const sfxPaddle = new Audio('poka02.mp3'); 
+const sfxOver = new Audio('gameover.mp3');
+const sfxBunseki = new Audio('bunseki.mp3'); 
+sfxBunseki.volume = 0.05; 
+const sfxHirameku = new Audio('hirameku.mp3'); 
+const sfxMaru = new Audio('maru.mp3');
+const sfxBatu = new Audio('batu.mp3');
+const gameHitComments = ["うまいにゃ！", "すごいにゃ！", "さすがにゃ！", "がんばれにゃ！"];
+
+// 画像リソース
+const subjectImages = {
+    'こくご': { base: 'nell-kokugo.png', talk: 'nell-kokugo-talk.png' },
+    'さんすう': { base: 'nell-sansu.png', talk: 'nell-sansu-talk.png' },
+    'りか': { base: 'nell-rika.png', talk: 'nell-rika-talk.png' },
+    'しゃかい': { base: 'nell-shakai.png', talk: 'nell-shakai-talk.png' },
+    'おはなし': { base: 'nell-normal.png', talk: 'nell-talk.png' }
+};
+const defaultIcon = 'nell-normal.png'; 
+const talkIcon = 'nell-talk.png';
+
+// 口パク
+function startMouthAnimation() {
+    let toggle = false;
+    setInterval(() => {
+        const img = document.getElementById('nell-face') || document.querySelector('.nell-avatar-wrap img');
+        if (!img) return;
+        let baseImg = defaultIcon;
+        let talkImg = talkIcon;
+        if (currentSubject && subjectImages[currentSubject] && 
+           (currentMode === 'explain' || currentMode === 'grade' || currentMode === 'review')) {
+            baseImg = subjectImages[currentSubject].base;
+            talkImg = subjectImages[currentSubject].talk;
+        }
+        if (window.isNellSpeaking) img.src = toggle ? talkImg : baseImg;
+        else img.src = baseImg;
+        toggle = !toggle;
+    }, 150);
+}
+startMouthAnimation();
+
+window.addEventListener('DOMContentLoaded', () => {
+    const camIn = document.getElementById('hw-input-camera'); 
+    const albIn = document.getElementById('hw-input-album'); 
+    if(camIn) camIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
+    if(albIn) albIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
+    const startCamBtn = document.getElementById('start-webcam-btn');
+    if (startCamBtn) startCamBtn.onclick = startHomeworkWebcam;
+});
+
+// 宿題用カメラ機能 (変更なし)
+async function startHomeworkWebcam() {
+    const modal = document.getElementById('camera-modal');
+    const video = document.getElementById('camera-video');
+    const shutter = document.getElementById('camera-shutter-btn');
+    const cancel = document.getElementById('camera-cancel-btn');
+    if (!modal || !video) return;
+    try {
+        let constraints = { video: { facingMode: "environment" } };
+        try { homeworkStream = await navigator.mediaDevices.getUserMedia(constraints); } 
+        catch (e) { homeworkStream = await navigator.mediaDevices.getUserMedia({ video: true }); }
+        video.srcObject = homeworkStream;
+        video.setAttribute('playsinline', true); 
+        await video.play();
+        modal.classList.remove('hidden');
+        shutter.onclick = () => {
+            const canvas = document.getElementById('camera-canvas');
+            canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            canvas.toBlob((blob) => {
+                if(blob) {
+                    const file = new File([blob], "homework_capture.jpg", { type: "image/jpeg" });
+                    closeHomeworkCamera();
+                    handleFileUpload(file);
+                }
+            }, 'image/jpeg', 0.9);
+        };
+        cancel.onclick = closeHomeworkCamera;
+    } catch (err) { alert("カメラエラー: " + err.message); closeHomeworkCamera(); }
+}
+function closeHomeworkCamera() {
+    const modal = document.getElementById('camera-modal');
+    const video = document.getElementById('camera-video');
+    if (homeworkStream) { homeworkStream.getTracks().forEach(t => t.stop()); homeworkStream = null; }
+    if (video) video.srcObject = null;
+    if (modal) modal.classList.add('hidden');
 }
 
-function stopAlwaysOnListening() {
-    isAlwaysListening = false;
-    if (continuousRecognition) {
-        try { continuousRecognition.stop(); } catch(e){}
-        continuousRecognition = null;
-    }
+// 記憶・メッセージ管理
+async function saveToNellMemory(role, text) {
+    if (!currentUser || !currentUser.id) return;
+    const trimmed = text.trim();
+    if (trimmed.length <= 1) return;
+    
+    chatTranscript += `${role === 'user' ? '生徒' : 'ネル'}: ${trimmed}\n`;
+    const newItem = { role: role, text: trimmed, time: new Date().toISOString() };
+    try {
+        const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
+        let history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
+        if (history.length > 0 && history[history.length - 1].text === trimmed) return;
+        history.push(newItem);
+        if (history.length > 50) history.shift(); 
+        localStorage.setItem(memoryKey, JSON.stringify(history));
+    } catch(e) {}
 }
 
-// 共通メッセージ更新関数
 window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false, speak = true) {
+    // chatモード(お宝図鑑)はHTTP+TTSなのでWebSocket状態に関わらず発話OK
+    // 他のモードでWebSocket接続中の場合のみ抑制
     if (liveSocket && liveSocket.readyState === WebSocket.OPEN && currentMode !== 'chat') {
         speak = false;
     }
@@ -303,163 +499,26 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     if (speak && typeof speakNell === 'function') {
         let textForSpeech = displayText.replace(/【.*?】/g, "").trim();
         textForSpeech = textForSpeech.replace(/🐾/g, "");
-        if (textForSpeech.length > 0) {
-            await speakNell(textForSpeech, mood);
-        }
+        if (textForSpeech.length > 0) await speakNell(textForSpeech, mood);
     }
 };
 
-// ==========================================
-// 4. お宝図鑑専用 (HTTPベース)
-// ==========================================
-
-async function startPreviewCamera() {
-    const video = document.getElementById('live-chat-video');
-    const container = document.getElementById('live-chat-video-container');
-    if (!video || !container) return;
-
-    try {
-        if (previewStream) {
-            previewStream.getTracks().forEach(t => t.stop());
-        }
-        
-        try {
-            previewStream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: "environment" },
-                audio: false 
-            });
-        } catch(e) {
-            previewStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        }
-        
-        video.srcObject = previewStream;
-        await video.play();
-        container.style.display = 'block';
-
-    } catch (e) {
-        console.warn("[Preview] Camera init failed:", e);
-        alert("カメラが使えないにゃ…。");
-    }
-}
-
-function stopPreviewCamera() {
-    if (previewStream) {
-        previewStream.getTracks().forEach(t => t.stop());
-        previewStream = null;
-    }
-    const video = document.getElementById('live-chat-video');
-    if (video) video.srcObject = null;
-    const container = document.getElementById('live-chat-video-container');
-    if (container) container.style.display = 'none';
-}
-
-function createTreasureImage(sourceCanvas) {
-    const size = Math.min(sourceCanvas.width, sourceCanvas.height);
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext('2d');
-    const sx = (sourceCanvas.width - size) / 2;
-    const sy = (sourceCanvas.height - size) / 2;
-    ctx.fillStyle = "#ffffff";
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(size/2, size/2, size/2, 0, Math.PI * 2);
-    ctx.closePath();
-    ctx.clip();
-    ctx.drawImage(sourceCanvas, sx, sy, size, size, 0, 0, size, size);
-    ctx.restore();
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(size/2, size/2, size/2 - 5, 0, Math.PI * 2);
-    ctx.strokeStyle = '#ffd700'; 
-    ctx.lineWidth = 10;
-    ctx.stroke();
-    ctx.restore();
-    ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
-    ctx.beginPath();
-    ctx.arc(size*0.2, size*0.2, size*0.05, 0, Math.PI*2);
-    ctx.fill();
-    return canvas.toDataURL('image/png');
-}
-
-window.captureAndIdentifyItem = async function() {
-    if (window.isLiveImageSending) return;
-    
-    if (isAlwaysListening && continuousRecognition) {
-        try { continuousRecognition.stop(); } catch(e){}
-    }
-
-    const video = document.getElementById('live-chat-video');
-    if (!video || !video.srcObject || !video.srcObject.active) return alert("カメラが動いてないにゃ...。");
-
-    window.isLiveImageSending = true;
-    const btn = document.getElementById('live-camera-btn');
-    const originalBtnText = btn ? btn.innerHTML : "";
-    if (btn) {
-        btn.innerHTML = "<span>📡</span> 解析中にゃ...";
-        btn.style.backgroundColor = "#ccc";
-        btn.disabled = true;
-    }
-
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
-    const treasureDataUrl = createTreasureImage(canvas);
-
-    const flash = document.createElement('div');
-    flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;";
-    document.body.appendChild(flash);
-    setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
-
-    try {
-        window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
-
-        const res = await fetch('/identify-item', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image: base64Data, name: currentUser ? currentUser.name : "生徒" })
-        });
-
-        if (!res.ok) throw new Error("Server response not ok");
-        const data = await res.json();
-        
-        if (data.speechText) await window.updateNellMessage(data.speechText, "happy", true, true);
-        else if (data.text) await window.updateNellMessage(data.text, "happy", true, true); 
-
-        if (data.itemName && window.NellMemory) {
-            const description = data.description || "（解説はないにゃ）";
-            await window.NellMemory.addToCollection(currentUser.id, data.itemName, treasureDataUrl, description);
-            
-            const notif = document.createElement('div');
-            notif.innerText = `📖 図鑑に「${data.itemName}」を登録したにゃ！`;
-            notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #00bcd4; color:#006064; padding:15px 25px; border-radius:30px; font-weight:900; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 10px 25px rgba(0,0,0,0.3);";
-            document.body.appendChild(notif);
-            setTimeout(() => notif.remove(), 4000);
-            try { sfxHirameku.currentTime=0; sfxHirameku.play(); } catch(e){}
-        }
-
-    } catch (e) {
-        console.error("Identify Error:", e);
-        window.updateNellMessage("よく見えなかったにゃ…もう一回お願いにゃ！", "thinking", false, true);
-    } finally {
-        window.isLiveImageSending = false;
-        if (btn) {
-            btn.innerHTML = originalBtnText;
-            btn.style.backgroundColor = "#ff85a1"; 
-            btn.disabled = false;
-        }
-        if (isAlwaysListening && currentMode === 'chat') {
-            try { continuousRecognition.start(); } catch(e){}
-        }
-    }
+window.setSubject = function(s) { 
+    currentSubject = s; 
+    const icon = document.querySelector('.nell-avatar-wrap img'); if(icon&&subjectImages[s]){icon.src=subjectImages[s].base; icon.onerror=()=>{icon.src=defaultIcon;};} 
+    document.getElementById('subject-selection-view').classList.add('hidden'); 
+    document.getElementById('upload-controls').classList.remove('hidden'); 
+    updateNellMessage(`${currentSubject}の問題をみせてにゃ！`, "happy", false); 
+    const btnFast = document.getElementById('mode-btn-fast');
+    const btnPrec = document.getElementById('mode-btn-precision');
+    if (btnFast) { btnFast.innerText = "📷 ネル先生に宿題を見せる"; btnFast.className = "main-btn"; btnFast.style.background = "#ff85a1"; btnFast.style.width = "100%"; btnFast.onclick = null; }
+    if (btnPrec) btnPrec.style.display = "none";
 };
 
+window.setAnalyzeMode = function(type) { analysisType = 'precision'; };
+
 // ==========================================
-// 5. タイマー関連
+// ★ タイマー関連
 // ==========================================
 
 window.openTimerModal = function() {
@@ -539,7 +598,7 @@ function sendSilentPrompt(text) {
 }
 
 // ==========================================
-// 6. WebSocket (simple-chat/embedded用)
+// ★ WebSocket (simple-chat/embedded用)
 // ==========================================
 
 function stopAudioPlayback() {
@@ -884,7 +943,6 @@ function showKarikariEffect(amount) { const container = document.querySelector('
 // ==========================================
 // 7. 宿題・ゲーム・Cropper関連
 // ==========================================
-
 // 宿題分析
 window.startAnalysis = async function(b64) {
     if (isAnalyzing) return;
@@ -902,6 +960,7 @@ window.startAnalysis = async function(b64) {
     let p = 0; 
     const timer = setInterval(() => { if (!isAnalyzing) { clearInterval(timer); return; } if (p < 30) p += 1; else if (p < 80) p += 0.4; else if (p < 95) p += 0.1; updateProgress(p); }, 300);
     
+    // --- 解析中のセリフ ---
     const performAnalysisNarration = async () => {
         const msgs = [
             { text: "じーっと見て、問題を書き写してるにゃ…", mood: "thinking" },
@@ -1199,8 +1258,6 @@ window.checkOneProblem = function(id) {
 };
 function updateMarkDisplay(id, isCorrect) { const container = document.getElementById(`grade-item-${id}`); const markElem = document.getElementById(`mark-${id}`); if (container && markElem) { if (isCorrect) { markElem.innerText = "⭕"; markElem.style.color = "#ff5252"; container.style.backgroundColor = "#fff5f5"; } else { markElem.innerText = "❌"; markElem.style.color = "#4a90e2"; container.style.backgroundColor = "#f0f8ff"; } } }
 window.updateGradingMessage = function() { let correctCount = 0; transcribedProblems.forEach(p => { if (p.is_correct) correctCount++; }); const scoreRate = correctCount / (transcribedProblems.length || 1); if (scoreRate === 1.0) updateNellMessage(`全問正解だにゃ！天才だにゃ〜！！`, "excited", false); else if (scoreRate >= 0.5) updateNellMessage(`あと${transcribedProblems.length - correctCount}問！直してみるにゃ！`, "happy", false); else updateNellMessage(`間違ってても大丈夫！入力し直してみて！`, "gentle", false); };
-
-// スクロール復元
 window.backToProblemSelection = function() { 
     document.getElementById('final-view').classList.add('hidden'); 
     document.getElementById('hint-detail-container').classList.add('hidden'); 
@@ -1223,7 +1280,6 @@ window.backToProblemSelection = function() {
         }, 100);
     }
 };
-
 window.pressThanks = function() { window.backToProblemSelection(); };
 window.finishGrading = async function(btnElement) { if(btnElement) { btnElement.disabled = true; btnElement.innerText = "採点完了！"; } if (currentUser) { currentUser.karikari += 100; saveAndSync(); updateMiniKarikari(); showKarikariEffect(100); } await updateNellMessage("よくがんばったにゃ！カリカリ100個あげる！", "excited", false); setTimeout(() => { if(typeof backToLobby === 'function') backToLobby(true); }, 3000); };
 window.pressAllSolved = function(btnElement) { if(btnElement) { btnElement.disabled = true; btnElement.innerText = "すごい！"; } if (currentUser) { currentUser.karikari += 100; saveAndSync(); showKarikariEffect(100); updateMiniKarikari(); updateNellMessage("よくがんばったにゃ！カリカリ100個あげるにゃ！", "excited", false).then(() => { setTimeout(() => { if(typeof backToLobby === 'function') backToLobby(true); }, 3000); }); } };
