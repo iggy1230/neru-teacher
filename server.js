@@ -1,4 +1,4 @@
-// --- server.js (完全版 v286.0: 会話文脈維持対応) ---
+// --- server.js (完全版 v290.0: 完全版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
