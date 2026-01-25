@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v283.0: こじんめんだんTTSの汎用化対応) ---
+// --- analyze.js (完全版 v284.0: 割り込み機能追加・対話制御強化) ---
 
 // ==========================================
 // 1. 最重要：UI操作・モード選択関数
@@ -128,9 +128,8 @@ window.selectMode = function(m) {
             window.updateNellMessage("今日はお話だけするにゃ？", "gentle", false);
         }
         else if (m === 'simple-chat-tts') {
-            // 新HTTP版
+            // 新HTTP版 (こじんめんだんTTS)
             document.getElementById('simple-chat-tts-view').classList.remove('hidden');
-            // ★修正: 初期メッセージ変更
             window.updateNellMessage("なんでも話してにゃ！", "happy", false);
             // カメラは手動。常時聞き取り開始
             startAlwaysOnListening();
@@ -166,25 +165,6 @@ window.selectMode = function(m) {
 // ★ 常時聞き取り機能 (HTTPチャット用)
 // ==========================================
 
-function getChatElements(context) {
-    if (context === 'simple-tts' || currentMode === 'simple-chat-tts') {
-        return {
-            resultTextId: 'user-speech-text-simple-tts',
-            chalkboardId: 'chalkboard-simple-tts'
-        };
-    } else {
-        // embedded, explain, grade, review など
-        return {
-            resultTextId: 'user-speech-text-embedded',
-            chalkboardId: 'chalkboard-embedded' // ★修正: 正しいIDを指定 (embedded-chalkboardはクラス名)
-        };
-    }
-}
-
-// 修正: chalkboard-embedded はHTML内に存在しないため、embedded-chalkboard (class) を持つIDを探す必要がある
-// しかし、index.htmlでは <div id="embedded-chalkboard" class="embedded-chalkboard hidden"></div> と定義した。
-// なので、embedded用IDは "embedded-chalkboard" が正しい。
-
 function getChatElementsCorrect(context) {
     if (context === 'simple-tts' || currentMode === 'simple-chat-tts') {
         return {
@@ -216,12 +196,26 @@ function startAlwaysOnListening() {
     continuousRecognition.maxAlternatives = 1;
 
     continuousRecognition.onresult = async (event) => {
+        const text = event.results[0][0].transcript;
+
+        // ★追加: 割り込み判定 (Nell先生が話している最中でもチェックする)
+        const stopKeywords = ["違う", "ちがう", "待って", "まって", "ストップ", "やめて", "うるさい", "静か", "しずか"];
+        
         if (window.isNellSpeaking) {
-            console.log("Ignored user input while Nell is speaking.");
+            if (text && stopKeywords.some(w => text.includes(w))) {
+                console.log("[Interruption] User stopped speech:", text);
+                if (typeof window.cancelNellSpeech === 'function') {
+                    window.cancelNellSpeech(); // 発話をキャンセル
+                }
+                // 認識をリセットして終了（サーバーには送らない）
+                continuousRecognition.stop();
+                return;
+            }
+            // 制止ワード以外の場合は、発話中なので無視する
+            console.log("Ignored user input while Nell is speaking:", text);
             return;
         }
 
-        const text = event.results[0][0].transcript;
         if (!text || text.trim() === "") return;
         
         console.log(`[User Said] ${text}`);
@@ -473,7 +467,6 @@ window.captureAndSendHttpImage = async function(context) {
     try {
         window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
 
-        // ★修正: contextに応じてプロンプトを変更
         let promptText = "この問題を教えてください。";
         if (context === 'simple-tts') {
             promptText = "この画像について、ネル先生の視点で解説や感想を教えてください。";
