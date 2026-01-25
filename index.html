@@ -110,7 +110,7 @@
             <div class="title-btn-container">
                 <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
             </div>
-            <div class="version-tag">Build: v283.0-SimpleChatTTS-Update</div>
+            <div class="version-tag">Build: v287.0-Fix-Upload-ID</div>
         </section>
 
         <!-- 1. 校門 (ユーザー選択) -->
@@ -140,8 +140,8 @@
             <div class="upload-buttons-container">
                 <button id="enroll-webcam-btn" class="camera-btn-large" style="background:#ff9800; box-shadow:0 6px 0 #e65100;">📹 アプリで撮影</button>
                 <div style="display:flex; gap:10px;">
-                    <label class="camera-btn-large" style="flex:1;">📷 標準カメラ<input type="file" id="hw-input-camera" accept="image/*" style="display:none;"></label>
-                    <label class="camera-btn-large" style="flex:1; background:#4a90e2; box-shadow:0 6px 0 #2c5f96;">📁 アルバム<input type="file" id="hw-input-album" accept="image/*" style="display:none;"></label>
+                    <label class="camera-btn-large" style="flex:1;">📷 標準カメラ<input type="file" id="student-photo-input-camera" accept="image/*" style="display:none;"></label>
+                    <label class="camera-btn-large" style="flex:1; background:#4a90e2; box-shadow:0 6px 0 #2c5f96;">📁 アルバム<input type="file" id="student-photo-input-album" accept="image/*" style="display:none;"></label>
                 </div>
             </div>
             <input type="text" id="new-student-name" class="styled-input" placeholder="おなまえ" oninput="updateIDPreviewText()">
@@ -221,6 +221,7 @@
                         <div class="upload-buttons-container">
                             <button id="start-webcam-btn" class="camera-btn-large" style="background:#ff9800;">📹 アプリで撮影</button>
                             <div style="display:flex; gap:10px;">
+                                <!-- ★修正: IDを重複しないように hw-input-... に統一 -->
                                 <label class="camera-btn-large" style="flex:1;">📷 標準カメラ<input type="file" id="hw-input-camera" accept="image/*" style="display:none;"></label>
                                 <label class="camera-btn-large" style="flex:1; background:#4a90e2;">📁 アルバム<input type="file" id="hw-input-album" accept="image/*" style="display:none;"></label>
                             </div>
@@ -271,7 +272,7 @@
                             </div>
 
                             <!-- カメラ質問ボタン -->
-                            <button id="live-camera-btn-embedded" class="mini-cam-btn" style="background:#66bb6a; box-shadow:0 4px 0 #33691e; margin-top:10px;" onclick="toggleHttpCamera('embedded')"><span>📷</span> カメラで見せて質問</button>
+                            <button id="live-camera-btn-embedded" class="mini-cam-btn" style="background:#66bb6a; box-shadow:0 4px 0 #33691e; margin-top:10px;" onclick="toggleEmbeddedCamera()"><span>📷</span> カメラで見せて質問</button>
                             
                             <div id="live-chat-video-container-embedded" class="live-chat-video-wrapper" style="margin-top:10px;">
                                 <video id="live-chat-video-embedded" class="live-chat-video-elem" autoplay playsinline muted></video>

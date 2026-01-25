@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v286.0: 会話文脈維持対応) ---
+// --- analyze.js (完全版 v287.0: 欠落機能補完・ID修正版) ---
 
 // ==========================================
 // 1. 最重要：UI操作・モード選択関数
@@ -40,7 +40,7 @@ let streamTextBuffer = "";
 let ttsTextBuffer = "";
 let latestDetectedName = null;
 
-// ★追加: 会話文脈履歴
+// ★追加: 会話文脈履歴 (前回漏れていた定義)
 window.chatSessionHistory = [];
 
 // ★追加: 常時聞き取り用のフラグ
@@ -64,14 +64,14 @@ let studyTimerCheck = 0;
 // プレビューカメラ用
 let previewStream = null;
 
-// ★追加: 履歴管理ヘルパー
-function addToSessionHistory(role, text) {
+// ★追加: 履歴管理ヘルパー (前回漏れていた定義)
+window.addToSessionHistory = function(role, text) {
     window.chatSessionHistory.push({ role: role, text: text });
     // 最新10件（5往復）程度を保持
     if (window.chatSessionHistory.length > 10) {
         window.chatSessionHistory.shift();
     }
-}
+};
 
 // ★ selectMode
 window.selectMode = function(m) {
@@ -210,6 +210,7 @@ function startAlwaysOnListening() {
     continuousRecognition.continuous = true; 
 
     continuousRecognition.onresult = async (event) => {
+        // continuous=true の場合、resultsは配列で来るので最新を取得
         const resultIndex = event.resultIndex;
         const text = event.results[resultIndex][0].transcript;
         const cleanText = text.trim();
@@ -240,7 +241,7 @@ function startAlwaysOnListening() {
         const speechTextElem = document.getElementById(elems.resultTextId);
         if (speechTextElem) speechTextElem.innerText = cleanText;
 
-        // ★修正: 履歴に追加してから送信
+        // 履歴に追加してから送信
         addToSessionHistory('user', cleanText);
 
         try {
@@ -250,7 +251,7 @@ function startAlwaysOnListening() {
                 body: JSON.stringify({ 
                     text: cleanText, 
                     name: currentUser ? currentUser.name : "生徒",
-                    history: window.chatSessionHistory // ★履歴を送信
+                    history: window.chatSessionHistory
                 })
             });
             
@@ -259,7 +260,7 @@ function startAlwaysOnListening() {
                 
                 const replyText = data.speech || data.reply || "ごめんにゃ、よくわからなかったにゃ";
                 
-                // ★修正: 応答も履歴に追加
+                // 応答も履歴に追加
                 addToSessionHistory('model', replyText);
 
                 await window.updateNellMessage(replyText, "normal", true, true);
@@ -407,8 +408,8 @@ window.sendHttpText = async function(context) {
     if (isAlwaysListening && continuousRecognition) {
         try { continuousRecognition.stop(); } catch(e){}
     }
-
-    // ★修正: 履歴に追加
+    
+    // 履歴に追加
     addToSessionHistory('user', text);
 
     try {
@@ -420,7 +421,7 @@ window.sendHttpText = async function(context) {
             body: JSON.stringify({ 
                 text: text, 
                 name: currentUser ? currentUser.name : "生徒",
-                history: window.chatSessionHistory // ★履歴送信
+                history: window.chatSessionHistory
             })
         });
 
@@ -428,7 +429,7 @@ window.sendHttpText = async function(context) {
             const data = await res.json();
             const speechText = data.speech || data.reply || "教えてあげるにゃ！";
             
-            // ★修正: 応答も履歴に追加
+            // 応答も履歴に追加
             addToSessionHistory('model', speechText);
 
             await window.updateNellMessage(speechText, "happy", true, true);
@@ -506,7 +507,7 @@ window.captureAndSendHttpImage = async function(context) {
             promptText = "この画像について、ネル先生の視点で解説や感想を教えてください。";
         }
         
-        // ★修正: 履歴に追加（画像質問）
+        // 履歴に追加
         addToSessionHistory('user', promptText);
 
         const res = await fetch('/chat-dialogue', {
@@ -516,7 +517,7 @@ window.captureAndSendHttpImage = async function(context) {
                 image: base64Data,
                 text: promptText, 
                 name: currentUser ? currentUser.name : "生徒",
-                history: window.chatSessionHistory // ★履歴送信
+                history: window.chatSessionHistory
             })
         });
 
@@ -525,7 +526,7 @@ window.captureAndSendHttpImage = async function(context) {
         
         const speechText = data.speech || data.reply || "教えてあげるにゃ！";
         
-        // ★修正: 応答も履歴に追加
+        // 応答も履歴に追加
         addToSessionHistory('model', speechText);
 
         await window.updateNellMessage(speechText, "happy", true, true);
