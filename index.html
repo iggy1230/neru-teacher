@@ -110,7 +110,7 @@
             <div class="title-btn-container">
                 <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
             </div>
-            <div class="version-tag">Build: v282.0-Unified-HTTP-Chat</div>
+            <div class="version-tag">Build: v283.0-SimpleChatTTS-Update</div>
         </section>
 
         <!-- 1. 校門 (ユーザー選択) -->
@@ -264,7 +264,7 @@
                         <div style="text-align:center;">
                             <p style="font-size:0.8rem; color:#666; margin-bottom:10px;">（ネル先生はいつでも聞いてるにゃ）</p>
 
-                            <!-- テキスト質問エリア (ID: embedded-text-input) -->
+                            <!-- テキスト質問エリア -->
                             <div class="text-question-area">
                                 <textarea id="text-input-embedded" class="text-question-input" placeholder="ここに書いて質問"></textarea>
                                 <button onclick="sendHttpText('embedded')" class="text-question-btn">送信</button>
@@ -305,7 +305,7 @@
                         </div>
                     </div>
 
-                    <!-- チャットモード（こじんめんだん：シンプル版・WebSocket） -->
+                    <!-- チャットモード（こじんめんだん：シンプル版） -->
                     <div id="simple-chat-view" class="hidden">
                         <div class="glass-card" style="text-align:center; padding:20px;">
                             <p style="font-size:0.9rem; color:#666;">マイクを押して話しかけてね</p>
@@ -328,7 +328,7 @@
                     <!-- チャットモード（こじんめんだんTTS：HTTP版） -->
                     <div id="simple-chat-tts-view" class="hidden">
                         <div class="glass-card" style="text-align:center; padding:20px;">
-                            <p style="font-size:0.9rem; color:#666;">（ネル先生はいつでも聞いてるにゃ）</p>
+                            <p style="font-size:0.9rem; color:#666; margin-bottom:10px;">（ネル先生はいつでも聞いてるにゃ）</p>
 
                             <!-- テキスト質問エリア -->
                             <div class="text-question-area">

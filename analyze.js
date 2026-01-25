@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v282.0: 共通HTTPチャット機能実装) ---
+// --- analyze.js (完全版 v283.0: こじんめんだんTTSの汎用化対応) ---
 
 // ==========================================
 // 1. 最重要：UI操作・モード選択関数
@@ -82,7 +82,7 @@ window.selectMode = function(m) {
             if (el) el.classList.add('hidden'); 
         });
         
-        // 黒板などのリセット (共通関数で処理可能だが、ここでは明示的に)
+        // 黒板などのリセット
         ['embedded-chalkboard', 'chalkboard-simple-tts'].forEach(id => {
             const board = document.getElementById(id);
             if (board) {
@@ -130,7 +130,8 @@ window.selectMode = function(m) {
         else if (m === 'simple-chat-tts') {
             // 新HTTP版
             document.getElementById('simple-chat-tts-view').classList.remove('hidden');
-            window.updateNellMessage("今日はお話だけするにゃ？(HTTP)", "gentle", false);
+            // ★修正: 初期メッセージ変更
+            window.updateNellMessage("なんでも話してにゃ！", "happy", false);
             // カメラは手動。常時聞き取り開始
             startAlwaysOnListening();
         }
@@ -175,7 +176,25 @@ function getChatElements(context) {
         // embedded, explain, grade, review など
         return {
             resultTextId: 'user-speech-text-embedded',
-            chalkboardId: 'chalkboard-embedded'
+            chalkboardId: 'chalkboard-embedded' // ★修正: 正しいIDを指定 (embedded-chalkboardはクラス名)
+        };
+    }
+}
+
+// 修正: chalkboard-embedded はHTML内に存在しないため、embedded-chalkboard (class) を持つIDを探す必要がある
+// しかし、index.htmlでは <div id="embedded-chalkboard" class="embedded-chalkboard hidden"></div> と定義した。
+// なので、embedded用IDは "embedded-chalkboard" が正しい。
+
+function getChatElementsCorrect(context) {
+    if (context === 'simple-tts' || currentMode === 'simple-chat-tts') {
+        return {
+            resultTextId: 'user-speech-text-simple-tts',
+            chalkboardId: 'chalkboard-simple-tts'
+        };
+    } else {
+        return {
+            resultTextId: 'user-speech-text-embedded',
+            chalkboardId: 'embedded-chalkboard'
         };
     }
 }
@@ -209,7 +228,7 @@ function startAlwaysOnListening() {
         continuousRecognition.stop();
         
         // 現在のモードに応じた要素を取得
-        const elems = getChatElements(currentMode);
+        const elems = getChatElementsCorrect(currentMode);
         const speechTextElem = document.getElementById(elems.resultTextId);
         if (speechTextElem) speechTextElem.innerText = text;
 
@@ -326,7 +345,7 @@ window.startPreviewCamera = async function(videoId, containerId) {
 
     } catch (e) {
         console.warn("[Preview] Camera init failed:", e);
-        alert("カメラが使えないにゃ…。");
+        // カメラがなくてもアラートは出さない（自動起動時対策）
     }
 };
 
@@ -350,14 +369,13 @@ window.stopPreviewCamera = function() {
 
 // コンテキストに応じたIDを取得するヘルパー
 function getHttpModeIds(context) {
-    // context: 'embedded' (教えて/採点) or 'simple-tts' (こじんめんだんTTS)
     const suffix = context === 'simple-tts' ? 'simple-tts' : 'embedded';
     return {
         videoId: `live-chat-video-${suffix}`,
         containerId: `live-chat-video-container-${suffix}`,
         btnId: `live-camera-btn-${suffix}`,
         inputId: `text-input-${suffix}`,
-        chalkboardId: context === 'simple-tts' ? 'chalkboard-simple-tts' : 'chalkboard-embedded'
+        chalkboardId: context === 'simple-tts' ? 'chalkboard-simple-tts' : 'embedded-chalkboard'
     };
 }
 
@@ -372,9 +390,6 @@ window.sendHttpText = async function(context) {
     if (isAlwaysListening && continuousRecognition) {
         try { continuousRecognition.stop(); } catch(e){}
     }
-
-    // ボタンの状態を変える（クラス指定だと複数あるので親要素から探すなど工夫が必要だが、ここでは簡易的に）
-    // const btn = document.querySelector('.text-question-btn'); 
 
     try {
         window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
@@ -412,12 +427,9 @@ window.toggleHttpCamera = function(context) {
     const ids = getHttpModeIds(context);
     const btn = document.getElementById(ids.btnId);
     
-    // プレビュー中かどうか
     if (previewStream && previewStream.active) {
-        // 撮影実行
         captureAndSendHttpImage(context);
     } else {
-        // カメラ起動
         startPreviewCamera(ids.videoId, ids.containerId).then(() => {
             if (btn) {
                 btn.innerHTML = "<span>📸</span> 撮影して質問";
@@ -461,12 +473,18 @@ window.captureAndSendHttpImage = async function(context) {
     try {
         window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
 
+        // ★修正: contextに応じてプロンプトを変更
+        let promptText = "この問題を教えてください。";
+        if (context === 'simple-tts') {
+            promptText = "この画像について、ネル先生の視点で解説や感想を教えてください。";
+        }
+
         const res = await fetch('/chat-dialogue', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 image: base64Data,
-                text: "この問題を教えてください。", 
+                text: promptText, 
                 name: currentUser ? currentUser.name : "生徒"
             })
         });
@@ -988,6 +1006,11 @@ window.stopLiveChat = function() {
     const videoSimple = document.getElementById('live-chat-video-simple');
     if(videoSimple) videoSimple.srcObject = null;
     document.getElementById('live-chat-video-container-simple').style.display = 'none';
+
+    const videoSimpleTts = document.getElementById('live-chat-video-simple-tts');
+    if(videoSimpleTts) videoSimpleTts.srcObject = null;
+    const containerSimpleTts = document.getElementById('live-chat-video-container-simple-tts');
+    if(containerSimpleTts) containerSimpleTts.style.display = 'none';
 };
 
 async function startLiveChat(context = 'main') { 
