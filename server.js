@@ -1,4 +1,4 @@
-// --- server.js (完全版 v297.0) ---
+// --- server.js (完全版 v298.0) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -482,7 +482,8 @@ wss.on('connection', async (clientWs, req) => {
                     setup: {
                         model: "models/gemini-2.0-flash-exp",
                         generationConfig: { 
-                            responseModalities: ["AUDIO"],
+                            // ★重要: TEXTも含めることでデバッグを容易にし、音声生成を安定させる
+                            responseModalities: ["AUDIO", "TEXT"],
                             speech_config: { 
                                 voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }, 
                                 language_code: "ja-JP" 
@@ -563,7 +564,21 @@ wss.on('connection', async (clientWs, req) => {
                 geminiWs.send(JSON.stringify({ client_content: msg.clientContent }));
             }
             if (msg.base64Audio) {
-                geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: msg.base64Audio }] } }));
+                // 1. 音声データを送信
+                geminiWs.send(JSON.stringify({ 
+                    realtimeInput: { 
+                        mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: msg.base64Audio }] 
+                    } 
+                }));
+
+                // ★重要: 強制トリガー（response.createのGemini版）
+                // ユーザーの指示通り、音声送信後に応答生成を促すシグナルを送る。
+                // これにより「無反応」を確実に防ぐ。
+                geminiWs.send(JSON.stringify({ 
+                    clientContent: { 
+                        turnComplete: true 
+                    } 
+                }));
             }
             if (msg.base64Image) {
                 geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "image/jpeg", data: msg.base64Image }] } }));

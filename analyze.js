@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v297.0) ---
+// --- analyze.js (完全版 v298.0) ---
 
 // ==========================================
 // 1. グローバル変数・定数・初期化
@@ -929,9 +929,14 @@ window.startLiveChat = async function(context = 'main') {
                     if(btn) { btn.innerText = "📞 つながった！(終了)"; btn.style.background = "#ff5252"; btn.disabled = false; } 
                     window.updateNellMessage("お待たせ！なんでも話してにゃ！", "happy", false, false); 
                     isRecognitionActive = true; 
-                    // ★重要修正: 改良版マイク起動関数を呼び出し
+                    // ★重要修正: マイク開始順序変更対応
                     window.startMicrophone(); 
                     return;
+                }
+                if (data.type === "error") {
+                     window.updateNellMessage(data.message, "thinking", false);
+                     window.stopLiveChat();
+                     return;
                 }
                 if (data.serverContent?.modelTurn?.parts) { 
                     data.serverContent.modelTurn.parts.forEach(p => { 
@@ -947,141 +952,66 @@ window.startLiveChat = async function(context = 'main') {
     } catch (e) { window.stopLiveChat(); } 
 }
 
-// ★修正: カメラ取得失敗時でも音声のみで続行する強力なフォールバック
+// ★修正: Realtime APIモードでもSpeechRecognitionを起動する（文字起こし表示用）
 window.startMicrophone = async function() { 
     try { 
-        // 1. AudioContextの確実な再開
-        if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        if (audioContext.state === 'suspended') await audioContext.resume();
+        const useVideo = true;
+        // マイク権限取得を優先
+        mediaStream = await navigator.mediaDevices.getUserMedia({ 
+            audio: { sampleRate: 16000, channelCount: 1 }, 
+            video: useVideo ? { facingMode: "environment" } : false 
+        }); 
 
-        // 2. メディアストリームの取得（カメラ取得に失敗しても音声だけで続行するロジック）
-        try {
-            // まずはビデオとオーディオ両方を試みる
-            mediaStream = await navigator.mediaDevices.getUserMedia({ 
-                audio: { 
-                    sampleRate: 16000, 
-                    channelCount: 1,
-                    echoCancellation: true, // エコーキャンセル有効化
-                    noiseSuppression: true  // ノイズ除去有効化
-                }, 
-                video: { facingMode: "environment" } 
-            }); 
-        } catch (cameraError) {
-            console.warn("カメラの取得に失敗しました。音声のみで続行します。", cameraError);
-            // ビデオがダメならオーディオのみで再トライ
-            try {
-                mediaStream = await navigator.mediaDevices.getUserMedia({ 
-                    audio: { 
-                        sampleRate: 16000, 
-                        channelCount: 1,
-                        echoCancellation: true,
-                        noiseSuppression: true
-                    }, 
-                    video: false 
-                });
-            } catch (audioError) {
-                // オーディオもダメなら終了
-                alert("マイクが使えないみたいだにゃ。ブラウザの設定を確認してにゃ！");
-                window.stopLiveChat();
-                return;
-            }
-        }
-
-        // 3. 音声認識API (字幕用) の開始
-        // ※これが音声送信を邪魔しないよう、エラーハンドリングを強化
+        // SpeechRecognition を常に起動（字幕表示のため）
         if ('webkitSpeechRecognition' in window) { 
-            try {
-                if (recognition) try { recognition.stop(); } catch(e){}
-                recognition = new webkitSpeechRecognition(); 
-                recognition.continuous = true; 
-                recognition.interimResults = true; 
-                recognition.lang = 'ja-JP'; 
-                recognition.onresult = (event) => { 
-                    let currentText = "";
-                    for (let i = event.resultIndex; i < event.results.length; ++i) currentText += event.results[i][0].transcript;
-                    const cleanText = currentText.trim();
-                    
-                    // 割り込み停止処理
-                    const stopKeywords = ["違う", "ちがう", "待って", "まって", "ストップ", "やめて", "うるさい", "静か", "しずか"];
-                    if (window.isNellSpeaking && cleanText.length > 0) {
-                        const isLongEnough = cleanText.length >= 10;
-                        const isStopCommand = stopKeywords.some(w => cleanText.includes(w));
-                        if (isLongEnough || isStopCommand) window.stopAudioPlayback();
+            recognition = new webkitSpeechRecognition(); 
+            recognition.continuous = true; 
+            recognition.interimResults = true; 
+            recognition.lang = 'ja-JP'; 
+            recognition.onresult = (event) => { 
+                let currentText = "";
+                for (let i = event.resultIndex; i < event.results.length; ++i) currentText += event.results[i][0].transcript;
+                const cleanText = currentText.trim();
+                const stopKeywords = ["違う", "ちがう", "待って", "まって", "ストップ", "やめて", "うるさい", "静か", "しずか"];
+                if (window.isNellSpeaking && cleanText.length > 0) {
+                    const isLongEnough = cleanText.length >= 10;
+                    const isStopCommand = stopKeywords.some(w => cleanText.includes(w));
+                    if (isLongEnough || isStopCommand) window.stopAudioPlayback();
+                }
+                for (let i = event.resultIndex; i < event.results.length; ++i) { 
+                    if (event.results[i].isFinal) { 
+                        const userText = event.results[i][0].transcript;
+                        window.saveToNellMemory('user', userText); 
+                        streamTextBuffer = ""; 
+                        const el = document.getElementById('user-speech-text-simple'); 
+                        if(el) el.innerText = userText; 
                     }
-                    
-                    // 確定したテキストの処理
-                    for (let i = event.resultIndex; i < event.results.length; ++i) { 
-                        if (event.results[i].isFinal) { 
-                            const userText = event.results[i][0].transcript;
-                            window.saveToNellMemory('user', userText); 
-                            streamTextBuffer = ""; 
-                            const el = document.getElementById('user-speech-text-simple'); 
-                            if(el) el.innerText = userText; 
-                        }
-                    } 
-                }; 
-                // 音声認識が意図せず止まった場合の再開処理
-                recognition.onend = () => { 
-                    if (isRecognitionActive && liveSocket && liveSocket.readyState === WebSocket.OPEN) {
-                        try{ recognition.start(); } catch(e){} 
-                    }
-                }; 
-                recognition.start(); 
-            } catch(e) { console.warn("SpeechRec start error:", e); }
+                } 
+            }; 
+            recognition.onend = () => { if (isRecognitionActive && liveSocket && liveSocket.readyState === WebSocket.OPEN) try{recognition.start()}catch(e){} }; 
+            try { recognition.start(); } catch(e) { console.warn("SpeechRec start error:", e); }
         } 
 
-        // 4. 映像プレビューの表示（映像がある場合のみ）
-        const videoTrack = mediaStream.getVideoTracks()[0];
-        let videoContainer = document.getElementById('live-chat-video-container-simple');
-        let videoElement = document.getElementById('live-chat-video-simple');
-        
-        if (videoTrack && videoElement) {
-            videoElement.srcObject = mediaStream; 
-            videoElement.play(); 
-            if(videoContainer) videoContainer.style.display = 'block';
-        } else {
-            if(videoContainer) videoContainer.style.display = 'none';
+        if (useVideo) {
+            let videoId = 'live-chat-video-simple';
+            let containerId = 'live-chat-video-container-simple';
+            const video = document.getElementById(videoId);
+            if (video) { video.srcObject = mediaStream; video.play(); document.getElementById(containerId).style.display = 'block'; }
         }
         
-        // 5. AudioWorkletの設定 (AIへの音声送信用)
-        // ※一度だけ登録するようにチェックを入れる
-        try {
-            const processorCode = `class PcmProcessor extends AudioWorkletProcessor { constructor() { super(); this.bufferSize = 2048; this.buffer = new Float32Array(this.bufferSize); this.index = 0; } process(inputs, outputs, parameters) { const input = inputs[0]; if (input.length > 0) { const channel = input[0]; for (let i = 0; i < channel.length; i++) { this.buffer[this.index++] = channel[i]; if (this.index >= this.bufferSize) { this.port.postMessage(this.buffer); this.index = 0; } } } return true; } } registerProcessor('pcm-processor', PcmProcessor);`; 
-            const blob = new Blob([processorCode], { type: 'application/javascript' }); 
-            const blobUrl = URL.createObjectURL(blob);
-            
-            // モジュール追加時の競合エラー回避
-            try {
-                await audioContext.audioWorklet.addModule(blobUrl);
-            } catch (err) {
-                // すでに登録済みなどの場合は無視して続行
-                console.log("AudioWorklet module might already be added:", err);
-            }
-
-            const source = audioContext.createMediaStreamSource(mediaStream); 
-            workletNode = new AudioWorkletNode(audioContext, 'pcm-processor'); 
-            
-            source.connect(workletNode); 
-            // ※重要: マイクの音をスピーカーから出さないように、destinationには接続しない
-            
-            workletNode.port.onmessage = (event) => { 
-                if (window.isMicMuted) return;
-                if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return; 
-                
-                // ダウンサンプリングして送信
-                const downsampled = window.downsampleBuffer(event.data, audioContext.sampleRate, 16000); 
-                liveSocket.send(JSON.stringify({ base64Audio: window.arrayBufferToBase64(window.floatTo16BitPCM(downsampled)) })); 
-            }; 
-        } catch (workletError) {
-            console.error("AudioWorklet setup failed:", workletError);
-            alert("音声処理の準備に失敗したにゃ…再読み込みしてみてにゃ。");
-            window.stopLiveChat();
-        }
-
-    } catch(e) { 
-        console.warn("Audio/Camera Fatal Error:", e); 
-        window.stopLiveChat();
-    } 
+        const processorCode = `class PcmProcessor extends AudioWorkletProcessor { constructor() { super(); this.bufferSize = 2048; this.buffer = new Float32Array(this.bufferSize); this.index = 0; } process(inputs, outputs, parameters) { const input = inputs[0]; if (input.length > 0) { const channel = input[0]; for (let i = 0; i < channel.length; i++) { this.buffer[this.index++] = channel[i]; if (this.index >= this.bufferSize) { this.port.postMessage(this.buffer); this.index = 0; } } } return true; } } registerProcessor('pcm-processor', PcmProcessor);`; 
+        const blob = new Blob([processorCode], { type: 'application/javascript' }); 
+        await audioContext.audioWorklet.addModule(URL.createObjectURL(blob)); 
+        const source = audioContext.createMediaStreamSource(mediaStream); 
+        workletNode = new AudioWorkletNode(audioContext, 'pcm-processor'); 
+        source.connect(workletNode); 
+        workletNode.port.onmessage = (event) => { 
+            if (window.isMicMuted) return;
+            if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return; 
+            const downsampled = window.downsampleBuffer(event.data, audioContext.sampleRate, 16000); 
+            liveSocket.send(JSON.stringify({ base64Audio: window.arrayBufferToBase64(window.floatTo16BitPCM(downsampled)) })); 
+        }; 
+    } catch(e) { console.warn("Audio/Camera Error:", e); } 
 }
 
 // ==========================================
@@ -1534,8 +1464,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (hwCamera) hwCamera.addEventListener('change', (e) => window.handleFileUpload(e.target.files[0]));
     if (hwAlbum) hwAlbum.addEventListener('change', (e) => window.handleFileUpload(e.target.files[0]));
     if (webcamBtn) webcamBtn.addEventListener('click', () => {
-        if (window.startEnrollmentWebCamera) {
-            window.startEnrollmentWebCamera(window.handleFileUpload);
+        if (window.startHomeworkWebcam) {
+            window.startHomeworkWebcam();
         } else {
             alert("カメラが準備できてないにゃ...");
         }
