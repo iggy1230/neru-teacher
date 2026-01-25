@@ -1,4 +1,4 @@
-// --- server.js (完全版 v280.2: エラー回避・記憶保存強化) ---
+// --- server.js (完全版 v299.0) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -92,7 +92,6 @@ app.post('/synthesize', async (req, res) => {
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
-        // ★修正: JSONモードは使用せず、テキスト抽出で対応（エラー回避）
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp"
         });
@@ -132,7 +131,6 @@ app.post('/update-memory', async (req, res) => {
         
         let newProfile;
         try {
-            // ★修正: JSON抽出ロジックを強化（Markdown除去など）
             let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
             const firstBrace = cleanText.indexOf('{');
             const lastBrace = cleanText.lastIndexOf('}');
@@ -239,7 +237,6 @@ app.post('/analyze', async (req, res) => {
 app.post('/identify-item', async (req, res) => {
     try {
         const { image, name } = req.body;
-        // ★MODEL指定: その他はFlash-Exp
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp",
             generationConfig: { responseMimeType: "application/json" }
@@ -257,7 +254,7 @@ app.post('/identify-item', async (req, res) => {
         【出力フォーマット (JSON)】
         {
             "itemName": "画像の中の主要な物体の名前（短く）",
-            "description": "その物体についてのネル先生のユニークで面白い解説（60文字以内）。猫視点での勘違いや、独自の使い方の提案などを含める。",
+            "description": "その物体についてのネル先生のユニークで面白い解説（120文字程度）。猫視点での勘違いや、独自の使い方の提案などを含める。",
             "speechText": "『これは（itemName）だにゃ！（description）』という形式の読み上げ用セリフ。必ず『これは〇〇だにゃ！』から始める。"
         }
         `;
@@ -282,26 +279,37 @@ app.post('/identify-item', async (req, res) => {
 // --- ★ HTTPチャット会話 (お宝図鑑・埋め込みチャット共用) ---
 app.post('/chat-dialogue', async (req, res) => {
     try {
-        const { text, name, image } = req.body;
+        const { text, name, image, history } = req.body;
         
         const now = new Date();
         const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' };
         const currentDateTime = now.toLocaleString('ja-JP', dateOptions);
 
-        // ★修正: Search Toolを使うため、JSON Mode (responseMimeType) を削除し、手動パースで対応
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp",
-            // generationConfig: { responseMimeType: "application/json" }, // ← 検索ツールと競合するため削除
             tools: [{ google_search: {} }] 
         });
+
+        let contextPrompt = "";
+        if (history && Array.isArray(history) && history.length > 0) {
+            contextPrompt = "【これまでの会話の流れ（直近）】\n";
+            history.forEach(h => {
+                const speaker = h.role === 'user' ? `${name}` : 'ネル先生';
+                contextPrompt += `${speaker}: ${h.text}\n`;
+            });
+            contextPrompt += "\n";
+        }
 
         let prompt = `
         あなたは猫の「ネル先生」です。相手は「${name}」さん。
         以下のユーザーの発言（または画像）に対して、子供にもわかるように答えてください。
+        これまでの会話の流れを踏まえて、自然に返答してください。
 
         【重要：現在の状況】
         - **現在は ${currentDateTime} です。**
         - **わからないことや最新の情報が必要な場合は、提供されたGoogle検索ツールを使って調べてください。**
+
+        ${contextPrompt}
 
         【出力フォーマット】
         **必ず以下のJSON形式の文字列だけ**を出力してください。Markdownコードブロックは含んでも構いません。
@@ -329,7 +337,6 @@ app.post('/chat-dialogue', async (req, res) => {
         
         const responseText = result.response.text().trim();
         
-        // ★修正: JSON抽出ロジックの強化
         let jsonResponse;
         try {
             let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -341,7 +348,6 @@ app.post('/chat-dialogue', async (req, res) => {
             jsonResponse = JSON.parse(cleanText);
         } catch (e) {
             console.warn("JSON Parse Fallback:", responseText);
-            // パース失敗時のフォールバック
             jsonResponse = { speech: responseText, board: "" };
         }
         
@@ -359,7 +365,6 @@ app.post('/lunch-reaction', async (req, res) => {
         const { count, name } = req.body;
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
         const isSpecial = (count % 10 === 0);
-        // ★MODEL指定: その他はFlash-Exp
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         
         let prompt = isSpecial 
@@ -382,7 +387,6 @@ app.post('/lunch-reaction', async (req, res) => {
 app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;
-        // ★MODEL指定: その他はFlash-Exp
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         let prompt = "";
         let mood = "excited";
@@ -455,6 +459,7 @@ wss.on('connection', async (clientWs, req) => {
                 ${statusContext}
                 `;
 
+                // ★ v294仕様: WebSocketでもGoogle検索ツールを有効化
                 const tools = [
                     { google_search: {} },
                     {
@@ -474,10 +479,10 @@ wss.on('connection', async (clientWs, req) => {
 
                 geminiWs.send(JSON.stringify({
                     setup: {
-                        // ★MODEL指定: リアルタイム会話はFlash-Exp
                         model: "models/gemini-2.0-flash-exp",
                         generationConfig: { 
-                            responseModalities: ["AUDIO"],
+                            // ★重要: TEXTも含める（安定性向上 & デバッグ用）
+                            responseModalities: ["AUDIO", "TEXT"],
                             speech_config: { 
                                 voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }, 
                                 language_code: "ja-JP" 
@@ -550,16 +555,37 @@ wss.on('connection', async (clientWs, req) => {
                 return;
             }
 
+            // Clientからの転送処理
             if (msg.toolResponse) {
-                geminiWs.send(JSON.stringify({ clientContent: msg.toolResponse }));
+                geminiWs.send(JSON.stringify({ client_content: msg.toolResponse })); // snake_caseに統一
                 return;
             }
             if (msg.clientContent) {
-                geminiWs.send(JSON.stringify({ client_content: msg.clientContent }));
+                geminiWs.send(JSON.stringify({ client_content: msg.clientContent })); // snake_caseに統一
             }
             if (msg.base64Audio) {
-                geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: msg.base64Audio }] } }));
+                // 音声データ送信
+                geminiWs.send(JSON.stringify({ 
+                    realtimeInput: { 
+                        mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: msg.base64Audio }] 
+                    } 
+                }));
             }
+            
+            // ★重要: クライアントからの明示的なトリガーで応答を生成させる
+            // 音声が終わり、SpeechRecognitionがisFinalを出した時に送られてくる
+            if (msg.trigger) {
+                geminiWs.send(JSON.stringify({
+                    client_content: { // ★ snake_case で送信
+                        turns: [{
+                            role: "user",
+                            parts: [{ text: "（音声入力が終わりました。これまでの音声に対して応答してください）" }]
+                        }],
+                        turn_complete: true // 念のため残すが、実質はtext送信がトリガー
+                    }
+                }));
+            }
+
             if (msg.base64Image) {
                 geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "image/jpeg", data: msg.base64Image }] } }));
             }
