@@ -290,7 +290,6 @@ app.post('/chat-dialogue', async (req, res) => {
             tools: [{ google_search: {} }] 
         });
 
-        // 履歴プロンプトの構築
         let contextPrompt = "";
         if (history && Array.isArray(history) && history.length > 0) {
             contextPrompt = "【これまでの会話の流れ（直近）】\n";
@@ -482,7 +481,7 @@ wss.on('connection', async (clientWs, req) => {
                     setup: {
                         model: "models/gemini-2.0-flash-exp",
                         generationConfig: { 
-                            // ★重要: TEXTも含めることでデバッグを容易にし、音声生成を安定させる
+                            // ★重要: TEXTも含める（安定性向上 & デバッグ用）
                             responseModalities: ["AUDIO", "TEXT"],
                             speech_config: { 
                                 voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }, 
@@ -564,22 +563,28 @@ wss.on('connection', async (clientWs, req) => {
                 geminiWs.send(JSON.stringify({ client_content: msg.clientContent }));
             }
             if (msg.base64Audio) {
-                // 1. 音声データを送信
+                // 音声データ送信 (これだけでは反応しない仕様)
                 geminiWs.send(JSON.stringify({ 
                     realtimeInput: { 
                         mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: msg.base64Audio }] 
                     } 
                 }));
-
-                // ★重要: 強制トリガー（response.createのGemini版）
-                // ユーザーの指示通り、音声送信後に応答生成を促すシグナルを送る。
-                // これにより「無反応」を確実に防ぐ。
-                geminiWs.send(JSON.stringify({ 
-                    clientContent: { 
-                        turnComplete: true 
-                    } 
+                // ★注意: ここでトリガーを送るとAIが細切れに反応してしまうため削除
+            }
+            
+            // ★重要: クライアントからの明示的なトリガーで応答を生成させる
+            if (msg.trigger) {
+                geminiWs.send(JSON.stringify({
+                    client_content: { // ★ snake_case に厳格化
+                        turns: [{
+                            role: "user",
+                            parts: [{ text: "（応答）" }] // 空文字だと無視される場合があるため、意味のないテキストを送る
+                        }],
+                        turn_complete: true // 念のため
+                    }
                 }));
             }
+
             if (msg.base64Image) {
                 geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "image/jpeg", data: msg.base64Image }] } }));
             }
