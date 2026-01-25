@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v294.0) ---
+// --- analyze.js (完全版 v295.0) ---
 
 // ==========================================
 // 1. グローバル変数・定数・初期化
@@ -929,9 +929,13 @@ window.startLiveChat = async function(context = 'main') {
                     if(btn) { btn.innerText = "📞 つながった！(終了)"; btn.style.background = "#ff5252"; btn.disabled = false; } 
                     window.updateNellMessage("お待たせ！なんでも話してにゃ！", "happy", false, false); 
                     isRecognitionActive = true; 
-                    // ★重要修正: マイク開始順序変更対応
                     window.startMicrophone(); 
                     return;
+                }
+                if (data.type === "error") {
+                     window.updateNellMessage(data.message, "thinking", false);
+                     window.stopLiveChat();
+                     return;
                 }
                 if (data.serverContent?.modelTurn?.parts) { 
                     data.serverContent.modelTurn.parts.forEach(p => { 
@@ -947,18 +951,19 @@ window.startLiveChat = async function(context = 'main') {
     } catch (e) { window.stopLiveChat(); } 
 }
 
-// ★修正: マイク初期化順序を変更し、反応しない不具合を解消
+// ★修正: リアルタイムモード時はSpeechRecognitionを起動しない
 window.startMicrophone = async function() { 
     try { 
         const useVideo = true;
-        // マイク権限取得を優先
+        // マイク権限取得
         mediaStream = await navigator.mediaDevices.getUserMedia({ 
             audio: { sampleRate: 16000, channelCount: 1 }, 
             video: useVideo ? { facingMode: "environment" } : false 
         }); 
 
-        // 成功後に認識APIを開始
-        if ('webkitSpeechRecognition' in window) { 
+        // simple-chat (Realtime API) 以外の場合のみ SpeechRecognition を起動
+        // これによりマイクの競合を防ぐ
+        if (currentMode !== 'simple-chat' && 'webkitSpeechRecognition' in window) { 
             recognition = new webkitSpeechRecognition(); 
             recognition.continuous = true; 
             recognition.interimResults = true; 
@@ -1450,7 +1455,7 @@ window.handleFileUpload = async (file) => {
     reader.readAsDataURL(file);
 };
 
-// ★修正: 宿題アップロードのイベントリスナー追加
+// ★追加: 宿題アップロードのイベントリスナー（クロップ画面が表示されない不具合の修正）
 document.addEventListener('DOMContentLoaded', () => {
     const hwCamera = document.getElementById('hw-input-camera');
     const hwAlbum = document.getElementById('hw-input-album');
@@ -1460,7 +1465,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (hwAlbum) hwAlbum.addEventListener('change', (e) => window.handleFileUpload(e.target.files[0]));
     if (webcamBtn) webcamBtn.addEventListener('click', () => {
         if (window.startEnrollmentWebCamera) {
-            // Enrollment用のカメラを流用し、callbackでhandleFileUploadを呼ぶ
             window.startEnrollmentWebCamera(window.handleFileUpload);
         } else {
             alert("カメラが準備できてないにゃ...");

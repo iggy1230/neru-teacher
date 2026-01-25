@@ -1,4 +1,4 @@
-// --- server.js (完全版 v294.0) ---
+// --- server.js (完全版 v295.0) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -534,7 +534,15 @@ wss.on('connection', async (clientWs, req) => {
                 }
             });
 
-            geminiWs.on('error', (e) => console.error("Gemini WS Error:", e));
+            geminiWs.on('error', (e) => {
+                console.error("Gemini WS Error:", e);
+                // ★追加: クライアントにエラー通知
+                if (clientWs.readyState === WebSocket.OPEN) {
+                    try {
+                         clientWs.send(JSON.stringify({ type: "error", message: "ネル先生との接続が切れちゃったにゃ..." }));
+                    } catch(err) {}
+                }
+            });
             geminiWs.on('close', () => console.log("Gemini WS Closed"));
 
         } catch(e) { 
@@ -580,5 +588,3 @@ wss.on('connection', async (clientWs, req) => {
         if (geminiWs) geminiWs.close();
     });
 });
-
-// end of server.js
