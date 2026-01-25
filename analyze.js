@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v292.0: 全機能網羅・省略なし) ---
+// --- analyze.js (完全版 v292.1: 関数定義漏れ修正・全機能統合版) ---
 
 // ==========================================
 // 1. グローバル変数・初期化
@@ -63,17 +63,36 @@ let studyTimerCheck = 0;
 let previewStream = null;
 
 // ==========================================
-// 2. ヘルパー関数 (履歴・カリカリ・エフェクト)
+// 2. ヘルパー関数 (履歴・カリカリ・音声処理)
 // ==========================================
 
+// 会話履歴
 window.addToSessionHistory = function(role, text) {
     window.chatSessionHistory.push({ role: role, text: text });
-    // 最新10件（5往復）程度を保持
     if (window.chatSessionHistory.length > 10) {
         window.chatSessionHistory.shift();
     }
 };
 
+// 記憶保存
+window.saveToNellMemory = async function(role, text) {
+    if (!currentUser || !currentUser.id) return;
+    const trimmed = text.trim();
+    if (trimmed.length <= 1) return;
+    
+    chatTranscript += `${role === 'user' ? '生徒' : 'ネル'}: ${trimmed}\n`;
+    const newItem = { role: role, text: trimmed, time: new Date().toISOString() };
+    try {
+        const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
+        let history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
+        if (history.length > 0 && history[history.length - 1].text === trimmed) return;
+        history.push(newItem);
+        if (history.length > 50) history.shift(); 
+        localStorage.setItem(memoryKey, JSON.stringify(history));
+    } catch(e) {}
+};
+
+// カリカリ表示
 window.updateMiniKarikari = function() {
     if (currentUser) {
         const el = document.getElementById('mini-karikari-count');
@@ -97,8 +116,50 @@ window.showKarikariEffect = function(amount) {
     }
 };
 
+// 音声処理
+window.floatTo16BitPCM = function(float32Array) {
+    const buffer = new ArrayBuffer(float32Array.length * 2);
+    const view = new DataView(buffer);
+    let offset = 0;
+    for (let i = 0; i < float32Array.length; i++, offset += 2) {
+        let s = Math.max(-1, Math.min(1, float32Array[i]));
+        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    }
+    return buffer;
+};
+
+window.downsampleBuffer = function(buffer, sampleRate, outSampleRate) {
+    if (outSampleRate >= sampleRate) return buffer;
+    const ratio = sampleRate / outSampleRate;
+    const newLength = Math.round(buffer.length / ratio);
+    const result = new Float32Array(newLength);
+    let offsetResult = 0;
+    let offsetBuffer = 0;
+    while (offsetResult < result.length) {
+        const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio);
+        let accum = 0, count = 0;
+        for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
+            accum += buffer[i];
+            count++;
+        }
+        result[offsetResult] = accum / count;
+        offsetResult++;
+        offsetBuffer = nextOffsetBuffer;
+    }
+    return result;
+};
+
+window.arrayBufferToBase64 = function(buffer) {
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return window.btoa(binary);
+};
+
 // ==========================================
-// 3. モード選択 (selectMode)
+// 3. モード選択 & UI操作
 // ==========================================
 
 window.selectMode = function(m) {
@@ -106,10 +167,8 @@ window.selectMode = function(m) {
         console.log(`[UI] selectMode called: ${m}`);
         currentMode = m; 
         
-        // 会話履歴リセット
         window.chatSessionHistory = [];
         
-        // 画面切り替え
         if (typeof window.switchScreen === 'function') {
             window.switchScreen('screen-main'); 
         } else {
@@ -117,14 +176,12 @@ window.selectMode = function(m) {
             document.getElementById('screen-main').classList.remove('hidden');
         }
 
-        // 各種ビューの非表示化
         const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'simple-chat-view', 'simple-chat-tts-view', 'lunch-view', 'grade-sheet-container', 'hint-detail-container', 'embedded-chat-section'];
         ids.forEach(id => { 
             const el = document.getElementById(id); 
             if (el) el.classList.add('hidden'); 
         });
         
-        // 黒板・入力欄リセット
         ['embedded-chalkboard', 'chalkboard-simple-tts'].forEach(id => {
             const board = document.getElementById(id);
             if (board) {
@@ -137,11 +194,9 @@ window.selectMode = function(m) {
             if (input) input.value = "";
         });
 
-        // 戻るボタン設定
         const backBtn = document.getElementById('main-back-btn');
         if (backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = window.backToLobby; }
         
-        // 既存プロセスのクリーンアップ
         stopAlwaysOnListening();
         if (typeof window.stopLiveChat === 'function') window.stopLiveChat();
         window.stopPreviewCamera(); 
@@ -154,21 +209,16 @@ window.selectMode = function(m) {
         if(miniKarikari) miniKarikari.classList.remove('hidden');
         window.updateMiniKarikari();
         
-        // --- モード別処理 ---
         if (m === 'chat') { 
-            // お宝図鑑
             document.getElementById('chat-view').classList.remove('hidden'); 
             window.updateNellMessage("お宝を見せてにゃ！お話もできるにゃ！", "excited", false); 
-            // カメラ手動、常時聞き取り開始
             startAlwaysOnListening();
         } 
         else if (m === 'simple-chat') {
-            // WebSocket版
             document.getElementById('simple-chat-view').classList.remove('hidden');
             window.updateNellMessage("今日はお話だけするにゃ？", "gentle", false);
         }
         else if (m === 'simple-chat-tts') {
-            // HTTP版 (こじんめんだんTTS)
             document.getElementById('simple-chat-tts-view').classList.remove('hidden');
             window.updateNellMessage("なんでも話してにゃ！", "happy", false);
             startAlwaysOnListening();
@@ -178,13 +228,11 @@ window.selectMode = function(m) {
             window.updateNellMessage("お腹ペコペコだにゃ……", "thinking", false); 
         } 
         else if (m === 'review') { 
-            // 復習ノート
-            renderMistakeSelection(); 
+            window.renderMistakeSelection(); 
             document.getElementById('embedded-chat-section').classList.remove('hidden'); 
             startAlwaysOnListening();
         } 
         else { 
-            // 教えて/採点 (科目選択)
             const subjectView = document.getElementById('subject-selection-view'); 
             if (subjectView) subjectView.classList.remove('hidden'); 
             window.updateNellMessage("どの教科にするのかにゃ？", "normal", false); 
@@ -198,6 +246,20 @@ window.selectMode = function(m) {
         alert("エラーが発生したにゃ。再読み込みしてにゃ。");
     }
 };
+
+window.setSubject = function(s) { 
+    currentSubject = s; 
+    const icon = document.querySelector('.nell-avatar-wrap img'); if(icon&&subjectImages[s]){icon.src=subjectImages[s].base; icon.onerror=()=>{icon.src=defaultIcon;};} 
+    document.getElementById('subject-selection-view').classList.add('hidden'); 
+    document.getElementById('upload-controls').classList.remove('hidden'); 
+    window.updateNellMessage(`${currentSubject}の問題をみせてにゃ！`, "happy", false); 
+    const btnFast = document.getElementById('mode-btn-fast');
+    const btnPrec = document.getElementById('mode-btn-precision');
+    if (btnFast) { btnFast.innerText = "📷 ネル先生に宿題を見せる"; btnFast.className = "main-btn"; btnFast.style.background = "#ff85a1"; btnFast.style.width = "100%"; btnFast.onclick = null; }
+    if (btnPrec) btnPrec.style.display = "none";
+};
+
+window.setAnalyzeMode = function(type) { analysisType = 'precision'; };
 
 // ==========================================
 // 4. 音声認識 (常時聞き取り & 割り込み)
@@ -240,7 +302,6 @@ function startAlwaysOnListening() {
 
         if (!cleanText) return;
 
-        // 割り込み制御
         if (window.isNellSpeaking) {
             const stopKeywords = ["違う", "ちがう", "待って", "まって", "ストップ", "やめて", "うるさい", "静か", "しずか"];
             const isStopCommand = stopKeywords.some(w => cleanText.includes(w));
@@ -328,11 +389,10 @@ function stopAlwaysOnListening() {
 }
 
 // ==========================================
-// 5. メッセージ・TTS・アニメーション
+// 5. メッセージ・TTS
 // ==========================================
 
 window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false, speak = true) {
-    // WebSocketモード中はHTTP側のTTSを抑制
     if (liveSocket && liveSocket.readyState === WebSocket.OPEN && currentMode !== 'chat' && currentMode !== 'simple-chat-tts') {
         speak = false;
     }
@@ -346,7 +406,7 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     if (el) el.innerText = displayText;
     
     if (t && t.includes("もぐもぐ")) { try { sfxBori.currentTime = 0; sfxBori.play(); } catch(e){} }
-    if (saveToMemory) { saveToNellMemory('nell', t); }
+    if (saveToMemory) { window.saveToNellMemory('nell', t); }
     
     if (speak && typeof speakNell === 'function') {
         let textForSpeech = displayText.replace(/【.*?】/g, "").trim();
@@ -356,6 +416,16 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
         }
     }
 };
+
+window.stopAudioPlayback = function() {
+    liveAudioSources.forEach(source => { try { source.stop(); } catch(e){} });
+    liveAudioSources = [];
+    if (audioContext && audioContext.state === 'running') nextStartTime = audioContext.currentTime + 0.05;
+    window.isNellSpeaking = false;
+    if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer);
+    if(speakingStartTimer) clearTimeout(speakingStartTimer);
+    if (window.cancelNellSpeech) window.cancelNellSpeech();
+}
 
 // ==========================================
 // 6. カメラ機能 (Preview & HTTP Send)
@@ -552,6 +622,11 @@ window.captureAndSendHttpImage = async function(context) {
     }
 };
 
+// 埋め込みカメラトグル (エイリアス)
+window.toggleEmbeddedCamera = function() {
+    window.toggleHttpCamera('embedded');
+};
+
 // お宝カメラトグル
 window.toggleTreasureCamera = function() {
     const videoId = 'live-chat-video';
@@ -677,16 +752,6 @@ window.captureAndIdentifyItem = async function() {
 // ==========================================
 // 8. WebSocketチャット (simple-chat用)
 // ==========================================
-
-window.stopAudioPlayback = function() {
-    liveAudioSources.forEach(source => { try { source.stop(); } catch(e){} });
-    liveAudioSources = [];
-    if (audioContext && audioContext.state === 'running') nextStartTime = audioContext.currentTime + 0.05;
-    window.isNellSpeaking = false;
-    if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer);
-    if(speakingStartTimer) clearTimeout(speakingStartTimer);
-    if (window.cancelNellSpeech) window.cancelNellSpeech();
-}
 
 window.captureAndSendLiveImage = function() {
     if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return alert("まずは「おはなしする」でネル先生とつながってにゃ！");
@@ -831,7 +896,7 @@ window.startLiveChat = async function(context = 'main') {
                         if (p.inlineData) playLivePcmAudio(p.inlineData.data); 
                     }); 
                 }
-                if (data.serverContent && data.serverContent.turnComplete) { saveToNellMemory('nell', streamTextBuffer); streamTextBuffer = ""; }
+                if (data.serverContent && data.serverContent.turnComplete) { window.saveToNellMemory('nell', streamTextBuffer); streamTextBuffer = ""; }
             } catch (e) {} 
         }; 
         liveSocket.onclose = () => window.stopLiveChat(); 
@@ -859,7 +924,7 @@ window.startMicrophone = async function() {
                 for (let i = event.resultIndex; i < event.results.length; ++i) { 
                     if (event.results[i].isFinal) { 
                         const userText = event.results[i][0].transcript;
-                        saveToNellMemory('user', userText); 
+                        window.saveToNellMemory('user', userText); 
                         streamTextBuffer = ""; 
                         const el = document.getElementById('user-speech-text-simple'); 
                         if(el) el.innerText = userText; 
@@ -886,14 +951,14 @@ window.startMicrophone = async function() {
         workletNode.port.onmessage = (event) => { 
             if (window.isMicMuted) return;
             if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) return; 
-            const downsampled = downsampleBuffer(event.data, audioContext.sampleRate, 16000); 
-            liveSocket.send(JSON.stringify({ base64Audio: arrayBufferToBase64(floatTo16BitPCM(downsampled)) })); 
+            const downsampled = window.downsampleBuffer(event.data, audioContext.sampleRate, 16000); 
+            liveSocket.send(JSON.stringify({ base64Audio: window.arrayBufferToBase64(window.floatTo16BitPCM(downsampled)) })); 
         }; 
     } catch(e) { console.warn("Audio/Camera Error:", e); } 
 }
 
 // ==========================================
-// 8. 宿題分析・採点・ゲーム等
+// 9. 宿題分析・採点・ゲーム等
 // ==========================================
 
 window.startAnalysis = async function(b64) {
@@ -1331,7 +1396,7 @@ window.handleFileUpload = async (file) => {
             ];
             canvas.style.opacity = '1';
             window.updateNellMessage("ここを読み取るにゃ？", "normal");
-            window.initCustomCropper(); 
+            window.initCustomCropper();
         };
         cropImg.src = e.target.result;
     };
