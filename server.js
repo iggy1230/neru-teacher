@@ -1,4 +1,4 @@
-// --- server.js (完全版 v282.0: 変更なし・完全版として出力) ---
+// --- server.js (完全版 v285.0: 解説文増量) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -255,7 +255,7 @@ app.post('/identify-item', async (req, res) => {
         【出力フォーマット (JSON)】
         {
             "itemName": "画像の中の主要な物体の名前（短く）",
-            "description": "その物体についてのネル先生のユニークで面白い解説（120文字以内）。猫視点での勘違いや、独自の使い方の提案などを含める。",
+            "description": "その物体についてのネル先生のユニークで面白い解説（120文字程度）。猫視点での勘違いや、独自の使い方の提案などを含める。",
             "speechText": "『これは（itemName）だにゃ！（description）』という形式の読み上げ用セリフ。必ず『これは〇〇だにゃ！』から始める。"
         }
         `;

@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v284.0: 割り込み機能追加・対話制御強化) ---
+// --- analyze.js (完全版 v285.0: 割り込み機能強化・お宝カメラ手動化) ---
 
 // ==========================================
 // 1. 最重要：UI操作・モード選択関数
@@ -119,19 +119,18 @@ window.selectMode = function(m) {
             // お宝図鑑モード
             document.getElementById('chat-view').classList.remove('hidden'); 
             window.updateNellMessage("お宝を見せてにゃ！お話もできるにゃ！", "excited", false); 
-            startPreviewCamera('live-chat-video', 'live-chat-video-container'); // カメラ即時起動
+            // ★修正: カメラ自動起動を削除（手動化）
+            // startPreviewCamera('live-chat-video', 'live-chat-video-container'); 
+            // 常時聞き取り開始
             startAlwaysOnListening();
         } 
         else if (m === 'simple-chat') {
-            // WebSocket版
             document.getElementById('simple-chat-view').classList.remove('hidden');
             window.updateNellMessage("今日はお話だけするにゃ？", "gentle", false);
         }
         else if (m === 'simple-chat-tts') {
-            // 新HTTP版 (こじんめんだんTTS)
             document.getElementById('simple-chat-tts-view').classList.remove('hidden');
             window.updateNellMessage("なんでも話してにゃ！", "happy", false);
-            // カメラは手動。常時聞き取り開始
             startAlwaysOnListening();
         }
         else if (m === 'lunch') { 
@@ -141,17 +140,14 @@ window.selectMode = function(m) {
         else if (m === 'review') { 
             renderMistakeSelection(); 
             document.getElementById('embedded-chat-section').classList.remove('hidden'); 
-            // 復習モード: 常時聞き取りのみ開始 (カメラは手動)
             startAlwaysOnListening();
         } 
         else { 
-            // 教えて/採点
             const subjectView = document.getElementById('subject-selection-view'); 
             if (subjectView) subjectView.classList.remove('hidden'); 
             window.updateNellMessage("どの教科にするのかにゃ？", "normal", false); 
             if (m === 'explain' || m === 'grade') {
                 document.getElementById('embedded-chat-section').classList.remove('hidden');
-                // 解説・採点モード: 常時聞き取りのみ開始 (カメラは手動)
                 startAlwaysOnListening();
             }
         }
@@ -198,22 +194,14 @@ function startAlwaysOnListening() {
     continuousRecognition.onresult = async (event) => {
         const text = event.results[0][0].transcript;
 
-        // ★追加: 割り込み判定 (Nell先生が話している最中でもチェックする)
-        const stopKeywords = ["違う", "ちがう", "待って", "まって", "ストップ", "やめて", "うるさい", "静か", "しずか"];
-        
+        // ★修正: 割り込み強化
+        // ネル先生が話している最中でも、ユーザーが何か話したら（空でなければ）即座に中断して新しい話題へ移行する
         if (window.isNellSpeaking) {
-            if (text && stopKeywords.some(w => text.includes(w))) {
-                console.log("[Interruption] User stopped speech:", text);
-                if (typeof window.cancelNellSpeech === 'function') {
-                    window.cancelNellSpeech(); // 発話をキャンセル
-                }
-                // 認識をリセットして終了（サーバーには送らない）
-                continuousRecognition.stop();
-                return;
+            console.log("[Interruption] User spoke:", text);
+            if (typeof window.cancelNellSpeech === 'function') {
+                window.cancelNellSpeech(); // 発話をキャンセル
             }
-            // 制止ワード以外の場合は、発話中なので無視する
-            console.log("Ignored user input while Nell is speaking:", text);
-            return;
+            // そのまま下流の処理（サーバー送信）へ流すことで「次の話題」へ移行する
         }
 
         if (!text || text.trim() === "") return;
@@ -221,7 +209,6 @@ function startAlwaysOnListening() {
         console.log(`[User Said] ${text}`);
         continuousRecognition.stop();
         
-        // 現在のモードに応じた要素を取得
         const elems = getChatElementsCorrect(currentMode);
         const speechTextElem = document.getElementById(elems.resultTextId);
         if (speechTextElem) speechTextElem.innerText = text;
@@ -250,7 +237,6 @@ function startAlwaysOnListening() {
         } catch(e) {
             console.error("Chat Error:", e);
         } finally {
-            // 対象モードなら再開
             if (isAlwaysListening && (currentMode === 'chat' || currentMode === 'explain' || currentMode === 'grade' || currentMode === 'review' || currentMode === 'simple-chat-tts')) {
                 try { continuousRecognition.start(); } catch(e){}
             }
@@ -339,7 +325,6 @@ window.startPreviewCamera = async function(videoId, containerId) {
 
     } catch (e) {
         console.warn("[Preview] Camera init failed:", e);
-        // カメラがなくてもアラートは出さない（自動起動時対策）
     }
 };
 
