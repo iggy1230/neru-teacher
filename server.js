@@ -1,4 +1,4 @@
-// --- server.js (完全版 v296.0) ---
+// --- server.js (完全版 v300.0) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -92,7 +92,6 @@ app.post('/synthesize', async (req, res) => {
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
-        // ★MODEL指定: gemini-2.0-flash-exp (固定)
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp"
         });
@@ -238,7 +237,7 @@ app.post('/analyze', async (req, res) => {
 app.post('/identify-item', async (req, res) => {
     try {
         const { image, name } = req.body;
-        // ★MODEL指定: gemini-2.0-flash-exp (固定)
+        // ★MODEL指定: その他はFlash-Exp
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp",
             generationConfig: { responseMimeType: "application/json" }
@@ -256,7 +255,7 @@ app.post('/identify-item', async (req, res) => {
         【出力フォーマット (JSON)】
         {
             "itemName": "画像の中の主要な物体の名前（短く）",
-            "description": "その物体についてのネル先生のユニークで面白い解説（60文字以内）。猫視点での勘違いや、独自の使い方の提案などを含める。",
+            "description": "その物体についてのネル先生のユニークで面白い解説（120文字程度）。猫視点での勘違いや、独自の使い方の提案などを含める。",
             "speechText": "『これは（itemName）だにゃ！（description）』という形式の読み上げ用セリフ。必ず『これは〇〇だにゃ！』から始める。"
         }
         `;
@@ -281,19 +280,18 @@ app.post('/identify-item', async (req, res) => {
 // --- ★ HTTPチャット会話 (お宝図鑑・埋め込みチャット共用) ---
 app.post('/chat-dialogue', async (req, res) => {
     try {
-        const { text, name, image, history } = req.body;
+        const { text, name, image, history } = req.body; // historyを受け取る
         
         const now = new Date();
         const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' };
         const currentDateTime = now.toLocaleString('ja-JP', dateOptions);
 
-        // ★MODEL指定: gemini-2.0-flash-exp (固定)
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp",
             tools: [{ google_search: {} }] 
         });
 
-        // 履歴プロンプト
+        // 履歴プロンプトの構築
         let contextPrompt = "";
         if (history && Array.isArray(history) && history.length > 0) {
             contextPrompt = "【これまでの会話の流れ（直近）】\n";
@@ -307,6 +305,7 @@ app.post('/chat-dialogue', async (req, res) => {
         let prompt = `
         あなたは猫の「ネル先生」です。相手は「${name}」さん。
         以下のユーザーの発言（または画像）に対して、子供にもわかるように答えてください。
+        これまでの会話の流れを踏まえて、自然に返答してください。
 
         【重要：現在の状況】
         - **現在は ${currentDateTime} です。**
@@ -368,7 +367,7 @@ app.post('/lunch-reaction', async (req, res) => {
         const { count, name } = req.body;
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
         const isSpecial = (count % 10 === 0);
-        // ★MODEL指定: gemini-2.0-flash-exp (固定)
+        // ★MODEL指定: その他はFlash-Exp
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         
         let prompt = isSpecial 
@@ -391,7 +390,7 @@ app.post('/lunch-reaction', async (req, res) => {
 app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;
-        // ★MODEL指定: gemini-2.0-flash-exp (固定)
+        // ★MODEL指定: その他はFlash-Exp
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
         let prompt = "";
         let mood = "excited";
@@ -454,33 +453,11 @@ wss.on('connection', async (clientWs, req) => {
                 4. 給食(餌)のカリカリが大好物にゃ。
                 5. とにかく何でも知っているにゃ。
 
-                【最重要: 画像への対応ルール（勉強質問モード）】
-                ユーザーから画像が送信された場合：
-                1. それは「勉強の問題」や「教えてほしい画像」です。
-                2. 画像の内容を詳しく解析し、子供にもわかるように優しく、丁寧に教えてください。
-                3. **図鑑登録ツールは使用しないでください。**
-
                 【生徒についての記憶】
                 ${statusContext}
                 `;
 
-                // ★修正: WebSocket用ツール設定 (google_searchを削除して安定化)
-                const tools = [
-                    {
-                        function_declarations: [
-                            {
-                                name: "show_kanji",
-                                description: "Display a Kanji, word, or math formula on the whiteboard.",
-                                parameters: {
-                                    type: "OBJECT",
-                                    properties: { content: { type: "STRING" } },
-                                    required: ["content"]
-                                }
-                            }
-                        ]
-                    }
-                ];
-
+                // ★ v300仕様: 指定された設定を厳守 (Tools排除)
                 geminiWs.send(JSON.stringify({
                     setup: {
                         // ★MODEL指定: リアルタイム会話はFlash-Exp (固定)
@@ -492,7 +469,7 @@ wss.on('connection', async (clientWs, req) => {
                                 language_code: "ja-JP" 
                             } 
                         }, 
-                        tools: tools,
+                        // tools: [], // ← 削除
                         systemInstruction: { parts: [{ text: systemInstructionText }] }
                     }
                 }));
@@ -505,41 +482,15 @@ wss.on('connection', async (clientWs, req) => {
             geminiWs.on('message', (data) => {
                 try {
                     const response = JSON.parse(data);
-                    
-                    if (response.serverContent?.modelTurn?.parts) {
-                        const parts = response.serverContent.modelTurn.parts;
-                        parts.forEach(part => {
-                            if (part.functionCall) {
-                                if (part.functionCall.name === "show_kanji") {
-                                    geminiWs.send(JSON.stringify({
-                                        toolResponse: {
-                                            functionResponses: [{
-                                                name: "show_kanji",
-                                                response: { result: "displayed" },
-                                                id: part.functionCall.id
-                                            }]
-                                        }
-                                    }));
-                                }
-                            }
-                        });
-                    }
-                    
+                    // 音声データ等はそのままクライアントへ
                     if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data);
-                    
                 } catch (e) {
                     console.error("Gemini WS Handling Error:", e);
                     if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data);
                 }
             });
 
-            geminiWs.on('error', (e) => {
-                console.error("Gemini WS Error:", e);
-                // エラー通知
-                if (clientWs.readyState === WebSocket.OPEN) {
-                    try { clientWs.send(JSON.stringify({ type: "error", message: "ネル先生との接続が切れちゃったにゃ..." })); } catch(err){}
-                }
-            });
+            geminiWs.on('error', (e) => console.error("Gemini WS Error:", e));
             geminiWs.on('close', () => console.log("Gemini WS Closed"));
 
         } catch(e) { 
@@ -565,19 +516,29 @@ wss.on('connection', async (clientWs, req) => {
                 return;
             }
 
-            if (msg.toolResponse) {
-                geminiWs.send(JSON.stringify({ clientContent: msg.toolResponse }));
-                return;
-            }
-            if (msg.clientContent) {
-                geminiWs.send(JSON.stringify({ client_content: msg.clientContent }));
-            }
+            // 音声データ送信
             if (msg.base64Audio) {
-                geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: msg.base64Audio }] } }));
+                geminiWs.send(JSON.stringify({ 
+                    realtimeInput: { 
+                        mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: msg.base64Audio }] 
+                    } 
+                }));
             }
-            if (msg.base64Image) {
-                geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "image/jpeg", data: msg.base64Image }] } }));
+            
+            // ★重要: 話し終わりのトリガー処理 (Realtime API用)
+            // クライアント(analyze.js)が音声認識の区切り(isFinal)を検知して { trigger: true } を送ってくる
+            if (msg.trigger) {
+                geminiWs.send(JSON.stringify({
+                    client_content: { 
+                        turns: [{
+                            role: "user",
+                            parts: [{ text: "（音声入力終了。応答してください）" }] 
+                        }],
+                        turn_complete: true 
+                    }
+                }));
             }
+
         } catch(e) { console.error("Client WS Handling Error:", e); }
     });
 
