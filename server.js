@@ -1,4 +1,4 @@
-// --- server.js (完全版 v288.0: 変更なし・完全版として出力) ---
+// --- server.js (完全版 v286.0: 会話文脈維持対応) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -280,7 +280,7 @@ app.post('/identify-item', async (req, res) => {
 // --- ★ HTTPチャット会話 (お宝図鑑・埋め込みチャット共用) ---
 app.post('/chat-dialogue', async (req, res) => {
     try {
-        const { text, name, image } = req.body;
+        const { text, name, image, history } = req.body; // historyを受け取る
         
         const now = new Date();
         const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' };
@@ -291,13 +291,27 @@ app.post('/chat-dialogue', async (req, res) => {
             tools: [{ google_search: {} }] 
         });
 
+        // 履歴プロンプトの構築
+        let contextPrompt = "";
+        if (history && Array.isArray(history) && history.length > 0) {
+            contextPrompt = "【これまでの会話の流れ（直近）】\n";
+            history.forEach(h => {
+                const speaker = h.role === 'user' ? `${name}` : 'ネル先生';
+                contextPrompt += `${speaker}: ${h.text}\n`;
+            });
+            contextPrompt += "\n";
+        }
+
         let prompt = `
         あなたは猫の「ネル先生」です。相手は「${name}」さん。
         以下のユーザーの発言（または画像）に対して、子供にもわかるように答えてください。
+        これまでの会話の流れを踏まえて、自然に返答してください。
 
         【重要：現在の状況】
         - **現在は ${currentDateTime} です。**
         - **わからないことや最新の情報が必要な場合は、提供されたGoogle検索ツールを使って調べてください。**
+
+        ${contextPrompt}
 
         【出力フォーマット】
         **必ず以下のJSON形式の文字列だけ**を出力してください。Markdownコードブロックは含んでも構いません。
