@@ -1,4 +1,4 @@
-// --- server.js (完全版 v298.0) ---
+// --- server.js (完全版 v299.0) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -555,32 +555,33 @@ wss.on('connection', async (clientWs, req) => {
                 return;
             }
 
+            // Clientからの転送処理
             if (msg.toolResponse) {
-                geminiWs.send(JSON.stringify({ clientContent: msg.toolResponse }));
+                geminiWs.send(JSON.stringify({ client_content: msg.toolResponse })); // snake_caseに統一
                 return;
             }
             if (msg.clientContent) {
-                geminiWs.send(JSON.stringify({ client_content: msg.clientContent }));
+                geminiWs.send(JSON.stringify({ client_content: msg.clientContent })); // snake_caseに統一
             }
             if (msg.base64Audio) {
-                // 音声データ送信 (これだけでは反応しない仕様)
+                // 音声データ送信
                 geminiWs.send(JSON.stringify({ 
                     realtimeInput: { 
                         mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: msg.base64Audio }] 
                     } 
                 }));
-                // ★注意: ここでトリガーを送るとAIが細切れに反応してしまうため削除
             }
             
             // ★重要: クライアントからの明示的なトリガーで応答を生成させる
+            // 音声が終わり、SpeechRecognitionがisFinalを出した時に送られてくる
             if (msg.trigger) {
                 geminiWs.send(JSON.stringify({
-                    client_content: { // ★ snake_case に厳格化
+                    client_content: { // ★ snake_case で送信
                         turns: [{
                             role: "user",
-                            parts: [{ text: "（応答）" }] // 空文字だと無視される場合があるため、意味のないテキストを送る
+                            parts: [{ text: "（音声入力が終わりました。これまでの音声に対して応答してください）" }]
                         }],
-                        turn_complete: true // 念のため
+                        turn_complete: true // 念のため残すが、実質はtext送信がトリガー
                     }
                 }));
             }
