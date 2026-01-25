@@ -1,4 +1,4 @@
-// --- server.js (完全版 v280.2: エラー回避・記憶保存強化) ---
+// --- server.js (完全版 v282.0: 変更なし・完全版として出力) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -92,7 +92,6 @@ app.post('/synthesize', async (req, res) => {
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
-        // ★修正: JSONモードは使用せず、テキスト抽出で対応（エラー回避）
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp"
         });
@@ -132,7 +131,6 @@ app.post('/update-memory', async (req, res) => {
         
         let newProfile;
         try {
-            // ★修正: JSON抽出ロジックを強化（Markdown除去など）
             let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
             const firstBrace = cleanText.indexOf('{');
             const lastBrace = cleanText.lastIndexOf('}');
@@ -288,10 +286,8 @@ app.post('/chat-dialogue', async (req, res) => {
         const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' };
         const currentDateTime = now.toLocaleString('ja-JP', dateOptions);
 
-        // ★修正: Search Toolを使うため、JSON Mode (responseMimeType) を削除し、手動パースで対応
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp",
-            // generationConfig: { responseMimeType: "application/json" }, // ← 検索ツールと競合するため削除
             tools: [{ google_search: {} }] 
         });
 
@@ -329,7 +325,6 @@ app.post('/chat-dialogue', async (req, res) => {
         
         const responseText = result.response.text().trim();
         
-        // ★修正: JSON抽出ロジックの強化
         let jsonResponse;
         try {
             let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -341,7 +336,6 @@ app.post('/chat-dialogue', async (req, res) => {
             jsonResponse = JSON.parse(cleanText);
         } catch (e) {
             console.warn("JSON Parse Fallback:", responseText);
-            // パース失敗時のフォールバック
             jsonResponse = { speech: responseText, board: "" };
         }
         

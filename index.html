@@ -40,7 +40,7 @@
             background: #f1f8e9;
         }
 
-        /* 黒板スタイル（埋め込み用） */
+        /* 黒板スタイル（埋め込み・TTSモード共用） */
         .embedded-chalkboard {
             background: #2e7d32;
             color: white;
@@ -110,7 +110,7 @@
             <div class="title-btn-container">
                 <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
             </div>
-            <div class="version-tag">Build: v281.1-SimpleChatTTS</div>
+            <div class="version-tag">Build: v282.0-Unified-HTTP-Chat</div>
         </section>
 
         <!-- 1. 校門 (ユーザー選択) -->
@@ -140,8 +140,8 @@
             <div class="upload-buttons-container">
                 <button id="enroll-webcam-btn" class="camera-btn-large" style="background:#ff9800; box-shadow:0 6px 0 #e65100;">📹 アプリで撮影</button>
                 <div style="display:flex; gap:10px;">
-                    <label class="camera-btn-large" style="flex:1;">📷 標準カメラ<input type="file" id="student-photo-input-camera" accept="image/*" style="display:none;"></label>
-                    <label class="camera-btn-large" style="flex:1; background:#4a90e2; box-shadow:0 6px 0 #2c5f96;">📁 アルバム<input type="file" id="student-photo-input-album" accept="image/*" style="display:none;"></label>
+                    <label class="camera-btn-large" style="flex:1;">📷 標準カメラ<input type="file" id="hw-input-camera" accept="image/*" style="display:none;"></label>
+                    <label class="camera-btn-large" style="flex:1; background:#4a90e2; box-shadow:0 6px 0 #2c5f96;">📁 アルバム<input type="file" id="hw-input-album" accept="image/*" style="display:none;"></label>
                 </div>
             </div>
             <input type="text" id="new-student-name" class="styled-input" placeholder="おなまえ" oninput="updateIDPreviewText()">
@@ -174,8 +174,6 @@
                 <button onclick="selectMode('review')" class="main-btn orange-btn">🔥 復習ノート</button>
                 <button onclick="showGame()" class="main-btn yellow-btn">🎮 カリカリ・キャッチ</button>
                 <button onclick="selectMode('simple-chat')" class="main-btn green-btn">🎤 こじんめんだん</button>
-                
-                <!-- 新規追加: こじんめんだんTTS -->
                 <button onclick="selectMode('simple-chat-tts')" class="main-btn green-btn" style="background:#4db6ac; box-shadow: 0 4px 0 #00897b;">🎤 こじんめんだんTTS</button>
                 
                 <button onclick="selectMode('chat')" class="main-btn" style="background:#5c6bc0; box-shadow: 0 4px 0 #3949ab;">💎 ネル先生のお宝図鑑</button>
@@ -266,14 +264,14 @@
                         <div style="text-align:center;">
                             <p style="font-size:0.8rem; color:#666; margin-bottom:10px;">（ネル先生はいつでも聞いてるにゃ）</p>
 
-                            <!-- テキスト質問エリア -->
+                            <!-- テキスト質問エリア (ID: embedded-text-input) -->
                             <div class="text-question-area">
-                                <textarea id="embedded-text-input" class="text-question-input" placeholder="ここに書いて質問"></textarea>
-                                <button onclick="sendEmbeddedText()" class="text-question-btn">送信</button>
+                                <textarea id="text-input-embedded" class="text-question-input" placeholder="ここに書いて質問"></textarea>
+                                <button onclick="sendHttpText('embedded')" class="text-question-btn">送信</button>
                             </div>
 
                             <!-- カメラ質問ボタン -->
-                            <button id="live-camera-btn-embedded" class="mini-cam-btn" style="background:#66bb6a; box-shadow:0 4px 0 #33691e; margin-top:10px;" onclick="toggleEmbeddedCamera()"><span>📷</span> カメラで見せて質問</button>
+                            <button id="live-camera-btn-embedded" class="mini-cam-btn" style="background:#66bb6a; box-shadow:0 4px 0 #33691e; margin-top:10px;" onclick="toggleHttpCamera('embedded')"><span>📷</span> カメラで見せて質問</button>
                             
                             <div id="live-chat-video-container-embedded" class="live-chat-video-wrapper" style="margin-top:10px;">
                                 <video id="live-chat-video-embedded" class="live-chat-video-elem" autoplay playsinline muted></video>
@@ -283,7 +281,7 @@
                             <p id="user-speech-text-embedded" style="margin-top:10px; font-weight:bold; min-height:1.2em; font-size:0.9rem; color:#333;">...</p>
                             
                             <!-- ネル先生の解説用黒板 -->
-                            <div id="embedded-chalkboard" class="embedded-chalkboard hidden"></div>
+                            <div id="chalkboard-embedded" class="embedded-chalkboard hidden"></div>
                         </div>
                     </div>
 
@@ -307,7 +305,7 @@
                         </div>
                     </div>
 
-                    <!-- チャットモード（こじんめんだん：シンプル版） -->
+                    <!-- チャットモード（こじんめんだん：シンプル版・WebSocket） -->
                     <div id="simple-chat-view" class="hidden">
                         <div class="glass-card" style="text-align:center; padding:20px;">
                             <p style="font-size:0.9rem; color:#666;">マイクを押して話しかけてね</p>
@@ -327,23 +325,32 @@
                         </div>
                     </div>
 
-                    <!-- 新規追加: チャットモード（こじんめんだんTTS：シンプル版複製） -->
+                    <!-- チャットモード（こじんめんだんTTS：HTTP版） -->
                     <div id="simple-chat-tts-view" class="hidden">
                         <div class="glass-card" style="text-align:center; padding:20px;">
-                            <p style="font-size:0.9rem; color:#666;">（TTSモード）マイクを押して話しかけてね</p>
-                            <button id="mic-btn-simple-tts" class="camera-btn-large" style="background:#4db6ac; box-shadow:none;" onclick="startLiveChat('simple-tts')">🎤 おはなしする</button>
+                            <p style="font-size:0.9rem; color:#666;">（ネル先生はいつでも聞いてるにゃ）</p>
+
+                            <!-- テキスト質問エリア -->
+                            <div class="text-question-area">
+                                <textarea id="text-input-simple-tts" class="text-question-input" placeholder="ここに書いて質問"></textarea>
+                                <button onclick="sendHttpText('simple-tts')" class="text-question-btn">送信</button>
+                            </div>
                             
-                            <!-- 「これ教えて！」カメラボタン -->
-                            <button id="live-camera-btn-simple-tts" class="mini-cam-btn" onclick="captureAndSendLiveImage('simple-tts')" style="background:#009688; box-shadow:0 4px 0 #00695c;">
-                                <span>📝</span> 問題をみせて教えてもらう
+                            <!-- カメラ質問ボタン -->
+                            <button id="live-camera-btn-simple-tts" class="mini-cam-btn" style="background:#009688; box-shadow:0 4px 0 #00695c; margin-top:10px;" onclick="toggleHttpCamera('simple-tts')">
+                                <span>📷</span> カメラで見せて質問
                             </button>
 
                             <!-- カメラプレビュー -->
-                            <div id="live-chat-video-container-simple-tts" class="live-chat-video-wrapper">
+                            <div id="live-chat-video-container-simple-tts" class="live-chat-video-wrapper" style="margin-top:10px;">
                                 <video id="live-chat-video-simple-tts" class="live-chat-video-elem" autoplay playsinline muted></video>
                             </div>
 
+                            <!-- 音声認識結果 -->
                             <p id="user-speech-text-simple-tts" style="margin-top:15px; font-weight:bold; min-height:1.5em;">...</p>
+
+                            <!-- 黒板 -->
+                            <div id="chalkboard-simple-tts" class="embedded-chalkboard hidden"></div>
                         </div>
                     </div>
 
