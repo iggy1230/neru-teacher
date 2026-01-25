@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v299.0) ---
+// --- analyze.js (完全版 v299.1) ---
 
 // ==========================================
 // 1. グローバル変数・定数・初期化
@@ -841,8 +841,17 @@ window.captureAndSendLiveImage = function() {
     
     window.updateNellMessage("ん？どれどれ…", "thinking", false, false);
     if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
+        // 画像と一緒にテキストプロンプトを送るが、Bidi仕様では client_content に含める
         let promptText = "（ユーザーが勉強の問題や画像を見せました）この画像の内容を詳しく、子供にもわかるように丁寧に教えてください。図鑑登録は不要です。";
-        liveSocket.send(JSON.stringify({ clientContent: { turns: [{ role: "user", parts: [ { text: promptText }, { inlineData: { mime_type: "image/jpeg", data: base64Data } } ] }], turnComplete: true } }));
+        liveSocket.send(JSON.stringify({ 
+            clientContent: { 
+                turns: [{ 
+                    role: "user", 
+                    parts: [ { text: promptText }, { inlineData: { mime_type: "image/jpeg", data: base64Data } } ] 
+                }], 
+                turnComplete: true 
+            } 
+        }));
     }
     setTimeout(() => {
         window.isLiveImageSending = false;
