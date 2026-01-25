@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v281.0: タイマーコメント更新) ---
+// --- analyze.js (完全版 v281.1: こじんめんだんTTS対応) ---
 
 // ==========================================
 // 1. 最重要：UI操作・モード選択関数
@@ -76,7 +76,7 @@ window.selectMode = function(m) {
         }
 
         // 各種ビューの表示リセット
-        const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'simple-chat-view', 'lunch-view', 'grade-sheet-container', 'hint-detail-container', 'embedded-chat-section'];
+        const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'simple-chat-view', 'simple-chat-tts-view', 'lunch-view', 'grade-sheet-container', 'hint-detail-container', 'embedded-chat-section'];
         ids.forEach(id => { 
             const el = document.getElementById(id); 
             if (el) el.classList.add('hidden'); 
@@ -121,6 +121,10 @@ window.selectMode = function(m) {
         } 
         else if (m === 'simple-chat') {
             document.getElementById('simple-chat-view').classList.remove('hidden');
+            window.updateNellMessage("今日はお話だけするにゃ？", "gentle", false);
+        }
+        else if (m === 'simple-chat-tts') {
+            document.getElementById('simple-chat-tts-view').classList.remove('hidden');
             window.updateNellMessage("今日はお話だけするにゃ？", "gentle", false);
         }
         else if (m === 'lunch') { 
@@ -316,11 +320,11 @@ window.stopPreviewCamera = function() {
         previewStream = null;
     }
     // 全ての可能性のあるビデオ要素を停止
-    ['live-chat-video', 'live-chat-video-embedded'].forEach(vid => {
+    ['live-chat-video', 'live-chat-video-embedded', 'live-chat-video-simple-tts'].forEach(vid => {
         const v = document.getElementById(vid);
         if(v) v.srcObject = null;
     });
-    ['live-chat-video-container', 'live-chat-video-container-embedded'].forEach(cid => {
+    ['live-chat-video-container', 'live-chat-video-container-embedded', 'live-chat-video-container-simple-tts'].forEach(cid => {
         const c = document.getElementById(cid);
         if(c) c.style.display = 'none';
     });
@@ -788,6 +792,7 @@ function stopAudioPlayback() {
 window.captureAndSendLiveImage = function(context = 'main') {
     if (context === 'main') {
         if (currentMode === 'simple-chat') context = 'simple';
+        else if (currentMode === 'simple-chat-tts') context = 'simple-tts';
         else if (activeChatContext === 'embedded') context = 'embedded';
     }
     
@@ -803,6 +808,8 @@ window.captureAndSendLiveImage = function(context = 'main') {
     }
     if (window.isLiveImageSending) return; 
     let videoId = 'live-chat-video-simple';
+    if (context === 'simple-tts') videoId = 'live-chat-video-simple-tts'; // TTS用のID
+
     const video = document.getElementById(videoId);
     if (!video || !video.srcObject || !video.srcObject.active) return alert("カメラが動いてないにゃ...");
 
@@ -810,7 +817,10 @@ window.captureAndSendLiveImage = function(context = 'main') {
     ignoreIncomingAudio = true; 
     window.isLiveImageSending = true;
     
-    const btn = document.getElementById('live-camera-btn-simple');
+    let btnId = 'live-camera-btn-simple';
+    if (context === 'simple-tts') btnId = 'live-camera-btn-simple-tts';
+
+    const btn = document.getElementById(btnId);
     if (btn) {
         btn.innerHTML = "<span>📡</span> 送信中にゃ...";
         btn.style.backgroundColor = "#ccc";
@@ -834,7 +844,10 @@ window.captureAndSendLiveImage = function(context = 'main') {
     document.body.appendChild(flash);
     setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
 
-    const videoContainer = document.getElementById('live-chat-video-container-simple');
+    let containerId = 'live-chat-video-container-simple';
+    if (context === 'simple-tts') containerId = 'live-chat-video-container-simple-tts';
+
+    const videoContainer = document.getElementById(containerId);
     if (videoContainer) {
         const oldPreview = document.getElementById('snapshot-preview-overlay');
         if(oldPreview) oldPreview.remove();
@@ -863,7 +876,7 @@ window.captureAndSendLiveImage = function(context = 'main') {
         window.isMicMuted = false;
         if (btn) {
              btn.innerHTML = "<span>📝</span> 問題をみせて教えてもらう";
-             btn.style.backgroundColor = "#8bc34a";
+             btn.style.backgroundColor = (context === 'simple-tts') ? "#009688" : "#8bc34a";
         }
     }, 3000);
     setTimeout(() => { ignoreIncomingAudio = false; }, 300);
@@ -933,9 +946,6 @@ async function captureAndSendLiveImageHttp() {
         window.updateNellMessage("よく見えなかったにゃ…もう一回お願いにゃ！", "thinking", false, true);
     } finally {
         window.isLiveImageSending = false;
-        
-        // ★修正: 撮影後はカメラを停止してボタンを元に戻す
-        stopPreviewCamera(); 
         if (btn) {
             btn.innerHTML = "<span>📷</span> カメラで見せて質問";
             btn.style.backgroundColor = "#66bb6a";
@@ -964,12 +974,21 @@ window.stopLiveChat = function() {
     if(speakingStartTimer) clearTimeout(speakingStartTimer); 
     
     // simple-chat用ボタンリセット
-    const btn = document.getElementById('mic-btn-simple');
-    if (btn) { 
-        btn.innerText = "🎤 おはなしする"; 
-        btn.style.background = "#66bb6a"; 
-        btn.disabled = false; 
-        btn.onclick = () => startLiveChat('simple');
+    const btnSimple = document.getElementById('mic-btn-simple');
+    if (btnSimple) { 
+        btnSimple.innerText = "🎤 おはなしする"; 
+        btnSimple.style.background = "#66bb6a"; 
+        btnSimple.disabled = false; 
+        btnSimple.onclick = () => startLiveChat('simple');
+    }
+
+    // simple-chat-tts用ボタンリセット
+    const btnSimpleTts = document.getElementById('mic-btn-simple-tts');
+    if (btnSimpleTts) {
+        btnSimpleTts.innerText = "🎤 おはなしする";
+        btnSimpleTts.style.background = "#4db6ac";
+        btnSimpleTts.disabled = false;
+        btnSimpleTts.onclick = () => startLiveChat('simple-tts');
     }
 
     liveSocket = null; 
@@ -982,23 +1001,38 @@ window.stopLiveChat = function() {
     if (camBtnSimple) { camBtnSimple.innerHTML = "<span>📝</span> 問題をみせて教えてもらう"; camBtnSimple.style.backgroundColor = "#8bc34a"; }
     const camBtnEmbedded = document.getElementById('live-camera-btn-embedded');
     if (camBtnEmbedded) { camBtnEmbedded.innerHTML = "<span>📝</span> 画面を見せて質問"; camBtnEmbedded.style.backgroundColor = "#66bb6a"; }
+    const camBtnSimpleTts = document.getElementById('live-camera-btn-simple-tts');
+    if (camBtnSimpleTts) { camBtnSimpleTts.innerHTML = "<span>📝</span> 問題をみせて教えてもらう"; camBtnSimpleTts.style.backgroundColor = "#009688"; }
 
     window.isLiveImageSending = false;
     window.isMicMuted = false; 
 
+    // ビデオ停止
     const videoSimple = document.getElementById('live-chat-video-simple');
     if(videoSimple) videoSimple.srcObject = null;
     document.getElementById('live-chat-video-container-simple').style.display = 'none';
+
+    const videoSimpleTts = document.getElementById('live-chat-video-simple-tts');
+    if(videoSimpleTts) videoSimpleTts.srcObject = null;
+    const containerSimpleTts = document.getElementById('live-chat-video-container-simple-tts');
+    if(containerSimpleTts) containerSimpleTts.style.display = 'none';
 };
 
 async function startLiveChat(context = 'main') { 
     // simple-chatのみWebSocketを使用
-    if (context === 'main' && currentMode === 'simple-chat') context = 'simple';
+    if (context === 'main') {
+        if (currentMode === 'simple-chat') context = 'simple';
+        else if (currentMode === 'simple-chat-tts') context = 'simple-tts';
+    }
     
-    if (context !== 'simple') return;
+    // contextが simple または simple-tts 以外は対象外
+    if (context !== 'simple' && context !== 'simple-tts') return;
 
     activeChatContext = context;
-    const btnId = 'mic-btn-simple';
+    
+    let btnId = 'mic-btn-simple';
+    if (context === 'simple-tts') btnId = 'mic-btn-simple-tts';
+
     const btn = document.getElementById(btnId);
     if (liveSocket) { window.stopLiveChat(); return; } 
     
@@ -1022,7 +1056,7 @@ async function startLiveChat(context = 'main') {
         
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:'; 
         let statusSummary = `${currentUser.name}さんは今、お話しにきたにゃ。カリカリは${currentUser.karikari}個持ってるにゃ。`; 
-        let modeParam = 'simple-chat';
+        let modeParam = 'simple-chat'; // デフォルトはこれにしておく
 
         const url = `${wsProto}//${location.host}?grade=${currentUser.grade}&name=${encodeURIComponent(currentUser.name)}&mode=${modeParam}`; 
         
@@ -1105,7 +1139,11 @@ async function startMicrophone() {
                         const userText = event.results[i][0].transcript;
                         saveToNellMemory('user', userText); 
                         streamTextBuffer = ""; 
-                        const el = document.getElementById('user-speech-text-simple'); 
+                        
+                        let txtId = 'user-speech-text-simple';
+                        if (activeChatContext === 'simple-tts') txtId = 'user-speech-text-simple-tts';
+                        
+                        const el = document.getElementById(txtId); 
                         if(el) el.innerText = userText; 
                     }
                 } 
@@ -1123,6 +1161,12 @@ async function startMicrophone() {
         if (useVideo) {
             let videoId = 'live-chat-video-simple';
             let containerId = 'live-chat-video-container-simple';
+            
+            if (activeChatContext === 'simple-tts') {
+                videoId = 'live-chat-video-simple-tts';
+                containerId = 'live-chat-video-container-simple-tts';
+            }
+
             const video = document.getElementById(videoId);
             if (video) {
                 video.srcObject = mediaStream;

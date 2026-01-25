@@ -110,7 +110,7 @@
             <div class="title-btn-container">
                 <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
             </div>
-            <div class="version-tag">Build: v280.1-Fix-Search-Conflict</div>
+            <div class="version-tag">Build: v281.1-SimpleChatTTS</div>
         </section>
 
         <!-- 1. 校門 (ユーザー選択) -->
@@ -174,6 +174,9 @@
                 <button onclick="selectMode('review')" class="main-btn orange-btn">🔥 復習ノート</button>
                 <button onclick="showGame()" class="main-btn yellow-btn">🎮 カリカリ・キャッチ</button>
                 <button onclick="selectMode('simple-chat')" class="main-btn green-btn">🎤 こじんめんだん</button>
+                
+                <!-- 新規追加: こじんめんだんTTS -->
+                <button onclick="selectMode('simple-chat-tts')" class="main-btn green-btn" style="background:#4db6ac; box-shadow: 0 4px 0 #00897b;">🎤 こじんめんだんTTS</button>
                 
                 <button onclick="selectMode('chat')" class="main-btn" style="background:#5c6bc0; box-shadow: 0 4px 0 #3949ab;">💎 ネル先生のお宝図鑑</button>
                 
@@ -321,6 +324,26 @@
                             </div>
 
                             <p id="user-speech-text-simple" style="margin-top:15px; font-weight:bold; min-height:1.5em;">...</p>
+                        </div>
+                    </div>
+
+                    <!-- 新規追加: チャットモード（こじんめんだんTTS：シンプル版複製） -->
+                    <div id="simple-chat-tts-view" class="hidden">
+                        <div class="glass-card" style="text-align:center; padding:20px;">
+                            <p style="font-size:0.9rem; color:#666;">（TTSモード）マイクを押して話しかけてね</p>
+                            <button id="mic-btn-simple-tts" class="camera-btn-large" style="background:#4db6ac; box-shadow:none;" onclick="startLiveChat('simple-tts')">🎤 おはなしする</button>
+                            
+                            <!-- 「これ教えて！」カメラボタン -->
+                            <button id="live-camera-btn-simple-tts" class="mini-cam-btn" onclick="captureAndSendLiveImage('simple-tts')" style="background:#009688; box-shadow:0 4px 0 #00695c;">
+                                <span>📝</span> 問題をみせて教えてもらう
+                            </button>
+
+                            <!-- カメラプレビュー -->
+                            <div id="live-chat-video-container-simple-tts" class="live-chat-video-wrapper">
+                                <video id="live-chat-video-simple-tts" class="live-chat-video-elem" autoplay playsinline muted></video>
+                            </div>
+
+                            <p id="user-speech-text-simple-tts" style="margin-top:15px; font-weight:bold; min-height:1.5em;">...</p>
                         </div>
                     </div>
 
