@@ -460,22 +460,7 @@ wss.on('connection', async (clientWs, req) => {
                 `;
 
                 // ★ v294仕様: WebSocketでもGoogle検索ツールを有効化
-                const tools = [
-                    { google_search: {} },
-                    {
-                        function_declarations: [
-                            {
-                                name: "show_kanji",
-                                description: "Display a Kanji, word, or math formula on the whiteboard.",
-                                parameters: {
-                                    type: "OBJECT",
-                                    properties: { content: { type: "STRING" } },
-                                    required: ["content"]
-                                }
-                            }
-                        ]
-                    }
-                ];
+                
 
                 geminiWs.send(JSON.stringify({
                     setup: {
