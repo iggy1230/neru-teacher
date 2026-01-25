@@ -1,4 +1,4 @@
-// --- server.js (完全版 v297.0) ---
+// --- server.js (完全版 v296.0) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -487,8 +487,9 @@ wss.on('connection', async (clientWs, req) => {
                         model: "models/gemini-2.0-flash-exp",
                         generationConfig: { 
                             responseModalities: ["AUDIO"],
-                            speechConfig: { 
-                                voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } }
+                            speech_config: { 
+                                voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }, 
+                                language_code: "ja-JP" 
                             } 
                         }, 
                         tools: tools,
@@ -503,22 +504,16 @@ wss.on('connection', async (clientWs, req) => {
 
             geminiWs.on('message', (data) => {
                 try {
-                    // バイナリデータまたは文字列が来る
-                    let msgObj;
-                    if (data instanceof Buffer) {
-                        msgObj = JSON.parse(data.toString());
-                    } else {
-                        msgObj = JSON.parse(data);
-                    }
+                    const response = JSON.parse(data);
                     
-                    if (msgObj.serverContent?.modelTurn?.parts) {
-                        const parts = msgObj.serverContent.modelTurn.parts;
+                    if (response.serverContent?.modelTurn?.parts) {
+                        const parts = response.serverContent.modelTurn.parts;
                         parts.forEach(part => {
                             if (part.functionCall) {
                                 if (part.functionCall.name === "show_kanji") {
                                     geminiWs.send(JSON.stringify({
-                                        tool_response: {
-                                            function_responses: [{
+                                        toolResponse: {
+                                            functionResponses: [{
                                                 name: "show_kanji",
                                                 response: { result: "displayed" },
                                                 id: part.functionCall.id
@@ -533,8 +528,7 @@ wss.on('connection', async (clientWs, req) => {
                     if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data);
                     
                 } catch (e) {
-                    // console.error("Gemini WS Handling Error:", e);
-                    // エラーでも転送を試みる
+                    console.error("Gemini WS Handling Error:", e);
                     if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data);
                 }
             });
@@ -571,40 +565,19 @@ wss.on('connection', async (clientWs, req) => {
                 return;
             }
 
-            // ★修正: Gemini APIへの送信は snake_case で行う必要がある
             if (msg.toolResponse) {
-                geminiWs.send(JSON.stringify({ tool_response: msg.toolResponse }));
+                geminiWs.send(JSON.stringify({ clientContent: msg.toolResponse }));
                 return;
             }
             if (msg.clientContent) {
                 geminiWs.send(JSON.stringify({ client_content: msg.clientContent }));
             }
-            // ★重要: 音声データのキーは realtime_input / media_chunks
             if (msg.base64Audio) {
-                geminiWs.send(JSON.stringify({ 
-                    realtime_input: { 
-                        media_chunks: [{ 
-                            mime_type: "audio/pcm;rate=16000", 
-                            data: msg.base64Audio 
-                        }] 
-                    } 
-                }));
+                geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: msg.base64Audio }] } }));
             }
             if (msg.base64Image) {
-                geminiWs.send(JSON.stringify({ 
-                    realtime_input: { 
-                        media_chunks: [{ 
-                            mime_type: "image/jpeg", 
-                            data: msg.base64Image 
-                        }] 
-                    } 
-                }));
+                geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "image/jpeg", data: msg.base64Image }] } }));
             }
-            // ★追加: 発話終了トリガー (Geminiへターン完了を通知)
-            if (msg.trigger) {
-                geminiWs.send(JSON.stringify({ client_content: { turn_complete: true } }));
-            }
-
         } catch(e) { console.error("Client WS Handling Error:", e); }
     });
 
