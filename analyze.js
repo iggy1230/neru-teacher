@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v287.0: 欠落機能補完・ID修正版) ---
+// --- analyze.js (完全版 v288.0: クロップ画面黒画面修正版) ---
 
 // ==========================================
 // 1. 最重要：UI操作・モード選択関数
@@ -40,7 +40,7 @@ let streamTextBuffer = "";
 let ttsTextBuffer = "";
 let latestDetectedName = null;
 
-// ★追加: 会話文脈履歴 (前回漏れていた定義)
+// ★追加: 会話文脈履歴
 window.chatSessionHistory = [];
 
 // ★追加: 常時聞き取り用のフラグ
@@ -64,7 +64,7 @@ let studyTimerCheck = 0;
 // プレビューカメラ用
 let previewStream = null;
 
-// ★追加: 履歴管理ヘルパー (前回漏れていた定義)
+// ★追加: 履歴管理ヘルパー
 window.addToSessionHistory = function(role, text) {
     window.chatSessionHistory.push({ role: role, text: text });
     // 最新10件（5往復）程度を保持
@@ -210,7 +210,6 @@ function startAlwaysOnListening() {
     continuousRecognition.continuous = true; 
 
     continuousRecognition.onresult = async (event) => {
-        // continuous=true の場合、resultsは配列で来るので最新を取得
         const resultIndex = event.resultIndex;
         const text = event.results[resultIndex][0].transcript;
         const cleanText = text.trim();
@@ -408,7 +407,7 @@ window.sendHttpText = async function(context) {
     if (isAlwaysListening && continuousRecognition) {
         try { continuousRecognition.stop(); } catch(e){}
     }
-    
+
     // 履歴に追加
     addToSessionHistory('user', text);
 
@@ -421,7 +420,7 @@ window.sendHttpText = async function(context) {
             body: JSON.stringify({ 
                 text: text, 
                 name: currentUser ? currentUser.name : "生徒",
-                history: window.chatSessionHistory
+                history: window.chatSessionHistory // ★履歴送信
             })
         });
 
@@ -517,7 +516,7 @@ window.captureAndSendHttpImage = async function(context) {
                 image: base64Data,
                 text: promptText, 
                 name: currentUser ? currentUser.name : "生徒",
-                history: window.chatSessionHistory
+                history: window.chatSessionHistory // ★履歴送信
             })
         });
 
@@ -713,6 +712,7 @@ const sfxMaru = new Audio('maru.mp3');
 const sfxBatu = new Audio('batu.mp3');
 const gameHitComments = ["うまいにゃ！", "すごいにゃ！", "さすがにゃ！", "がんばれにゃ！"];
 
+// 画像リソース
 const subjectImages = {
     'こくご': { base: 'nell-kokugo.png', talk: 'nell-kokugo-talk.png' },
     'さんすう': { base: 'nell-sansu.png', talk: 'nell-sansu-talk.png' },
@@ -743,6 +743,7 @@ function startMouthAnimation() {
 startMouthAnimation();
 
 window.addEventListener('DOMContentLoaded', () => {
+    // 宿題アップロード用のIDに合わせたリスナー設定
     const camIn = document.getElementById('hw-input-camera'); 
     const albIn = document.getElementById('hw-input-album'); 
     if(camIn) camIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
@@ -808,6 +809,8 @@ async function saveToNellMemory(role, text) {
     } catch(e) {}
 }
 
+// updateNellMessageは冒頭で上書き済み
+
 window.setSubject = function(s) { 
     currentSubject = s; 
     const icon = document.querySelector('.nell-avatar-wrap img'); if(icon&&subjectImages[s]){icon.src=subjectImages[s].base; icon.onerror=()=>{icon.src=defaultIcon;};} 
@@ -865,6 +868,7 @@ window.toggleTimer = function() {
         document.getElementById('mini-timer-display').classList.remove('hidden');
         closeTimerModal();
         
+        // ★ここに追加: タイマー開始メッセージ
         window.updateNellMessage("今からネル先生が時間を計ってやるにゃ", "normal", false, true);
 
         studyTimerInterval = setInterval(() => {
@@ -872,6 +876,7 @@ window.toggleTimer = function() {
                 studyTimerValue--;
                 studyTimerCheck++;
                 updateTimerDisplay();
+                // ★ここを修正
                 if (studyTimerValue === 600) window.updateNellMessage("10分前だにゃ〜。お茶でも飲んで落ち着くにゃ。", "gentle", false, true);
                 else if (studyTimerValue === 300) window.updateNellMessage("あと5分。一歩ずつ、一歩ずつだにゃ〜。", "normal", false, true);
                 else if (studyTimerValue === 180) window.updateNellMessage("3分前。深呼吸して、もうひと踏ん張りだにゃ。", "excited", false, true);
@@ -882,6 +887,7 @@ window.toggleTimer = function() {
                 document.getElementById('timer-toggle-btn').innerText = "スタート！";
                 document.getElementById('timer-toggle-btn').className = "main-btn pink-btn";
                 try { sfxChime.play(); } catch(e){}
+                // ★ここを修正
                 window.updateNellMessage("時間だにゃ！お疲れ様だにゃ〜。さ、ゆっくり休むにゃ。", "happy", false, true);
                 document.getElementById('mini-timer-display').classList.add('hidden');
                 openTimerModal();
@@ -906,7 +912,7 @@ function sendSilentPrompt(text) {
 }
 
 // ==========================================
-// ★ WebSocket (simple-chat用)
+// ★ WebSocket (simple-chat/embedded用)
 // ==========================================
 
 function stopAudioPlayback() {
@@ -919,7 +925,18 @@ function stopAudioPlayback() {
     if (window.cancelNellSpeech) window.cancelNellSpeech();
 }
 
-window.captureAndSendLiveImage = function() {
+window.captureAndSendLiveImage = function(context = 'main') {
+    if (context === 'main') {
+        if (currentMode === 'simple-chat') context = 'simple';
+        else if (activeChatContext === 'embedded') context = 'embedded';
+    }
+    
+    // embeddedモードの場合はWebSocketではなくHTTP送信
+    if (context === 'embedded') {
+        captureAndSendLiveImageHttp();
+        return;
+    }
+
     // simple-chat (WebSocket) 用の既存処理
     if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) {
         return alert("まずは「おはなしする」でネル先生とつながってにゃ！");
@@ -992,6 +1009,82 @@ window.captureAndSendLiveImage = function() {
     setTimeout(() => { ignoreIncomingAudio = false; }, 300);
 };
 
+// ★追加: 埋め込みチャット用 HTTP画像送信 (黒板表示対応)
+async function captureAndSendLiveImageHttp() {
+    if (window.isLiveImageSending) return;
+    
+    // 一時的に聞き取り停止
+    if (isAlwaysListening && continuousRecognition) {
+        try { continuousRecognition.stop(); } catch(e){}
+    }
+    
+    const video = document.getElementById('live-chat-video-embedded');
+    if (!video || !video.srcObject || !video.srcObject.active) return alert("カメラが動いてないにゃ...");
+    
+    window.isLiveImageSending = true;
+    const btn = document.getElementById('live-camera-btn-embedded');
+    if (btn) {
+        btn.innerHTML = "<span>📡</span> 送信中にゃ...";
+        btn.style.backgroundColor = "#ccc";
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+    
+    // フラッシュ効果
+    const flash = document.createElement('div');
+    flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;";
+    document.body.appendChild(flash);
+    setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
+
+    try {
+        window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
+
+        const res = await fetch('/chat-dialogue', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                image: base64Data,
+                text: "この問題を教えてください。", // 質問コンテキストを明確化
+                name: currentUser ? currentUser.name : "生徒"
+            })
+        });
+
+        if (!res.ok) throw new Error("Server response not ok");
+        const data = await res.json();
+        
+        // ★修正: JSONレスポンスのspeechとboardを適切に処理
+        const speechText = data.speech || data.reply || "教えてあげるにゃ！";
+        await window.updateNellMessage(speechText, "happy", true, true);
+        
+        // 黒板に回答テキストを表示
+        const embedBoard = document.getElementById('embedded-chalkboard');
+        if (embedBoard && data.board && data.board.trim() !== "") {
+            embedBoard.innerText = data.board;
+            embedBoard.classList.remove('hidden');
+        }
+
+    } catch(e) {
+        console.error("HTTP Image Error:", e);
+        window.updateNellMessage("よく見えなかったにゃ…もう一回お願いにゃ！", "thinking", false, true);
+    } finally {
+        window.isLiveImageSending = false;
+        if (btn) {
+            btn.innerHTML = "<span>📷</span> カメラで見せて質問";
+            btn.style.backgroundColor = "#66bb6a";
+        }
+        
+        // 聞き取り再開
+        if (isAlwaysListening) {
+             try { continuousRecognition.start(); } catch(e){}
+        }
+    }
+};
+
 window.stopLiveChat = function() {
     if (window.NellMemory && chatTranscript && chatTranscript.length > 10) {
         window.NellMemory.updateProfileFromChat(currentUser.id, chatTranscript);
@@ -1008,12 +1101,12 @@ window.stopLiveChat = function() {
     if(speakingStartTimer) clearTimeout(speakingStartTimer); 
     
     // simple-chat用ボタンリセット
-    const btnSimple = document.getElementById('mic-btn-simple');
-    if (btnSimple) { 
-        btnSimple.innerText = "🎤 おはなしする"; 
-        btnSimple.style.background = "#66bb6a"; 
-        btnSimple.disabled = false; 
-        btnSimple.onclick = () => startLiveChat('simple');
+    const btn = document.getElementById('mic-btn-simple');
+    if (btn) { 
+        btn.innerText = "🎤 おはなしする"; 
+        btn.style.background = "#66bb6a"; 
+        btn.disabled = false; 
+        btn.onclick = () => startLiveChat('simple');
     }
 
     liveSocket = null; 
@@ -1024,42 +1117,26 @@ window.stopLiveChat = function() {
     // カメラボタンリセット
     const camBtnSimple = document.getElementById('live-camera-btn-simple');
     if (camBtnSimple) { camBtnSimple.innerHTML = "<span>📝</span> 問題をみせて教えてもらう"; camBtnSimple.style.backgroundColor = "#8bc34a"; }
-    
-    // HTTP系ボタンリセット（汎用）
-    ['embedded', 'simple-tts'].forEach(ctx => {
-        const ids = getHttpModeIds(ctx);
-        const btn = document.getElementById(ids.btnId);
-        if(btn) {
-             btn.innerHTML = "<span>📷</span> カメラで見せて質問";
-             btn.style.backgroundColor = (ctx === 'simple-tts') ? "#009688" : "#66bb6a";
-        }
-    });
+    const camBtnEmbedded = document.getElementById('live-camera-btn-embedded');
+    if (camBtnEmbedded) { camBtnEmbedded.innerHTML = "<span>📝</span> 画面を見せて質問"; camBtnEmbedded.style.backgroundColor = "#66bb6a"; }
 
     window.isLiveImageSending = false;
     window.isMicMuted = false; 
 
-    // ビデオ停止
     const videoSimple = document.getElementById('live-chat-video-simple');
     if(videoSimple) videoSimple.srcObject = null;
     document.getElementById('live-chat-video-container-simple').style.display = 'none';
-
-    const videoSimpleTts = document.getElementById('live-chat-video-simple-tts');
-    if(videoSimpleTts) videoSimpleTts.srcObject = null;
-    const containerSimpleTts = document.getElementById('live-chat-video-container-simple-tts');
-    if(containerSimpleTts) containerSimpleTts.style.display = 'none';
 };
 
 async function startLiveChat(context = 'main') { 
     // simple-chatのみWebSocketを使用
-    if (context === 'main') {
-        if (currentMode === 'simple-chat') context = 'simple';
-    }
+    if (context === 'main' && currentMode === 'simple-chat') context = 'simple';
     
-    // contextが simple 以外は対象外
     if (context !== 'simple') return;
 
     activeChatContext = context;
-    const btn = document.getElementById('mic-btn-simple');
+    const btnId = 'mic-btn-simple';
+    const btn = document.getElementById(btnId);
     if (liveSocket) { window.stopLiveChat(); return; } 
     
     try { 
@@ -1165,7 +1242,6 @@ async function startMicrophone() {
                         const userText = event.results[i][0].transcript;
                         saveToNellMemory('user', userText); 
                         streamTextBuffer = ""; 
-                        
                         const el = document.getElementById('user-speech-text-simple'); 
                         if(el) el.innerText = userText; 
                     }
@@ -1184,7 +1260,6 @@ async function startMicrophone() {
         if (useVideo) {
             let videoId = 'live-chat-video-simple';
             let containerId = 'live-chat-video-container-simple';
-            
             const video = document.getElementById(videoId);
             if (video) {
                 video.srcObject = mediaStream;
