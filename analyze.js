@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v293.0: Part 1/2) ---
+// --- analyze.js (完全版 v294.0) ---
 
 // ==========================================
 // 1. グローバル変数・定数・初期化
@@ -62,7 +62,7 @@ let studyTimerCheck = 0;
 // プレビューカメラ用
 let previewStream = null;
 
-// ★重要: 画像リソース定数を冒頭に移動 (ReferenceError対策)
+// 画像リソース定数
 const subjectImages = {
     'こくご': { base: 'nell-kokugo.png', talk: 'nell-kokugo-talk.png' },
     'さんすう': { base: 'nell-sansu.png', talk: 'nell-sansu-talk.png' },
@@ -929,6 +929,7 @@ window.startLiveChat = async function(context = 'main') {
                     if(btn) { btn.innerText = "📞 つながった！(終了)"; btn.style.background = "#ff5252"; btn.disabled = false; } 
                     window.updateNellMessage("お待たせ！なんでも話してにゃ！", "happy", false, false); 
                     isRecognitionActive = true; 
+                    // ★重要修正: マイク開始順序変更対応
                     window.startMicrophone(); 
                     return;
                 }
@@ -946,8 +947,17 @@ window.startLiveChat = async function(context = 'main') {
     } catch (e) { window.stopLiveChat(); } 
 }
 
+// ★修正: マイク初期化順序を変更し、反応しない不具合を解消
 window.startMicrophone = async function() { 
     try { 
+        const useVideo = true;
+        // マイク権限取得を優先
+        mediaStream = await navigator.mediaDevices.getUserMedia({ 
+            audio: { sampleRate: 16000, channelCount: 1 }, 
+            video: useVideo ? { facingMode: "environment" } : false 
+        }); 
+
+        // 成功後に認識APIを開始
         if ('webkitSpeechRecognition' in window) { 
             recognition = new webkitSpeechRecognition(); 
             recognition.continuous = true; 
@@ -974,16 +984,16 @@ window.startMicrophone = async function() {
                 } 
             }; 
             recognition.onend = () => { if (isRecognitionActive && liveSocket && liveSocket.readyState === WebSocket.OPEN) try{recognition.start()}catch(e){} }; 
-            recognition.start(); 
+            try { recognition.start(); } catch(e) { console.warn("SpeechRec start error:", e); }
         } 
-        const useVideo = true;
-        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1 }, video: useVideo ? { facingMode: "environment" } : false }); 
+
         if (useVideo) {
             let videoId = 'live-chat-video-simple';
             let containerId = 'live-chat-video-container-simple';
             const video = document.getElementById(videoId);
             if (video) { video.srcObject = mediaStream; video.play(); document.getElementById(containerId).style.display = 'block'; }
         }
+        
         const processorCode = `class PcmProcessor extends AudioWorkletProcessor { constructor() { super(); this.bufferSize = 2048; this.buffer = new Float32Array(this.bufferSize); this.index = 0; } process(inputs, outputs, parameters) { const input = inputs[0]; if (input.length > 0) { const channel = input[0]; for (let i = 0; i < channel.length; i++) { this.buffer[this.index++] = channel[i]; if (this.index >= this.bufferSize) { this.port.postMessage(this.buffer); this.index = 0; } } } return true; } } registerProcessor('pcm-processor', PcmProcessor);`; 
         const blob = new Blob([processorCode], { type: 'application/javascript' }); 
         await audioContext.audioWorklet.addModule(URL.createObjectURL(blob)); 
@@ -1439,3 +1449,21 @@ window.handleFileUpload = async (file) => {
     };
     reader.readAsDataURL(file);
 };
+
+// ★修正: 宿題アップロードのイベントリスナー追加
+document.addEventListener('DOMContentLoaded', () => {
+    const hwCamera = document.getElementById('hw-input-camera');
+    const hwAlbum = document.getElementById('hw-input-album');
+    const webcamBtn = document.getElementById('start-webcam-btn');
+
+    if (hwCamera) hwCamera.addEventListener('change', (e) => window.handleFileUpload(e.target.files[0]));
+    if (hwAlbum) hwAlbum.addEventListener('change', (e) => window.handleFileUpload(e.target.files[0]));
+    if (webcamBtn) webcamBtn.addEventListener('click', () => {
+        if (window.startEnrollmentWebCamera) {
+            // Enrollment用のカメラを流用し、callbackでhandleFileUploadを呼ぶ
+            window.startEnrollmentWebCamera(window.handleFileUpload);
+        } else {
+            alert("カメラが準備できてないにゃ...");
+        }
+    });
+});

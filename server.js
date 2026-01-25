@@ -1,4 +1,4 @@
-// --- server.js (完全版 v293.0) ---
+// --- server.js (完全版 v294.0) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -92,6 +92,7 @@ app.post('/synthesize', async (req, res) => {
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
+        // ★MODEL指定: その他はFlash-Exp
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp"
         });
@@ -286,6 +287,7 @@ app.post('/chat-dialogue', async (req, res) => {
         const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' };
         const currentDateTime = now.toLocaleString('ja-JP', dateOptions);
 
+        // ★MODEL指定: その他はFlash-Exp
         const model = genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash-exp",
             tools: [{ google_search: {} }] 
@@ -578,3 +580,5 @@ wss.on('connection', async (clientWs, req) => {
         if (geminiWs) geminiWs.close();
     });
 });
+
+// end of server.js
