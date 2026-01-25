@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v286.0: 割り込み感度調整版) ---
+// --- analyze.js (完全版 v286.0: 会話文脈維持対応) ---
 
 // ==========================================
 // 1. 最重要：UI操作・モード選択関数
@@ -40,6 +40,9 @@ let streamTextBuffer = "";
 let ttsTextBuffer = "";
 let latestDetectedName = null;
 
+// ★追加: 会話文脈履歴
+window.chatSessionHistory = [];
+
 // ★追加: 常時聞き取り用のフラグ
 let isAlwaysListening = false;
 let continuousRecognition = null;
@@ -61,11 +64,23 @@ let studyTimerCheck = 0;
 // プレビューカメラ用
 let previewStream = null;
 
+// ★追加: 履歴管理ヘルパー
+function addToSessionHistory(role, text) {
+    window.chatSessionHistory.push({ role: role, text: text });
+    // 最新10件（5往復）程度を保持
+    if (window.chatSessionHistory.length > 10) {
+        window.chatSessionHistory.shift();
+    }
+}
+
 // ★ selectMode
 window.selectMode = function(m) {
     try {
         console.log(`[UI] selectMode called: ${m}`);
         currentMode = m; 
+        
+        // ★修正: モード切り替え時に会話履歴をリセット
+        window.chatSessionHistory = [];
         
         // 画面切り替え
         if (typeof window.switchScreen === 'function') {
@@ -192,57 +207,61 @@ function startAlwaysOnListening() {
     continuousRecognition.lang = 'ja-JP';
     continuousRecognition.interimResults = false;
     continuousRecognition.maxAlternatives = 1;
-    continuousRecognition.continuous = true; // 途切れさせない
+    continuousRecognition.continuous = true; 
 
     continuousRecognition.onresult = async (event) => {
-        // continuous=true の場合、resultsは配列で来るので最新を取得
         const resultIndex = event.resultIndex;
         const text = event.results[resultIndex][0].transcript;
         const cleanText = text.trim();
 
         if (!cleanText) return;
 
-        // ★修正: 割り込み制御の調整
-        // ネル先生が話している最中の判定
+        // 割り込み制御
         if (window.isNellSpeaking) {
             const stopKeywords = ["違う", "ちがう", "待って", "まって", "ストップ", "やめて", "うるさい", "静か", "しずか"];
             const isStopCommand = stopKeywords.some(w => cleanText.includes(w));
-            // ある程度長い文章（10文字以上）なら質問とみなして割り込む
             const isLongEnough = cleanText.length >= 10; 
 
             if (isStopCommand || isLongEnough) {
                 console.log("[Interruption] Valid interruption detected:", cleanText);
                 if (typeof window.cancelNellSpeech === 'function') {
-                    window.cancelNellSpeech(); // 発話をキャンセル
+                    window.cancelNellSpeech(); 
                 }
-                // 処理続行（サーバー送信へ）
             } else {
-                // 短い発言かつ制止ワードでない場合は無視（相槌や環境音と判断してスルー）
                 console.log("[Ignored] Interruption too short/invalid:", cleanText);
-                return; // ここでreturnするとサーバー送信されず、音声認識は継続される
+                return; 
             }
         }
         
         console.log(`[User Said] ${cleanText}`);
-        
-        // サーバー送信のため一旦停止（二重送信防止）
         continuousRecognition.stop();
         
         const elems = getChatElementsCorrect(currentMode);
         const speechTextElem = document.getElementById(elems.resultTextId);
         if (speechTextElem) speechTextElem.innerText = cleanText;
 
+        // ★修正: 履歴に追加してから送信
+        addToSessionHistory('user', cleanText);
+
         try {
             const res = await fetch('/chat-dialogue', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text: cleanText, name: currentUser ? currentUser.name : "生徒" })
+                body: JSON.stringify({ 
+                    text: cleanText, 
+                    name: currentUser ? currentUser.name : "生徒",
+                    history: window.chatSessionHistory // ★履歴を送信
+                })
             });
             
             if(res.ok) {
                 const data = await res.json();
                 
                 const replyText = data.speech || data.reply || "ごめんにゃ、よくわからなかったにゃ";
+                
+                // ★修正: 応答も履歴に追加
+                addToSessionHistory('model', replyText);
+
                 await window.updateNellMessage(replyText, "normal", true, true);
                 
                 const board = document.getElementById(elems.chalkboardId);
@@ -263,7 +282,6 @@ function startAlwaysOnListening() {
     };
 
     continuousRecognition.onend = () => {
-        // 話している最中でも聞き耳を立てる（ただし上記onresultでフィルタリング）
         if (isAlwaysListening && (currentMode === 'chat' || currentMode === 'explain' || currentMode === 'grade' || currentMode === 'review' || currentMode === 'simple-chat-tts')) {
             try { continuousRecognition.start(); } catch(e){}
         }
@@ -390,18 +408,29 @@ window.sendHttpText = async function(context) {
         try { continuousRecognition.stop(); } catch(e){}
     }
 
+    // ★修正: 履歴に追加
+    addToSessionHistory('user', text);
+
     try {
         window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
         
         const res = await fetch('/chat-dialogue', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: text, name: currentUser ? currentUser.name : "生徒" })
+            body: JSON.stringify({ 
+                text: text, 
+                name: currentUser ? currentUser.name : "生徒",
+                history: window.chatSessionHistory // ★履歴送信
+            })
         });
 
         if(res.ok) {
             const data = await res.json();
             const speechText = data.speech || data.reply || "教えてあげるにゃ！";
+            
+            // ★修正: 応答も履歴に追加
+            addToSessionHistory('model', speechText);
+
             await window.updateNellMessage(speechText, "happy", true, true);
             
             const board = document.getElementById(ids.chalkboardId);
@@ -476,6 +505,9 @@ window.captureAndSendHttpImage = async function(context) {
         if (context === 'simple-tts') {
             promptText = "この画像について、ネル先生の視点で解説や感想を教えてください。";
         }
+        
+        // ★修正: 履歴に追加（画像質問）
+        addToSessionHistory('user', promptText);
 
         const res = await fetch('/chat-dialogue', {
             method: 'POST',
@@ -483,7 +515,8 @@ window.captureAndSendHttpImage = async function(context) {
             body: JSON.stringify({ 
                 image: base64Data,
                 text: promptText, 
-                name: currentUser ? currentUser.name : "生徒"
+                name: currentUser ? currentUser.name : "生徒",
+                history: window.chatSessionHistory // ★履歴送信
             })
         });
 
@@ -491,6 +524,10 @@ window.captureAndSendHttpImage = async function(context) {
         const data = await res.json();
         
         const speechText = data.speech || data.reply || "教えてあげるにゃ！";
+        
+        // ★修正: 応答も履歴に追加
+        addToSessionHistory('model', speechText);
+
         await window.updateNellMessage(speechText, "happy", true, true);
         
         const board = document.getElementById(ids.chalkboardId);
