@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v290.0: 全機能統合・Cropper修正版) ---
+// --- analyze.js (完全版 v291.0: カリカリ更新関数参照エラー修正版) ---
 
 // ==========================================
 // 1. 最重要：UI操作・モード選択関数
@@ -40,10 +40,10 @@ let streamTextBuffer = "";
 let ttsTextBuffer = "";
 let latestDetectedName = null;
 
-// ★追加: 会話文脈履歴
+// 会話文脈履歴
 window.chatSessionHistory = [];
 
-// ★追加: 常時聞き取り用のフラグ
+// 常時聞き取り用のフラグ
 let isAlwaysListening = false;
 let continuousRecognition = null;
 
@@ -64,12 +64,37 @@ let studyTimerCheck = 0;
 // プレビューカメラ用
 let previewStream = null;
 
-// ★追加: 履歴管理ヘルパー
+// 履歴管理ヘルパー
 window.addToSessionHistory = function(role, text) {
     window.chatSessionHistory.push({ role: role, text: text });
     // 最新10件（5往復）程度を保持
     if (window.chatSessionHistory.length > 10) {
         window.chatSessionHistory.shift();
+    }
+};
+
+// ★修正: カリカリ表示更新関数をwindowに登録
+window.updateMiniKarikari = function() {
+    if (currentUser) {
+        const el = document.getElementById('mini-karikari-count');
+        if (el) el.innerText = currentUser.karikari;
+        const el2 = document.getElementById('karikari-count');
+        if (el2) el2.innerText = currentUser.karikari;
+    }
+};
+
+// ★修正: カリカリエフェクト関数をwindowに登録
+window.showKarikariEffect = function(amount) {
+    const container = document.querySelector('.nell-avatar-wrap');
+    if (container) {
+        const floatText = document.createElement('div');
+        floatText.className = 'floating-text';
+        floatText.innerText = amount > 0 ? `+${amount}` : `${amount}`;
+        floatText.style.color = amount > 0 ? '#ff9100' : '#ff5252';
+        floatText.style.right = '0px';
+        floatText.style.top = '0px';
+        container.appendChild(floatText);
+        setTimeout(() => floatText.remove(), 1500);
     }
 };
 
@@ -79,7 +104,7 @@ window.selectMode = function(m) {
         console.log(`[UI] selectMode called: ${m}`);
         currentMode = m; 
         
-        // ★修正: モード切り替え時に会話履歴をリセット
+        // モード切り替え時に会話履歴をリセット
         window.chatSessionHistory = [];
         
         // 画面切り替え
@@ -127,7 +152,7 @@ window.selectMode = function(m) {
         
         const miniKarikari = document.getElementById('mini-karikari-display');
         if(miniKarikari) miniKarikari.classList.remove('hidden');
-        if(typeof updateMiniKarikari === 'function') updateMiniKarikari();
+        window.updateMiniKarikari();
         
         // --- モード別表示制御 ---
         if (m === 'chat') { 
@@ -554,12 +579,7 @@ window.captureAndSendHttpImage = async function(context) {
     }
 };
 
-// ★追加: 埋め込みカメラのトグル処理
-window.toggleEmbeddedCamera = function() {
-    window.toggleHttpCamera('embedded');
-};
-
-// ★修正: お宝カメラのトグル処理
+// ★修正: お宝カメラのトグル処理 (ID直指定で残す)
 window.toggleTreasureCamera = function() {
     const videoId = 'live-chat-video';
     const containerId = 'live-chat-video-container';
@@ -869,7 +889,6 @@ window.toggleTimer = function() {
         document.getElementById('mini-timer-display').classList.remove('hidden');
         closeTimerModal();
         
-        // ★ここに追加: タイマー開始メッセージ
         window.updateNellMessage("今からネル先生が時間を計ってやるにゃ", "normal", false, true);
 
         studyTimerInterval = setInterval(() => {
@@ -877,7 +896,6 @@ window.toggleTimer = function() {
                 studyTimerValue--;
                 studyTimerCheck++;
                 updateTimerDisplay();
-                // ★ここを修正
                 if (studyTimerValue === 600) window.updateNellMessage("10分前だにゃ〜。お茶でも飲んで落ち着くにゃ。", "gentle", false, true);
                 else if (studyTimerValue === 300) window.updateNellMessage("あと5分。一歩ずつ、一歩ずつだにゃ〜。", "normal", false, true);
                 else if (studyTimerValue === 180) window.updateNellMessage("3分前。深呼吸して、もうひと踏ん張りだにゃ。", "excited", false, true);
@@ -888,7 +906,6 @@ window.toggleTimer = function() {
                 document.getElementById('timer-toggle-btn').innerText = "スタート！";
                 document.getElementById('timer-toggle-btn').className = "main-btn pink-btn";
                 try { sfxChime.play(); } catch(e){}
-                // ★ここを修正
                 window.updateNellMessage("時間だにゃ！お疲れ様だにゃ〜。さ、ゆっくり休むにゃ。", "happy", false, true);
                 document.getElementById('mini-timer-display').classList.add('hidden');
                 openTimerModal();
@@ -1119,7 +1136,7 @@ function renderHintUI() {
 window.unlockNextHint = function(level, cost) {
     if (window.initAudioContext) window.initAudioContext();
     if (currentUser.karikari < cost) return updateNellMessage(`カリカリが足りないにゃ…あと${cost}個！`, "thinking", false);
-    currentUser.karikari -= cost; saveAndSync(); updateMiniKarikari(); showKarikariEffect(-cost);
+    currentUser.karikari -= cost; saveAndSync(); window.updateMiniKarikari(); window.showKarikariEffect(-cost);
     selectedProblem.maxUnlockedHintLevel = level;
     window.showHintText(level); renderHintUI();
 };
@@ -1296,7 +1313,7 @@ window.backToProblemSelection = function() {
     document.getElementById('answer-display-area').classList.add('hidden'); 
     if (currentMode === 'grade') showGradingView(); else { renderProblemSelection(); updateNellMessage("他も見るにゃ？", "normal", false); } 
     const backBtn = document.getElementById('main-back-btn'); 
-    if(backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = backToLobby; } 
+    if(backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = window.backToLobby; } 
     if (selectedProblem && selectedProblem.id) {
         setTimeout(() => {
             const targetId = `grade-item-${selectedProblem.id}`;
@@ -1313,19 +1330,12 @@ window.backToProblemSelection = function() {
 };
 
 window.pressThanks = function() { window.backToProblemSelection(); };
-window.finishGrading = async function(btnElement) { if(btnElement) { btnElement.disabled = true; btnElement.innerText = "採点完了！"; } if (currentUser) { currentUser.karikari += 100; saveAndSync(); updateMiniKarikari(); showKarikariEffect(100); } await updateNellMessage("よくがんばったにゃ！カリカリ100個あげる！", "excited", false); setTimeout(() => { if(typeof backToLobby === 'function') backToLobby(true); }, 3000); };
-window.pressAllSolved = function(btnElement) { if(btnElement) { btnElement.disabled = true; btnElement.innerText = "すごい！"; } if (currentUser) { currentUser.karikari += 100; saveAndSync(); showKarikariEffect(100); updateMiniKarikari(); updateNellMessage("よくがんばったにゃ！カリカリ100個あげるにゃ！", "excited", false).then(() => { setTimeout(() => { if(typeof backToLobby === 'function') backToLobby(true); }, 3000); }); } };
-window.renderMistakeSelection = function() { if (!currentUser.mistakes || currentUser.mistakes.length === 0) { updateNellMessage("ノートは空っぽにゃ！", "happy", false); setTimeout(backToLobby, 2000); return; } transcribedProblems = currentUser.mistakes; renderProblemSelection(); updateNellMessage("復習するにゃ？", "excited", false); };
-window.giveLunch = function() { if (currentUser.karikari < 1) return updateNellMessage("カリカリがないにゃ……", "thinking", false); updateNellMessage("もぐもぐ……", "normal", false); currentUser.karikari--; if(typeof saveAndSync === 'function') saveAndSync(); updateMiniKarikari(); showKarikariEffect(-1); lunchCount++; fetch('/lunch-reaction', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ count: lunchCount, name: currentUser.name }) }).then(r => r.json()).then(d => { setTimeout(() => { updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy", true); }, 1500); }).catch(e => { setTimeout(() => { updateNellMessage("おいしいにゃ！", "happy", false); }, 1500); }); }; 
-window.showGame = function() { switchScreen('screen-game'); document.getElementById('mini-karikari-display').classList.remove('hidden'); updateMiniKarikari(); initGame(); fetchGameComment("start"); const startBtn = document.getElementById('start-game-btn'); if (startBtn) { const newBtn = startBtn.cloneNode(true); startBtn.parentNode.replaceChild(newBtn, startBtn); newBtn.onclick = () => { if (!gameRunning) { initGame(); gameRunning = true; newBtn.disabled = true; drawGame(); } }; } };
+window.finishGrading = async function(btnElement) { if(btnElement) { btnElement.disabled = true; btnElement.innerText = "採点完了！"; } if (currentUser) { currentUser.karikari += 100; saveAndSync(); window.updateMiniKarikari(); window.showKarikariEffect(100); } await updateNellMessage("よくがんばったにゃ！カリカリ100個あげる！", "excited", false); setTimeout(() => { if(typeof window.backToLobby === 'function') window.backToLobby(true); }, 3000); };
+window.pressAllSolved = function(btnElement) { if(btnElement) { btnElement.disabled = true; btnElement.innerText = "すごい！"; } if (currentUser) { currentUser.karikari += 100; saveAndSync(); window.showKarikariEffect(100); window.updateMiniKarikari(); updateNellMessage("よくがんばったにゃ！カリカリ100個あげるにゃ！", "excited", false).then(() => { setTimeout(() => { if(typeof window.backToLobby === 'function') window.backToLobby(true); }, 3000); }); } };
+window.renderMistakeSelection = function() { if (!currentUser.mistakes || currentUser.mistakes.length === 0) { updateNellMessage("ノートは空っぽにゃ！", "happy", false); setTimeout(window.backToLobby, 2000); return; } transcribedProblems = currentUser.mistakes; renderProblemSelection(); updateNellMessage("復習するにゃ？", "excited", false); };
+window.giveLunch = function() { if (currentUser.karikari < 1) return updateNellMessage("カリカリがないにゃ……", "thinking", false); updateNellMessage("もぐもぐ……", "normal", false); currentUser.karikari--; if(typeof saveAndSync === 'function') saveAndSync(); window.updateMiniKarikari(); window.showKarikariEffect(-1); lunchCount++; fetch('/lunch-reaction', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ count: lunchCount, name: currentUser.name }) }).then(r => r.json()).then(d => { setTimeout(() => { updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy", true); }, 1500); }).catch(e => { setTimeout(() => { updateNellMessage("おいしいにゃ！", "happy", false); }, 1500); }); }; 
+window.showGame = function() { switchScreen('screen-game'); document.getElementById('mini-karikari-display').classList.remove('hidden'); window.updateMiniKarikari(); initGame(); fetchGameComment("start"); const startBtn = document.getElementById('start-game-btn'); if (startBtn) { const newBtn = startBtn.cloneNode(true); startBtn.parentNode.replaceChild(newBtn, startBtn); newBtn.onclick = () => { if (!gameRunning) { initGame(); gameRunning = true; newBtn.disabled = true; drawGame(); } }; } };
 function fetchGameComment(type, score=0) { fetch('/game-reaction', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type, name: currentUser.name, score }) }).then(r=>r.json()).then(d=>{ updateNellMessage(d.reply, d.mood || "excited", true); }).catch(e=>{}); }
-
-// ゲーム機能
-function initGame() { gameCanvas = document.getElementById('game-canvas'); if(!gameCanvas) return; ctx = gameCanvas.getContext('2d'); paddle = { w: 80, h: 10, x: 120, speed: 7 }; ball = { x: 160, y: 350, dx: 3, dy: -3, r: 8 }; score = 0; document.getElementById('game-score').innerText = score; bricks = []; for(let c=0; c<5; c++) for(let r=0; r<4; r++) bricks.push({ x: c*64+10, y: r*35+40, status: 1 }); gameCanvas.removeEventListener("mousemove", movePaddle); gameCanvas.removeEventListener("touchmove", touchPaddle); gameCanvas.addEventListener("mousemove", movePaddle, false); gameCanvas.addEventListener("touchmove", touchPaddle, { passive: false }); }
-function movePaddle(e) { const rect = gameCanvas.getBoundingClientRect(); const scaleX = gameCanvas.width / rect.width; const rx = (e.clientX - rect.left) * scaleX; if(rx > 0 && rx < gameCanvas.width) paddle.x = rx - paddle.w/2; }
-function touchPaddle(e) { e.preventDefault(); const rect = gameCanvas.getBoundingClientRect(); const scaleX = gameCanvas.width / rect.width; const rx = (e.touches[0].clientX - rect.left) * scaleX; if(rx > 0 && rx < gameCanvas.width) paddle.x = rx - paddle.w/2; }
-function drawGame() { if (!gameRunning) return; ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height); ctx.font = "20px serif"; bricks.forEach(b => { if(b.status === 1) ctx.fillText("🍖", b.x + 10, b.y + 20); }); ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2); ctx.fillStyle = "#ff85a1"; ctx.fill(); ctx.closePath(); ctx.fillStyle = "#4a90e2"; ctx.fillRect(paddle.x, gameCanvas.height - paddle.h - 10, paddle.w, paddle.h); bricks.forEach(b => { if(b.status === 1 && ball.x>b.x && ball.x<b.x+40 && ball.y>b.y && ball.y<b.y+30){ ball.dy*=-1; b.status=0; score++; document.getElementById('game-score').innerText=score; try { sfxHit.currentTime=0; sfxHit.play(); } catch(e){} if (Math.random() > 0.7 && !window.isNellSpeaking) { updateNellMessage(gameHitComments[Math.floor(Math.random() * gameHitComments.length)], "excited", false); } if(score===bricks.length) { endGame(true); return; } } }); if(ball.x+ball.dx > gameCanvas.width-ball.r || ball.x+ball.dx < ball.r) ball.dx *= -1; if(ball.y+ball.dy < ball.r) ball.dy *= -1; else if(ball.y+ball.dy > gameCanvas.height - ball.r - 20) { if(ball.x > paddle.x && ball.x < paddle.x + paddle.w) { ball.dy *= -1; ball.dx = (ball.x - (paddle.x+paddle.w/2)) * 0.15; try { sfxPaddle.currentTime = 0; sfxPaddle.play(); } catch(e){} } else if(ball.y+ball.dy > gameCanvas.height-ball.r) { try { sfxOver.currentTime=0; sfxOver.play(); } catch(e){} endGame(false); return; } } ball.x += ball.dx; ball.y += ball.dy; gameAnimId = requestAnimationFrame(drawGame); }
-function endGame(c) { gameRunning = false; if(gameAnimId)cancelAnimationFrame(gameAnimId); fetchGameComment("end", score); const s=document.getElementById('start-game-btn'); if(s){s.disabled=false;s.innerText="もう一回！";} setTimeout(()=>{ alert(c?`すごい！全クリだにゃ！\nカリカリ ${score} 個ゲット！`:`おしい！\nカリカリ ${score} 個ゲット！`); if(currentUser&&score>0){currentUser.karikari+=score;if(typeof saveAndSync==='function')saveAndSync();updateMiniKarikari();showKarikariEffect(score);} }, 500); }
 
 // Cropper
 window.initCustomCropper = function() {
@@ -1573,7 +1583,7 @@ window.handleFileUpload = async (file) => {
             ];
             canvas.style.opacity = '1';
             updateNellMessage("ここを読み取るにゃ？", "normal");
-            window.initCustomCropper();
+            window.initCustomCropper(); // ★修正: window.付きで呼び出し
         };
         cropImg.src = e.target.result;
     };
