@@ -1,4 +1,4 @@
-// --- server.js (完全版 v285.0: 解説文増量) ---
+// --- server.js (完全版 v285.1: 変更なし・完全版として出力) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";

@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v285.0: 割り込み機能強化・お宝カメラ手動化) ---
+// --- analyze.js (完全版 v285.1: 割り込み強化対応) ---
 
 // ==========================================
 // 1. 最重要：UI操作・モード選択関数
@@ -119,8 +119,7 @@ window.selectMode = function(m) {
             // お宝図鑑モード
             document.getElementById('chat-view').classList.remove('hidden'); 
             window.updateNellMessage("お宝を見せてにゃ！お話もできるにゃ！", "excited", false); 
-            // ★修正: カメラ自動起動を削除（手動化）
-            // startPreviewCamera('live-chat-video', 'live-chat-video-container'); 
+            // カメラは手動起動なのでここでは開始しない
             // 常時聞き取り開始
             startAlwaysOnListening();
         } 
@@ -140,14 +139,17 @@ window.selectMode = function(m) {
         else if (m === 'review') { 
             renderMistakeSelection(); 
             document.getElementById('embedded-chat-section').classList.remove('hidden'); 
+            // 復習モード: 常時聞き取りのみ開始 (カメラは手動)
             startAlwaysOnListening();
         } 
         else { 
+            // 教えて/採点
             const subjectView = document.getElementById('subject-selection-view'); 
             if (subjectView) subjectView.classList.remove('hidden'); 
             window.updateNellMessage("どの教科にするのかにゃ？", "normal", false); 
             if (m === 'explain' || m === 'grade') {
                 document.getElementById('embedded-chat-section').classList.remove('hidden');
+                // 解説・採点モード: 常時聞き取りのみ開始 (カメラは手動)
                 startAlwaysOnListening();
             }
         }
@@ -190,9 +192,13 @@ function startAlwaysOnListening() {
     continuousRecognition.lang = 'ja-JP';
     continuousRecognition.interimResults = false;
     continuousRecognition.maxAlternatives = 1;
+    // ★修正: 途切れさせない設定
+    continuousRecognition.continuous = true; 
 
     continuousRecognition.onresult = async (event) => {
-        const text = event.results[0][0].transcript;
+        // continuous=true の場合、resultsは配列で来るので最新を取得
+        const resultIndex = event.resultIndex;
+        const text = event.results[resultIndex][0].transcript;
 
         // ★修正: 割り込み強化
         // ネル先生が話している最中でも、ユーザーが何か話したら（空でなければ）即座に中断して新しい話題へ移行する
@@ -207,6 +213,8 @@ function startAlwaysOnListening() {
         if (!text || text.trim() === "") return;
         
         console.log(`[User Said] ${text}`);
+        // continuous=trueなのでstopしないと次が拾えない場合があるが、
+        // ここでは一旦停止して処理後に再開するフローにする（二重送信防止）
         continuousRecognition.stop();
         
         const elems = getChatElementsCorrect(currentMode);
@@ -244,7 +252,8 @@ function startAlwaysOnListening() {
     };
 
     continuousRecognition.onend = () => {
-        if (isAlwaysListening && (currentMode === 'chat' || currentMode === 'explain' || currentMode === 'grade' || currentMode === 'review' || currentMode === 'simple-chat-tts') && !window.isNellSpeaking) {
+        // ★修正: !window.isNellSpeaking を削除し、話している最中でも聞き耳を立てる
+        if (isAlwaysListening && (currentMode === 'chat' || currentMode === 'explain' || currentMode === 'grade' || currentMode === 'review' || currentMode === 'simple-chat-tts')) {
             try { continuousRecognition.start(); } catch(e){}
         }
     };
