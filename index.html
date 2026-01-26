@@ -110,19 +110,64 @@
         }
         .log-user .log-role { color: #2196f3; }
         .log-nell .log-role { color: #ff85a1; }
+
+        /* 音量コントロール */
+        .volume-control-panel {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            z-index: 2000;
+            display: flex;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 5px 10px;
+            border-radius: 30px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            border: 2px solid #ccc;
+        }
+        .volume-btn {
+            background: none;
+            border: none;
+            font-size: 1.2rem;
+            cursor: pointer;
+            margin-right: 5px;
+            line-height: 1;
+        }
+        .volume-slider {
+            width: 80px;
+            height: 5px;
+            -webkit-appearance: none;
+            background: #ddd;
+            border-radius: 5px;
+            outline: none;
+        }
+        .volume-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 15px;
+            height: 15px;
+            background: #ff85a1;
+            border-radius: 50%;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
     <canvas id="hanamaru-canvas"></canvas>
     <canvas id="deco-canvas" style="display:none;"></canvas>
     
+    <!-- 音量コントロール -->
+    <div class="volume-control-panel">
+        <button id="mute-btn" class="volume-btn" onclick="window.toggleMute()">🔊</button>
+        <input type="range" id="volume-slider" class="volume-slider" min="0" max="100" value="100" oninput="window.setGlobalVolume(this.value)">
+    </div>
+
     <!-- カリカリ表示（右上） -->
     <div id="mini-karikari-display" class="mini-karikari-display hidden">
         <span>🍖</span><span id="mini-karikari-count">0</span>
     </div>
 
-    <!-- 常駐ミニタイマー（左上） -->
-    <div id="mini-timer-display" class="mini-timer-display hidden" onclick="openTimerModal()">
+    <!-- 常駐ミニタイマー（左上・音量の下へ配置調整） -->
+    <div id="mini-timer-display" class="mini-timer-display hidden" onclick="openTimerModal()" style="top: 50px; left: 10px;">
         <span>⏱️</span> <span id="mini-timer-text">00:00</span>
     </div>
 
@@ -133,7 +178,7 @@
             <div class="title-btn-container">
                 <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
             </div>
-            <div class="version-tag">Build: v288.0-Restored-All</div>
+            <div class="version-tag">Build: v289.0-Volume-Fix</div>
         </section>
 
         <!-- 1. 校門 (ユーザー選択) -->
@@ -211,7 +256,7 @@
         <!-- 4. メイン画面 -->
         <section id="screen-main" class="screen hidden">
             <header>
-                <button id="main-back-btn" onclick="backToLobby()" class="main-btn gray-btn" style="width:auto; padding:10px 20px;">←</button>
+                <button id="main-back-btn" onclick="backToLobby()" class="main-btn gray-btn" style="width:auto; padding:10px 20px; margin-left: 100px;">←</button>
             </header>
             <div class="operation-layout">
                 <div class="nell-chat">
@@ -260,7 +305,7 @@
                         <div class="problem-selection-card">
                             <div class="problem-scroll-area" id="transcribed-problem-list"></div>
                             <div style="text-align:center; margin-top:20px;">
-                                <button onclick="pressAllSolved()" class="main-btn orange-btn">✨ ぜんぶわかったにゃ！</button>
+                                <button onclick="pressAllSolved(this)" class="main-btn orange-btn">✨ ぜんぶわかったにゃ！</button>
                             </div>
                         </div>
                     </div>
