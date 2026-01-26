@@ -87,6 +87,29 @@
             transform: translateY(2px);
             box-shadow: 0 2px 0 #558b2f;
         }
+
+        /* ログエリア */
+        .conversation-log-container {
+            margin-top: 20px;
+            padding: 10px;
+            background: rgba(255,255,255,0.7);
+            border-radius: 10px;
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+        }
+        .log-item {
+            font-size: 0.85rem;
+            margin-bottom: 5px;
+            padding-bottom: 5px;
+            border-bottom: 1px dashed #eee;
+        }
+        .log-role {
+            font-weight: bold;
+            margin-right: 5px;
+        }
+        .log-user .log-role { color: #2196f3; }
+        .log-nell .log-role { color: #ff85a1; }
     </style>
 </head>
 <body>
@@ -110,7 +133,7 @@
             <div class="title-btn-container">
                 <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
             </div>
-            <div class="version-tag">Build: v280.1-Fix-Search-Conflict</div>
+            <div class="version-tag">Build: v281.0-Fix-Search-Conflict</div>
         </section>
 
         <!-- 1. 校門 (ユーザー選択) -->
@@ -174,6 +197,7 @@
                 <button onclick="selectMode('review')" class="main-btn orange-btn">🔥 復習ノート</button>
                 <button onclick="showGame()" class="main-btn yellow-btn">🎮 カリカリ・キャッチ</button>
                 <button onclick="selectMode('simple-chat')" class="main-btn green-btn">🎤 こじんめんだん</button>
+                <button onclick="selectMode('chat-free')" class="main-btn green-btn" style="background:#4db6ac; box-shadow: 0 4px 0 #00897b;">💬 放課後おしゃべりタイム</button>
                 
                 <button onclick="selectMode('chat')" class="main-btn" style="background:#5c6bc0; box-shadow: 0 4px 0 #3949ab;">💎 ネル先生のお宝図鑑</button>
                 
@@ -284,6 +308,33 @@
                         </div>
                     </div>
 
+                    <!-- ★放課後おしゃべりタイム (HTTP版) -->
+                    <div id="chat-free-view" class="hidden">
+                        <div class="glass-card" style="text-align:center; padding:15px;">
+                            <h4 style="text-align:center; margin:0 0 10px 0; color:#00897b;">💬 放課後おしゃべりタイム</h4>
+                            <p style="font-size:0.8rem; color:#666; margin-bottom:10px;">（何でも話していいにゃ）</p>
+
+                            <!-- テキスト質問エリア -->
+                            <div class="text-question-area">
+                                <textarea id="free-text-input" class="text-question-input" placeholder="ここに入力"></textarea>
+                                <button onclick="sendFreeText()" class="text-question-btn">送信</button>
+                            </div>
+
+                            <!-- カメラボタン -->
+                            <button id="live-camera-btn-free" class="mini-cam-btn" style="background:#4db6ac; box-shadow:0 4px 0 #00796b; margin-top:10px;" onclick="toggleFreeCamera()"><span>📷</span> 写真を見せてお話</button>
+                            
+                            <div id="live-chat-video-container-free" class="live-chat-video-wrapper" style="margin-top:10px;">
+                                <video id="live-chat-video-free" class="live-chat-video-elem" autoplay playsinline muted></video>
+                            </div>
+                            
+                            <!-- 音声認識結果 -->
+                            <p id="user-speech-text-free" style="margin-top:10px; font-weight:bold; min-height:1.2em; font-size:0.9rem; color:#333;">...</p>
+                            
+                            <!-- 黒板 -->
+                            <div id="chalkboard-free" class="embedded-chalkboard hidden"></div>
+                        </div>
+                    </div>
+
                     <!-- チャットモード（お宝図鑑：HTTP版） -->
                     <div id="chat-view" class="hidden">
                         <div class="glass-card" style="text-align:center; padding:15px;">
@@ -331,6 +382,12 @@
                             <button onclick="giveLunch()" class="camera-btn-large" style="background:#ffb74d;">🐟 カリカリをあげる</button>
                             <p style="margin-top:10px; font-size:0.8rem;">（カリカリが1つ減ります）</p>
                         </div>
+                    </div>
+
+                    <!-- 会話ログエリア -->
+                    <div id="conversation-log" class="conversation-log-container hidden">
+                        <div style="text-align:center; font-size:0.8rem; color:#888;">--- 会話ログ ---</div>
+                        <div id="log-content"></div>
                     </div>
                 </div>
             </div>

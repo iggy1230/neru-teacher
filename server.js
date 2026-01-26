@@ -253,11 +253,12 @@ app.post('/identify-item', async (req, res) => {
         - 語尾は必ず「にゃ」や「だにゃ」をつける。
         - **猫の視点**で人間界の道具を解釈する独特な感性を持っている。
         - 解説は**ユーモアと愛嬌**たっぷりに、子供が笑ってしまうような内容にする。
+        - **解説は長めに、120文字程度で詳しく書いてください。**
 
         【出力フォーマット (JSON)】
         {
             "itemName": "画像の中の主要な物体の名前（短く）",
-            "description": "その物体についてのネル先生のユニークで面白い解説（60文字以内）。猫視点での勘違いや、独自の使い方の提案などを含める。",
+            "description": "その物体についてのネル先生のユニークで面白い解説（120文字程度）。猫視点での勘違いや、独自の使い方の提案などを含める。",
             "speechText": "『これは（itemName）だにゃ！（description）』という形式の読み上げ用セリフ。必ず『これは〇〇だにゃ！』から始める。"
         }
         `;
@@ -282,7 +283,7 @@ app.post('/identify-item', async (req, res) => {
 // --- ★ HTTPチャット会話 (お宝図鑑・埋め込みチャット共用) ---
 app.post('/chat-dialogue', async (req, res) => {
     try {
-        const { text, name, image } = req.body;
+        const { text, name, image, history } = req.body;
         
         const now = new Date();
         const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' };
@@ -295,6 +296,17 @@ app.post('/chat-dialogue', async (req, res) => {
             tools: [{ google_search: {} }] 
         });
 
+        // 履歴プロンプト
+        let contextPrompt = "";
+        if (history && Array.isArray(history) && history.length > 0) {
+            contextPrompt = "【これまでの会話の流れ（直近）】\n";
+            history.forEach(h => {
+                const speaker = h.role === 'user' ? `${name}` : 'ネル先生';
+                contextPrompt += `${speaker}: ${h.text}\n`;
+            });
+            contextPrompt += "\nユーザーの言葉に主語がなくても、この流れを汲んで自然に返答してください。\n";
+        }
+
         let prompt = `
         あなたは猫の「ネル先生」です。相手は「${name}」さん。
         以下のユーザーの発言（または画像）に対して、子供にもわかるように答えてください。
@@ -302,6 +314,10 @@ app.post('/chat-dialogue', async (req, res) => {
         【重要：現在の状況】
         - **現在は ${currentDateTime} です。**
         - **わからないことや最新の情報が必要な場合は、提供されたGoogle検索ツールを使って調べてください。**
+        - **日付を聞かれない限り、冒頭で今日の日付を言う必要はありません。**
+        - **相手を呼ぶときは必ず「${name}さん」と呼んでください。呼び捨ては厳禁です。**
+
+        ${contextPrompt}
 
         【出力フォーマット】
         **必ず以下のJSON形式の文字列だけ**を出力してください。Markdownコードブロックは含んでも構いません。
