@@ -1,4 +1,4 @@
-// --- server.js (完全版 v285.0) ---
+// --- server.js (完全版 v287.0: チャット安定化・エラー自動回避版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -278,7 +278,7 @@ app.post('/identify-item', async (req, res) => {
     }
 });
 
-// --- ★ HTTPチャット会話 (お宝図鑑・埋め込みチャット共用) ---
+// --- ★ HTTPチャット会話 (お宝図鑑・個別指導共用) ---
 app.post('/chat-dialogue', async (req, res) => {
     try {
         const { text, name, image, history } = req.body;
@@ -286,11 +286,6 @@ app.post('/chat-dialogue', async (req, res) => {
         const now = new Date();
         const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' };
         const currentDateTime = now.toLocaleString('ja-JP', dateOptions);
-
-        const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.0-flash-exp",
-            tools: [{ google_search: {} }] 
-        });
 
         // 履歴プロンプト
         let contextPrompt = "";
@@ -330,17 +325,48 @@ app.post('/chat-dialogue', async (req, res) => {
         }
 
         let result;
-        if (image) {
-             result = await model.generateContent([
-                prompt,
-                { inlineData: { mime_type: "image/jpeg", data: image } }
-            ]);
-        } else {
-             result = await model.generateContent(prompt);
+        let responseText;
+
+        try {
+            // ★重要修正: 画像がある場合はツールを使わない（エラー回避）
+            // 画像がない場合はツールを使う
+            const toolsConfig = image ? undefined : [{ google_search: {} }];
+            
+            const model = genAI.getGenerativeModel({ 
+                model: "gemini-2.0-flash-exp",
+                tools: toolsConfig
+            });
+
+            if (image) {
+                result = await model.generateContent([
+                    prompt,
+                    { inlineData: { mime_type: "image/jpeg", data: image } }
+                ]);
+            } else {
+                result = await model.generateContent(prompt);
+            }
+            responseText = result.response.text().trim();
+
+        } catch (genError) {
+            console.warn("Generation failed with tools/image. Retrying without tools...", genError.message);
+            
+            // ★フォールバック: 失敗したらツールなしでリトライ
+            const modelFallback = genAI.getGenerativeModel({ 
+                model: "gemini-2.0-flash-exp"
+            });
+            
+            if (image) {
+                result = await modelFallback.generateContent([
+                    prompt,
+                    { inlineData: { mime_type: "image/jpeg", data: image } }
+                ]);
+            } else {
+                result = await modelFallback.generateContent(prompt);
+            }
+            responseText = result.response.text().trim();
         }
         
-        const responseText = result.response.text().trim();
-        
+        // JSONパース処理
         let jsonResponse;
         try {
             let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -352,14 +378,15 @@ app.post('/chat-dialogue', async (req, res) => {
             jsonResponse = JSON.parse(cleanText);
         } catch (e) {
             console.warn("JSON Parse Fallback:", responseText);
+            // パース失敗時はそのままセリフとして返す
             jsonResponse = { speech: responseText, board: "" };
         }
         
         res.json(jsonResponse);
 
     } catch (error) {
-        console.error("Chat API Error:", error);
-        res.status(500).json({ speech: "ごめん、ちょっと聞こえなかったにゃ。", board: "" });
+        console.error("Chat API Fatal Error:", error);
+        res.status(500).json({ speech: "ごめんにゃ、ちょっと調子が悪いみたいだにゃ。", board: "" });
     }
 });
 
