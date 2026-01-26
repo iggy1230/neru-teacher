@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v281.0: タイマーコメント更新) ---
+// --- analyze.js (完全版 v282.0: 機能入れ替え版) ---
 
 // ==========================================
 // 1. 最重要：UI操作・モード選択関数
@@ -87,7 +87,7 @@ window.selectMode = function(m) {
         document.getElementById('log-content').innerHTML = "";
         
         // 黒板リセット
-        ['embedded-chalkboard', 'chalkboard-free'].forEach(bid => {
+        ['embedded-chalkboard', 'chalkboard-simple', 'chalkboard-free'].forEach(bid => {
             const embedBoard = document.getElementById(bid);
             if (embedBoard) {
                 embedBoard.innerText = "";
@@ -96,7 +96,7 @@ window.selectMode = function(m) {
         });
 
         // テキスト入力欄リセット
-        ['embedded-text-input', 'free-text-input'].forEach(iid => {
+        ['embedded-text-input', 'simple-text-input'].forEach(iid => {
             const embedInput = document.getElementById(iid);
             if(embedInput) embedInput.value = "";
         });
@@ -128,15 +128,17 @@ window.selectMode = function(m) {
             startAlwaysOnListening();
         } 
         else if (m === 'simple-chat') {
+            // ★こじんめんだん (HTTPモードに変更)
             document.getElementById('simple-chat-view').classList.remove('hidden');
             window.updateNellMessage("今日はお話だけするにゃ？", "gentle", false);
-        }
-        else if (m === 'chat-free') {
-            // ★放課後おしゃべりタイム
-            document.getElementById('chat-free-view').classList.remove('hidden');
-            window.updateNellMessage("何でも話していいにゃ！", "happy", false);
             document.getElementById('conversation-log').classList.remove('hidden');
             startAlwaysOnListening();
+        }
+        else if (m === 'chat-free') {
+            // ★放課後おしゃべりタイム (WebSocketモードに変更)
+            document.getElementById('chat-free-view').classList.remove('hidden');
+            window.updateNellMessage("何でも話していいにゃ！", "happy", false);
+            // WebSocketは常時聞き取りしない
         }
         else if (m === 'lunch') { 
             document.getElementById('lunch-view').classList.remove('hidden'); 
@@ -197,10 +199,8 @@ function startAlwaysOnListening() {
             if (isLongEnough || isStopCommand) {
                 console.log("[Interruption] Stopping audio.");
                 if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
-                // 停止命令そのものはチャットに送らない
                 if (isStopCommand) return; 
             } else {
-                // 短い相槌などは無視
                 return;
             }
         }
@@ -210,7 +210,8 @@ function startAlwaysOnListening() {
         
         // 音声認識結果を表示（各モード対応）
         let targetId = 'user-speech-text-embedded';
-        if (currentMode === 'chat-free') targetId = 'user-speech-text-free';
+        if (currentMode === 'simple-chat') targetId = 'user-speech-text-simple';
+        
         const embeddedText = document.getElementById(targetId);
         if (embeddedText) embeddedText.innerText = text;
 
@@ -241,7 +242,7 @@ function startAlwaysOnListening() {
                 
                 // 黒板表示
                 let boardId = 'embedded-chalkboard';
-                if (currentMode === 'chat-free') boardId = 'chalkboard-free';
+                if (currentMode === 'simple-chat') boardId = 'chalkboard-simple';
                 const embedBoard = document.getElementById(boardId);
                 
                 if (embedBoard) {
@@ -255,14 +256,14 @@ function startAlwaysOnListening() {
             console.error("Chat Error:", e);
         } finally {
             // 対象モードなら再開
-            if (isAlwaysListening && (currentMode === 'chat' || currentMode === 'explain' || currentMode === 'grade' || currentMode === 'review' || currentMode === 'chat-free')) {
+            if (isAlwaysListening && (currentMode === 'chat' || currentMode === 'explain' || currentMode === 'grade' || currentMode === 'review' || currentMode === 'simple-chat')) {
                 try { continuousRecognition.start(); } catch(e){}
             }
         }
     };
 
     continuousRecognition.onend = () => {
-        if (isAlwaysListening && (currentMode === 'chat' || currentMode === 'explain' || currentMode === 'grade' || currentMode === 'review' || currentMode === 'chat-free') && !window.isNellSpeaking) {
+        if (isAlwaysListening && (currentMode === 'chat' || currentMode === 'explain' || currentMode === 'grade' || currentMode === 'review' || currentMode === 'simple-chat') && !window.isNellSpeaking) {
             try { continuousRecognition.start(); } catch(e){}
         }
     };
@@ -373,11 +374,11 @@ window.stopPreviewCamera = function() {
         previewStream = null;
     }
     // 全ての可能性のあるビデオ要素を停止
-    ['live-chat-video', 'live-chat-video-embedded', 'live-chat-video-free'].forEach(vid => {
+    ['live-chat-video', 'live-chat-video-embedded', 'live-chat-video-simple', 'live-chat-video-free'].forEach(vid => {
         const v = document.getElementById(vid);
         if(v) v.srcObject = null;
     });
-    ['live-chat-video-container', 'live-chat-video-container-embedded', 'live-chat-video-container-free'].forEach(cid => {
+    ['live-chat-video-container', 'live-chat-video-container-embedded', 'live-chat-video-container-simple', 'live-chat-video-container-free'].forEach(cid => {
         const c = document.getElementById(cid);
         if(c) c.style.display = 'none';
     });
@@ -387,7 +388,7 @@ window.stopPreviewCamera = function() {
 window.sendHttpText = async function(context) {
     let inputId, btnClass;
     if (context === 'embedded') { inputId = 'embedded-text-input'; btnClass = '.text-question-btn'; }
-    else if (context === 'free') { inputId = 'free-text-input'; btnClass = '.text-question-btn'; }
+    else if (context === 'simple') { inputId = 'simple-text-input'; btnClass = '.text-question-btn'; }
     else return;
 
     const input = document.getElementById(inputId);
@@ -401,9 +402,6 @@ window.sendHttpText = async function(context) {
     
     addLogItem('user', text);
     addToSessionHistory('user', text);
-
-    // const btn = document.querySelector(btnClass); // 複数あるので注意
-    // if (btn) { btn.disabled = true; btn.innerText = "送信中..."; }
 
     try {
         window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
@@ -425,7 +423,7 @@ window.sendHttpText = async function(context) {
             addToSessionHistory('nell', speechText);
             await window.updateNellMessage(speechText, "happy", true, true);
             
-            let boardId = (context === 'embedded') ? 'embedded-chalkboard' : 'chalkboard-free';
+            let boardId = (context === 'embedded') ? 'embedded-chalkboard' : 'chalkboard-simple';
             const embedBoard = document.getElementById(boardId);
             if (embedBoard && data.board && data.board.trim() !== "") {
                 embedBoard.innerText = data.board;
@@ -444,15 +442,15 @@ window.sendHttpText = async function(context) {
 };
 
 window.sendEmbeddedText = function() { sendHttpText('embedded'); }
-window.sendFreeText = function() { sendHttpText('free'); }
+window.sendSimpleText = function() { sendHttpText('simple'); }
 
 // 汎用カメラトグル
 window.toggleHttpCamera = function(context) {
     let videoId, containerId, btnId, activeColor;
     if (context === 'embedded') {
         videoId = 'live-chat-video-embedded'; containerId = 'live-chat-video-container-embedded'; btnId = 'live-camera-btn-embedded'; activeColor = '#66bb6a';
-    } else if (context === 'free') {
-        videoId = 'live-chat-video-free'; containerId = 'live-chat-video-container-free'; btnId = 'live-camera-btn-free'; activeColor = '#4db6ac';
+    } else if (context === 'simple') {
+        videoId = 'live-chat-video-simple'; containerId = 'live-chat-video-container-simple'; btnId = 'live-camera-btn-simple'; activeColor = '#66bb6a';
     } else return;
 
     const btn = document.getElementById(btnId);
@@ -470,7 +468,7 @@ window.toggleHttpCamera = function(context) {
 };
 
 window.toggleEmbeddedCamera = function() { toggleHttpCamera('embedded'); }
-window.toggleFreeCamera = function() { toggleHttpCamera('free'); }
+window.toggleSimpleCamera = function() { toggleHttpCamera('simple'); }
 
 // ★追加: お宝カメラのトグル処理
 window.toggleTreasureCamera = function() {
@@ -493,7 +491,6 @@ window.toggleTreasureCamera = function() {
 
 // ★修正: お宝画像加工処理（サイズ縮小 320px & JPEG圧縮）
 function createTreasureImage(sourceCanvas) {
-    // 320x320に固定して容量削減 (約30KB〜50KB)
     const OUTPUT_SIZE = 320; 
     const canvas = document.createElement('canvas');
     canvas.width = OUTPUT_SIZE;
@@ -588,8 +585,6 @@ window.captureAndIdentifyItem = async function() {
         if (data.itemName && window.NellMemory) {
             console.log(`[Collection] Registering: ${data.itemName}`);
             const description = data.description || "（解説はないにゃ）";
-            
-            // 軽量化した画像を保存
             await window.NellMemory.addToCollection(currentUser.id, data.itemName, treasureDataUrl, description);
             
             const notif = document.createElement('div');
@@ -788,7 +783,6 @@ window.toggleTimer = function() {
         document.getElementById('mini-timer-display').classList.remove('hidden');
         closeTimerModal();
         
-        // ★ここに追加: タイマー開始メッセージ
         window.updateNellMessage("今からネル先生が時間を計ってやるにゃ", "normal", false, true);
 
         studyTimerInterval = setInterval(() => {
@@ -796,7 +790,7 @@ window.toggleTimer = function() {
                 studyTimerValue--;
                 studyTimerCheck++;
                 updateTimerDisplay();
-                // ★ここを修正
+                
                 if (studyTimerValue === 600) window.updateNellMessage("10分前だにゃ〜。お茶でも飲んで落ち着くにゃ。", "gentle", false, true);
                 else if (studyTimerValue === 300) window.updateNellMessage("あと5分。一歩ずつ、一歩ずつだにゃ〜。", "normal", false, true);
                 else if (studyTimerValue === 180) window.updateNellMessage("3分前。深呼吸して、もうひと踏ん張りだにゃ。", "excited", false, true);
@@ -807,7 +801,6 @@ window.toggleTimer = function() {
                 document.getElementById('timer-toggle-btn').innerText = "スタート！";
                 document.getElementById('timer-toggle-btn').className = "main-btn pink-btn";
                 try { sfxChime.play(); } catch(e){}
-                // ★ここを修正
                 window.updateNellMessage("時間だにゃ！お疲れ様だにゃ〜。さ、ゆっくり休むにゃ。", "happy", false, true);
                 document.getElementById('mini-timer-display').classList.add('hidden');
                 openTimerModal();
@@ -826,7 +819,7 @@ function updateTimerDisplay() {
 }
 
 // ==========================================
-// ★ WebSocket (simple-chat用)
+// ★ WebSocket (chat-free用)
 // ==========================================
 
 function stopAudioPlayback() {
@@ -841,22 +834,23 @@ function stopAudioPlayback() {
 
 window.captureAndSendLiveImage = function(context = 'main') {
     if (context === 'main') {
-        if (currentMode === 'simple-chat') context = 'simple';
+        if (currentMode === 'chat-free') context = 'free';
         else if (activeChatContext === 'embedded') context = 'embedded';
+        else if (currentMode === 'simple-chat') context = 'simple';
     }
     
-    // embeddedモード/freeモードの場合はWebSocketではなくHTTP送信
-    if (context === 'embedded' || context === 'free') {
+    // embedded/simpleモードの場合はWebSocketではなくHTTP送信
+    if (context === 'embedded' || context === 'simple') {
         captureAndSendLiveImageHttp(context);
         return;
     }
 
-    // simple-chat (WebSocket) 用の既存処理
+    // chat-free (WebSocket) 用の処理
     if (!liveSocket || liveSocket.readyState !== WebSocket.OPEN) {
         return alert("まずは「おはなしする」でネル先生とつながってにゃ！");
     }
     if (window.isLiveImageSending) return; 
-    let videoId = 'live-chat-video-simple';
+    let videoId = 'live-chat-video-free';
     const video = document.getElementById(videoId);
     if (!video || !video.srcObject || !video.srcObject.active) return alert("カメラが動いてないにゃ...");
 
@@ -864,7 +858,7 @@ window.captureAndSendLiveImage = function(context = 'main') {
     ignoreIncomingAudio = true; 
     window.isLiveImageSending = true;
     
-    const btn = document.getElementById('live-camera-btn-simple');
+    const btn = document.getElementById('live-camera-btn-free');
     if (btn) {
         btn.innerHTML = "<span>📡</span> 送信中にゃ...";
         btn.style.backgroundColor = "#ccc";
@@ -888,7 +882,7 @@ window.captureAndSendLiveImage = function(context = 'main') {
     document.body.appendChild(flash);
     setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
 
-    const videoContainer = document.getElementById('live-chat-video-container-simple');
+    const videoContainer = document.getElementById('live-chat-video-container-free');
     if (videoContainer) {
         const oldPreview = document.getElementById('snapshot-preview-overlay');
         if(oldPreview) oldPreview.remove();
@@ -916,8 +910,8 @@ window.captureAndSendLiveImage = function(context = 'main') {
         window.isLiveImageSending = false;
         window.isMicMuted = false;
         if (btn) {
-             btn.innerHTML = "<span>📝</span> 問題をみせて教えてもらう";
-             btn.style.backgroundColor = "#8bc34a";
+             btn.innerHTML = "<span>📷</span> 写真を見せてお話";
+             btn.style.backgroundColor = "#009688";
         }
     }, 3000);
     setTimeout(() => { ignoreIncomingAudio = false; }, 300);
@@ -934,7 +928,7 @@ async function captureAndSendLiveImageHttp(context = 'embedded') {
     
     let videoId, btnId, activeColor;
     if (context === 'embedded') { videoId = 'live-chat-video-embedded'; btnId = 'live-camera-btn-embedded'; activeColor = '#66bb6a'; }
-    else if (context === 'free') { videoId = 'live-chat-video-free'; btnId = 'live-camera-btn-free'; activeColor = '#4db6ac'; }
+    else if (context === 'simple') { videoId = 'live-chat-video-simple'; btnId = 'live-camera-btn-simple'; activeColor = '#66bb6a'; }
 
     const video = document.getElementById(videoId);
     if (!video || !video.srcObject || !video.srcObject.active) return alert("カメラが動いてないにゃ...");
@@ -985,7 +979,7 @@ async function captureAndSendLiveImageHttp(context = 'embedded') {
         await window.updateNellMessage(speechText, "happy", true, true);
         
         // 黒板に回答テキストを表示
-        let boardId = (context === 'embedded') ? 'embedded-chalkboard' : 'chalkboard-free';
+        let boardId = (context === 'embedded') ? 'embedded-chalkboard' : 'chalkboard-simple';
         const embedBoard = document.getElementById(boardId);
         if (embedBoard && data.board && data.board.trim() !== "") {
             embedBoard.innerText = data.board;
@@ -1000,7 +994,7 @@ async function captureAndSendLiveImageHttp(context = 'embedded') {
         
         stopPreviewCamera(); 
         if (btn) {
-            btn.innerHTML = (context === 'embedded') ? "<span>📷</span> カメラで見せて質問" : "<span>📷</span> 写真を見せてお話";
+            btn.innerHTML = "<span>📷</span> カメラで見せて質問";
             btn.style.backgroundColor = activeColor;
         }
         
@@ -1026,13 +1020,13 @@ window.stopLiveChat = function() {
     if(stopSpeakingTimer) clearTimeout(stopSpeakingTimer); 
     if(speakingStartTimer) clearTimeout(speakingStartTimer); 
     
-    // simple-chat用ボタンリセット
-    const btn = document.getElementById('mic-btn-simple');
+    // chat-free用ボタンリセット
+    const btn = document.getElementById('mic-btn-free');
     if (btn) { 
         btn.innerText = "🎤 おはなしする"; 
-        btn.style.background = "#66bb6a"; 
+        btn.style.background = "#4db6ac"; 
         btn.disabled = false; 
-        btn.onclick = () => startLiveChat('simple');
+        btn.onclick = () => startLiveChat('free');
     }
 
     liveSocket = null; 
@@ -1042,28 +1036,28 @@ window.stopLiveChat = function() {
     
     // カメラボタンリセット
     const camBtnSimple = document.getElementById('live-camera-btn-simple');
-    if (camBtnSimple) { camBtnSimple.innerHTML = "<span>📝</span> 問題をみせて教えてもらう"; camBtnSimple.style.backgroundColor = "#8bc34a"; }
+    if (camBtnSimple) { camBtnSimple.innerHTML = "<span>📷</span> カメラで見せて質問"; camBtnSimple.style.backgroundColor = "#66bb6a"; }
     const camBtnEmbedded = document.getElementById('live-camera-btn-embedded');
     if (camBtnEmbedded) { camBtnEmbedded.innerHTML = "<span>📷</span> カメラで見せて質問"; camBtnEmbedded.style.backgroundColor = "#66bb6a"; }
     const camBtnFree = document.getElementById('live-camera-btn-free');
-    if (camBtnFree) { camBtnFree.innerHTML = "<span>📷</span> 写真を見せてお話"; camBtnFree.style.backgroundColor = "#4db6ac"; }
+    if (camBtnFree) { camBtnFree.innerHTML = "<span>📷</span> 写真を見せてお話"; camBtnFree.style.backgroundColor = "#009688"; }
 
     window.isLiveImageSending = false;
     window.isMicMuted = false; 
 
-    const videoSimple = document.getElementById('live-chat-video-simple');
-    if(videoSimple) videoSimple.srcObject = null;
-    document.getElementById('live-chat-video-container-simple').style.display = 'none';
+    const videoFree = document.getElementById('live-chat-video-free');
+    if(videoFree) videoFree.srcObject = null;
+    document.getElementById('live-chat-video-container-free').style.display = 'none';
 };
 
 async function startLiveChat(context = 'main') { 
-    // simple-chatのみWebSocketを使用
-    if (context === 'main' && currentMode === 'simple-chat') context = 'simple';
+    // chat-freeのみWebSocketを使用
+    if (context === 'main' && currentMode === 'chat-free') context = 'free';
     
-    if (context !== 'simple') return;
+    if (context !== 'free') return;
 
     activeChatContext = context;
-    const btnId = 'mic-btn-simple';
+    const btnId = 'mic-btn-free';
     const btn = document.getElementById(btnId);
     if (liveSocket) { window.stopLiveChat(); return; } 
     
@@ -1087,7 +1081,7 @@ async function startLiveChat(context = 'main') {
         
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:'; 
         let statusSummary = `${currentUser.name}さんは今、お話しにきたにゃ。カリカリは${currentUser.karikari}個持ってるにゃ。`; 
-        let modeParam = 'simple-chat';
+        let modeParam = 'chat-free';
 
         const url = `${wsProto}//${location.host}?grade=${currentUser.grade}&name=${encodeURIComponent(currentUser.name)}&mode=${modeParam}`; 
         
@@ -1170,7 +1164,7 @@ async function startMicrophone() {
                         const userText = event.results[i][0].transcript;
                         saveToNellMemory('user', userText); 
                         streamTextBuffer = ""; 
-                        const el = document.getElementById('user-speech-text-simple'); 
+                        const el = document.getElementById('user-speech-text-free'); 
                         if(el) el.innerText = userText; 
                     }
                 } 
@@ -1186,8 +1180,8 @@ async function startMicrophone() {
         }); 
         
         if (useVideo) {
-            let videoId = 'live-chat-video-simple';
-            let containerId = 'live-chat-video-container-simple';
+            let videoId = 'live-chat-video-free';
+            let containerId = 'live-chat-video-container-free';
             const video = document.getElementById(videoId);
             if (video) {
                 video.srcObject = mediaStream;
