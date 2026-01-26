@@ -1,7 +1,7 @@
-// --- server.js (完全版 v288.0) ---
+// --- server.js (完全版 v289.0: 給食リアクション修正版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
@@ -327,7 +327,6 @@ app.post('/chat-dialogue', async (req, res) => {
         let responseText;
 
         try {
-            // ★画像がある場合はツールを使わない（エラー回避）
             const toolsConfig = image ? undefined : [{ google_search: {} }];
             
             const model = genAI.getGenerativeModel({ 
@@ -347,7 +346,6 @@ app.post('/chat-dialogue', async (req, res) => {
 
         } catch (genError) {
             console.warn("Generation failed with tools/image. Retrying without tools...", genError.message);
-            // フォールバック: 失敗したらツールなしでリトライ
             const modelFallback = genAI.getGenerativeModel({ 
                 model: "gemini-2.0-flash-exp"
             });
@@ -362,7 +360,6 @@ app.post('/chat-dialogue', async (req, res) => {
             responseText = result.response.text().trim();
         }
         
-        // JSONパース処理
         let jsonResponse;
         try {
             let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -391,8 +388,17 @@ app.post('/lunch-reaction', async (req, res) => {
         const { count, name } = req.body;
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
         const isSpecial = (count % 10 === 0);
-        // ★MODEL指定: その他はFlash-Exp
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+        
+        // ★修正: Safety Settingsを追加してブロック回避
+        const model = genAI.getGenerativeModel({ 
+            model: "gemini-2.0-flash-exp",
+            safetySettings: [
+                { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+                { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+                { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+                { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE }
+            ]
+        });
         
         let prompt = isSpecial 
             ? `あなたは猫の「ネル先生」。生徒の「${name}さん」から記念すべき${count}個目の給食（カリカリ）をもらいました！
@@ -408,7 +414,13 @@ app.post('/lunch-reaction', async (req, res) => {
 
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text().trim(), isSpecial });
-    } catch { res.json({ reply: "おいしいにゃ！", isSpecial: false }); }
+    } catch (error) { 
+        // ★修正: エラーログ出力＆ランダムフォールバック
+        console.error("Lunch Reaction Error:", error); 
+        const fallbacks = ["おいしいにゃ！", "うまうまにゃ！", "カリカリ最高にゃ！", "ありがとにゃ！", "元気が出たにゃ！"];
+        const randomFallback = fallbacks[Math.floor(Math.random() * fallbacks.length)];
+        res.json({ reply: randomFallback, isSpecial: false }); 
+    }
 });
 
 app.post('/game-reaction', async (req, res) => {
