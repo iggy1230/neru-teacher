@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v284.0: コード復元・整形版) ---
+// --- analyze.js (完全版 v285.0: バグ修正版) ---
 
 // ==========================================
 // 1. 最重要：UI操作・モード選択関数
@@ -44,6 +44,9 @@ let latestDetectedName = null;
 let isAlwaysListening = false;
 let continuousRecognition = null;
 
+// 履歴用配列の初期化 (最重要)
+window.chatSessionHistory = [];
+
 // ゲーム・Cropper関連
 let gameCanvas, ctx, ball, paddle, bricks, score, gameRunning = false, gameAnimId = null;
 let cropImg = new Image();
@@ -67,6 +70,9 @@ window.selectMode = function(m) {
         console.log(`[UI] selectMode called: ${m}`);
         currentMode = m; 
         
+        // 履歴をリセット
+        window.chatSessionHistory = [];
+
         // 画面切り替え (ui.jsの関数)
         if (typeof window.switchScreen === 'function') {
             window.switchScreen('screen-main'); 
@@ -303,7 +309,9 @@ function addLogItem(role, text) {
     container.scrollTop = container.scrollHeight;
 }
 
+// ★修正: 履歴追加時の安全装置を追加
 window.addToSessionHistory = function(role, text) {
+    if (!window.chatSessionHistory) window.chatSessionHistory = []; // 安全装置
     window.chatSessionHistory.push({ role: role, text: text });
     if (window.chatSessionHistory.length > 10) {
         window.chatSessionHistory.shift();
