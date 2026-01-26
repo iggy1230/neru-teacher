@@ -1,4 +1,4 @@
-// --- server.js (完全版 v287.0: チャット安定化・エラー自動回避版) ---
+// --- server.js (完全版 v288.0) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -287,7 +287,6 @@ app.post('/chat-dialogue', async (req, res) => {
         const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' };
         const currentDateTime = now.toLocaleString('ja-JP', dateOptions);
 
-        // 履歴プロンプト
         let contextPrompt = "";
         if (history && Array.isArray(history) && history.length > 0) {
             contextPrompt = "【これまでの会話の流れ（直近）】\n";
@@ -328,8 +327,7 @@ app.post('/chat-dialogue', async (req, res) => {
         let responseText;
 
         try {
-            // ★重要修正: 画像がある場合はツールを使わない（エラー回避）
-            // 画像がない場合はツールを使う
+            // ★画像がある場合はツールを使わない（エラー回避）
             const toolsConfig = image ? undefined : [{ google_search: {} }];
             
             const model = genAI.getGenerativeModel({ 
@@ -349,12 +347,10 @@ app.post('/chat-dialogue', async (req, res) => {
 
         } catch (genError) {
             console.warn("Generation failed with tools/image. Retrying without tools...", genError.message);
-            
-            // ★フォールバック: 失敗したらツールなしでリトライ
+            // フォールバック: 失敗したらツールなしでリトライ
             const modelFallback = genAI.getGenerativeModel({ 
                 model: "gemini-2.0-flash-exp"
             });
-            
             if (image) {
                 result = await modelFallback.generateContent([
                     prompt,
@@ -378,7 +374,6 @@ app.post('/chat-dialogue', async (req, res) => {
             jsonResponse = JSON.parse(cleanText);
         } catch (e) {
             console.warn("JSON Parse Fallback:", responseText);
-            // パース失敗時はそのままセリフとして返す
             jsonResponse = { speech: responseText, board: "" };
         }
         
