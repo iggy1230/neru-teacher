@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v285.0: バグ修正版) ---
+// --- analyze.js (完全版 v286.0: 不足関数復元版) ---
 
 // ==========================================
 // 1. 最重要：UI操作・モード選択関数
@@ -1247,9 +1247,176 @@ function arrayBufferToBase64(buffer) { let binary = ''; const bytes = new Uint8A
 function updateMiniKarikari() { if(currentUser) { const el = document.getElementById('mini-karikari-count'); if(el) el.innerText = currentUser.karikari; const el2 = document.getElementById('karikari-count'); if(el2) el2.innerText = currentUser.karikari; } }
 function showKarikariEffect(amount) { const container = document.querySelector('.nell-avatar-wrap'); if(container) { const floatText = document.createElement('div'); floatText.className = 'floating-text'; floatText.innerText = amount > 0 ? `+${amount}` : `${amount}`; floatText.style.color = amount > 0 ? '#ff9100' : '#ff5252'; floatText.style.right = '0px'; floatText.style.top = '0px'; container.appendChild(floatText); setTimeout(() => floatText.remove(), 1500); } }
 
-// Cropper
+// 復元: 給食機能
+window.giveLunch = function() { 
+    if (currentUser.karikari < 1) return updateNellMessage("カリカリがないにゃ……", "thinking", false); 
+    updateNellMessage("もぐもぐ……", "normal", false); 
+    currentUser.karikari--; 
+    if(typeof saveAndSync === 'function') saveAndSync(); 
+    updateMiniKarikari(); 
+    showKarikariEffect(-1); 
+    lunchCount++; 
+    fetch('/lunch-reaction', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ count: lunchCount, name: currentUser.name }) })
+        .then(r => r.json())
+        .then(d => { setTimeout(() => { updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy", true); }, 1500); })
+        .catch(e => { setTimeout(() => { updateNellMessage("おいしいにゃ！", "happy", false); }, 1500); }); 
+}; 
+
+// 復元: ゲーム機能
+window.showGame = function() { 
+    switchScreen('screen-game'); 
+    document.getElementById('mini-karikari-display').classList.remove('hidden'); 
+    updateMiniKarikari(); 
+    initGame(); 
+    fetchGameComment("start"); 
+    const startBtn = document.getElementById('start-game-btn'); 
+    if (startBtn) { 
+        const newBtn = startBtn.cloneNode(true); 
+        startBtn.parentNode.replaceChild(newBtn, startBtn); 
+        newBtn.onclick = () => { if (!gameRunning) { initGame(); gameRunning = true; newBtn.disabled = true; drawGame(); } }; 
+    } 
+};
+function fetchGameComment(type, score=0) { fetch('/game-reaction', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type, name: currentUser.name, score }) }).then(r=>r.json()).then(d=>{ updateNellMessage(d.reply, d.mood || "excited", true); }).catch(e=>{}); }
+
+// 復元: 復習ノート
+window.renderMistakeSelection = function() { 
+    if (!currentUser.mistakes || currentUser.mistakes.length === 0) { 
+        updateNellMessage("ノートは空っぽにゃ！", "happy", false); 
+        setTimeout(window.backToLobby, 2000); 
+        return; 
+    } 
+    transcribedProblems = currentUser.mistakes; 
+    renderProblemSelection(); 
+    updateNellMessage("復習するにゃ？", "excited", false); 
+};
+
+// 復元: 画像切り抜き (Cropper) & 宿題分析
 function initCustomCropper() { const modal = document.getElementById('cropper-modal'); modal.classList.remove('hidden'); const canvas = document.getElementById('crop-canvas'); const MAX_CANVAS_SIZE = 2500; let w = cropImg.width; let h = cropImg.height; if (w > MAX_CANVAS_SIZE || h > MAX_CANVAS_SIZE) { const scale = Math.min(MAX_CANVAS_SIZE / w, MAX_CANVAS_SIZE / h); w *= scale; h *= scale; cropPoints = cropPoints.map(p => ({ x: p.x * scale, y: p.y * scale })); } canvas.width = w; canvas.height = h; canvas.style.width = '100%'; canvas.style.height = '100%'; canvas.style.objectFit = 'contain'; const ctx = canvas.getContext('2d'); ctx.drawImage(cropImg, 0, 0, w, h); updateCropUI(canvas); const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl']; handles.forEach((id, idx) => { const el = document.getElementById(id); const startDrag = (e) => { e.preventDefault(); activeHandle = idx; }; el.onmousedown = startDrag; el.ontouchstart = startDrag; }); const move = (e) => { if (activeHandle === -1) return; e.preventDefault(); const rect = canvas.getBoundingClientRect(); const imgRatio = canvas.width / canvas.height; const rectRatio = rect.width / rect.height; let drawX, drawY, drawW, drawH; if (imgRatio > rectRatio) { drawW = rect.width; drawH = rect.width / imgRatio; drawX = 0; drawY = (rect.height - drawH) / 2; } else { drawH = rect.height; drawW = rect.height * imgRatio; drawY = 0; drawX = (rect.width - drawW) / 2; } const clientX = e.touches ? e.touches[0].clientX : e.clientX; const clientY = e.touches ? e.touches[0].clientY : e.clientY; let relX = (clientX - rect.left - drawX) / drawW; let relY = (clientY - rect.top - drawY) / drawH; relX = Math.max(0, Math.min(1, relX)); relY = Math.max(0, Math.min(1, relY)); cropPoints[activeHandle] = { x: relX * canvas.width, y: relY * canvas.height }; updateCropUI(canvas); }; const end = () => { activeHandle = -1; }; window.onmousemove = move; window.ontouchmove = move; window.onmouseup = end; window.ontouchend = end; document.getElementById('cropper-cancel-btn').onclick = () => { modal.classList.add('hidden'); window.onmousemove = null; window.ontouchmove = null; document.getElementById('upload-controls').classList.remove('hidden'); }; document.getElementById('cropper-ok-btn').onclick = () => { modal.classList.add('hidden'); window.onmousemove = null; window.ontouchmove = null; const croppedBase64 = performPerspectiveCrop(canvas, cropPoints); startAnalysis(croppedBase64); }; }
 function updateCropUI(canvas) { const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl']; const rect = canvas.getBoundingClientRect(); const imgRatio = canvas.width / canvas.height; const rectRatio = rect.width / rect.height; let drawX, drawY, drawW, drawH; if (imgRatio > rectRatio) { drawW = rect.width; drawH = rect.width / imgRatio; drawX = 0; drawY = (rect.height - drawH) / 2; } else { drawH = rect.height; drawW = rect.height * imgRatio; drawY = 0; drawX = (rect.width - drawW) / 2; } const toScreen = (p) => ({ x: (p.x / canvas.width) * drawW + drawX + canvas.offsetLeft, y: (p.y / canvas.height) * drawH + drawY + canvas.offsetTop }); const screenPoints = cropPoints.map(toScreen); handles.forEach((id, i) => { const el = document.getElementById(id); el.style.left = screenPoints[i].x + 'px'; el.style.top = screenPoints[i].y + 'px'; }); const svg = document.getElementById('crop-lines'); svg.style.left = canvas.offsetLeft + 'px'; svg.style.top = canvas.offsetTop + 'px'; svg.style.width = canvas.offsetWidth + 'px'; svg.style.height = canvas.offsetHeight + 'px'; const toSvg = (p) => ({ x: (p.x / canvas.width) * drawW + drawX, y: (p.y / canvas.height) * drawH + drawY }); const svgPts = cropPoints.map(toSvg); const ptsStr = svgPts.map(p => `${p.x},${p.y}`).join(' '); svg.innerHTML = `<polyline points="${ptsStr} ${svgPts[0].x},${svgPts[0].y}" style="fill:rgba(255,255,255,0.2);stroke:#ff4081;stroke-width:2;stroke-dasharray:5" />`; }
 function processImageForAI(sourceCanvas) { const MAX_WIDTH = 1600; let w = sourceCanvas.width; let h = sourceCanvas.height; if (w > MAX_WIDTH || h > MAX_WIDTH) { if (w > h) { h *= MAX_WIDTH / w; w = MAX_WIDTH; } else { w *= MAX_WIDTH / h; h = MAX_WIDTH; } } const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h; const ctx = canvas.getContext('2d'); ctx.drawImage(sourceCanvas, 0, 0, w, h); return canvas.toDataURL('image/jpeg', 0.9); }
 function performPerspectiveCrop(sourceCanvas, points) { const minX = Math.min(...points.map(p => p.x)), maxX = Math.max(...points.map(p => p.x)); const minY = Math.min(...points.map(p => p.y)), maxY = Math.max(...points.map(p => p.y)); let w = maxX - minX, h = maxY - minY; if (w < 1) w = 1; if (h < 1) h = 1; const tempCv = document.createElement('canvas'); tempCv.width = w; tempCv.height = h; const ctx = tempCv.getContext('2d'); ctx.drawImage(sourceCanvas, minX, minY, w, h, 0, 0, w, h); return processImageForAI(tempCv).split(',')[1]; }
 window.handleFileUpload = async (file) => { if (isAnalyzing || !file) return; document.getElementById('upload-controls').classList.add('hidden'); document.getElementById('cropper-modal').classList.remove('hidden'); const canvas = document.getElementById('crop-canvas'); canvas.style.opacity = '0'; const reader = new FileReader(); reader.onload = async (e) => { cropImg = new Image(); cropImg.onload = async () => { const w = cropImg.width; const h = cropImg.height; cropPoints = [ { x: w * 0.1, y: h * 0.1 }, { x: w * 0.9, y: h * 0.1 }, { x: w * 0.9, y: h * 0.9 }, { x: w * 0.1, y: h * 0.9 } ]; canvas.style.opacity = '1'; updateNellMessage("ここを読み取るにゃ？", "normal"); initCustomCropper(); }; cropImg.src = e.target.result; }; reader.readAsDataURL(file); };
+
+// 復元: ゲームロジック (簡易版)
+function initGame() {
+    gameCanvas = document.getElementById('game-canvas');
+    if(!gameCanvas) return;
+    ctx = gameCanvas.getContext('2d');
+    
+    // パドルとボールの初期化
+    paddle = { x: gameCanvas.width / 2 - 40, y: gameCanvas.height - 30, w: 80, h: 10 };
+    ball = { x: gameCanvas.width / 2, y: gameCanvas.height - 40, r: 8, dx: 4, dy: -4 };
+    score = 0;
+    document.getElementById('game-score').innerText = score;
+    
+    // カリカリ(ブロック)配置
+    bricks = [];
+    for(let c=0; c<5; c++) {
+        for(let r=0; r<4; r++) {
+            bricks.push({ x: 30 + c*55, y: 30 + r*30, w: 40, h: 20, status: 1 });
+        }
+    }
+    
+    // 操作
+    const movePaddle = (e) => {
+        const rect = gameCanvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        let relativeX = clientX - rect.left;
+        if(relativeX > 0 && relativeX < gameCanvas.width) {
+            paddle.x = relativeX - paddle.w/2;
+        }
+    };
+    gameCanvas.onmousemove = movePaddle;
+    gameCanvas.ontouchmove = (e) => { e.preventDefault(); movePaddle(e); };
+}
+
+function drawGame() {
+    if(!gameRunning) return;
+    ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
+    
+    // ボール
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
+    ctx.fillStyle = "#ff5722";
+    ctx.fill();
+    ctx.closePath();
+    
+    // パドル
+    ctx.beginPath();
+    ctx.rect(paddle.x, paddle.y, paddle.w, paddle.h);
+    ctx.fillStyle = "#8d6e63";
+    ctx.fill();
+    ctx.closePath();
+    
+    // カリカリ
+    bricks.forEach(b => {
+        if(b.status === 1) {
+            ctx.beginPath();
+            ctx.rect(b.x, b.y, b.w, b.h);
+            ctx.fillStyle = "#ffb74d"; // カリカリ色
+            ctx.fill();
+            ctx.closePath();
+        }
+    });
+    
+    // 移動
+    ball.x += ball.dx;
+    ball.y += ball.dy;
+    
+    // 壁反射
+    if(ball.x + ball.dx > gameCanvas.width - ball.r || ball.x + ball.dx < ball.r) ball.dx = -ball.dx;
+    if(ball.y + ball.dy < ball.r) ball.dy = -ball.dy;
+    
+    // パドル衝突
+    if(ball.y + ball.dy > gameCanvas.height - ball.r - 30) {
+        if(ball.x > paddle.x && ball.x < paddle.x + paddle.w) {
+            ball.dy = -ball.dy;
+            try{ sfxPaddle.currentTime=0; sfxPaddle.play(); } catch(e){}
+        } else if(ball.y + ball.dy > gameCanvas.height - ball.r) {
+            // ゲームオーバー
+            gameRunning = false;
+            try{ sfxOver.play(); } catch(e){}
+            updateNellMessage("あ〜あ、落ちちゃったにゃ…", "sad");
+            fetchGameComment("end", score);
+            const startBtn = document.getElementById('start-game-btn');
+            if(startBtn) { startBtn.disabled = false; startBtn.innerText = "もう一回！"; }
+            return;
+        }
+    }
+    
+    // カリカリ衝突
+    let allCleared = true;
+    bricks.forEach(b => {
+        if(b.status === 1) {
+            allCleared = false;
+            if(ball.x > b.x && ball.x < b.x + b.w && ball.y > b.y && ball.y < b.y + b.h) {
+                ball.dy = -ball.dy;
+                b.status = 0;
+                score += 10;
+                document.getElementById('game-score').innerText = score;
+                try{ sfxHit.currentTime=0; sfxHit.play(); } catch(e){}
+                
+                // コメント
+                if (score % 50 === 0) {
+                    const comment = gameHitComments[Math.floor(Math.random() * gameHitComments.length)];
+                    updateNellMessage(comment, "excited", false, false);
+                }
+            }
+        }
+    });
+    
+    if (allCleared) {
+        gameRunning = false;
+        updateNellMessage("全部取ったにゃ！すごいにゃ！！", "excited");
+        currentUser.karikari += 50; 
+        saveAndSync();
+        updateMiniKarikari();
+        showKarikariEffect(50);
+        fetchGameComment("end", score);
+        const startBtn = document.getElementById('start-game-btn');
+        if(startBtn) { startBtn.disabled = false; startBtn.innerText = "もう一回！"; }
+        return;
+    }
+    
+    gameAnimId = requestAnimationFrame(drawGame);
+}
