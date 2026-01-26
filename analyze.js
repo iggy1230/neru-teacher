@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v282.0: 機能入れ替え版) ---
+// --- analyze.js (完全版 v284.0: コード復元・整形版) ---
 
 // ==========================================
 // 1. 最重要：UI操作・モード選択関数
@@ -40,7 +40,7 @@ let streamTextBuffer = "";
 let ttsTextBuffer = "";
 let latestDetectedName = null;
 
-// ★追加: 常時聞き取り用のフラグ
+// 常時聞き取り用のフラグ
 let isAlwaysListening = false;
 let continuousRecognition = null;
 
@@ -96,7 +96,7 @@ window.selectMode = function(m) {
         });
 
         // テキスト入力欄リセット
-        ['embedded-text-input', 'simple-text-input'].forEach(iid => {
+        ['embedded-text-input', 'simple-text-input', 'free-text-input'].forEach(iid => {
             const embedInput = document.getElementById(iid);
             if(embedInput) embedInput.value = "";
         });
@@ -128,17 +128,17 @@ window.selectMode = function(m) {
             startAlwaysOnListening();
         } 
         else if (m === 'simple-chat') {
-            // ★こじんめんだん (HTTPモードに変更)
+            // ★ネル先生の個別指導 (HTTPモード)
             document.getElementById('simple-chat-view').classList.remove('hidden');
             window.updateNellMessage("今日はお話だけするにゃ？", "gentle", false);
             document.getElementById('conversation-log').classList.remove('hidden');
             startAlwaysOnListening();
         }
         else if (m === 'chat-free') {
-            // ★放課後おしゃべりタイム (WebSocketモードに変更)
+            // ★放課後おしゃべりタイム (WebSocketモード)
             document.getElementById('chat-free-view').classList.remove('hidden');
             window.updateNellMessage("何でも話していいにゃ！", "happy", false);
-            // WebSocketは常時聞き取りしない
+            // WebSocketは常時聞き取りしない（マイクボタンで開始）
         }
         else if (m === 'lunch') { 
             document.getElementById('lunch-view').classList.remove('hidden'); 
@@ -199,6 +199,7 @@ function startAlwaysOnListening() {
             if (isLongEnough || isStopCommand) {
                 console.log("[Interruption] Stopping audio.");
                 if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
+                // 停止命令自体は送信しない
                 if (isStopCommand) return; 
             } else {
                 return;

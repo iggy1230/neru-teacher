@@ -133,7 +133,7 @@
             <div class="title-btn-container">
                 <button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button>
             </div>
-            <div class="version-tag">Build: v282.0-Swap-Simple-Free</div>
+            <div class="version-tag">Build: v283.0-Rename-Chat</div>
         </section>
 
         <!-- 1. 校門 (ユーザー選択) -->
@@ -196,7 +196,7 @@
                 <button onclick="selectMode('grade')" class="main-btn red-btn">💯 採点ネル先生</button>
                 <button onclick="selectMode('review')" class="main-btn orange-btn">🔥 復習ノート</button>
                 <button onclick="showGame()" class="main-btn yellow-btn">🎮 カリカリ・キャッチ</button>
-                <button onclick="selectMode('simple-chat')" class="main-btn green-btn">🎤 こじんめんだん</button>
+                <button onclick="selectMode('simple-chat')" class="main-btn green-btn">👩‍🏫 ネル先生の個別指導</button>
                 <button onclick="selectMode('chat-free')" class="main-btn green-btn" style="background:#4db6ac; box-shadow: 0 4px 0 #00897b;">💬 放課後おしゃべりタイム</button>
                 
                 <button onclick="selectMode('chat')" class="main-btn" style="background:#5c6bc0; box-shadow: 0 4px 0 #3949ab;">💎 ネル先生のお宝図鑑</button>
@@ -308,10 +308,10 @@
                         </div>
                     </div>
 
-                    <!-- ★こじんめんだん (HTTP版 - 旧Chat Free UI) -->
+                    <!-- ★ネル先生の個別指導 (HTTP版) -->
                     <div id="simple-chat-view" class="hidden">
                         <div class="glass-card" style="text-align:center; padding:15px;">
-                            <h4 style="text-align:center; margin:0 0 10px 0; color:#558b2f;">🎤 こじんめんだん</h4>
+                            <h4 style="text-align:center; margin:0 0 10px 0; color:#558b2f;">👩‍🏫 ネル先生の個別指導</h4>
                             <p style="font-size:0.8rem; color:#666; margin-bottom:10px;">（ネル先生はいつでも聞いてるにゃ）</p>
 
                             <!-- テキスト質問エリア -->
@@ -355,7 +355,7 @@
                         </div>
                     </div>
 
-                    <!-- ★放課後おしゃべりタイム (WebSocket版 - 旧Simple Chat UI) -->
+                    <!-- ★放課後おしゃべりタイム (WebSocket版) -->
                     <div id="chat-free-view" class="hidden">
                         <div class="glass-card" style="text-align:center; padding:20px;">
                             <h4 style="text-align:center; margin:0 0 10px 0; color:#00897b;">💬 放課後おしゃべりタイム</h4>
