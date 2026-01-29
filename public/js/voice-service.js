@@ -1,4 +1,4 @@
-// --- js/voice-service.js (v300.5: AudioContext接続修正版) ---
+// --- js/voice-service.js (v293.0: 音声・チャット機能) ---
 
 // 音声再生の停止
 window.stopAudioPlayback = function() {
@@ -32,6 +32,7 @@ window.startAlwaysOnListening = function() {
         const text = event.results[0][0].transcript;
         if (!text || text.trim() === "") return;
 
+        // 割り込み判定
         const stopKeywords = ["違う", "ちがう", "待って", "まって", "ストップ", "やめて", "うるさい", "静か", "しずか"];
         const isStopCommand = stopKeywords.some(w => text.includes(w));
         const isLongEnough = text.length >= 10;
@@ -49,6 +50,7 @@ window.startAlwaysOnListening = function() {
         console.log(`[User Said] ${text}`);
         window.continuousRecognition.stop();
         
+        // 音声認識結果を表示
         let targetId = 'user-speech-text-embedded';
         if (window.currentMode === 'simple-chat') targetId = 'user-speech-text-simple';
         
@@ -80,6 +82,7 @@ window.startAlwaysOnListening = function() {
                     await window.updateNellMessage(speechText, "normal", true, true);
                 }
                 
+                // 黒板表示
                 let boardId = 'embedded-chalkboard';
                 if (window.currentMode === 'simple-chat') boardId = 'chalkboard-simple';
                 const embedBoard = document.getElementById(boardId);
@@ -114,6 +117,7 @@ window.startAlwaysOnListening = function() {
     try { window.continuousRecognition.start(); } catch(e) { console.log("Rec start failed", e); }
 };
 
+// 常時聞き取り停止
 window.stopAlwaysOnListening = function() {
     window.isAlwaysListening = false;
     if (window.continuousRecognition) {
@@ -122,7 +126,7 @@ window.stopAlwaysOnListening = function() {
     }
 };
 
-// WebSocketチャット用画像送信 (トグル動作 & プレビュー制御)
+// WebSocketチャット用画像送信
 window.captureAndSendLiveImage = function(context = 'main') {
     if (context === 'main') {
         if (window.currentMode === 'chat-free') context = 'free';
@@ -131,41 +135,23 @@ window.captureAndSendLiveImage = function(context = 'main') {
     }
     
     if (context === 'embedded' || context === 'simple') {
-        if(window.captureAndSendLiveImageHttp) window.captureAndSendLiveImageHttp(context);
+        window.captureAndSendLiveImageHttp(context);
         return;
     }
 
     if (!window.liveSocket || window.liveSocket.readyState !== WebSocket.OPEN) {
         return alert("まずは「おはなしする」でネル先生とつながってにゃ！");
     }
-
-    const videoId = 'live-chat-video-free';
-    const containerId = 'live-chat-video-container-free';
-    const btn = document.getElementById('live-camera-btn-free');
-    const video = document.getElementById(videoId);
-
-    // カメラが動いていない（まだ表示されていない）場合 -> プレビュー開始
-    if (!window.previewStream || !window.previewStream.active) {
-        if(window.startPreviewCamera) {
-            window.startPreviewCamera(videoId, containerId).then(() => {
-                if (btn) {
-                    btn.innerHTML = "<span>📸</span> 撮影して送信";
-                    btn.style.backgroundColor = "#ff5252"; 
-                }
-            });
-        }
-        return;
-    }
-
-    // カメラが動いている（プレビュー中）場合 -> 撮影・送信
     if (window.isLiveImageSending) return; 
-    
+    let videoId = 'live-chat-video-free';
+    const video = document.getElementById(videoId);
     if (!video || !video.srcObject || !video.srcObject.active) return alert("カメラが動いてないにゃ...");
 
     window.stopAudioPlayback();
     window.ignoreIncomingAudio = true; 
     window.isLiveImageSending = true;
     
+    const btn = document.getElementById('live-camera-btn-free');
     if (btn) {
         btn.innerHTML = "<span>📡</span> 送信中にゃ...";
         btn.style.backgroundColor = "#ccc";
@@ -178,26 +164,23 @@ window.captureAndSendLiveImage = function(context = 'main') {
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     
+    // 通知
     const notif = document.createElement('div');
-    notif.innerText = `📝 写真を送ったにゃ！`;
+    notif.innerText = `📝 問題を送ったにゃ！`;
     notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #8bc34a; color:#558b2f; padding:10px 20px; border-radius:30px; font-weight:bold; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 4px 10px rgba(0,0,0,0.2);";
     document.body.appendChild(notif);
     setTimeout(() => notif.remove(), 2000);
     
     const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
     
+    // フラッシュ
     const flash = document.createElement('div');
     flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;";
     document.body.appendChild(flash);
     setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
 
-    // 送信したのでカメラを停止して隠す
-    if(window.stopPreviewCamera) window.stopPreviewCamera();
-
-    // プレビュー用サムネイルを表示（少しの間だけ）
-    const videoContainer = document.getElementById(containerId);
+    const videoContainer = document.getElementById('live-chat-video-container-free');
     if (videoContainer) {
-        videoContainer.style.display = 'block'; 
         const oldPreview = document.getElementById('snapshot-preview-overlay');
         if(oldPreview) oldPreview.remove();
         const previewImg = document.createElement('img');
@@ -206,17 +189,13 @@ window.captureAndSendLiveImage = function(context = 'main') {
         previewImg.style.cssText = "position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; z-index:10; border:4px solid #ffeb3b; box-sizing:border-box; animation: fadeIn 0.2s;";
         videoContainer.style.position = "relative"; 
         videoContainer.appendChild(previewImg);
-        
-        setTimeout(() => { 
-            if(previewImg && previewImg.parentNode) previewImg.remove();
-            videoContainer.style.display = 'none'; 
-        }, 3000);
+        setTimeout(() => { if(previewImg && previewImg.parentNode) previewImg.remove(); }, 3000);
     }
 
     if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ん？どれどれ…", "thinking", false, false);
     
     if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN) {
-        let promptText = "（ユーザーが写真を見せました）この画像に写っているものを詳しく、具体的な商品名なども含めて、子供にもわかるように丁寧に教えてください。図鑑登録は不要です。";
+        let promptText = "（ユーザーが勉強の問題や画像を見せました）この画像の内容を詳しく、子供にもわかるように丁寧に教えてください。図鑑登録は不要です。";
         window.liveSocket.send(JSON.stringify({ 
             clientContent: { 
                 turns: [{ role: "user", parts: [ { text: promptText }, { inlineData: { mime_type: "image/jpeg", data: base64Data } } ] }],
@@ -350,9 +329,6 @@ window.stopLiveChat = function() {
     window.streamTextBuffer = "";
     window.ttsTextBuffer = "";
     
-    // ★追加: 停止時にGainNodeも破棄
-    window.ttsGainNode = null;
-    
     const camBtnSimple = document.getElementById('live-camera-btn-simple');
     if (camBtnSimple) { camBtnSimple.innerHTML = "<span>📷</span> カメラで見せて質問"; camBtnSimple.style.backgroundColor = "#66bb6a"; }
     const camBtnEmbedded = document.getElementById('live-camera-btn-embedded');
@@ -363,8 +339,9 @@ window.stopLiveChat = function() {
     window.isLiveImageSending = false;
     window.isMicMuted = false; 
 
-    // カメラも停止して隠す
-    if(window.stopPreviewCamera) window.stopPreviewCamera();
+    const videoFree = document.getElementById('live-chat-video-free');
+    if(videoFree) videoFree.srcObject = null;
+    document.getElementById('live-chat-video-container-free').style.display = 'none';
 };
 
 // WebSocketチャット開始
@@ -391,17 +368,7 @@ window.startLiveChat = async function(context = 'main') {
         window.ttsTextBuffer = "";
         
         if (window.initAudioContext) await window.initAudioContext(); 
-        
-        // ★修正: 新しいAudioContextを作成し、それに合わせたGainNodeを作成して接続
         window.audioContext = new (window.AudioContext || window.webkitAudioContext)(); 
-        
-        // ここでGainNodeを作り直して window.ttsGainNode に再代入
-        window.ttsGainNode = window.audioContext.createGain();
-        window.ttsGainNode.connect(window.audioContext.destination);
-        // 現在の音量を適用
-        const currentVol = window.isMuted ? 0 : (window.appVolume || 0.5);
-        window.ttsGainNode.gain.value = currentVol;
-
         await window.audioContext.resume(); 
         window.nextStartTime = window.audioContext.currentTime; 
         
@@ -446,24 +413,15 @@ window.startLiveChat = async function(context = 'main') {
                 if (data.serverContent?.modelTurn?.parts) { 
                     data.serverContent.modelTurn.parts.forEach(p => { 
                         if (p.text) { 
-                            // 思考漏れフィルタリング
-                            const hasJapanese = /[ぁ-んァ-ン一-龠]/.test(p.text);
-                            const isVeryShort = p.text.trim().length < 5;
-                            const isMarkdown = /^\s*(\*\*|\*|_)/.test(p.text);
-                            
-                            if ((hasJapanese || isVeryShort) && !isMarkdown) {
-                                window.streamTextBuffer += p.text;
-                                if(typeof window.updateNellMessage === 'function') window.updateNellMessage(window.streamTextBuffer, "normal", false, false);
-                            }
+                            window.streamTextBuffer += p.text;
+                            if(typeof window.updateNellMessage === 'function') window.updateNellMessage(window.streamTextBuffer, "normal", false, false); 
                         } 
                         if (p.inlineData) window.playLivePcmAudio(p.inlineData.data); 
                     }); 
                 }
 
                 if (data.serverContent && data.serverContent.turnComplete) {
-                    if(typeof window.saveToNellMemory === 'function' && window.streamTextBuffer) {
-                        window.saveToNellMemory('nell', window.streamTextBuffer);
-                    }
+                    if(typeof window.saveToNellMemory === 'function') window.saveToNellMemory('nell', window.streamTextBuffer);
                     window.streamTextBuffer = "";
                 }
             } catch (e) {} 
@@ -507,12 +465,23 @@ window.startMicrophone = async function() {
             window.recognition.start(); 
         } 
         
-        const useVideo = false; // 音声通話モードではビデオは基本OFF
+        const useVideo = true;
         window.mediaStream = await navigator.mediaDevices.getUserMedia({ 
             audio: { sampleRate: 16000, channelCount: 1 }, 
-            video: useVideo 
+            video: useVideo ? { facingMode: "environment" } : false 
         }); 
         
+        if (useVideo) {
+            let videoId = 'live-chat-video-free';
+            let containerId = 'live-chat-video-container-free';
+            const video = document.getElementById(videoId);
+            if (video) {
+                video.srcObject = window.mediaStream;
+                video.play();
+                document.getElementById(containerId).style.display = 'block';
+            }
+        }
+
         const processorCode = `class PcmProcessor extends AudioWorkletProcessor { constructor() { super(); this.bufferSize = 2048; this.buffer = new Float32Array(this.bufferSize); this.index = 0; } process(inputs, outputs, parameters) { const input = inputs[0]; if (input.length > 0) { const channel = input[0]; for (let i = 0; i < channel.length; i++) { this.buffer[this.index++] = channel[i]; if (this.index >= this.bufferSize) { this.port.postMessage(this.buffer); this.index = 0; } } } return true; } } registerProcessor('pcm-processor', PcmProcessor);`; 
         const blob = new Blob([processorCode], { type: 'application/javascript' }); 
         await window.audioContext.audioWorklet.addModule(URL.createObjectURL(blob)); 
@@ -532,54 +501,27 @@ window.startMicrophone = async function() {
 
 window.playLivePcmAudio = function(base64) { 
     if (!window.audioContext || window.ignoreIncomingAudio) return; 
-    
-    // Resume context if suspended
-    if (window.audioContext.state === 'suspended') {
-        window.audioContext.resume().catch(e => console.warn(e));
-    }
-
     const binary = window.atob(base64); 
     const bytes = new Uint8Array(binary.length); 
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i); 
     const float32 = new Float32Array(bytes.length / 2); 
     const view = new DataView(bytes.buffer); 
     for (let i = 0; i < float32.length; i++) float32[i] = view.getInt16(i * 2, true) / 32768.0; 
-    
     const buffer = window.audioContext.createBuffer(1, float32.length, 24000); 
     buffer.copyToChannel(float32, 0); 
     const source = window.audioContext.createBufferSource(); 
     source.buffer = buffer; 
-    
-    // ★修正: 新しいコンテキストのGainNodeを使用
-    if (window.ttsGainNode) {
-        try {
-            source.connect(window.ttsGainNode);
-        } catch(e) {
-            // 万が一接続に失敗したら直接出力へ
-            source.connect(window.audioContext.destination);
-        }
-    } else {
-        source.connect(window.audioContext.destination);
-    }
-
+    source.connect(window.audioContext.destination); 
     window.liveAudioSources.push(source);
     source.onended = () => { window.liveAudioSources = window.liveAudioSources.filter(s => s !== source); };
-    
     const now = window.audioContext.currentTime; 
-    // スケジューリング補正: 時間が大幅にずれている場合は現在時刻に合わせる
-    if (window.nextStartTime < now || window.nextStartTime > now + 10) {
-         window.nextStartTime = now + 0.05;
-    }
-    
+    if (window.nextStartTime < now) window.nextStartTime = now; 
     source.start(window.nextStartTime); 
-    
-    const startDelay = Math.max(0, (window.nextStartTime - now) * 1000); 
+    const startDelay = (window.nextStartTime - now) * 1000; 
     const duration = buffer.duration * 1000; 
-    
     if(window.stopSpeakingTimer) clearTimeout(window.stopSpeakingTimer); 
     window.speakingStartTimer = setTimeout(() => { window.isNellSpeaking = true; }, startDelay); 
     window.stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, startDelay + duration + 100); 
-    
     window.nextStartTime += buffer.duration; 
 };
 

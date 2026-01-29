@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v301.1: 関数復元＆全モードGPS完全対応版) ---
+// --- js/camera-service.js (v299.1: 撮影フリーズ対策版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -129,7 +129,7 @@ window.createTreasureImage = function(sourceCanvas) {
     return canvas.toDataURL('image/jpeg', 0.8);
 };
 
-// GPS取得ヘルパー (共通)
+// GPS取得ヘルパー (タイムアウト付き)
 const getLocation = () => {
     return new Promise((resolve) => {
         if (!navigator.geolocation) return resolve(null);
@@ -150,15 +150,15 @@ const getLocation = () => {
                 console.warn("GPS Error:", err); 
                 resolve(null); 
             },
-            { timeout: 3000, enableHighAccuracy: false }
+            { timeout: 3000, enableHighAccuracy: false } // 高精度は遅いのでOFFにする場合もあるが、一旦Timeoutで制御
         );
     });
 };
 
-// --- お宝図鑑用 (専用APIへ送信) ---
 window.captureAndIdentifyItem = async function() {
     if (window.isLiveImageSending) return;
     
+    // 1. まずマイクを停止 (音声競合回避)
     if (window.isAlwaysListening && window.continuousRecognition) {
         try { window.continuousRecognition.stop(); } catch(e){}
     }
@@ -168,6 +168,7 @@ window.captureAndIdentifyItem = async function() {
         return alert("カメラが動いてないにゃ...。");
     }
 
+    // 2. UIを即座に更新 (フリーズ感をなくすため、awaitの前に実行)
     window.isLiveImageSending = true;
     const btn = document.getElementById('live-camera-btn');
     if (btn) {
@@ -176,6 +177,7 @@ window.captureAndIdentifyItem = async function() {
         btn.disabled = true;
     }
 
+    // 3. 画像キャプチャを先に実行 (カメラ映像を確保)
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
@@ -184,17 +186,19 @@ window.captureAndIdentifyItem = async function() {
     const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
     const treasureDataUrl = window.createTreasureImage(canvas);
 
+    // 4. フラッシュエフェクト (視覚フィードバック)
     const flash = document.createElement('div');
     flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;";
     document.body.appendChild(flash);
     setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
 
-    // 音声リアクション
+    // 5. 音声リアクション (GPS待ちの間に喋らせる)
     if(typeof window.updateNellMessage === 'function') {
+        // awaitしないことで、発話と並行してGPS取得へ進む
         window.updateNellMessage("ん？どこで何を見つけたのかにゃ…？", "thinking", false, true);
     }
 
-    // GPS取得
+    // 6. GPS取得 (ここで少し待つ可能性があるが、画像は確保済み)
     let locationData = null;
     try {
         locationData = await getLocation();
@@ -202,6 +206,7 @@ window.captureAndIdentifyItem = async function() {
         console.warn("Location fetch skipped");
     }
 
+    // 7. API送信
     try {
         const res = await fetch('/identify-item', {
             method: 'POST',
@@ -209,7 +214,7 @@ window.captureAndIdentifyItem = async function() {
             body: JSON.stringify({ 
                 image: base64Data,
                 name: currentUser ? currentUser.name : "生徒",
-                location: locationData 
+                location: locationData // 位置情報も送信
             })
         });
 
@@ -261,234 +266,6 @@ window.captureAndIdentifyItem = async function() {
         
         if (window.isAlwaysListening && window.currentMode === 'chat') {
             try { window.continuousRecognition.start(); } catch(e){}
-        }
-    }
-};
-
-// --- WebSocketチャット用画像送信 (トグル動作 & プレビュー制御) ---
-window.captureAndSendLiveImage = async function(context = 'main') {
-    if (context === 'main') {
-        if (window.currentMode === 'chat-free') context = 'free';
-        else if (window.activeChatContext === 'embedded') context = 'embedded';
-        else if (window.currentMode === 'simple-chat') context = 'simple';
-    }
-    
-    if (context === 'embedded' || context === 'simple') {
-        if(window.captureAndSendLiveImageHttp) window.captureAndSendLiveImageHttp(context);
-        return;
-    }
-
-    if (!window.liveSocket || window.liveSocket.readyState !== WebSocket.OPEN) {
-        return alert("まずは「おはなしする」でネル先生とつながってにゃ！");
-    }
-
-    const videoId = 'live-chat-video-free';
-    const containerId = 'live-chat-video-container-free';
-    const btn = document.getElementById('live-camera-btn-free');
-    const video = document.getElementById(videoId);
-
-    // ★ ステート1: カメラが動いていない（まだ表示されていない）場合 -> プレビュー開始
-    if (!window.previewStream || !window.previewStream.active) {
-        if(window.startPreviewCamera) {
-            window.startPreviewCamera(videoId, containerId).then(() => {
-                if (btn) {
-                    btn.innerHTML = "<span>📸</span> 撮影して送信";
-                    btn.style.backgroundColor = "#ff5252"; // 赤色に変更
-                }
-            });
-        }
-        return;
-    }
-
-    // ★ ステート2: カメラが動いている（プレビュー中）場合 -> 撮影・送信
-    if (window.isLiveImageSending) return; 
-    
-    if (!video || !video.srcObject || !video.srcObject.active) return alert("カメラが動いてないにゃ...");
-
-    window.stopAudioPlayback();
-    window.ignoreIncomingAudio = true; 
-    window.isLiveImageSending = true;
-    
-    if (btn) {
-        btn.innerHTML = "<span>📡</span> 解析中にゃ...";
-        btn.style.backgroundColor = "#ccc";
-    }
-    window.isMicMuted = true;
-
-    // 画像取得
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    
-    // GPS取得
-    let locationData = null;
-    try {
-        locationData = await getLocation();
-    } catch(e) {
-        console.warn("Location fetch skipped");
-    }
-
-    const notif = document.createElement('div');
-    notif.innerText = `📝 写真を送ったにゃ！`;
-    notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #8bc34a; color:#558b2f; padding:10px 20px; border-radius:30px; font-weight:bold; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 4px 10px rgba(0,0,0,0.2);";
-    document.body.appendChild(notif);
-    setTimeout(() => notif.remove(), 2000);
-    
-    const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
-    
-    const flash = document.createElement('div');
-    flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;";
-    document.body.appendChild(flash);
-    setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
-
-    // 送信したのでカメラを停止して隠す
-    if(window.stopPreviewCamera) window.stopPreviewCamera();
-
-    // プレビュー用サムネイルを表示
-    const videoContainer = document.getElementById(containerId);
-    if (videoContainer) {
-        videoContainer.style.display = 'block';
-        const oldPreview = document.getElementById('snapshot-preview-overlay');
-        if(oldPreview) oldPreview.remove();
-        const previewImg = document.createElement('img');
-        previewImg.id = 'snapshot-preview-overlay';
-        previewImg.src = canvas.toDataURL('image/jpeg', 0.8);
-        previewImg.style.cssText = "position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; z-index:10; border:4px solid #ffeb3b; box-sizing:border-box; animation: fadeIn 0.2s;";
-        videoContainer.style.position = "relative"; 
-        videoContainer.appendChild(previewImg);
-        
-        setTimeout(() => { 
-            if(previewImg && previewImg.parentNode) previewImg.remove();
-            videoContainer.style.display = 'none';
-        }, 3000);
-    }
-
-    if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ん？どれどれ…", "thinking", false, false);
-    
-    // APIへ送信 (GPS情報を含める)
-    if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN) {
-        let locText = "";
-        if (locationData) {
-            locText = `（位置情報: 緯度${locationData.lat}, 経度${locationData.lon}）`;
-        }
-        
-        let promptText = `（ユーザーが写真を見せました${locText}）この画像に写っているものを詳しく、具体的な商品名や場所の名前も含めて、子供にもわかるように丁寧に教えてください。図鑑登録は不要です。`;
-        
-        window.liveSocket.send(JSON.stringify({ 
-            clientContent: { 
-                turns: [{ role: "user", parts: [ { text: promptText }, { inlineData: { mime_type: "image/jpeg", data: base64Data } } ] }],
-                turnComplete: true 
-            } 
-        }));
-    }
-
-    setTimeout(() => {
-        window.isLiveImageSending = false;
-        window.isMicMuted = false;
-        if (btn) {
-             btn.innerHTML = "<span>📷</span> 写真を見せてお話";
-             btn.style.backgroundColor = "#009688";
-        }
-    }, 3000);
-    setTimeout(() => { window.ignoreIncomingAudio = false; }, 300);
-};
-
-// --- HTTPチャット用画像送信 (こちらもトグル対応) ---
-window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
-    if (window.isLiveImageSending) return;
-    
-    if (window.isAlwaysListening && window.continuousRecognition) {
-        try { window.continuousRecognition.stop(); } catch(e){}
-    }
-    
-    let videoId, btnId, activeColor;
-    if (context === 'embedded') { videoId = 'live-chat-video-embedded'; btnId = 'live-camera-btn-embedded'; activeColor = '#66bb6a'; }
-    else if (context === 'simple') { videoId = 'live-chat-video-simple'; btnId = 'live-camera-btn-simple'; activeColor = '#66bb6a'; }
-
-    const video = document.getElementById(videoId);
-    if (!video || !video.srcObject || !video.srcObject.active) return alert("カメラが動いてないにゃ...");
-    
-    window.isLiveImageSending = true;
-    const btn = document.getElementById(btnId);
-    if (btn) {
-        btn.innerHTML = "<span>📡</span> 送信中にゃ...";
-        btn.style.backgroundColor = "#ccc";
-    }
-
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
-    
-    // GPS取得
-    let locationData = null;
-    try {
-        locationData = await getLocation();
-    } catch(e) {
-        console.warn("Location fetch skipped");
-    }
-
-    const flash = document.createElement('div');
-    flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;";
-    document.body.appendChild(flash);
-    setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
-
-    if(typeof window.addLogItem === 'function') window.addLogItem('user', '（画像送信）');
-
-    try {
-        if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
-
-        let locText = "";
-        if (locationData) {
-            locText = `（位置情報: 緯度${locationData.lat}, 経度${locationData.lon}）`;
-        }
-
-        const res = await fetch('/chat-dialogue', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                image: base64Data,
-                text: `この問題を教えてください。${locText}`,
-                name: currentUser ? currentUser.name : "生徒",
-                history: window.chatSessionHistory
-            })
-        });
-
-        if (!res.ok) throw new Error("Server response not ok");
-        const data = await res.json();
-        
-        const speechText = data.speech || data.reply || "教えてあげるにゃ！";
-        
-        if(typeof window.addLogItem === 'function') window.addLogItem('nell', speechText);
-        if(typeof window.addToSessionHistory === 'function') window.addToSessionHistory('nell', speechText);
-        
-        if(typeof window.updateNellMessage === 'function') await window.updateNellMessage(speechText, "happy", true, true);
-        
-        let boardId = (context === 'embedded') ? 'embedded-chalkboard' : 'chalkboard-simple';
-        const embedBoard = document.getElementById(boardId);
-        if (embedBoard && data.board && data.board.trim() !== "") {
-            embedBoard.innerText = data.board;
-            embedBoard.classList.remove('hidden');
-        }
-
-    } catch(e) {
-        console.error("HTTP Image Error:", e);
-        if(typeof window.updateNellMessage === 'function') window.updateNellMessage("よく見えなかったにゃ…もう一回お願いにゃ！", "thinking", false, true);
-    } finally {
-        window.isLiveImageSending = false;
-        
-        if(typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera(); 
-        if (btn) {
-            btn.innerHTML = "<span>📷</span> カメラで見せて質問";
-            btn.style.backgroundColor = activeColor;
-        }
-        
-        if (window.isAlwaysListening) {
-             try { window.continuousRecognition.start(); } catch(e){}
         }
     }
 };
@@ -659,7 +436,10 @@ window.performPerspectiveCrop = function(sourceCanvas, points) {
     return window.processImageForAI(tempCv).split(',')[1]; 
 };
 
-// ...startAnalysis以降は変更なし...
+// ==========================================
+// 宿題分析 (AI API連携)
+// ==========================================
+
 window.startAnalysis = async function(b64) {
     if (window.isAnalyzing) return;
     window.isAnalyzing = true; 
@@ -668,6 +448,7 @@ window.startAnalysis = async function(b64) {
     document.getElementById('upload-controls').classList.add('hidden'); 
     const backBtn = document.getElementById('main-back-btn'); if(backBtn) backBtn.classList.add('hidden');
     
+    // ★修正箇所: sfxHirameku(完了音)を鳴らさないように削除 (sfxBunsekiは鳴らす)
     try { 
         window.sfxBunseki.currentTime = 0; 
         window.sfxBunseki.loop = true;

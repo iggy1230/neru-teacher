@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v299.0: 音量直接制御スタイル) --- */
+/* --- style.css (完全版 v298.0: 設定ボタン左上配置対応) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -177,8 +177,8 @@ button { font-family: inherit; }
 
 #main-back-btn {
     position: absolute;
-    top: 60px; /* ★修正: 音量コントロールの下に配置 */
-    left: 10px;
+    top: 10px;
+    left: 60px; /* ★修正: 設定ボタン(左10px)と重ならないように右へずらす */
     width: auto !important;
     margin: 0 !important;
     padding: 8px 20px !important;
@@ -1033,20 +1033,13 @@ button { font-family: inherit; }
     line-height: 1;
     padding: 0;
 }
-/* 音量コントロール (左上固定) */
-.volume-controls-fixed {
+/* 設定ボタン(左上固定) */
+.settings-btn-fixed {
     position: fixed; top: 10px; left: 10px; z-index: 9999;
-    background: rgba(255, 255, 255, 0.85); 
-    border: 2px solid #b0bec5;
-    border-radius: 30px; 
-    padding: 5px 10px;
-    display: flex; align-items: center; gap: 5px;
+    background: rgba(255, 255, 255, 0.8); border: 2px solid #b0bec5;
+    border-radius: 50%; width: 40px; height: 40px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.5rem; cursor: pointer;
     box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-    transition: opacity 0.3s;
 }
-.mute-btn-direct {
-    background: none; border: none; font-size: 1.5rem; cursor: pointer; padding: 0; line-height: 1;
-}
-.volume-slider-direct {
-    width: 80px; cursor: pointer;
-}
+.settings-btn-fixed:active { transform: scale(0.9); }

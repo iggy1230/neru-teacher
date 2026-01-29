@@ -1,4 +1,4 @@
-// --- server.js (完全版 v300.4: 思考漏れ対策強化版) ---
+// --- server.js (完全版 v300.0: モデル構成刷新版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -23,10 +23,10 @@ app.use(express.json({ limit: '50mb' }));
 const publicDir = path.join(__dirname, 'public');
 app.use(express.static(publicDir));
 
-// --- AI Model Constants ---
-const MODEL_HOMEWORK = "gemini-2.5-pro";         // 宿題分析用
-const MODEL_FAST = "gemini-2.5-flash";           // 基本
-const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-12-2025"; // リアルタイム対話
+// --- AI Model Constants (ユーザー指定) ---
+const MODEL_HOMEWORK = "gemini-2.5-pro";         // 宿題分析用（高精度）
+const MODEL_FAST = "gemini-2.5-flash";           // 基本（会話・反応・記憶整理）
+const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025"; // リアルタイムWebSocket（対話）
 
 // --- Server Log ---
 const MEMORY_FILE = path.join(__dirname, 'server_log.json');
@@ -101,6 +101,7 @@ app.post('/synthesize', async (req, res) => {
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
+        // MODEL_FAST (gemini-2.5-flash) を使用
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
             generationConfig: { responseMimeType: "application/json" }
@@ -166,6 +167,7 @@ app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, name } = req.body;
         
+        // MODEL_HOMEWORK (gemini-2.5-pro) を使用
         const model = genAI.getGenerativeModel({ 
             model: MODEL_HOMEWORK, 
             generationConfig: { responseMimeType: "application/json", temperature: 0.0 }
@@ -239,6 +241,7 @@ app.post('/identify-item', async (req, res) => {
     try {
         const { image, name, location } = req.body;
         
+        // MODEL_FAST (gemini-2.5-flash) を使用
         const tools = [{ google_search: {} }];
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
@@ -263,7 +266,7 @@ app.post('/identify-item', async (req, res) => {
 
         【解説のルール】
         1. **ネル先生の解説**: 猫視点でのユーモラスな解説。語尾は「にゃ」。**★重要: 解説の最後に、「${name}さんはこれ知ってたにゃ？」や「これ好きにゃ？」など、ユーザーが返事をしやすい短い問いかけを必ず入れてください。**
-        2. **本当の解説**: 子供向けの学習図鑑のような、正確でためになる豆知識や説明。です・ます調。位置情報から特定した場合は、その場所の説明を含めてください。
+        2. **本当の解説**: 子供向けの学習図鑑のような、正確でためになる豆知識や説明。です・ます調。
 
         【出力フォーマット (JSON文字列のみ出力)】
         \`\`\`json
@@ -362,6 +365,7 @@ app.post('/chat-dialogue', async (req, res) => {
         try {
             const toolsConfig = image ? undefined : [{ google_search: {} }];
             
+            // MODEL_FAST (gemini-2.5-flash) を使用
             const model = genAI.getGenerativeModel({ 
                 model: MODEL_FAST,
                 tools: toolsConfig
@@ -424,6 +428,7 @@ app.post('/lunch-reaction', async (req, res) => {
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
         const isSpecial = (count % 10 === 0);
         
+        // MODEL_FAST (gemini-2.5-flash) を使用
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
             safetySettings: [
@@ -459,6 +464,7 @@ app.post('/lunch-reaction', async (req, res) => {
 app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;
+        // MODEL_FAST (gemini-2.5-flash) を使用
         const model = genAI.getGenerativeModel({ model: MODEL_FAST });
         let prompt = "";
         let mood = "excited";
@@ -523,11 +529,6 @@ wss.on('connection', async (clientWs, req) => {
                 4. 給食(餌)のカリカリが大好物にゃ。
                 5. とにかく何でも知っているにゃ。
 
-                【重要：禁止事項】
-                - **英語で話すこと。** (必ず日本語で話してください)
-                - **思考プロセスや行動の説明を出力すること。** (例: "**Describing...**", "Here is the answer")
-                - **生徒への発話以外のテキストを含めること。**
-                
                 【最重要: 画像への対応ルール】
                 ユーザーから画像が送信された場合：
                 1. それは「勉強の問題」や「教えてほしい画像」です。
@@ -558,6 +559,7 @@ wss.on('connection', async (clientWs, req) => {
 
                 geminiWs.send(JSON.stringify({
                     setup: {
+                        // MODEL_REALTIME (gemini-3-flash-preview) を使用
                         model: `models/${MODEL_REALTIME}`,
                         generationConfig: { 
                             responseModalities: ["AUDIO"],

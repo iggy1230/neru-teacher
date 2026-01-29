@@ -1,93 +1,62 @@
-// --- ui.js (完全版 v299.0: 音量直接制御対応) ---
-
-// 音声ファイルのパス設定（assetsフォルダ対応）
-const sfxChime = new Audio('assets/sounds/system/jpn_sch_chime.mp3');
-const sfxBtn = new Audio('assets/sounds/ui/botan1.mp3'); 
+// --- ui.js (完全版 v297.0: 音量設定UI追加) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
 
-// 音声再生ヘルパー
-function safePlay(audioObj) {
-    if (!audioObj) return;
-    try {
-        // 再生前に現在の音量を適用
-        // constants.jsで定義された window.appVolume 等を使用
-        audioObj.volume = window.isMuted ? 0 : window.appVolume;
-        
-        // 特殊な音量調整
-        if (window.sfxBunseki && audioObj === window.sfxBunseki) {
-             audioObj.volume = window.isMuted ? 0 : (window.appVolume * 0.1);
-        }
+// ==========================================
+// 音量管理・設定UI
+// ==========================================
 
-        audioObj.currentTime = 0;
-        const playPromise = audioObj.play();
-        if (playPromise !== undefined) {
-            playPromise.catch(error => {
-                console.warn("Audio play failed (ignored):", error);
-            });
-        }
-    } catch (e) {
-        console.warn("Audio error:", e);
+window.openSettings = function() {
+    const modal = document.getElementById('settings-modal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        // 現在の値をUIに反映
+        const slider = document.getElementById('volume-slider');
+        const muteCheck = document.getElementById('mute-checkbox');
+        if (slider) slider.value = window.appVolume * 100;
+        if (muteCheck) muteCheck.checked = window.isMuted;
     }
-}
-
-// ==========================================
-// 音量管理 (直接操作版)
-// ==========================================
-
-window.toggleMuteDirect = function() {
-    window.isMuted = !window.isMuted;
-    window.applyVolumeToAll();
-    window.updateVolumeUI();
 };
 
-window.changeVolumeDirect = function(slider) {
+window.closeSettings = function() {
+    const modal = document.getElementById('settings-modal');
+    if (modal) modal.classList.add('hidden');
+};
+
+window.toggleMute = function(checkbox) {
+    window.isMuted = checkbox.checked;
+    window.applyVolumeToAll();
+};
+
+window.changeVolume = function(slider) {
     window.appVolume = slider.value / 100;
     if (window.appVolume > 0 && window.isMuted) {
-        // スライダーを動かして音量があればミュート解除
+        // スライダーを動かして音量があればミュート解除するUX
         window.isMuted = false;
+        const muteCheck = document.getElementById('mute-checkbox');
+        if (muteCheck) muteCheck.checked = false;
     }
     window.applyVolumeToAll();
-    window.updateVolumeUI();
-};
-
-window.updateVolumeUI = function() {
-    const btn = document.getElementById('mute-btn-direct');
-    const slider = document.getElementById('volume-slider-direct');
-    
-    if (btn) {
-        if (window.isMuted || window.appVolume === 0) {
-            btn.innerText = "🔇";
-        } else {
-            btn.innerText = "🔊";
-        }
-    }
-    
-    if (slider) {
-        slider.value = window.appVolume * 100;
-    }
 };
 
 window.applyVolumeToAll = function() {
     const targetVol = window.isMuted ? 0 : window.appVolume;
     
-    // constants.js で管理されている audioList
+    // 登録されている全Audioオブジェクトの音量を更新
     if (window.audioList) {
         window.audioList.forEach(audio => {
-            if (window.sfxBunseki && audio === window.sfxBunseki) {
-                audio.volume = targetVol * 0.1; 
+            if (audio === window.sfxBunseki) {
+                audio.volume = targetVol * 0.1; // 分析音は10%の音量比率を維持
             } else {
                 audio.volume = targetVol;
             }
         });
     }
     
-    // TTSの音量反映
+    // 現在再生中のTTSがあればそれも反映（GainNodeがあれば）
     if (window.ttsGainNode && window.audioContext) {
-        try {
-            window.ttsGainNode.gain.setValueAtTime(targetVol, window.audioContext.currentTime);
-        } catch(e) {}
+        window.ttsGainNode.gain.setValueAtTime(targetVol, window.audioContext.currentTime);
     }
 };
 
@@ -104,21 +73,23 @@ window.switchScreen = function(to) {
     } else {
         console.error(`Screen not found: ${to}`);
     }
+    
+    // 設定ボタンの表示制御（タイトル画面とロビー以外では隠すなどの制御が必要ならここ）
+    // 今回は全画面で右上に表示しておく
 };
 
 window.startApp = async function() {
-    // AudioContextの再開
+    // AudioContextの再開（ユーザー操作が必要）
     if (window.initAudioContext) {
         await window.initAudioContext();
     }
-    // チャイム再生
+    
+    // チャイム再生 (window.sfxChime は constants.js で定義済み)
     if (window.sfxChime) {
         window.safePlay(window.sfxChime);
     }
-    switchScreen('screen-gate');
     
-    // 初期UI反映
-    window.updateVolumeUI();
+    switchScreen('screen-gate');
 };
 
 window.backToTitle = async function() {
@@ -235,7 +206,7 @@ window.updateProgress = function(p) {
 };
 
 // ==========================================
-// ★ 図鑑 (Collection)
+// 図鑑 (Collection)
 // ==========================================
 
 window.showCollection = async function() {
