@@ -1,4 +1,4 @@
-<!-- index.html (完全版 v298.0: 設定ボタン左上配置) -->
+<!-- index.html (完全版 v304.0: 設定ボタン完全削除・音量バー設置) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -33,17 +33,6 @@
         .log-role { font-weight: bold; margin-right: 5px; }
         .log-user .log-role { color: #2196f3; }
         .log-nell .log-role { color: #ff85a1; }
-        
-        /* 設定ボタン(左上固定) */
-        .settings-btn-fixed {
-            position: fixed; top: 10px; left: 10px; z-index: 9999;
-            background: rgba(255, 255, 255, 0.8); border: 2px solid #b0bec5;
-            border-radius: 50%; width: 40px; height: 40px;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 1.5rem; cursor: pointer;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-        }
-        .settings-btn-fixed:active { transform: scale(0.9); }
     </style>
 </head>
 <body>
@@ -52,15 +41,19 @@
     <div id="mini-karikari-display" class="mini-karikari-display hidden"><span>🍖</span><span id="mini-karikari-count">0</span></div>
     <div id="mini-timer-display" class="mini-timer-display hidden" onclick="openTimerModal()"><span>⏱️</span> <span id="mini-timer-text">00:00</span></div>
     
-    <!-- 音量設定ボタン -->
-    <button class="settings-btn-fixed" onclick="openSettings()">⚙️</button>
+    <!-- 音量コントロール (左上固定・即時操作) -->
+    <!-- 古い設定ボタン(settings-btn-fixed)は削除済み -->
+    <div class="volume-controls-fixed" id="volume-panel">
+        <button id="mute-btn" onclick="toggleMuteDirect()" class="volume-icon-btn">🔊</button>
+        <input type="range" id="direct-volume-slider" min="0" max="100" value="50" oninput="changeVolumeDirect(this)" class="volume-slider-bar">
+    </div>
 
     <div id="app-container">
         <!-- 0. タイトル画面 -->
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v298.0-GPS&Search</div>
+            <div class="version-tag">Build: v304.0-VolUI</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -153,8 +146,6 @@
     </div>
 
     <!-- モーダル類 -->
-    <div id="settings-modal" class="memory-modal-overlay hidden"><div class="memory-modal-content" style="max-height:auto;"><h3 style="text-align:center; margin:0 0 15px 0;">⚙️ 設定</h3><div style="margin-bottom:20px; text-align:center;"><label style="display:flex; align-items:center; justify-content:center; gap:10px; font-weight:bold; font-size:1.1rem;"><input type="checkbox" id="mute-checkbox" onchange="toggleMute(this)" style="width:20px; height:20px;"> 音を消す (ミュート)</label></div><div style="margin-bottom:20px;"><label style="font-weight:bold; display:block; margin-bottom:5px;">音量</label><input type="range" id="volume-slider" min="0" max="100" value="50" style="width:100%;" oninput="changeVolume(this)"></div><button onclick="closeSettings()" class="main-btn gray-btn">閉じる</button></div></div>
-    
     <div id="inline-whiteboard" class="hidden whiteboard-overlay"><div class="whiteboard-board"><p style="margin:0 0 10px 0; color:#8d6e63; font-weight:bold;">ネル先生のメモ</p><div id="whiteboard-content" class="whiteboard-text"></div><button onclick="document.getElementById('inline-whiteboard').classList.add('hidden')" class="close-board-btn">✖ 閉じる</button></div></div>
     <div id="camera-modal" class="camera-modal hidden"><div class="camera-container"><video id="camera-video" autoplay playsinline></video><div class="camera-guide-box"><p>枠に合わせてにゃ</p></div></div><div class="camera-controls"><button id="camera-cancel-btn" class="main-btn gray-btn" style="width:100px;">やめる</button><button id="camera-shutter-btn" class="camera-shutter-btn"></button></div><canvas id="camera-canvas" style="display:none;"></canvas></div>
     <div id="cropper-modal" class="camera-modal hidden"><div class="cropper-wrapper"><canvas id="crop-canvas"></canvas><svg id="crop-lines" style="position:absolute; top:0; left:0; pointer-events:none; width:100%; height:100%;"></svg><div id="handle-tl" class="crop-handle" style="top:0; left:0;"></div><div id="handle-tr" class="crop-handle" style="top:0; right:0;"></div><div id="handle-br" class="crop-handle" style="bottom:0; right:0;"></div><div id="handle-bl" class="crop-handle" style="bottom:0; left:0;"></div></div><div class="camera-controls"><button id="cropper-cancel-btn" class="main-btn gray-btn" style="width:100px;">やめる</button><button id="cropper-ok-btn" class="main-btn pink-btn" style="width:120px;">決定！</button></div></div>
@@ -170,7 +161,6 @@
     <script src="js/state/user.js"></script>
     <script src="js/voice-service.js"></script>
     <script src="js/camera-service.js"></script>
-    <!-- 追加 -->
     <script src="js/game-engine.js"></script>
     <script src="js/analyze.js"></script>
 </body>

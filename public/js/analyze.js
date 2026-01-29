@@ -1,7 +1,29 @@
-// --- js/analyze.js (v294.2: 採点ロジック修正完全版) ---
+// --- js/analyze.js (v306.0: 位置情報速度優先・図鑑モード対応版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
+
+// グローバル変数: 現在位置情報
+window.currentLocation = null;
+
+// 位置情報取得ヘルパー
+window.fetchCurrentLocation = function() {
+    if (!navigator.geolocation) return;
+    console.log("Fetching location (Speed Priority)...");
+    navigator.geolocation.getCurrentPosition(
+        (pos) => {
+            window.currentLocation = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+            console.log("Location fetched:", window.currentLocation);
+        },
+        (err) => {
+            console.warn("Location fetch failed:", err);
+            // 失敗してもnullのままにしておく（古い情報を残さない）
+            window.currentLocation = null;
+        },
+        // ★修正: 速度優先に戻す (enableHighAccuracy: false)
+        { timeout: 10000, enableHighAccuracy: false } 
+    );
+};
 
 // ==========================================
 // 1. UI操作・モード選択関数
@@ -61,16 +83,23 @@ window.selectMode = function(m) {
         
         // モードごとの初期化
         if (m === 'chat') { 
+            // お宝図鑑モード
             document.getElementById('chat-view').classList.remove('hidden'); 
             window.updateNellMessage("お宝を見せてにゃ！お話もできるにゃ！", "excited", false); 
             document.getElementById('conversation-log').classList.remove('hidden');
             if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
+            
+            // ★追加: 図鑑モードでも位置情報を事前に取得しておく（観光地特定などのため）
+            window.fetchCurrentLocation();
         } 
         else if (m === 'simple-chat') {
             document.getElementById('simple-chat-view').classList.remove('hidden');
             window.updateNellMessage("今日はお話だけするにゃ？", "gentle", false);
             document.getElementById('conversation-log').classList.remove('hidden');
             if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
+            
+            // 個別指導モードでも位置情報を取得
+            window.fetchCurrentLocation();
         }
         else if (m === 'chat-free') {
             document.getElementById('chat-free-view').classList.remove('hidden');
@@ -135,16 +164,33 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     const targetId = isGameHidden ? 'nell-text' : 'nell-text-game';
     const el = document.getElementById(targetId);
     
-    let displayText = t.replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "");
+    // --- 表示用テキストのクリーニング ---
+    let cleanText = t || "";
+
+    cleanText = cleanText.split('\n').filter(line => {
+        const trimmed = line.trim();
+        if (!trimmed) return true;
+        if (/^(?:System|User|Model|Assistant|Display|Thinking)[:：]/i.test(trimmed)) return false;
+        if (/^\*\*.*\*\*$/.test(trimmed)) return false;
+        if (/^\[.*\]$/.test(trimmed)) return false;
+        const hasJapanese = /[ぁ-んァ-ン一-龠]/.test(line);
+        if (!hasJapanese && /[a-zA-Z]/.test(line)) return false;
+        return true;
+    }).join('\n');
+
+    cleanText = cleanText.replace(/(?:\[|【)DISPLAY[:：].*?(?:\]|】)/gi, "");
+    cleanText = cleanText.replace(/^\s*[\(（【\[].*?[\)）】\]]/gm, ""); 
+    cleanText = cleanText.replace(/[\(（【\[].*?[\)）】\]]\s*$/gm, "");
+    cleanText = cleanText.trim();
     
-    if (el) el.innerText = displayText;
+    if (el) el.innerText = cleanText;
     
     if (t && t.includes("もぐもぐ")) { if(window.safePlay) window.safePlay(window.sfxBori); }
     
-    if (saveToMemory) { window.saveToNellMemory('nell', t); }
+    if (saveToMemory) { window.saveToNellMemory('nell', cleanText); }
     
     if (speak && typeof speakNell === 'function') {
-        let textForSpeech = displayText.replace(/【.*?】/g, "").trim();
+        let textForSpeech = cleanText.replace(/【.*?】/g, "").replace(/\[.*?\]/g, "").trim();
         textForSpeech = textForSpeech.replace(/🐾/g, "");
         if (textForSpeech.length > 0) {
             await speakNell(textForSpeech, mood);
@@ -183,7 +229,8 @@ window.sendHttpText = async function(context) {
             body: JSON.stringify({ 
                 text: text, 
                 name: currentUser ? currentUser.name : "生徒",
-                history: window.chatSessionHistory
+                history: window.chatSessionHistory,
+                location: window.currentLocation 
             })
         });
 
@@ -238,7 +285,10 @@ window.startMouthAnimation = function() {
 };
 window.startMouthAnimation();
 
+// ページロード時にも位置情報取得を試みる（速度優先）
 window.addEventListener('DOMContentLoaded', () => {
+    window.fetchCurrentLocation(); 
+
     // DOMContentLoaded でのイベント設定
     const camIn = document.getElementById('hw-input-camera'); 
     const albIn = document.getElementById('hw-input-album'); 
@@ -362,16 +412,25 @@ window.showKarikariEffect = function(amount) { const container = document.queryS
 
 window.giveLunch = function() { 
     if (currentUser.karikari < 1) return window.updateNellMessage("カリカリがないにゃ……", "thinking", false); 
+    
+    // まず「もぐもぐ」を表示・発話
     window.updateNellMessage("もぐもぐ……", "normal", false); 
+    
     currentUser.karikari--; 
     if(typeof saveAndSync === 'function') saveAndSync(); 
     window.updateMiniKarikari(); 
     window.showKarikariEffect(-1); 
     window.lunchCount++; 
+    
     fetch('/lunch-reaction', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ count: window.lunchCount, name: currentUser.name }) })
         .then(r => r.json())
-        .then(d => { setTimeout(() => { window.updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy", true); }, 1500); })
-        .catch(e => { setTimeout(() => { window.updateNellMessage("おいしいにゃ！", "happy", false); }, 1500); }); 
+        .then(d => { 
+            // サーバーからのレスポンスが返ったら即座に反映
+            window.updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy", true); 
+        })
+        .catch(e => { 
+            window.updateNellMessage("おいしいにゃ！", "happy", false); 
+        }); 
 }; 
 
 // ※ ゲームロジックは js/game-engine.js に移動済み

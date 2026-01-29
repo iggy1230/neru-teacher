@@ -1,4 +1,4 @@
-// --- memory.js (完全版 v296.0: 本当の解説対応) ---
+// --- js/state/memory.js (v302.0: 図鑑上限500拡張版) ---
 
 (function(global) {
     const Memory = {};
@@ -110,7 +110,7 @@
         return context;
     };
 
-    // ★修正: 図鑑にアイテムを追加 (realDescription引数を追加)
+    // ★修正: 図鑑の上限を500に変更
     Memory.addToCollection = async function(userId, itemName, imageBase64, description = "", realDescription = "") {
         console.log(`[Memory] addToCollection: ${itemName}`);
         try {
@@ -125,13 +125,14 @@
                 image: imageBase64,
                 date: new Date().toISOString(),
                 description: description,
-                realDescription: realDescription // 本当の解説も保存
+                realDescription: realDescription
             };
 
             profile.collection.unshift(newItem); 
 
-            if (profile.collection.length > 50) {
-                profile.collection = profile.collection.slice(0, 50);
+            // 上限を500個に変更
+            if (profile.collection.length > 500) {
+                profile.collection = profile.collection.slice(0, 500);
             }
 
             await Memory.saveUserProfile(userId, profile);

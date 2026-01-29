@@ -1,4 +1,4 @@
-// --- server.js (完全版 v300.0: モデル構成刷新版) ---
+// --- server.js (完全版 v303.0: 位置情報プロンプト強化版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -317,7 +317,7 @@ app.post('/identify-item', async (req, res) => {
 // --- HTTPチャット会話 ---
 app.post('/chat-dialogue', async (req, res) => {
     try {
-        const { text, name, image, history } = req.body;
+        const { text, name, image, history, location } = req.body;
         
         const now = new Date();
         const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' };
@@ -333,15 +333,28 @@ app.post('/chat-dialogue', async (req, res) => {
             contextPrompt += "\nユーザーの言葉に主語がなくても、この流れを汲んで自然に返答してください。\n";
         }
 
+        // ★修正: 位置情報を強く認識させるプロンプト
+        let locationPrompt = "";
+        if (location && location.lat && location.lon) {
+            locationPrompt = `
+            【重要：現在地情報】
+            ユーザーの現在地は 緯度:${location.lat}, 経度:${location.lon} です。
+            ユーザーが「天気」「周辺情報」「ここはどこ？」など、**場所に関連する質問**をした場合は、必ずこの座標を検索キーワードに含めて（例：「${location.lat},${location.lon} 天気」）Google検索を実行してください。
+            単に「天気」とだけ検索すると現在地が反映されないため禁止します。
+            `;
+        }
+
         let prompt = `
         あなたは猫の「ネル先生」です。相手は「${name}」さん。
         以下のユーザーの発言（または画像）に対して、子供にもわかるように答えてください。
 
         【重要：現在の状況】
         - **現在は ${currentDateTime} です。**
-        - **わからないことや最新の情報が必要な場合は、提供されたGoogle検索ツールを使って調べてください。**
+        - **わからないことや最新の情報、天気予報が必要な場合は、提供されたGoogle検索ツールを使って調べてください。**
         - **日付を聞かれない限り、冒頭で今日の日付を言う必要はありません。**
         - **相手を呼ぶときは必ず「${name}さん」と呼んでください。呼び捨ては厳禁です。**
+        
+        ${locationPrompt}
 
         ${contextPrompt}
 
@@ -610,7 +623,20 @@ wss.on('connection', async (clientWs, req) => {
             });
 
             geminiWs.on('error', (e) => console.error("Gemini WS Error:", e));
-            geminiWs.on('close', () => console.log("Gemini WS Closed"));
+            
+            // ★追加: Gemini側からの切断を検知し、クライアントに通知して切断する
+            geminiWs.on('close', (code, reason) => {
+                console.log(`Gemini WS Closed: ${code} ${reason}`);
+                if (clientWs.readyState === WebSocket.OPEN) {
+                    // クライアントに通知 (type: "gemini_closed")
+                    try {
+                        clientWs.send(JSON.stringify({ type: "gemini_closed" }));
+                    } catch(e) {}
+                    
+                    // クライアント側で再接続ロジックを動かすために接続を閉じる
+                    clientWs.close();
+                }
+            });
 
         } catch(e) { 
             console.error("Gemini Connection Error:", e);

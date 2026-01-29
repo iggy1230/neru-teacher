@@ -1,62 +1,58 @@
-// --- ui.js (完全版 v297.0: 音量設定UI追加) ---
+// --- js/ui/ui.js (完全版 v304.0: 初期表示同期強化版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
 
 // ==========================================
-// 音量管理・設定UI
+// 音量管理 (直接操作)
 // ==========================================
 
-window.openSettings = function() {
-    const modal = document.getElementById('settings-modal');
-    if (modal) {
-        modal.classList.remove('hidden');
-        // 現在の値をUIに反映
-        const slider = document.getElementById('volume-slider');
-        const muteCheck = document.getElementById('mute-checkbox');
-        if (slider) slider.value = window.appVolume * 100;
-        if (muteCheck) muteCheck.checked = window.isMuted;
-    }
-};
-
-window.closeSettings = function() {
-    const modal = document.getElementById('settings-modal');
-    if (modal) modal.classList.add('hidden');
-};
-
-window.toggleMute = function(checkbox) {
-    window.isMuted = checkbox.checked;
+window.toggleMuteDirect = function() {
+    window.isMuted = !window.isMuted;
     window.applyVolumeToAll();
+    window.updateVolumeUI();
 };
 
-window.changeVolume = function(slider) {
+window.changeVolumeDirect = function(slider) {
     window.appVolume = slider.value / 100;
     if (window.appVolume > 0 && window.isMuted) {
-        // スライダーを動かして音量があればミュート解除するUX
-        window.isMuted = false;
-        const muteCheck = document.getElementById('mute-checkbox');
-        if (muteCheck) muteCheck.checked = false;
+        window.isMuted = false; // スライダー操作でミュート解除
     }
     window.applyVolumeToAll();
+    window.updateVolumeUI();
+};
+
+window.updateVolumeUI = function() {
+    const btn = document.getElementById('mute-btn');
+    const slider = document.getElementById('direct-volume-slider');
+    
+    if (btn) {
+        btn.innerText = window.isMuted ? "🔇" : "🔊";
+    }
+    if (slider) {
+        slider.value = window.appVolume * 100;
+        slider.style.opacity = window.isMuted ? "0.5" : "1.0";
+    }
 };
 
 window.applyVolumeToAll = function() {
     const targetVol = window.isMuted ? 0 : window.appVolume;
     
-    // 登録されている全Audioオブジェクトの音量を更新
+    // 1. Audio Elements (constants.jsで定義された効果音たち)
     if (window.audioList) {
         window.audioList.forEach(audio => {
             if (audio === window.sfxBunseki) {
-                audio.volume = targetVol * 0.1; // 分析音は10%の音量比率を維持
+                audio.volume = targetVol * 0.1; 
             } else {
                 audio.volume = targetVol;
             }
         });
     }
     
-    // 現在再生中のTTSがあればそれも反映（GainNodeがあれば）
-    if (window.ttsGainNode && window.audioContext) {
-        window.ttsGainNode.gain.setValueAtTime(targetVol, window.audioContext.currentTime);
+    // 2. Web Audio API Master Gain (TTS & Realtime Chat)
+    if (window.masterGainNode && window.audioCtx) {
+        // 現在時刻で即座に変更
+        window.masterGainNode.gain.setValueAtTime(targetVol, window.audioCtx.currentTime);
     }
 };
 
@@ -73,22 +69,16 @@ window.switchScreen = function(to) {
     } else {
         console.error(`Screen not found: ${to}`);
     }
-    
-    // 設定ボタンの表示制御（タイトル画面とロビー以外では隠すなどの制御が必要ならここ）
-    // 今回は全画面で右上に表示しておく
+    window.updateVolumeUI(); // 画面遷移時にUI状態を確認
 };
 
 window.startApp = async function() {
-    // AudioContextの再開（ユーザー操作が必要）
     if (window.initAudioContext) {
         await window.initAudioContext();
     }
-    
-    // チャイム再生 (window.sfxChime は constants.js で定義済み)
     if (window.sfxChime) {
         window.safePlay(window.sfxChime);
     }
-    
     switchScreen('screen-gate');
 };
 
@@ -456,6 +446,11 @@ function renderLogView(container) {
         container.appendChild(div);
     });
 }
+
+// ページ読み込み完了時にUI状態を初期化
+document.addEventListener('DOMContentLoaded', () => {
+    window.updateVolumeUI();
+});
 
 document.addEventListener('click', () => { 
     if (window.initAudioContext) window.initAudioContext().catch(e => console.log("Audio Init:", e)); 

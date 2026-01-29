@@ -1,4 +1,4 @@
-// --- js/voice-service.js (v293.0: 音声・チャット機能) ---
+// --- js/voice-service.js (v308.1: 音声対話への位置情報連携追加版) ---
 
 // 音声再生の停止
 window.stopAudioPlayback = function() {
@@ -61,13 +61,15 @@ window.startAlwaysOnListening = function() {
         if(typeof window.addToSessionHistory === 'function') window.addToSessionHistory('user', text);
 
         try {
+            // ★修正: 音声入力時も位置情報をサーバーに送信する
             const res = await fetch('/chat-dialogue', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
                     text: text, 
                     name: currentUser ? currentUser.name : "生徒",
-                    history: window.chatSessionHistory 
+                    history: window.chatSessionHistory,
+                    location: window.currentLocation // 位置情報を追加
                 })
             });
             
@@ -143,15 +145,31 @@ window.captureAndSendLiveImage = function(context = 'main') {
         return alert("まずは「おはなしする」でネル先生とつながってにゃ！");
     }
     if (window.isLiveImageSending) return; 
+    
     let videoId = 'live-chat-video-free';
+    let containerId = 'live-chat-video-container-free';
     const video = document.getElementById(videoId);
-    if (!video || !video.srcObject || !video.srcObject.active) return alert("カメラが動いてないにゃ...");
+    const btn = document.getElementById('live-camera-btn-free');
+
+    // カメラがまだ動いていない場合は起動する（マイク通話中でない場合など）
+    if (!video || !video.srcObject || !video.srcObject.active) {
+        if (typeof window.startPreviewCamera === 'function') {
+            window.startPreviewCamera(videoId, containerId).then(() => {
+                if (btn) {
+                    btn.innerHTML = "<span>📸</span> 撮影して送信";
+                    btn.style.backgroundColor = "#ff5252";
+                }
+            });
+        } else {
+            alert("カメラ機能が読み込まれていないにゃ...");
+        }
+        return;
+    }
 
     window.stopAudioPlayback();
     window.ignoreIncomingAudio = true; 
     window.isLiveImageSending = true;
     
-    const btn = document.getElementById('live-camera-btn-free');
     if (btn) {
         btn.innerHTML = "<span>📡</span> 送信中にゃ...";
         btn.style.backgroundColor = "#ccc";
@@ -207,6 +225,12 @@ window.captureAndSendLiveImage = function(context = 'main') {
     setTimeout(() => {
         window.isLiveImageSending = false;
         window.isMicMuted = false;
+        
+        // 送信完了後は必ずカメラ画面を閉じる
+        if (typeof window.stopPreviewCamera === 'function') {
+            window.stopPreviewCamera();
+        }
+        
         if (btn) {
              btn.innerHTML = "<span>📷</span> 写真を見せてお話";
              btn.style.backgroundColor = "#009688";
@@ -254,6 +278,7 @@ window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
     try {
         if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
 
+        // ★修正: 画像送信時も位置情報を送る
         const res = await fetch('/chat-dialogue', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -261,7 +286,8 @@ window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
                 image: base64Data,
                 text: "この問題を教えてください。",
                 name: currentUser ? currentUser.name : "生徒",
-                history: window.chatSessionHistory
+                history: window.chatSessionHistory,
+                location: window.currentLocation // 位置情報を追加
             })
         });
 
@@ -300,18 +326,26 @@ window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
     }
 };
 
-// WebSocketチャット停止
 window.stopLiveChat = function() {
     if (window.NellMemory && window.chatTranscript && window.chatTranscript.length > 10) {
         window.NellMemory.updateProfileFromChat(currentUser.id, window.chatTranscript);
     }
     window.isRecognitionActive = false; 
+    window.isLiveChatManuallyStopped = true;
+
     if (window.connectionTimeout) clearTimeout(window.connectionTimeout); 
     if (window.recognition) try{window.recognition.stop()}catch(e){} 
     if (window.mediaStream) window.mediaStream.getTracks().forEach(t=>t.stop()); 
     if (window.workletNode) { window.workletNode.port.postMessage('stop'); window.workletNode.disconnect(); } 
-    if (window.liveSocket) window.liveSocket.close(); 
-    if (window.audioContext && window.audioContext.state !== 'closed') window.audioContext.close(); 
+    if (window.liveSocket) {
+        window.liveSocket.close(); 
+    }
+    if (window.audioContext && window.audioContext.state !== 'closed') {
+        window.audioContext.close(); 
+    }
+    window.audioContext = null;
+    window.audioCtx = null; // audio.jsの変数もクリア
+
     window.isNellSpeaking = false; 
     if(window.stopSpeakingTimer) clearTimeout(window.stopSpeakingTimer); 
     if(window.speakingStartTimer) clearTimeout(window.speakingStartTimer); 
@@ -344,15 +378,19 @@ window.stopLiveChat = function() {
     document.getElementById('live-chat-video-container-free').style.display = 'none';
 };
 
-// WebSocketチャット開始
 window.startLiveChat = async function(context = 'main') { 
     if (context === 'main' && window.currentMode === 'chat-free') context = 'free';
     if (context !== 'free') return;
 
+    window.isLiveChatManuallyStopped = false;
+
     window.activeChatContext = context;
     const btnId = 'mic-btn-free';
     const btn = document.getElementById(btnId);
-    if (window.liveSocket) { window.stopLiveChat(); return; } 
+    
+    if (window.liveSocket) { 
+        if (window.liveSocket) window.liveSocket.close();
+    } 
     
     try { 
         if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ネル先生を呼んでるにゃ…", "thinking", false); 
@@ -368,19 +406,37 @@ window.startLiveChat = async function(context = 'main') {
         window.ttsTextBuffer = "";
         
         if (window.initAudioContext) await window.initAudioContext(); 
-        window.audioContext = new (window.AudioContext || window.webkitAudioContext)(); 
+        
+        if (!window.audioContext && window.audioCtx) {
+            window.audioContext = window.audioCtx;
+        } else if (!window.audioContext) {
+             window.audioContext = new (window.AudioContext || window.webkitAudioContext)(); 
+        }
+        
         await window.audioContext.resume(); 
         window.nextStartTime = window.audioContext.currentTime; 
         
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:'; 
         let statusSummary = `${currentUser.name}さんは今、お話しにきたにゃ。カリカリは${currentUser.karikari}個持ってるにゃ。`; 
+        
+        // ★修正: リアルタイムチャット開始時も現在地情報をコンテキストに含める
+        if (window.currentLocation) {
+            statusSummary += ` 現在地は緯度${window.currentLocation.lat}、経度${window.currentLocation.lon}だにゃ。`;
+        }
+
         let modeParam = 'chat-free';
 
         const url = `${wsProto}//${location.host}?grade=${currentUser.grade}&name=${encodeURIComponent(currentUser.name)}&mode=${modeParam}`; 
         
         window.liveSocket = new WebSocket(url); 
         window.liveSocket.binaryType = "blob"; 
-        window.connectionTimeout = setTimeout(() => { if (window.liveSocket && window.liveSocket.readyState !== WebSocket.OPEN) { if(typeof window.updateNellMessage === 'function') window.updateNellMessage("なかなかつながらないにゃ…", "thinking", false); window.stopLiveChat(); } }, 10000); 
+        
+        window.connectionTimeout = setTimeout(() => { 
+            if (window.liveSocket && window.liveSocket.readyState !== WebSocket.OPEN) { 
+                if(typeof window.updateNellMessage === 'function') window.updateNellMessage("なかなかつながらないにゃ…", "thinking", false); 
+                window.stopLiveChat(); 
+            } 
+        }, 10000); 
         
         window.lastSentCollectionImage = null;
         window.isLiveImageSending = false;
@@ -401,9 +457,19 @@ window.startLiveChat = async function(context = 'main') {
                 if (rawData instanceof Blob) rawData = await rawData.text();
                 const data = JSON.parse(rawData);
 
+                if (data.type === "gemini_closed") {
+                    console.log("Gemini WS closed by server.");
+                    return; 
+                }
+
                 if (data.type === "server_ready") {
                     clearTimeout(window.connectionTimeout); 
-                    if(btn) { btn.innerText = "📞 つながった！(終了)"; btn.style.background = "#ff5252"; btn.disabled = false; } 
+                    if(btn) { 
+                        btn.innerText = "📞 つながった！(終了)"; 
+                        btn.style.background = "#ff5252"; 
+                        btn.disabled = false; 
+                        btn.onclick = () => window.stopLiveChat();
+                    } 
                     if(typeof window.updateNellMessage === 'function') window.updateNellMessage("お待たせ！なんでも話してにゃ！", "happy", false, false); 
                     window.isRecognitionActive = true; 
                     window.startMicrophone(); 
@@ -426,9 +492,33 @@ window.startLiveChat = async function(context = 'main') {
                 }
             } catch (e) {} 
         }; 
-        window.liveSocket.onclose = () => window.stopLiveChat(); 
-        window.liveSocket.onerror = () => window.stopLiveChat(); 
-    } catch (e) { window.stopLiveChat(); } 
+        
+        window.liveSocket.onclose = () => {
+            console.log("WS Closed. Manual Stop:", window.isLiveChatManuallyStopped);
+            if (!window.isLiveChatManuallyStopped) {
+                if(typeof window.updateNellMessage === 'function') window.updateNellMessage("あれ？切れちゃったにゃ。つなぎ直すにゃ！", "thinking", false, false);
+                
+                if (window.mediaStream) window.mediaStream.getTracks().forEach(t=>t.stop());
+                if (window.recognition) try{window.recognition.stop()}catch(e){}
+                
+                setTimeout(() => {
+                    if (window.currentMode === 'chat-free') {
+                        window.startLiveChat('free');
+                    }
+                }, 1500);
+            } else {
+                window.stopLiveChat();
+            }
+        }; 
+        
+        window.liveSocket.onerror = (e) => {
+            console.error("WS Error:", e);
+        }; 
+        
+    } catch (e) { 
+        console.error("Start Live Chat Error:", e);
+        window.stopLiveChat(); 
+    } 
 };
 
 window.startMicrophone = async function() { 
@@ -465,7 +555,9 @@ window.startMicrophone = async function() {
             window.recognition.start(); 
         } 
         
-        const useVideo = true;
+        // chat-freeモードでは初期ビデオOFF (音声のみ)
+        const useVideo = (window.currentMode !== 'chat-free');
+
         window.mediaStream = await navigator.mediaDevices.getUserMedia({ 
             audio: { sampleRate: 16000, channelCount: 1 }, 
             video: useVideo ? { facingMode: "environment" } : false 
@@ -501,6 +593,9 @@ window.startMicrophone = async function() {
 
 window.playLivePcmAudio = function(base64) { 
     if (!window.audioContext || window.ignoreIncomingAudio) return; 
+    
+    if (!window.audioContext && window.audioCtx) window.audioContext = window.audioCtx;
+
     const binary = window.atob(base64); 
     const bytes = new Uint8Array(binary.length); 
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i); 
@@ -511,7 +606,13 @@ window.playLivePcmAudio = function(base64) {
     buffer.copyToChannel(float32, 0); 
     const source = window.audioContext.createBufferSource(); 
     source.buffer = buffer; 
-    source.connect(window.audioContext.destination); 
+    
+    if (window.masterGainNode) {
+        source.connect(window.masterGainNode);
+    } else {
+        source.connect(window.audioContext.destination);
+    }
+    
     window.liveAudioSources.push(source);
     source.onended = () => { window.liveAudioSources = window.liveAudioSources.filter(s => s !== source); };
     const now = window.audioContext.currentTime; 

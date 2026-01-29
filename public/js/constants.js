@@ -1,4 +1,4 @@
-// --- js/constants.js (v297.0: 音量管理対応版) ---
+// --- js/constants.js (v303.0: 音量制御確認版) ---
 
 // ==========================================
 // グローバル変数・状態フラグ
@@ -17,7 +17,7 @@ window.isComposing = false;
 window.chatSessionHistory = [];
 
 // ==========================================
-// 音量設定 (新規)
+// 音量設定
 // ==========================================
 window.appVolume = 0.5; // 初期音量 50%
 window.isMuted = false;
@@ -41,9 +41,7 @@ window.sfxChime = createAudio('assets/sounds/system/jpn_sch_chime.mp3');
 window.sfxBtn = createAudio('assets/sounds/ui/botan1.mp3'); 
 window.sfxOver = createAudio('assets/sounds/system/gameover.mp3');
 window.sfxBunseki = createAudio('assets/sounds/system/bunseki.mp3');
-window.sfxBunseki.volume = 0.05; // これは元々小さいので、個別調整が必要ならロジックで対応
-// 便宜上リストから外して個別管理するか、applyVolumeで比率を維持するロジックが必要だが、
-// 簡易的にリストには入れつつ、再生時に再調整する方針とする。
+window.sfxBunseki.volume = 0.05; 
 
 // UI/アクション音
 window.sfxBori = createAudio('assets/sounds/ui/boribori.mp3');
@@ -129,12 +127,12 @@ window.previewStream = null;
 window.safePlay = function(audioObj) {
     if (!audioObj) return Promise.resolve();
     try {
-        // 再生前に現在の音量を適用
-        audioObj.volume = window.isMuted ? 0 : window.appVolume;
+        const targetVol = window.isMuted ? 0 : window.appVolume;
         
-        // 特殊な音量調整が必要なファイルへの対応
         if (audioObj === window.sfxBunseki) {
-             audioObj.volume = window.isMuted ? 0 : (window.appVolume * 0.1); // 分析音は小さめに
+             audioObj.volume = targetVol * 0.1;
+        } else {
+             audioObj.volume = targetVol;
         }
 
         audioObj.currentTime = 0;

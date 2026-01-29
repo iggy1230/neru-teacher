@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v298.0: 設定ボタン左上配置対応) --- */
+/* --- style.css (完全版 v305.0: UI配置調整版) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -39,7 +39,6 @@ body::before {
     left: 0;
     width: 100%;
     height: 100vh;
-    /* パス修正 */
     background-image: url('assets/images/background/classroom-bg.png');
     background-size: cover;
     background-position: center;
@@ -80,7 +79,6 @@ button { font-family: inherit; }
     left: 0;
     width: 100%;
     height: 100%;
-    /* パス修正 */
     background-image: url('assets/images/background/neru-title-bg.png');
     background-size: cover;
     background-position: center;
@@ -178,7 +176,7 @@ button { font-family: inherit; }
 #main-back-btn {
     position: absolute;
     top: 10px;
-    left: 60px; /* ★修正: 設定ボタン(左10px)と重ならないように右へずらす */
+    left: 150px; /* ★修正: 音量バーの右側に配置 */
     width: auto !important;
     margin: 0 !important;
     padding: 8px 20px !important;
@@ -194,7 +192,6 @@ button { font-family: inherit; }
     left: 0;
     width: 100%;
     height: 100%;
-    /* パス修正 */
     background-image: url('assets/images/background/classroom0-bg.png');
     background-size: cover;
     background-position: center;
@@ -589,18 +586,17 @@ button { font-family: inherit; }
     gap: 5px;
 }
 
-/* ★修正: タイマーを大きく・見やすく */
 .mini-timer-display {
     position: fixed;
-    top: 10px;
-    left: 50px; /* 左上の戻るボタンの横 */
-    background: #fff3e0; /* 背景を少しオレンジ寄りに */
+    top: 60px; /* ★修正: 音量バーの下に配置 */
+    left: 10px; 
+    background: #fff3e0; 
     padding: 8px 15px;
     border-radius: 25px;
     font-weight: 900;
     font-size: 1.2rem;
-    font-family: 'Kiwi Maru', serif; /* フォント変更 */
-    color: #e64a19; /* 文字色を濃く */
+    font-family: 'Kiwi Maru', serif; 
+    color: #e64a19; 
     box-shadow: 0 4px 8px rgba(0,0,0,0.2);
     z-index: 100;
     display: flex;
@@ -814,14 +810,13 @@ button { font-family: inherit; }
 }
 .memory-modal-content {
     background: #fff; width: 90%; max-width: 500px; 
-    max-height: 80vh; /* 高さ制限 */
+    max-height: 80vh; 
     height: auto; 
     border-radius: 15px; padding: 20px;
-    display: flex; flex-direction: column; /* 縦並び */
+    display: flex; flex-direction: column; 
     box-shadow: 0 5px 15px rgba(0,0,0,0.3);
 }
 .memory-list {
-    /* 親のflexコンテナ内で伸縮し、スクロール可能にする */
     flex: 1; 
     overflow-y: auto; 
     margin: 15px 0;
@@ -880,7 +875,7 @@ button { font-family: inherit; }
     font-size: 0.9rem;
 }
 
-/* --- Liveカメラ関連 (New) --- */
+/* --- Liveカメラ関連 --- */
 .mini-cam-btn {
     background: #4a90e2; 
     color: white; 
@@ -919,14 +914,14 @@ button { font-family: inherit; }
     object-fit: cover;
 }
 
-/* --- ホワイトボード（漢字表示用） (New) --- */
+/* --- ホワイトボード --- */
 .whiteboard-overlay {
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.6); /* 背景を少し暗くする */
+    background: rgba(0, 0, 0, 0.6); 
     display: flex;
     justify-content: center;
     align-items: center;
@@ -936,7 +931,7 @@ button { font-family: inherit; }
 
 .whiteboard-board {
     background: #fff;
-    border: 8px solid #8d6e63; /* 木枠っぽい色 */
+    border: 8px solid #8d6e63; 
     border-radius: 15px;
     padding: 20px;
     width: 90%;
@@ -947,14 +942,14 @@ button { font-family: inherit; }
     align-items: center;
     justify-content: center;
     box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-    background-color: #fdfbf7; /* 画用紙っぽい色 */
+    background-color: #fdfbf7; 
     position: relative;
 }
 
 .whiteboard-text {
-    font-size: 5rem; /* 漢字をドーンと大きく！ */
+    font-size: 5rem; 
     font-weight: 900;
-    font-family: 'Kiwi Maru', serif; /* 教科書体っぽいフォント */
+    font-family: 'Kiwi Maru', serif; 
     color: #333;
     margin: 20px 0;
     text-align: center;
@@ -979,7 +974,7 @@ button { font-family: inherit; }
     box-shadow: 0 2px 0 #d32f2f;
 }
 
-/* --- 記憶管理タブ (v196.0) --- */
+/* --- 記憶管理タブ --- */
 .memory-tab {
     flex: 1;
     background: none;
@@ -1033,13 +1028,53 @@ button { font-family: inherit; }
     line-height: 1;
     padding: 0;
 }
-/* 設定ボタン(左上固定) */
+
 .settings-btn-fixed {
-    position: fixed; top: 10px; left: 10px; z-index: 9999;
-    background: rgba(255, 255, 255, 0.8); border: 2px solid #b0bec5;
-    border-radius: 50%; width: 40px; height: 40px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 1.5rem; cursor: pointer;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    display: none !important;
 }
-.settings-btn-fixed:active { transform: scale(0.9); }
+
+/* 新: 音量コントロール固定表示 */
+.volume-controls-fixed {
+    position: fixed; 
+    top: 10px; 
+    left: 10px; 
+    z-index: 9999;
+    display: flex; 
+    align-items: center; 
+    gap: 5px;
+    background: rgba(255, 255, 255, 0.7); 
+    border-radius: 20px; 
+    padding: 5px 10px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    backdrop-filter: blur(2px);
+}
+
+.volume-icon-btn {
+    background: transparent;
+    border: none;
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+}
+
+.volume-slider-bar {
+    width: 80px; 
+    height: 6px; 
+    -webkit-appearance: none; 
+    background: #ccc; 
+    border-radius: 5px; 
+    outline: none;
+}
+
+.volume-slider-bar::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #ff85a1;
+    cursor: pointer;
+    border: 2px solid white;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
