@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v306.0: 図鑑位置情報ロジック改善版) ---
+// --- js/camera-service.js (v308.0: 座標調整追加版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -191,10 +191,10 @@ window.captureAndIdentifyItem = async function() {
         window.updateNellMessage("ん？どこで何を見つけたのかにゃ…？", "thinking", false, true);
     }
 
-    // ★修正: 位置情報の取得ロジック
-    // 1. すでに取得済みの window.currentLocation があればそれを使う
-    // 2. なければ、その場で getLocation (低精度) を試みる
+    // ★修正: 位置情報の取得と調整
     let locationData = window.currentLocation;
+    
+    // キャッシュがない場合はその場で取得を試みる
     if (!locationData) {
         console.log("Using fallback GPS...");
         try {
@@ -204,6 +204,12 @@ window.captureAndIdentifyItem = async function() {
         }
     } else {
         console.log("Using cached GPS:", locationData);
+    }
+
+    // ★修正: 座標が取得できた場合、小数点を丸めてAIに渡す
+    if (locationData) {
+        locationData.lat = parseFloat(locationData.lat).toFixed(6);
+        locationData.lon = parseFloat(locationData.lon).toFixed(6);
     }
 
     try {

@@ -1,4 +1,4 @@
-// --- js/analyze.js (v306.0: 位置情報速度優先・図鑑モード対応版) ---
+// --- js/analyze.js (v308.0: 位置情報高精度化版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -9,7 +9,7 @@ window.currentLocation = null;
 // 位置情報取得ヘルパー
 window.fetchCurrentLocation = function() {
     if (!navigator.geolocation) return;
-    console.log("Fetching location (Speed Priority)...");
+    console.log("Fetching location (High Accuracy)...");
     navigator.geolocation.getCurrentPosition(
         (pos) => {
             window.currentLocation = { lat: pos.coords.latitude, lon: pos.coords.longitude };
@@ -17,11 +17,11 @@ window.fetchCurrentLocation = function() {
         },
         (err) => {
             console.warn("Location fetch failed:", err);
-            // 失敗してもnullのままにしておく（古い情報を残さない）
+            // 失敗してもnullのままにしておく
             window.currentLocation = null;
         },
-        // ★修正: 速度優先に戻す (enableHighAccuracy: false)
-        { timeout: 10000, enableHighAccuracy: false } 
+        // ★修正: 高精度モードをON (enableHighAccuracy: true)
+        { timeout: 15000, enableHighAccuracy: true } 
     );
 };
 
@@ -89,7 +89,7 @@ window.selectMode = function(m) {
             document.getElementById('conversation-log').classList.remove('hidden');
             if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
             
-            // ★追加: 図鑑モードでも位置情報を事前に取得しておく（観光地特定などのため）
+            // 図鑑モードでも位置情報を事前に取得しておく
             window.fetchCurrentLocation();
         } 
         else if (m === 'simple-chat') {
@@ -285,7 +285,7 @@ window.startMouthAnimation = function() {
 };
 window.startMouthAnimation();
 
-// ページロード時にも位置情報取得を試みる（速度優先）
+// ページロード時にも位置情報取得を試みる
 window.addEventListener('DOMContentLoaded', () => {
     window.fetchCurrentLocation(); 
 
