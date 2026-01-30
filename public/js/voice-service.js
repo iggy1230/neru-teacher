@@ -1,4 +1,4 @@
-// --- js/voice-service.js (v308.1: 音声対話への位置情報連携追加版) ---
+// --- js/voice-service.js (v311.0: 住所連携対応版) ---
 
 // 音声再生の停止
 window.stopAudioPlayback = function() {
@@ -61,7 +61,7 @@ window.startAlwaysOnListening = function() {
         if(typeof window.addToSessionHistory === 'function') window.addToSessionHistory('user', text);
 
         try {
-            // ★修正: 音声入力時も位置情報をサーバーに送信する
+            // ★修正: 住所情報(address)も送信
             const res = await fetch('/chat-dialogue', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -69,7 +69,8 @@ window.startAlwaysOnListening = function() {
                     text: text, 
                     name: currentUser ? currentUser.name : "生徒",
                     history: window.chatSessionHistory,
-                    location: window.currentLocation // 位置情報を追加
+                    location: window.currentLocation,
+                    address: window.currentAddress // 追加
                 })
             });
             
@@ -278,7 +279,7 @@ window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
     try {
         if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
 
-        // ★修正: 画像送信時も位置情報を送る
+        // ★修正: 住所情報(address)も送信
         const res = await fetch('/chat-dialogue', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -287,7 +288,8 @@ window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
                 text: "この問題を教えてください。",
                 name: currentUser ? currentUser.name : "生徒",
                 history: window.chatSessionHistory,
-                location: window.currentLocation // 位置情報を追加
+                location: window.currentLocation,
+                address: window.currentAddress // 追加
             })
         });
 
@@ -419,8 +421,10 @@ window.startLiveChat = async function(context = 'main') {
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:'; 
         let statusSummary = `${currentUser.name}さんは今、お話しにきたにゃ。カリカリは${currentUser.karikari}個持ってるにゃ。`; 
         
-        // ★修正: リアルタイムチャット開始時も現在地情報をコンテキストに含める
-        if (window.currentLocation) {
+        // ★修正: 住所情報があればコンテキストに含める
+        if (window.currentAddress) {
+            statusSummary += ` 現在地は${window.currentAddress}だにゃ。`;
+        } else if (window.currentLocation) {
             statusSummary += ` 現在地は緯度${window.currentLocation.lat}、経度${window.currentLocation.lon}だにゃ。`;
         }
 

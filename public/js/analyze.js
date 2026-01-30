@@ -1,28 +1,99 @@
-// --- js/analyze.js (v308.0: 位置情報高精度化版) ---
+// --- js/analyze.js (v317.0: 住所重複排除・クライアント側住所特定版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
 
-// グローバル変数: 現在位置情報
+// グローバル変数
 window.currentLocation = null;
+window.currentAddress = null; // 住所文字列
+window.locationWatchId = null;
 
-// 位置情報取得ヘルパー
-window.fetchCurrentLocation = function() {
+// 住所特定ヘルパー (OpenStreetMap Nominatim API使用)
+window.fetchAddressFromCoords = async function(lat, lon) {
+    try {
+        const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&accept_language=ja&zoom=18&addressdetails=1`;
+        const res = await fetch(url);
+        if (res.ok) {
+            const data = await res.json();
+            const addr = data.address;
+            
+            // ★修正: 重複排除ロジック
+            let fullAddress = "";
+
+            const appendIfNew = (str) => {
+                // すでに含まれているかチェック (例: "筑後市"の後に"筑後市"を足さない)
+                if (str && !fullAddress.includes(str)) {
+                    fullAddress += str;
+                }
+            };
+            
+            // 都道府県
+            if (addr.province) appendIfNew(addr.province);
+            else if (addr.prefecture) appendIfNew(addr.prefecture);
+            
+            // 市区町村・郡
+            if (addr.city) appendIfNew(addr.city);
+            if (addr.county) appendIfNew(addr.county);
+            if (addr.town) appendIfNew(addr.town);
+            if (addr.village) appendIfNew(addr.village);
+            
+            // 町名・字・区
+            if (addr.ward) appendIfNew(addr.ward);
+            if (addr.suburb) appendIfNew(addr.suburb);
+            if (addr.city_district) appendIfNew(addr.city_district);
+            if (addr.neighbourhood) appendIfNew(addr.neighbourhood);
+            if (addr.quarter) appendIfNew(addr.quarter);
+            if (addr.hamlet) appendIfNew(addr.hamlet);
+
+            // 道路・番地・建物
+            if (addr.road) appendIfNew(addr.road);
+            if (addr.house_number) appendIfNew(addr.house_number);
+            if (addr.amenity || addr.building || addr.public_building || addr.tourism || addr.shop) {
+                appendIfNew(addr.amenity || addr.building || addr.public_building || addr.tourism || addr.shop);
+            }
+            
+            if (fullAddress) {
+                window.currentAddress = fullAddress;
+                console.log("★詳細住所特定:", window.currentAddress);
+            }
+        }
+    } catch (e) {
+        console.warn("Address fetch failed:", e);
+    }
+};
+
+// 位置情報の継続監視と住所特定
+window.startLocationWatch = function() {
     if (!navigator.geolocation) return;
-    console.log("Fetching location (High Accuracy)...");
-    navigator.geolocation.getCurrentPosition(
+    if (window.locationWatchId !== null) return;
+
+    console.log("Starting GPS & Address fetch...");
+
+    window.locationWatchId = navigator.geolocation.watchPosition(
         (pos) => {
-            window.currentLocation = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-            console.log("Location fetched:", window.currentLocation);
+            const newAccuracy = pos.coords.accuracy;
+            const lat = pos.coords.latitude;
+            const lon = pos.coords.longitude;
+
+            // 精度が良い場合、または初回の場合に更新
+            if (!window.currentLocation || newAccuracy < window.currentLocation.accuracy) {
+                window.currentLocation = { lat: lat, lon: lon, accuracy: newAccuracy };
+                console.log(`★位置更新: 精度${Math.round(newAccuracy)}m`);
+                
+                // 住所も更新（負荷軽減のため、精度が良くなった時だけ呼ぶ）
+                window.fetchAddressFromCoords(lat, lon);
+            }
         },
-        (err) => {
-            console.warn("Location fetch failed:", err);
-            // 失敗してもnullのままにしておく
-            window.currentLocation = null;
-        },
-        // ★修正: 高精度モードをON (enableHighAccuracy: true)
-        { timeout: 15000, enableHighAccuracy: true } 
+        (err) => { console.warn("Location watch error:", err); },
+        { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
     );
+};
+
+window.stopLocationWatch = function() {
+    if (window.locationWatchId !== null) {
+        navigator.geolocation.clearWatch(window.locationWatchId);
+        window.locationWatchId = null;
+    }
 };
 
 // ==========================================
@@ -83,27 +154,23 @@ window.selectMode = function(m) {
         
         // モードごとの初期化
         if (m === 'chat') { 
-            // お宝図鑑モード
             document.getElementById('chat-view').classList.remove('hidden'); 
             window.updateNellMessage("お宝を見せてにゃ！お話もできるにゃ！", "excited", false); 
             document.getElementById('conversation-log').classList.remove('hidden');
             if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
-            
-            // 図鑑モードでも位置情報を事前に取得しておく
-            window.fetchCurrentLocation();
+            window.startLocationWatch(); // 位置・住所監視開始
         } 
         else if (m === 'simple-chat') {
             document.getElementById('simple-chat-view').classList.remove('hidden');
             window.updateNellMessage("今日はお話だけするにゃ？", "gentle", false);
             document.getElementById('conversation-log').classList.remove('hidden');
             if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
-            
-            // 個別指導モードでも位置情報を取得
-            window.fetchCurrentLocation();
+            window.startLocationWatch(); // 位置・住所監視開始
         }
         else if (m === 'chat-free') {
             document.getElementById('chat-free-view').classList.remove('hidden');
             window.updateNellMessage("何でも話していいにゃ！", "happy", false);
+            window.startLocationWatch(); // 位置・住所監視開始
         }
         else if (m === 'lunch') { 
             document.getElementById('lunch-view').classList.remove('hidden'); 
@@ -223,6 +290,7 @@ window.sendHttpText = async function(context) {
     try {
         window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
         
+        // ★修正: 住所情報(address)も送信
         const res = await fetch('/chat-dialogue', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -230,7 +298,8 @@ window.sendHttpText = async function(context) {
                 text: text, 
                 name: currentUser ? currentUser.name : "生徒",
                 history: window.chatSessionHistory,
-                location: window.currentLocation 
+                location: window.currentLocation,
+                address: window.currentAddress // 確定した詳細住所
             })
         });
 
@@ -285,11 +354,11 @@ window.startMouthAnimation = function() {
 };
 window.startMouthAnimation();
 
-// ページロード時にも位置情報取得を試みる
 window.addEventListener('DOMContentLoaded', () => {
-    window.fetchCurrentLocation(); 
+    if(typeof window.startLocationWatch === 'function') {
+        window.startLocationWatch();
+    }
 
-    // DOMContentLoaded でのイベント設定
     const camIn = document.getElementById('hw-input-camera'); 
     const albIn = document.getElementById('hw-input-album'); 
     if(camIn) camIn.addEventListener('change', (e) => { if(window.handleFileUpload) window.handleFileUpload(e.target.files[0]); e.target.value=''; });

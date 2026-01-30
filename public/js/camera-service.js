@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v308.0: 座標調整追加版) ---
+// --- js/camera-service.js (v308.0: 図鑑撮影時位置情報待機版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -129,7 +129,7 @@ window.createTreasureImage = function(sourceCanvas) {
     return canvas.toDataURL('image/jpeg', 0.8);
 };
 
-// GPS取得ヘルパー (フォールバック用: 速度優先)
+// GPS取得ヘルパー (フォールバック用: 高精度)
 const getLocation = () => {
     return new Promise((resolve) => {
         if (!navigator.geolocation) return resolve(null);
@@ -137,19 +137,23 @@ const getLocation = () => {
         const timeoutId = setTimeout(() => {
             console.warn("GPS Timeout (Fallback)");
             resolve(null);
-        }, 5000); // 5秒でタイムアウト
+        }, 10000); // 10秒待つ
 
         navigator.geolocation.getCurrentPosition(
             (pos) => {
                 clearTimeout(timeoutId);
-                resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+                resolve({ 
+                    lat: pos.coords.latitude, 
+                    lon: pos.coords.longitude, 
+                    accuracy: pos.coords.accuracy 
+                });
             },
             (err) => { 
                 clearTimeout(timeoutId);
                 console.warn("GPS Error (Fallback):", err); 
                 resolve(null); 
             },
-            { timeout: 5000, enableHighAccuracy: false } // 速度優先
+            { timeout: 10000, enableHighAccuracy: true } // ★高精度
         );
     });
 };
@@ -174,6 +178,29 @@ window.captureAndIdentifyItem = async function() {
         btn.disabled = true;
     }
 
+    // ★追加: 位置情報の精度チェックと待機
+    let locationData = window.currentLocation;
+    
+    // 位置情報がない、または精度が悪い(1000m以上ズレている)場合は、少し待ってみる
+    if (!locationData || locationData.accuracy > 1000) {
+        console.log("位置情報の精度向上を待機中...");
+        if(typeof window.updateNellMessage === 'function') {
+            window.updateNellMessage("ん？詳しい場所を調べてるにゃ…ちょっと待ってにゃ…", "thinking", false, true);
+        }
+        
+        // 3秒間だけ待つループ（0.5秒ごとにチェック）
+        for (let i = 0; i < 6; i++) {
+            await new Promise(r => setTimeout(r, 500));
+            if (window.currentLocation && window.currentLocation.accuracy <= 1000) {
+                locationData = window.currentLocation;
+                break;
+            }
+        }
+    }
+    
+    // 最終的に取得できたデータを使用 (待ってもダメならあるもので行く)
+    locationData = window.currentLocation;
+
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
@@ -188,13 +215,10 @@ window.captureAndIdentifyItem = async function() {
     setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
 
     if(typeof window.updateNellMessage === 'function') {
-        window.updateNellMessage("ん？どこで何を見つけたのかにゃ…？", "thinking", false, true);
+        window.updateNellMessage("ん？何を見つけたのかにゃ…？", "thinking", false, true);
     }
 
-    // ★修正: 位置情報の取得と調整
-    let locationData = window.currentLocation;
-    
-    // キャッシュがない場合はその場で取得を試みる
+    // 位置情報がまだnullならフォールバックを実行
     if (!locationData) {
         console.log("Using fallback GPS...");
         try {
@@ -204,12 +228,6 @@ window.captureAndIdentifyItem = async function() {
         }
     } else {
         console.log("Using cached GPS:", locationData);
-    }
-
-    // ★修正: 座標が取得できた場合、小数点を丸めてAIに渡す
-    if (locationData) {
-        locationData.lat = parseFloat(locationData.lat).toFixed(6);
-        locationData.lon = parseFloat(locationData.lon).toFixed(6);
     }
 
     try {
