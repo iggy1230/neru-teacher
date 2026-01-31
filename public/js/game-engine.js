@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v294.2: 絵文字ブロック版) ---
+// --- js/game-engine.js (v329.0: 報酬ロジック変更版) ---
 
 /**
  * ゲーム画面を表示し、初期化を行う
@@ -91,6 +91,18 @@ window.initGame = function() {
 };
 
 /**
+ * 報酬付与ヘルパー
+ */
+window.giveGameReward = function(amount) {
+    if (amount <= 0 || !currentUser) return;
+    
+    currentUser.karikari += amount;
+    if(typeof window.saveAndSync === 'function') window.saveAndSync();
+    if(typeof window.updateMiniKarikari === 'function') window.updateMiniKarikari();
+    if(typeof window.showKarikariEffect === 'function') window.showKarikariEffect(amount);
+};
+
+/**
  * ゲームループ（描画と物理演算）
  */
 window.drawGame = function() {
@@ -113,7 +125,7 @@ window.drawGame = function() {
     window.ctx.fill();
     window.ctx.closePath();
     
-    // ブロック描画 (★修正: 絵文字を描画)
+    // ブロック描画 (絵文字)
     window.bricks.forEach(b => {
         if(b.status === 1) {
             window.ctx.beginPath();
@@ -143,7 +155,15 @@ window.drawGame = function() {
             // ゲームオーバー
             window.gameRunning = false;
             if(window.safePlay) window.safePlay(window.sfxOver);
-            if(typeof window.updateNellMessage === 'function') window.updateNellMessage("あ〜あ、落ちちゃったにゃ…", "sad");
+            
+            // ★修正: 獲得したスコア分だけ報酬をあげる
+            if (window.score > 0) {
+                window.giveGameReward(window.score);
+                if(typeof window.updateNellMessage === 'function') window.updateNellMessage(`あ〜あ、落ちちゃったにゃ…。でも${window.score}個ゲットだにゃ！`, "sad");
+            } else {
+                if(typeof window.updateNellMessage === 'function') window.updateNellMessage("あ〜あ、落ちちゃったにゃ…", "sad");
+            }
+
             window.fetchGameComment("end", window.score);
             
             const startBtn = document.getElementById('start-game-btn');
@@ -160,6 +180,7 @@ window.drawGame = function() {
             if(window.ball.x > b.x && window.ball.x < b.x + b.w && window.ball.y > b.y && window.ball.y < b.y + b.h) {
                 window.ball.dy = -window.ball.dy;
                 b.status = 0;
+                // ★1個あたり10点 (＝報酬10個)
                 window.score += 10;
                 const scoreEl = document.getElementById('game-score');
                 if(scoreEl) scoreEl.innerText = window.score;
@@ -177,14 +198,11 @@ window.drawGame = function() {
     // ゲームクリア判定
     if (allCleared) {
         window.gameRunning = false;
-        if(typeof window.updateNellMessage === 'function') window.updateNellMessage("全部取ったにゃ！すごいにゃ！！", "excited");
         
-        if (currentUser) {
-            currentUser.karikari += 50; 
-            if(typeof window.saveAndSync === 'function') window.saveAndSync();
-            if(typeof window.updateMiniKarikari === 'function') window.updateMiniKarikari();
-            if(typeof window.showKarikariEffect === 'function') window.showKarikariEffect(50);
-        }
+        // ★修正: スコア分を報酬として付与 (全クリなら200個)
+        window.giveGameReward(window.score);
+        
+        if(typeof window.updateNellMessage === 'function') window.updateNellMessage(`全部取ったにゃ！すごいにゃ！！${window.score}個ゲットだにゃ！`, "excited");
         
         window.fetchGameComment("end", window.score);
         
