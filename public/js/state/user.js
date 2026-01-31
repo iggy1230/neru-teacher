@@ -1,7 +1,7 @@
-// --- user.js (完全版: ディレクトリ構成変更対応) ---
+// --- js/state/user.js (v320.0: Storage初期化対応版) ---
 
 // Firebase初期化
-let app, auth, db;
+let app, auth, db, storage; // storageを追加
 if (typeof firebaseConfig === 'undefined') {
     console.warn("firebase-config.js が読み込まれていないか、設定されていません。");
 } else {
@@ -9,12 +9,17 @@ if (typeof firebaseConfig === 'undefined') {
         app = firebase.initializeApp(firebaseConfig);
         auth = firebase.auth();
         db = firebase.firestore();
+        storage = firebase.storage(); // Storage初期化
     } else if (typeof firebase !== 'undefined') {
         app = firebase.app();
         auth = firebase.auth();
         db = firebase.firestore();
+        storage = firebase.storage(); // Storage初期化
     }
 }
+
+// グローバルに公開（memory.js等から使うため）
+window.fireStorage = storage;
 
 let users = JSON.parse(localStorage.getItem('nekoneko_users')) || [];
 let currentUser = null;

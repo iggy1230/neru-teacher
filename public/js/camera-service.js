@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v309.0: 位置情報保存対応版) ---
+// --- js/camera-service.js (v327.0: 画像サイズ・通信量最適化版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -14,8 +14,9 @@ window.startPreviewCamera = async function(videoId = 'live-chat-video', containe
             window.previewStream.getTracks().forEach(t => t.stop());
         }
         try {
+            // 通信量節約のため、カメラ自体の要求解像度も少し抑える（HDクラス）
             window.previewStream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: "environment" },
+                video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
                 audio: false 
             });
         } catch(e) {
@@ -93,8 +94,10 @@ window.toggleTreasureCamera = function() {
     }
 };
 
+// ★修正: 図鑑用画像のサイズダウン (400px, quality 0.7)
+// これでサムネイルとしての視認性は保ちつつ、容量を削減
 window.createTreasureImage = function(sourceCanvas) {
-    const OUTPUT_SIZE = 320; 
+    const OUTPUT_SIZE = 400; 
     const canvas = document.createElement('canvas');
     canvas.width = OUTPUT_SIZE;
     canvas.height = OUTPUT_SIZE;
@@ -121,15 +124,26 @@ window.createTreasureImage = function(sourceCanvas) {
     ctx.stroke();
     ctx.restore();
     
-    ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
-    ctx.beginPath();
-    ctx.arc(OUTPUT_SIZE*0.2, OUTPUT_SIZE*0.2, OUTPUT_SIZE*0.05, 0, Math.PI*2);
-    ctx.fill();
-    
-    return canvas.toDataURL('image/jpeg', 0.8);
+    return canvas.toDataURL('image/jpeg', 0.7);
 };
 
-// GPS取得ヘルパー (フォールバック用: 高精度)
+// ★修正: AI送信用画像のサイズダウン (1024px, quality 0.7)
+// 文字認識精度を維持しつつ、パケットを節約するライン
+window.processImageForAI = function(sourceCanvas) { 
+    const MAX_WIDTH = 1024; 
+    const QUALITY = 0.7;
+
+    let w = sourceCanvas.width; 
+    let h = sourceCanvas.height; 
+    if (w > MAX_WIDTH || h > MAX_WIDTH) { 
+        if (w > h) { h *= MAX_WIDTH / w; w = MAX_WIDTH; } else { w *= MAX_WIDTH / h; h = MAX_WIDTH; } 
+    } 
+    const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h; 
+    const ctx = canvas.getContext('2d'); ctx.drawImage(sourceCanvas, 0, 0, w, h); 
+    return canvas.toDataURL('image/jpeg', QUALITY); 
+};
+
+// GPS取得ヘルパー
 const getLocation = () => {
     return new Promise((resolve) => {
         if (!navigator.geolocation) return resolve(null);
@@ -137,7 +151,7 @@ const getLocation = () => {
         const timeoutId = setTimeout(() => {
             console.warn("GPS Timeout (Fallback)");
             resolve(null);
-        }, 10000); // 10秒待つ
+        }, 10000); 
 
         navigator.geolocation.getCurrentPosition(
             (pos) => {
@@ -153,7 +167,7 @@ const getLocation = () => {
                 console.warn("GPS Error (Fallback):", err); 
                 resolve(null); 
             },
-            { timeout: 10000, enableHighAccuracy: true } // ★高精度
+            { timeout: 10000, enableHighAccuracy: true }
         );
     });
 };
@@ -178,17 +192,14 @@ window.captureAndIdentifyItem = async function() {
         btn.disabled = true;
     }
 
-    // ★追加: 位置情報の精度チェックと待機
     let locationData = window.currentLocation;
     
-    // 位置情報がない、または精度が悪い(1000m以上ズレている)場合は、少し待ってみる
     if (!locationData || locationData.accuracy > 1000) {
         console.log("位置情報の精度向上を待機中...");
         if(typeof window.updateNellMessage === 'function') {
             window.updateNellMessage("ん？詳しい場所を調べてるにゃ…ちょっと待ってにゃ…", "thinking", false, true);
         }
         
-        // 3秒間だけ待つループ（0.5秒ごとにチェック）
         for (let i = 0; i < 6; i++) {
             await new Promise(r => setTimeout(r, 500));
             if (window.currentLocation && window.currentLocation.accuracy <= 1000) {
@@ -198,7 +209,6 @@ window.captureAndIdentifyItem = async function() {
         }
     }
     
-    // 最終的に取得できたデータを使用 (待ってもダメならあるもので行く)
     locationData = window.currentLocation;
 
     const canvas = document.createElement('canvas');
@@ -206,7 +216,12 @@ window.captureAndIdentifyItem = async function() {
     canvas.height = video.videoHeight || 480;
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+
+    // ★修正: AI送信用に圧縮
+    const compressedDataUrl = window.processImageForAI(canvas);
+    const base64Data = compressedDataUrl.split(',')[1];
+    
+    // ★修正: 図鑑用にも圧縮版生成
     const treasureDataUrl = window.createTreasureImage(canvas);
 
     const flash = document.createElement('div');
@@ -218,7 +233,6 @@ window.captureAndIdentifyItem = async function() {
         window.updateNellMessage("ん？何を見つけたのかにゃ…？", "thinking", false, true);
     }
 
-    // 位置情報がまだnullならフォールバックを実行
     if (!locationData) {
         console.log("Using fallback GPS...");
         try {
@@ -235,10 +249,10 @@ window.captureAndIdentifyItem = async function() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-                image: base64Data,
+                image: base64Data, // 圧縮済みデータ
                 name: currentUser ? currentUser.name : "生徒",
-                location: locationData, // 位置情報
-                address: window.currentAddress // 詳細住所
+                location: locationData, 
+                address: window.currentAddress
             })
         });
 
@@ -265,11 +279,9 @@ window.captureAndIdentifyItem = async function() {
         if (data.itemName && window.NellMemory) {
             const description = data.description || "（解説はないにゃ）";
             const realDescription = data.realDescription || "";
-            // ★修正: locationData を渡す
-            await window.NellMemory.addToCollection(currentUser.id, data.itemName, treasureDataUrl, description, realDescription, locationData);
+            await window.NellMemory.addToCollection(currentUser.id, data.itemName, treasureDataUrl, description, realDescription, locationData, data.rarity || 1);
             
             const notif = document.createElement('div');
-            // ふりがなを除去して表示
             const cleanName = data.itemName.replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
             notif.innerText = `📖 図鑑に「${cleanName}」を登録したにゃ！`;
             notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #00bcd4; color:#006064; padding:15px 25px; border-radius:30px; font-weight:900; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 10px 25px rgba(0,0,0,0.3);";
@@ -441,17 +453,6 @@ window.updateCropUI = function(canvas) {
     svg.innerHTML = `<polyline points="${ptsStr} ${svgPts[0].x},${svgPts[0].y}" style="fill:rgba(255,255,255,0.2);stroke:#ff4081;stroke-width:2;stroke-dasharray:5" />`; 
 };
 
-window.processImageForAI = function(sourceCanvas) { 
-    const MAX_WIDTH = 1600; 
-    let w = sourceCanvas.width; let h = sourceCanvas.height; 
-    if (w > MAX_WIDTH || h > MAX_WIDTH) { 
-        if (w > h) { h *= MAX_WIDTH / w; w = MAX_WIDTH; } else { w *= MAX_WIDTH / h; h = MAX_WIDTH; } 
-    } 
-    const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h; 
-    const ctx = canvas.getContext('2d'); ctx.drawImage(sourceCanvas, 0, 0, w, h); 
-    return canvas.toDataURL('image/jpeg', 0.9); 
-};
-
 window.performPerspectiveCrop = function(sourceCanvas, points) { 
     const minX = Math.min(...points.map(p => p.x)), maxX = Math.max(...points.map(p => p.x)); 
     const minY = Math.min(...points.map(p => p.y)), maxY = Math.max(...points.map(p => p.y)); 
@@ -459,6 +460,7 @@ window.performPerspectiveCrop = function(sourceCanvas, points) {
     if (w < 1) w = 1; if (h < 1) h = 1; 
     const tempCv = document.createElement('canvas'); tempCv.width = w; tempCv.height = h; 
     const ctx = tempCv.getContext('2d'); ctx.drawImage(sourceCanvas, minX, minY, w, h, 0, 0, w, h); 
+    // ★修正: 圧縮処理を通す
     return window.processImageForAI(tempCv).split(',')[1]; 
 };
 
@@ -558,4 +560,207 @@ window.cleanupAnalysis = function() {
         window.analysisTimers.forEach(t => clearTimeout(t)); 
         window.analysisTimers = []; 
     } 
+};
+
+// ==========================================
+// WebSocketチャット用画像送信 (圧縮版)
+// ==========================================
+window.captureAndSendLiveImage = function(context = 'main') {
+    if (context === 'main') {
+        if (window.currentMode === 'chat-free') context = 'free';
+        else if (window.activeChatContext === 'embedded') context = 'embedded';
+        else if (window.currentMode === 'simple-chat') context = 'simple';
+    }
+    
+    if (context === 'embedded' || context === 'simple') {
+        window.captureAndSendLiveImageHttp(context);
+        return;
+    }
+
+    if (!window.liveSocket || window.liveSocket.readyState !== WebSocket.OPEN) {
+        return alert("まずは「おはなしする」でネル先生とつながってにゃ！");
+    }
+    if (window.isLiveImageSending) return; 
+    
+    let videoId = 'live-chat-video-free';
+    let containerId = 'live-chat-video-container-free';
+    const video = document.getElementById(videoId);
+    const btn = document.getElementById('live-camera-btn-free');
+
+    if (!video || !video.srcObject || !video.srcObject.active) {
+        if (typeof window.startPreviewCamera === 'function') {
+            window.startPreviewCamera(videoId, containerId).then(() => {
+                if (btn) {
+                    btn.innerHTML = "<span>📸</span> 撮影して送信";
+                    btn.style.backgroundColor = "#ff5252";
+                }
+            });
+        } else {
+            alert("カメラ機能が読み込まれていないにゃ...");
+        }
+        return;
+    }
+
+    window.stopAudioPlayback();
+    window.ignoreIncomingAudio = true; 
+    window.isLiveImageSending = true;
+    
+    if (btn) {
+        btn.innerHTML = "<span>📡</span> 送信中にゃ...";
+        btn.style.backgroundColor = "#ccc";
+    }
+    window.isMicMuted = true;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    const notif = document.createElement('div');
+    notif.innerText = `📝 問題を送ったにゃ！`;
+    notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #8bc34a; color:#558b2f; padding:10px 20px; border-radius:30px; font-weight:bold; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 4px 10px rgba(0,0,0,0.2);";
+    document.body.appendChild(notif);
+    setTimeout(() => notif.remove(), 2000);
+    
+    // ★修正: 圧縮処理を通す
+    const compressedDataUrl = window.processImageForAI(canvas);
+    const base64Data = compressedDataUrl.split(',')[1];
+    
+    const flash = document.createElement('div');
+    flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;";
+    document.body.appendChild(flash);
+    setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
+
+    const videoContainer = document.getElementById('live-chat-video-container-free');
+    if (videoContainer) {
+        const oldPreview = document.getElementById('snapshot-preview-overlay');
+        if(oldPreview) oldPreview.remove();
+        const previewImg = document.createElement('img');
+        previewImg.id = 'snapshot-preview-overlay';
+        previewImg.src = compressedDataUrl;
+        previewImg.style.cssText = "position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; z-index:10; border:4px solid #ffeb3b; box-sizing:border-box; animation: fadeIn 0.2s;";
+        videoContainer.style.position = "relative"; 
+        videoContainer.appendChild(previewImg);
+        setTimeout(() => { if(previewImg && previewImg.parentNode) previewImg.remove(); }, 3000);
+    }
+
+    if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ん？どれどれ…", "thinking", false, false);
+    
+    if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN) {
+        let promptText = "（ユーザーが勉強の問題や画像を見せました）この画像の内容を詳しく、子供にもわかるように丁寧に教えてください。図鑑登録は不要です。";
+        window.liveSocket.send(JSON.stringify({ 
+            clientContent: { 
+                turns: [{ role: "user", parts: [ { text: promptText }, { inlineData: { mime_type: "image/jpeg", data: base64Data } } ] }],
+                turnComplete: true 
+            } 
+        }));
+    }
+
+    setTimeout(() => {
+        window.isLiveImageSending = false;
+        window.isMicMuted = false;
+        
+        if (typeof window.stopPreviewCamera === 'function') {
+            window.stopPreviewCamera();
+        }
+        
+        if (btn) {
+             btn.innerHTML = "<span>📷</span> 写真を見せてお話";
+             btn.style.backgroundColor = "#009688";
+        }
+    }, 3000);
+    setTimeout(() => { window.ignoreIncomingAudio = false; }, 300);
+};
+
+// ==========================================
+// HTTPチャット用画像送信 (圧縮版)
+// ==========================================
+window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
+    if (window.isLiveImageSending) return;
+    
+    if (window.isAlwaysListening && window.continuousRecognition) {
+        try { window.continuousRecognition.stop(); } catch(e){}
+    }
+    
+    let videoId, btnId, activeColor;
+    if (context === 'embedded') { videoId = 'live-chat-video-embedded'; btnId = 'live-camera-btn-embedded'; activeColor = '#66bb6a'; }
+    else if (context === 'simple') { videoId = 'live-chat-video-simple'; btnId = 'live-camera-btn-simple'; activeColor = '#66bb6a'; }
+
+    const video = document.getElementById(videoId);
+    if (!video || !video.srcObject || !video.srcObject.active) return alert("カメラが動いてないにゃ...");
+    
+    window.isLiveImageSending = true;
+    const btn = document.getElementById(btnId);
+    if (btn) {
+        btn.innerHTML = "<span>📡</span> 送信中にゃ...";
+        btn.style.backgroundColor = "#ccc";
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    // ★修正: 圧縮処理を通す
+    const compressedDataUrl = window.processImageForAI(canvas);
+    const base64Data = compressedDataUrl.split(',')[1];
+    
+    const flash = document.createElement('div');
+    flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;";
+    document.body.appendChild(flash);
+    setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
+
+    if(typeof window.addLogItem === 'function') window.addLogItem('user', '（画像送信）');
+
+    try {
+        if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
+
+        const res = await fetch('/chat-dialogue', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                image: base64Data, // 圧縮済み
+                text: "この問題を教えてください。",
+                name: currentUser ? currentUser.name : "生徒",
+                history: window.chatSessionHistory,
+                location: window.currentLocation,
+                address: window.currentAddress // 追加
+            })
+        });
+
+        if (!res.ok) throw new Error("Server response not ok");
+        const data = await res.json();
+        
+        const speechText = data.speech || data.reply || "教えてあげるにゃ！";
+        
+        if(typeof window.addLogItem === 'function') window.addLogItem('nell', speechText);
+        if(typeof window.addToSessionHistory === 'function') window.addToSessionHistory('nell', speechText);
+        
+        if(typeof window.updateNellMessage === 'function') await window.updateNellMessage(speechText, "happy", true, true);
+        
+        let boardId = (context === 'embedded') ? 'embedded-chalkboard' : 'chalkboard-simple';
+        const embedBoard = document.getElementById(boardId);
+        if (embedBoard && data.board && data.board.trim() !== "") {
+            embedBoard.innerText = data.board;
+            embedBoard.classList.remove('hidden');
+        }
+
+    } catch(e) {
+        console.error("HTTP Image Error:", e);
+        if(typeof window.updateNellMessage === 'function') window.updateNellMessage("よく見えなかったにゃ…もう一回お願いにゃ！", "thinking", false, true);
+    } finally {
+        window.isLiveImageSending = false;
+        
+        if(typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera(); 
+        if (btn) {
+            btn.innerHTML = "<span>📷</span> カメラで見せて質問";
+            btn.style.backgroundColor = activeColor;
+        }
+        
+        if (window.isAlwaysListening) {
+             try { window.continuousRecognition.start(); } catch(e){}
+        }
+    }
 };

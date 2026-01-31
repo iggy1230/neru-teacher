@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v306.0: マップスタイル追加版) --- */
+/* --- style.css (完全版 v308.0: 肉球画像対応版) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -1027,13 +1027,14 @@ button { font-family: inherit; }
     font-size: 1rem;
     line-height: 1;
     padding: 0;
+    margin-left: 5px;
 }
 
 .settings-btn-fixed {
     display: none !important;
 }
 
-/* 新: 音量コントロール固定表示 */
+/* 音量コントロール固定表示 */
 .volume-controls-fixed {
     position: fixed; 
     top: 10px; 
@@ -1095,4 +1096,24 @@ button { font-family: inherit; }
     transform: scale(1.2);
     z-index: 1000 !important;
     border-color: #ffeb3b;
+}
+
+/* ★新: レアリティマーク画像 (肉球) */
+.rarity-mark {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 2px;
+}
+.rarity-img {
+    width: 16px; 
+    height: 16px; 
+    object-fit: contain;
+    /* 色調整が必要ならfilterを使うが、画像そのものを使うなら不要 */
+    filter: drop-shadow(1px 1px 0px rgba(255, 255, 255, 0.8));
+}
+
+/* アニメーション用（レア度高） */
+.rarity-5 .rarity-img {
+    animation: bounce 1s infinite alternate;
 }

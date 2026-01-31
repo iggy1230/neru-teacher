@@ -1,4 +1,4 @@
-// --- js/voice-service.js (v311.0: 住所連携対応版) ---
+// --- js/voice-service.js (v312.0: プロフィール未登録情報連携版) ---
 
 // 音声再生の停止
 window.stopAudioPlayback = function() {
@@ -60,8 +60,19 @@ window.startAlwaysOnListening = function() {
         if(typeof window.addLogItem === 'function') window.addLogItem('user', text);
         if(typeof window.addToSessionHistory === 'function') window.addToSessionHistory('user', text);
 
+        // ★追加: 未登録情報の検出
+        let missingInfo = [];
+        if (window.NellMemory && currentUser) {
+            try {
+                const profile = await window.NellMemory.getUserProfile(currentUser.id);
+                if (!profile.birthday) missingInfo.push("誕生日");
+                if (!profile.likes || profile.likes.length === 0) missingInfo.push("好きなもの");
+                if (!profile.weaknesses || profile.weaknesses.length === 0) missingInfo.push("苦手なもの");
+            } catch(e) {}
+        }
+
         try {
-            // ★修正: 住所情報(address)も送信
+            // ★修正: missingInfo送信
             const res = await fetch('/chat-dialogue', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -70,7 +81,8 @@ window.startAlwaysOnListening = function() {
                     name: currentUser ? currentUser.name : "生徒",
                     history: window.chatSessionHistory,
                     location: window.currentLocation,
-                    address: window.currentAddress // 追加
+                    address: window.currentAddress,
+                    missingInfo: missingInfo 
                 })
             });
             
@@ -426,6 +438,20 @@ window.startLiveChat = async function(context = 'main') {
             statusSummary += ` 現在地は${window.currentAddress}だにゃ。`;
         } else if (window.currentLocation) {
             statusSummary += ` 現在地は緯度${window.currentLocation.lat}、経度${window.currentLocation.lon}だにゃ。`;
+        }
+
+        // ★追加: WebSocket接続時にも未登録情報を伝える
+        let missingInfo = [];
+        if (window.NellMemory) {
+            try {
+                const profile = await window.NellMemory.getUserProfile(currentUser.id);
+                if (!profile.birthday) missingInfo.push("誕生日");
+                if (!profile.likes || profile.likes.length === 0) missingInfo.push("好きなもの");
+                if (!profile.weaknesses || profile.weaknesses.length === 0) missingInfo.push("苦手なもの");
+            } catch(e) {}
+        }
+        if (missingInfo.length > 0) {
+            statusSummary += `\n【重要】ユーザーの${missingInfo.join("、")}がまだ分かりません。会話の中で自然に聞いてみてください。`;
         }
 
         let modeParam = 'chat-free';

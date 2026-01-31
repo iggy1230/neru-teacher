@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (完全版 v305.0: 足あとマップ実装版) ---
+// --- js/ui/ui.js (完全版 v310.0: 相互リンク対応版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -54,6 +54,32 @@ window.applyVolumeToAll = function() {
         // 現在時刻で即座に変更
         window.masterGainNode.gain.setValueAtTime(targetVol, window.audioCtx.currentTime);
     }
+};
+
+// ==========================================
+// ★ Helper Functions
+// ==========================================
+
+// 表示用テキストクリーニング
+window.cleanDisplayString = function(text) {
+    if (!text) return "";
+    let clean = text;
+    // 1. マークダウンの太字(**)などを削除
+    clean = clean.replace(/\*\*/g, "");
+    // 2. 「漢字/英単語(ふりがな)」のふりがな部分を削除して、元の単語だけ残す
+    clean = clean.replace(/[\(（][ぁ-んァ-ンー\s　]+[\)）]/g, "");
+    return clean;
+};
+
+// レアリティ表示用文字列生成 (画像を使用)
+window.generateRarityString = function(rarity) {
+    const r = rarity || 1;
+    const imgPath = "assets/images/effects/nikukyurea.png";
+    let images = "";
+    for(let i=0; i<r; i++) {
+        images += `<img src="${imgPath}" class="rarity-img" alt="🐾">`;
+    }
+    return `<div class="rarity-mark rarity-${r}">${images}</div>`;
 };
 
 // ==========================================
@@ -199,6 +225,21 @@ window.updateProgress = function(p) {
 // 図鑑 (Collection)
 // ==========================================
 
+// ★追加: グローバルから詳細を開くためのラッパー
+window.openCollectionDetailByIndex = function(index) {
+    if (!window.NellMemory || !currentUser) return;
+    window.NellMemory.getUserProfile(currentUser.id).then(profile => {
+        if (profile && profile.collection && profile.collection[index]) {
+            // モーダルが非表示なら表示する
+            const modal = document.getElementById('collection-modal');
+            if (modal && modal.classList.contains('hidden')) {
+                modal.classList.remove('hidden');
+            }
+            window.showCollectionDetail(profile.collection[index], index);
+        }
+    });
+};
+
 window.showCollection = async function() {
     if (!currentUser) return;
     const modal = document.getElementById('collection-modal');
@@ -207,7 +248,8 @@ window.showCollection = async function() {
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 80vh; display: flex; flex-direction: column;">
             <h3 style="text-align:center; margin:0 0 15px 0; color:#f57f17; flex-shrink: 0;">📖 お宝図鑑</h3>
-            <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap:10px; flex: 1; overflow-y:auto; padding:5px;">
+            <button onclick="closeCollection(); showMap();" class="main-btn" style="margin-bottom:10px; background:#29b6f6; box-shadow: 0 4px 0 #0288d1; padding:10px; font-size:0.9rem;">🗺️ 足あとマップを見る</button>
+            <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap:10px; flex: 1; overflow-y:auto; padding:5px;">
                 <p style="width:100%; text-align:center;">読み込み中にゃ...</p>
             </div>
             <div style="text-align:center; margin-top:15px; flex-shrink: 0;">
@@ -240,9 +282,11 @@ window.showCollection = async function() {
         img.style.cssText = "width:100%; height:auto; max-height:75%; object-fit:contain; margin-bottom:5px; filter:drop-shadow(0 2px 2px rgba(0,0,0,0.1));";
         
         const name = document.createElement('div');
-        // 図鑑リスト表示でもふりがなを隠す
-        name.innerText = item.name.replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
-        name.style.cssText = "font-size:0.8rem; font-weight:bold; color:#555; width:100%; line-height:1.2; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;";
+        const rarityMark = window.generateRarityString(item.rarity);
+        const displayName = window.cleanDisplayString(item.name);
+        
+        name.innerHTML = `${rarityMark}<br>${displayName}`;
+        name.style.cssText = "font-size:0.8rem; font-weight:bold; color:#555; width:100%; line-height:1.2; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;";
 
         div.appendChild(img);
         div.appendChild(name);
@@ -253,18 +297,30 @@ window.showCollection = async function() {
 window.showCollectionDetail = function(item, index) {
     const modal = document.getElementById('collection-modal');
     if (!modal) return;
+    
+    // マップから呼ばれた場合のために表示を強制
+    modal.classList.remove('hidden');
 
     const dateStr = item.date ? new Date(item.date).toLocaleDateString() : "";
     
-    // 詳細表示でもふりがなを隠す
-    const displayItemName = item.name.replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
-    const description = (item.description || "（ネル先生の解説はまだないみたいだにゃ…）").replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
-    const realDescription = (item.realDescription || "（まだ情報がないみたいだにゃ…）").replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
+    const displayItemName = window.cleanDisplayString(item.name);
+    const description = window.cleanDisplayString(item.description || "（ネル先生の解説はまだないみたいだにゃ…）");
+    const realDescription = window.cleanDisplayString(item.realDescription || "（まだ情報がないみたいだにゃ…）");
+    const rarityMark = window.generateRarityString(item.rarity);
+
+    // ★追加: 地図へ飛ぶボタンのHTML
+    let mapBtnHtml = "";
+    if (item.location && item.location.lat && item.location.lon) {
+        mapBtnHtml = `<button onclick="window.closeCollection(); window.showMap(${item.location.lat}, ${item.location.lon});" class="mini-teach-btn" style="background:#29b6f6; width:auto; margin-left:10px;">🗺️ 地図で見る</button>`;
+    }
 
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 80vh; display: flex; flex-direction: column;">
             <div style="flex-shrink:0; display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                <button onclick="showCollection()" class="mini-teach-btn" style="background:#8d6e63;">← 戻る</button>
+                <div>
+                    <button onclick="showCollection()" class="mini-teach-btn" style="background:#8d6e63;">← 戻る</button>
+                    ${mapBtnHtml}
+                </div>
                 <h3 style="margin:0; color:#f57f17; font-size:1.1rem;">お宝データ</h3>
                 <button onclick="deleteCollectionItem(${index})" class="mini-teach-btn" style="background:#ff5252;">削除</button>
             </div>
@@ -274,6 +330,7 @@ window.showCollectionDetail = function(item, index) {
                     <img src="${item.image}" style="width:100%; max-width:280px; height:auto; object-fit:contain; border-radius:50%; border:5px solid #ffd700; box-shadow:0 4px 10px rgba(0,0,0,0.2);">
                 </div>
                 
+                <div style="text-align:center; margin-bottom:5px;">${rarityMark}</div>
                 <div style="font-size:1.6rem; font-weight:900; color:#e65100; text-align:center; margin-bottom:15px; border-bottom:2px dashed #ffcc80; padding-bottom:10px;">
                     ${displayItemName}
                 </div>
@@ -323,17 +380,17 @@ window.closeCollection = function() {
 
 window.mapInstance = null;
 
-window.showMap = async function() {
+// ★修正: 特定の座標へズーム可能に
+window.showMap = async function(targetLat, targetLon) {
     if (!currentUser) return;
     
-    // 現在地情報の更新を試みる
     if (typeof window.startLocationWatch === 'function') {
         window.startLocationWatch();
     }
 
     switchScreen('screen-map');
     
-    // マップ初期化 (初回のみ)
+    // マップ初期化
     if (!window.mapInstance) {
         window.mapInstance = L.map('map-container');
         
@@ -343,22 +400,24 @@ window.showMap = async function() {
         }).addTo(window.mapInstance);
     }
     
-    // サイズ再計算 (display:none解除後のお作法)
     setTimeout(() => {
         window.mapInstance.invalidateSize();
         
-        // 中心点を決定
-        let centerLat = 35.6895; // 東京
+        let centerLat = 35.6895; 
         let centerLon = 139.6917;
+        let zoomLevel = 15;
         
-        if (window.currentLocation && window.currentLocation.lat) {
+        // ターゲット指定があればそこへ飛ぶ
+        if (targetLat && targetLon) {
+            centerLat = targetLat;
+            centerLon = targetLon;
+            zoomLevel = 18; // ズームイン
+        } else if (window.currentLocation && window.currentLocation.lat) {
             centerLat = window.currentLocation.lat;
             centerLon = window.currentLocation.lon;
         }
         
-        window.mapInstance.setView([centerLat, centerLon], 15);
-        
-        // ピン立て処理
+        window.mapInstance.setView([centerLat, centerLon], zoomLevel);
         window.renderMapMarkers();
     }, 200);
 };
@@ -366,7 +425,6 @@ window.showMap = async function() {
 window.renderMapMarkers = async function() {
     if (!window.mapInstance || !window.NellMemory || !currentUser) return;
     
-    // 既存マーカーを削除 (レイヤーグループを使うのが一般的だが、簡易的に全削除)
     window.mapInstance.eachLayer((layer) => {
         if (layer instanceof L.Marker) {
             window.mapInstance.removeLayer(layer);
@@ -378,11 +436,10 @@ window.renderMapMarkers = async function() {
     
     let hasMarkers = false;
     
-    collection.forEach(item => {
+    collection.forEach((item, index) => {
         if (item.location && item.location.lat && item.location.lon) {
             hasMarkers = true;
             
-            // カスタムアイコン (写真を表示)
             const icon = L.divIcon({
                 className: 'custom-div-icon',
                 html: `<div class="map-pin-icon" style="background-image: url('${item.image}');"></div>`,
@@ -391,17 +448,20 @@ window.renderMapMarkers = async function() {
                 popupAnchor: [0, -30]
             });
             
-            // ふりがな除去
-            const displayName = item.name.replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
+            const displayName = window.cleanDisplayString(item.name);
             const dateStr = item.date ? new Date(item.date).toLocaleDateString() : "";
+            const rarityMark = window.generateRarityString(item.rarity);
 
             const marker = L.marker([item.location.lat, item.location.lon], { icon: icon }).addTo(window.mapInstance);
             
+            // ★修正: ポップアップに「図鑑で見る」ボタンを追加
             marker.bindPopup(`
                 <div style="text-align:center;">
                     <img src="${item.image}" style="width:100px; height:100px; object-fit:contain; margin-bottom:5px;"><br>
                     <strong>${displayName}</strong><br>
-                    <span style="font-size:0.8rem; color:#666;">${dateStr}</span>
+                    <div>${rarityMark}</div>
+                    <span style="font-size:0.8rem; color:#666;">${dateStr}</span><br>
+                    <button onclick="window.openCollectionDetailByIndex(${index})" class="mini-teach-btn" style="margin-top:5px; background:#ff85a1;">📖 図鑑で見る</button>
                 </div>
             `);
         }
@@ -414,7 +474,7 @@ window.renderMapMarkers = async function() {
 };
 
 // ==========================================
-// ★ 記憶管理
+// ★ 記憶管理 (プロフィール)
 // ==========================================
 
 window.openMemoryManager = function() {
@@ -460,9 +520,11 @@ function renderProfileView(container, profile) {
         return;
     }
 
-    const createSection = (title, items, isArray = false) => {
+    const createSection = (title, items, categoryName, isArray = false) => {
         const div = document.createElement('div');
         div.className = 'profile-section';
+        div.style.cssText = "background: white; padding: 10px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); position:relative;";
+        
         const h4 = document.createElement('h4');
         h4.className = 'profile-title';
         h4.innerText = title;
@@ -472,12 +534,12 @@ function renderProfileView(container, profile) {
             const tagsDiv = document.createElement('div');
             tagsDiv.className = 'profile-tags';
             if (!items || items.length === 0) {
-                tagsDiv.innerHTML = '<span style="color:#aaa; font-size:0.8rem;">(まだないにゃ)</span>';
+                tagsDiv.innerHTML = '<span style="color:#aaa; font-size:0.8rem;">(まだ教えてもらってないにゃ)</span>';
             } else {
                 items.forEach(item => {
                     const tag = document.createElement('span');
                     tag.className = 'profile-tag';
-                    tag.innerText = item;
+                    tag.innerHTML = `${window.cleanDisplayString(item)} <button onclick="deleteProfileItem('${categoryName}', '${item}')" class="profile-tag-delete">×</button>`;
                     tagsDiv.appendChild(tag);
                 });
             }
@@ -487,25 +549,89 @@ function renderProfileView(container, profile) {
             p.style.fontSize = '0.9rem';
             p.style.margin = '0';
             p.style.paddingLeft = '5px';
-            p.innerText = items || '(まだわかんないにゃ)';
+            p.style.display = 'flex';
+            p.style.justifyContent = 'space-between';
+            
+            const textContent = items ? window.cleanDisplayString(items) : '(まだ教えてもらってないにゃ)';
+            let deleteBtn = '';
+            if (items) {
+                deleteBtn = `<button onclick="deleteProfileItem('${categoryName}', '')" class="profile-tag-delete" style="margin-left:10px;">×</button>`;
+            }
+            p.innerHTML = `<span>${textContent}</span>${deleteBtn}`;
             div.appendChild(p);
         }
         return div;
     };
 
-    container.appendChild(createSection('あだ名', profile.nickname));
-    container.appendChild(createSection('お誕生日', profile.birthday));
-    container.appendChild(createSection('好きなもの', profile.likes, true));
-    container.appendChild(createSection('苦手なこと', profile.weaknesses, true));
-    container.appendChild(createSection('頑張ったこと', profile.achievements, true));
+    container.appendChild(createSection('👤 あだ名', profile.nickname, 'nickname'));
+    container.appendChild(createSection('🎂 お誕生日', profile.birthday, 'birthday'));
+    
+    const likesContainer = document.createElement('div');
+    likesContainer.style.display = "flex";
+    likesContainer.style.gap = "5px";
+    
+    const likesSec = createSection('❤️ 好きなもの', profile.likes, 'likes', true);
+    likesSec.style.flex = "1";
+    
+    const dislikesSec = createSection('💔 苦手なもの', profile.weaknesses, 'weaknesses', true);
+    dislikesSec.style.flex = "1";
+    
+    likesContainer.appendChild(likesSec);
+    likesContainer.appendChild(dislikesSec);
+    container.appendChild(likesContainer);
+
+    container.appendChild(createSection('🏆 頑張ったこと', profile.achievements, 'achievements', true));
     
     if (profile.last_topic) {
          const div = document.createElement('div');
          div.className = 'profile-section';
-         div.innerHTML = `<h4 class="profile-title">最後のお話</h4><p style="font-size:0.8rem; color:#666;">${profile.last_topic}</p>`;
+         div.style.cssText = "background: #e3f2fd; padding: 10px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #90caf9;";
+         div.innerHTML = `<h4 class="profile-title" style="color:#1565c0;">💬 最後のお話</h4><p style="font-size:0.8rem; color:#333;">${window.cleanDisplayString(profile.last_topic)}</p>`;
          container.appendChild(div);
     }
+
+    if (profile.collection && profile.collection.length > 0) {
+        const recents = profile.collection.slice(0, 3);
+        const div = document.createElement('div');
+        div.className = 'profile-section';
+        div.style.cssText = "background: #fff3e0; padding: 10px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #ffe0b2;";
+        div.innerHTML = `<h4 class="profile-title" style="color:#e65100;">📍 最近見つけたもの</h4>`;
+        
+        const listDiv = document.createElement('div');
+        listDiv.style.display = "flex";
+        listDiv.style.gap = "8px";
+        listDiv.style.overflowX = "auto";
+        listDiv.style.paddingBottom = "5px";
+        
+        recents.forEach(item => {
+            const itemDiv = document.createElement('div');
+            itemDiv.style.cssText = "flex-shrink: 0; width: 80px; text-align: center; font-size: 0.7rem;";
+            const cleanName = window.cleanDisplayString(item.name);
+            const rarityMark = window.generateRarityString(item.rarity);
+            itemDiv.innerHTML = `
+                <img src="${item.image}" style="width:50px; height:50px; object-fit:cover; border-radius:8px; border:2px solid #ffb74d;">
+                <div style="font-size:0.6rem;">${rarityMark}</div>
+                <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%; margin-top:2px;">${cleanName}</div>
+            `;
+            listDiv.appendChild(itemDiv);
+        });
+        
+        div.appendChild(listDiv);
+        container.appendChild(div);
+    }
 }
+
+window.deleteProfileItem = async function(category, itemContent) {
+    if (!currentUser) return;
+    if (!confirm("この情報を忘れさせるにゃ？")) return;
+    
+    if (window.NellMemory) {
+        await window.NellMemory.deleteProfileItem(currentUser.id, category, itemContent);
+        const container = document.getElementById('profile-container');
+        const profile = await window.NellMemory.getUserProfile(currentUser.id);
+        renderProfileView(container, profile);
+    }
+};
 
 function renderLogView(container) {
     container.innerHTML = '';
@@ -520,9 +646,21 @@ function renderLogView(container) {
         return;
     }
 
-    [...history].reverse().forEach(item => {
+    const ctrlDiv = document.createElement('div');
+    ctrlDiv.style.cssText = "margin-bottom:10px; text-align:right;";
+    ctrlDiv.innerHTML = `
+        <span style="font-size:0.8rem; color:#666; float:left;">新しい順</span>
+        <button onclick="deleteSelectedLogs()" class="mini-teach-btn" style="background:#ff5252; color:white;">選択したログを削除</button>
+    `;
+    container.appendChild(ctrlDiv);
+
+    [...history].reverse().forEach((item, index) => {
+        const originalIndex = history.length - 1 - index;
+        
         const div = document.createElement('div');
         div.className = 'memory-item';
+        div.style.display = 'flex';
+        div.style.alignItems = 'flex-start';
         
         const isUser = (item.role === 'user');
         const roleColor = isUser ? '#2196f3' : '#ff85a1';
@@ -535,17 +673,36 @@ function renderLogView(container) {
         } catch(e){}
 
         div.innerHTML = `
+            <div style="padding-right:10px;">
+                <input type="checkbox" class="log-delete-checkbox" value="${originalIndex}" style="transform:scale(1.3);">
+            </div>
             <div style="width:100%;">
                 <div class="memory-meta" style="color:${roleColor}; font-weight:bold; display:flex; justify-content:space-between;">
                     <span>${roleName}</span>
                     <span style="color:#ccc; font-weight:normal; font-size:0.7rem;">${timeStr}</span>
                 </div>
-                <div class="memory-text" style="margin-top:2px;">${item.text}</div>
+                <div class="memory-text" style="margin-top:2px;">${window.cleanDisplayString(item.text)}</div>
             </div>
         `;
         container.appendChild(div);
     });
 }
+
+window.deleteSelectedLogs = function() {
+    if (!currentUser) return;
+    const checkboxes = document.querySelectorAll('.log-delete-checkbox:checked');
+    if (checkboxes.length === 0) return alert("削除するものを選んでにゃ！");
+    
+    if (!confirm(`${checkboxes.length}件の会話ログを削除するにゃ？`)) return;
+    
+    const indicesToDelete = Array.from(checkboxes).map(cb => parseInt(cb.value)).sort((a, b) => b - a); 
+    
+    if (window.NellMemory) {
+        window.NellMemory.deleteRawChatLogs(currentUser.id, indicesToDelete);
+        const container = document.getElementById('memory-list-container');
+        renderLogView(container);
+    }
+};
 
 // ページ読み込み完了時にUI状態を初期化
 document.addEventListener('DOMContentLoaded', () => {
@@ -568,18 +725,13 @@ document.addEventListener('click', (e) => {
 // ★ ログ管理・セッション履歴・UI更新
 // ==========================================
 
-// ★修正: サーバーから送られた「筑後市(ちくごし)」などのふりがな付きテキストを、
-// 表示用は「筑後市」、音声用は「筑後市(ちくごし)」（サーバー側で読み上げ時にふりがなのみ化）に分ける処理を追加
 window.addLogItem = function(role, text) {
     const container = document.getElementById('log-content');
     if (!container) return;
     const div = document.createElement('div');
     div.className = `log-item log-${role}`;
     const name = role === 'user' ? (currentUser ? currentUser.name : 'あなた') : 'ネル先生';
-    
-    // 表示用に「漢字(ふりがな)」のふりがな部分を削除
-    const displayText = text.replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
-
+    const displayText = window.cleanDisplayString(text);
     div.innerHTML = `<span class="log-role">${name}:</span><span>${displayText}</span>`;
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
@@ -603,13 +755,11 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     const targetId = isGameHidden ? 'nell-text' : 'nell-text-game';
     const el = document.getElementById(targetId);
     
-    // --- 表示用テキストのクリーニング ---
     let cleanText = t || "";
-
     cleanText = cleanText.split('\n').filter(line => {
         const trimmed = line.trim();
         if (!trimmed) return true;
-        if (/^(?:System|User|Model|Assistant|Display|Thinking)[:：]/i.test(trimmed)) return false;
+        if (/^(?:System|User|Model|Assistant|Thinking|Display)[:：]/i.test(trimmed)) return false;
         if (/^\*\*.*\*\*$/.test(trimmed)) return false;
         if (/^\[.*\]$/.test(trimmed)) return false;
         const hasJapanese = /[ぁ-んァ-ン一-龠]/.test(line);
@@ -622,8 +772,7 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     cleanText = cleanText.replace(/[\(（【\[].*?[\)）】\]]\s*$/gm, "");
     cleanText = cleanText.trim();
     
-    // ★修正: 画面表示用テキスト（ふりがな削除）
-    const displayText = cleanText.replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
+    const displayText = window.cleanDisplayString(cleanText);
     
     if (el) el.innerText = displayText;
     
@@ -631,8 +780,6 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     
     if (saveToMemory) { window.saveToNellMemory('nell', cleanText); }
     
-    // ★修正: 音声合成には元のテキスト（ふりがな付き）を渡す
-    // サーバー側で「漢字(ふりがな)」を「ふりがな」に置換して発音するため
     if (speak && typeof speakNell === 'function') {
         let textForSpeech = cleanText.replace(/【.*?】/g, "").replace(/\[.*?\]/g, "").trim();
         textForSpeech = textForSpeech.replace(/🐾/g, "");
@@ -657,9 +804,19 @@ window.sendHttpText = async function(context) {
         try { window.continuousRecognition.stop(); } catch(e){}
     }
     
-    // ★修正: ログ表示もふりがな削除対応
     window.addLogItem('user', text);
     window.addToSessionHistory('user', text);
+
+    // ★追加: 未登録情報の検出ロジック
+    let missingInfo = [];
+    if (window.NellMemory && currentUser) {
+        try {
+            const profile = await window.NellMemory.getUserProfile(currentUser.id);
+            if (!profile.birthday) missingInfo.push("誕生日");
+            if (!profile.likes || profile.likes.length === 0) missingInfo.push("好きなもの");
+            if (!profile.weaknesses || profile.weaknesses.length === 0) missingInfo.push("苦手なもの");
+        } catch(e) {}
+    }
 
     try {
         window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
@@ -672,7 +829,8 @@ window.sendHttpText = async function(context) {
                 name: currentUser ? currentUser.name : "生徒",
                 history: window.chatSessionHistory,
                 location: window.currentLocation,
-                address: window.currentAddress
+                address: window.currentAddress,
+                missingInfo: missingInfo // ★サーバーへ送信
             })
         });
 
@@ -680,7 +838,6 @@ window.sendHttpText = async function(context) {
             const data = await res.json();
             const speechText = data.speech || data.reply || "教えてあげるにゃ！";
             
-            // ★修正: ログ表示もふりがな削除対応
             window.addLogItem('nell', speechText);
             window.addToSessionHistory('nell', speechText);
             

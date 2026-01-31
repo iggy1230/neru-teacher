@@ -1,4 +1,4 @@
-// --- server.js (完全版 v318.0: ふりがな対応・読み間違い防止版) ---
+// --- server.js (完全版 v327.0: レアリティ基準厳格化版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -23,10 +23,10 @@ app.use(express.json({ limit: '50mb' }));
 const publicDir = path.join(__dirname, 'public');
 app.use(express.static(publicDir));
 
-// --- AI Model Constants (ユーザー指定) ---
-const MODEL_HOMEWORK = "gemini-2.5-pro";         // 宿題分析用（高精度）
-const MODEL_FAST = "gemini-2.5-flash";           // 基本（会話・反応・記憶整理）
-const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025"; // リアルタイムWebSocket（対話）
+// --- AI Model Constants ---
+const MODEL_HOMEWORK = "gemini-2.5-pro";
+const MODEL_FAST = "gemini-2.5-flash";
+const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025";
 
 // --- Server Log ---
 const MEMORY_FILE = path.join(__dirname, 'server_log.json');
@@ -67,7 +67,7 @@ try {
 function getSubjectInstructions(subject) {
     switch (subject) {
         case 'さんすう': return `- **数式の記号**: 筆算の「横線」と「マイナス記号」を絶対に混同しないこと。\n- **複雑な表記**: 累乗（2^2など）、分数、帯分数を正確に認識すること。\n- **図形問題**: 図の中に書かれた長さや角度の数値も見落とさないこと。`;
-        case 'こくご': return `- **縦書きレイアウトの厳格な分離**: 問題文や選択肢は縦書きです。**縦の罫線や行間の余白**を強く意識し、隣の行や列の内容が絶対に混ざらないようにしてください。\n- **列の独立性**: ある問題の列にある文字と、隣の問題の列にある文字を混同しないこと。\n- **読み取り順序**: 右の行から左の行へ、上から下へ読み取ること。\n- **ふりがな表記**: 問題文中の読み仮名はそのまま認識すること。回答時の漢字には必要に応じて『漢字(ふりがな)』の形式を使うこと。`;
+        case 'こくご': return `- **縦書きレイアウトの厳格な分離**: 問題文や選択肢は縦書きです。**縦の罫線や行間の余白**を強く意識し、隣の行や列の内容が絶対に混ざらないようにしてください。\n- **列の独立性**: ある問題の列にある文字と、隣の問題の列にある文字を混同しないこと。\n- **読み取り順序**: 右の行から左の行へ、上から下へ読み取ること。`;
         case 'りか': return `- **グラフ・表**: グラフの軸ラベルや単位（g, cm, ℃, A, Vなど）を絶対に省略せず読み取ること。\n- **選択問題**: 記号選択問題（ア、イ、ウ...）の選択肢の文章もすべて書き出すこと。\n- **配置**: 図や表のすぐ近くや上部に「最初の問題」が配置されている場合が多いので、見逃さないこと。`;
         case 'しゃかい': return `- **選択問題**: 記号選択問題（ア、イ、ウ...）の選択肢の文章もすべて書き出すこと。\n- **資料読み取り**: 地図やグラフ、年表の近くにある「最初の問題」を見逃さないこと。\n- **用語**: 歴史用語や地名は正確に（子供の字が崩れていても文脈から補正して）読み取ること。`;
         default: return `- 基本的にすべての文字、図表内の数値を拾うこと。`;
@@ -84,9 +84,9 @@ app.post('/synthesize', async (req, res) => {
         if (!ttsClient) throw new Error("TTS Not Ready");
         const { text, mood } = req.body;
         
-        // ★修正: テキスト読み上げ時に「漢字(ふりがな)」を「ふりがな」のみに置換して重複読みを防止
-        // 例: "筑後市(ちくごし)" -> "ちくごし"
-        const speakText = text.replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$2');
+        let speakText = text;
+        speakText = speakText.replace(/[\*#_`~]/g, "");
+        speakText = speakText.replace(/([a-zA-Z0-9一-龠々ヶァ-ヴー]+)\s*[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$2');
 
         let rate = "1.1"; let pitch = "+2st";
         if (mood === "thinking") { rate = "1.0"; pitch = "0st"; }
@@ -108,7 +108,6 @@ app.post('/synthesize', async (req, res) => {
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
-        // MODEL_FAST (gemini-2.5-flash) を使用
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
             generationConfig: { responseMimeType: "application/json" }
@@ -116,11 +115,15 @@ app.post('/update-memory', async (req, res) => {
 
         const prompt = `
         あなたは生徒の長期記憶を管理するAIです。
-        以下の「現在のプロフィール」と「直近の会話ログ」をもとに、プロフィールを更新してください。
-        
-        【重要】
-        - 出力は純粋なJSONのみにしてください。
-        - 図鑑データ(collection)は入力のまま維持してください。
+        以下の「現在のプロフィール」と「直近の会話ログ」を分析し、最新のプロフィールJSONを作成してください。
+
+        【重要指示】
+        1. **情報の抽出**: 会話ログから誕生日、好きなもの、苦手なもの、趣味等の情報を抽出し、プロフィールを更新してください。
+        2. **誕生日**: 会話内で日付（〇月〇日）が言及され、それがユーザーの誕生日であれば、必ず \`birthday\` を更新してください。
+        3. **維持**: 会話ログに新しい情報がない項目は、現在の内容をそのまま維持してください。
+
+        【タスク2: 会話の要約】
+        今回の会話の内容を、「○○について話した」のように一文で要約し、\`summary_text\` として出力してください。
 
         【現在のプロフィール】
         ${JSON.stringify(currentProfile)}
@@ -128,21 +131,24 @@ app.post('/update-memory', async (req, res) => {
         【直近の会話ログ】
         ${chatLog}
 
-        【出力フォーマット】
+        【出力フォーマット (JSON)】
         {
-            "nickname": "...",
-            "birthday": "...",
-            "likes": ["..."],
-            "weaknesses": ["..."],
-            "achievements": ["..."],
-            "last_topic": "..."
+            "profile": {
+                "nickname": "...",
+                "birthday": "...",
+                "likes": ["..."],
+                "weaknesses": ["..."],
+                "achievements": ["..."],
+                "last_topic": "..."
+            },
+            "summary_text": "会話の要約文"
         }
         `;
 
         const result = await model.generateContent(prompt);
         const responseText = result.response.text();
         
-        let newProfile;
+        let output;
         try {
             let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
             const firstBrace = cleanText.indexOf('{');
@@ -150,22 +156,21 @@ app.post('/update-memory', async (req, res) => {
             if (firstBrace !== -1 && lastBrace !== -1) {
                 cleanText = cleanText.substring(firstBrace, lastBrace + 1);
             }
-            newProfile = JSON.parse(cleanText);
+            output = JSON.parse(cleanText);
         } catch (e) {
             console.warn("Memory JSON Parse Error. Using fallback.");
-            return res.json(currentProfile);
+            return res.json({ profile: currentProfile, summary_text: "（更新なし）" });
         }
 
-        if (Array.isArray(newProfile)) newProfile = newProfile[0];
-        res.json(newProfile);
+        if (Array.isArray(output)) output = output[0];
+        if (!output.profile) {
+            output = { profile: output, summary_text: "（会話終了）" };
+        }
+
+        res.json(output);
 
     } catch (error) {
-        if (error.message && (error.message.includes('429') || error.message.includes('Quota'))) {
-            console.warn("⚠️ Memory Update Skipped (Google API Busy)");
-        } else {
-            console.error("Memory Update Error:", error.message);
-        }
-        res.status(200).json(req.body.currentProfile || {});
+        res.status(200).json({ profile: req.body.currentProfile || {}, summary_text: "" });
     }
 });
 
@@ -173,8 +178,6 @@ app.post('/update-memory', async (req, res) => {
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, name } = req.body;
-        
-        // MODEL_HOMEWORK (gemini-2.5-pro) を使用
         const model = genAI.getGenerativeModel({ 
             model: MODEL_HOMEWORK, 
             generationConfig: { responseMimeType: "application/json", temperature: 0.0 }
@@ -188,7 +191,7 @@ app.post('/analyze', async (req, res) => {
 
         【重要: 教科別の解析ルール (${subject})】
         ${subjectSpecificInstructions}
-        - **表記ルール**: 解説文の中に人名、地名、難しい漢字が出てくる場合は、必ず『漢字(ふりがな)』の形式で記述してください（例: 筑後市(ちくごし)）。
+        - **表記ルール**: 解説文の中に読み間違いやすい人名、地名、難読漢字が出てくる場合は、『漢字(ふりがな)』の形式で記述してください（例: 筑後市(ちくごし)）。**一般的な簡単な漢字にはふりがなを振らないでください。**
 
         【タスク1: 問題文の書き起こし】
         - 設問文、選択肢を正確に書き起こす。
@@ -244,15 +247,11 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
-// --- ★ お宝図鑑用 画像解析API ---
+// --- ★ お宝図鑑用 画像解析API (レアリティ厳格化) ---
 app.post('/identify-item', async (req, res) => {
     try {
         const { image, name, location, address } = req.body;
         
-        if (address) console.log(`[図鑑住所] ${address}`);
-        else if (location) console.log(`[図鑑GPS] ${location.lat}, ${location.lon}`);
-
-        // MODEL_FAST (gemini-2.5-flash) を使用
         const tools = [{ google_search: {} }];
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
@@ -292,16 +291,39 @@ app.post('/identify-item', async (req, res) => {
         2. **商品や物体の場合**: 画像検索や知識を用いて、一般的なカテゴリ名ではなく「具体的な商品名・製品名・品種名」を特定してください。
         3. **一般的な商品**: 位置情報があっても、それが一般的な商品の場合は、場所の名前は登録せず、商品の正式名称を \`itemName\` にしてください。
 
+        【★レアリティ判定基準 (肉球ランク 1〜5)】
+        そのアイテムや場所の「見つけにくさ」「希少性」を以下の基準で厳格に判定してください。
+        
+        - **1 (★) [厳格に判定]**: 
+            - どこでも買える市販の商品（お菓子、飲み物、文房具、おもちゃ、スマホ、家電など）。
+            - どこにでも生えている植物（雑草、ありふれた花）。
+            - 日常的な風景（道路、普通の家、信号機）。
+            - **※スーパーやコンビニで買えるものは、どんなに美味しくても必ず「1」にしてください。**
+            
+        - **2 (★★)**: 
+            - ちょっとだけ珍しいもの（季節限定のパッケージ、少し見つけにくい植物、公園の立派な遊具）。
+            
+        - **3 (★★★)**: 
+            - その場所に行かないと見られないもの（地域のお店の看板、少し有名な公園のモニュメント、野良猫）。
+            
+        - **4 (★★★★)**: 
+            - かなり珍しいもの（歴史的建造物、有名なテーマパークのアトラクション、高級ブランドの限定品、美しい夕焼け）。
+            
+        - **5 (★★★★★)**: 
+            - 奇跡レベル・超レア（世界遺産、四つ葉のクローバー、野生のレア動物、虹、めったに見れない絶景）。
+
         【解説のルール】
         1. **ネル先生の解説**: 猫視点でのユーモラスな解説。語尾は「にゃ」。**★重要: 解説の最後に、「${name}さんはこれ知ってたにゃ？」や「これ好きにゃ？」など、ユーザーが返事をしやすい短い問いかけを必ず入れてください。**
         2. **本当の解説**: 子供向けの学習図鑑のような、正確でためになる豆知識や説明。です・ます調。
-        3. **ふりがな**: 人名、地名、難しい漢字には必ず『漢字(ふりがな)』の形式で読み仮名を振ってください（例: 狩野英孝(かのえいこう)、筑後市(ちくごし)）。
-        4. **禁止事項**: 座標の数値をそのままユーザーへの返答に入れないでください。
+        3. **ふりがな**: **読み間違いやすい**人名、地名、難読漢字、英単語のみ『漢字(ふりがな)』の形式で読み仮名を振ってください。**一般的な簡単な漢字には絶対にふりがなを振らないでください。**
+        4. **場所の言及ルール**: 撮影されたものが「建物」や「風景」ではなく、持ち運び可能な「商品」や「小物」の場合、解説文の中で**「ここは〇〇市〇〇町〜」のような撮影場所への言及は絶対にしないでください**。違和感があります。
+        5. **禁止事項**: 座標の数値をそのままユーザーへの返答に入れないでください。
 
         【出力フォーマット (JSON)】
         \`\`\`json
         {
             "itemName": "正式名称",
+            "rarity": 1, 
             "description": "ネル先生の面白い解説＋問いかけ",
             "realDescription": "本当の解説",
             "speechText": "『これは（itemName）だにゃ！（description）』"
@@ -328,10 +350,10 @@ app.post('/identify-item', async (req, res) => {
             }
         } catch (e) {
             console.warn("JSON Parse Fallback (Item):", responseText);
-            // フォールバック: AIの応答をそのままspeechTextとして利用
             let fallbackText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
             json = {
                 itemName: "なぞの物体",
+                rarity: 1, // Fallback
                 description: fallbackText,
                 realDescription: "AIの解析結果を直接表示しています。",
                 speechText: fallbackText
@@ -349,10 +371,7 @@ app.post('/identify-item', async (req, res) => {
 // --- HTTPチャット会話 ---
 app.post('/chat-dialogue', async (req, res) => {
     try {
-        let { text, name, image, history, location, address } = req.body;
-        
-        if (address) console.log(`[Chat住所] ${address}`);
-        if (location) console.log(`[ChatGPS] ${location.lat}, ${location.lon}`);
+        let { text, name, image, history, location, address, missingInfo } = req.body;
         
         const now = new Date();
         const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' };
@@ -368,38 +387,41 @@ app.post('/chat-dialogue', async (req, res) => {
             contextPrompt += "\nユーザーの言葉に主語がなくても、この流れを汲んで自然に返答してください。\n";
         }
 
+        let activeQuestionPrompt = "";
+        if (missingInfo && missingInfo.length > 0) {
+            const targetInfo = missingInfo[Math.floor(Math.random() * missingInfo.length)];
+            let specificQuestion = "";
+            switch(targetInfo) {
+                case "誕生日": specificQuestion = "そういえば、誕生日はいつにゃ？お祝いしたいにゃ！"; break;
+                case "好きなもの": specificQuestion = "ねえねえ、好きな漫画やキャラクターはあるにゃ？"; break;
+                case "苦手なもの": specificQuestion = "実は苦手な教科とか、嫌いな食べ物ってあるにゃ？"; break;
+                default: specificQuestion = "もっとキミのことを教えてほしいにゃ！趣味とかあるにゃ？"; break;
+            }
+
+            activeQuestionPrompt = `
+            【重要ミッション：プロフィールの穴埋め】
+            現在、ユーザーの「${targetInfo}」の情報がまだ登録されていません。
+            **今回の会話の最後に、自然な流れで以下のような質問をして情報を引き出してください。**
+            質問例: 「${specificQuestion}」
+            ※ユーザーが既に何か質問している場合は、まずそれに答えてから、最後に「ところで…」と切り出してください。
+            `;
+        }
+
+        const profileUsagePrompt = `
+        【記憶の活用】
+        もし会話が途切れそうなら、これまでの会話履歴やプロフィールにある「好きなもの」や「最近の話題」に関連した話を振ってください。
+        `;
+
         let locationPrompt = "";
         if (address) {
             locationPrompt = `
             【最優先情報：現在地】
             クライアント特定住所: **${address}**
-            
-            回答作成時の検索ルール:
-            1. **「一番近い〇〇」「近くの〇〇」「最寄りの〇〇」と聞かれた場合**:
-               - **★重要**: 住所名ではなく **座標** を使って、「${location.lat},${location.lon} 最寄りの〇〇」でGoogle検索を実行してください。
-               - 単に「${address} 〇〇」で検索すると、市内の代表的な施設（遠い場合がある）が出てしまうので注意してください。
-            
-            2. **「ここはどこ？」「天気を教えて」と聞かれた場合**:
-               - **${address}** という住所情報を正解として扱ってください。
-               - 天気は「${address} 天気」で検索してください。
-            
-            3. **禁止事項**:
-               - 座標の数値（${location.lat}など）はセリフに入れないでください。
-               - 検索せずに推測で地名を答えることは厳禁です。
+            禁止事項: 座標の数値（${location.lat}など）はセリフに入れないでください。
             `;
-            
             text += `\n（システム情報：現在地は「${address}」です。）`;
-
-        } else if (location && location.lat && location.lon) {
-            locationPrompt = `
-            【位置情報】
-            GPS座標: ${location.lat}, ${location.lon}
-            
-            回答ルール:
-            - 「近い〇〇」の質問は、「${location.lat},${location.lon} 最寄りの〇〇」で検索してください。
-            - 「ここはどこ？」の質問は、Google検索で「${location.lat},${location.lon} 住所」を検索し、正確な市町村を特定してください。
-            `;
-            
+        } else if (location && location.lat) {
+            locationPrompt = `GPS座標: ${location.lat}, ${location.lon}`;
             text += `\n（システム情報：現在の座標は ${location.lat}, ${location.lon} です。）`;
         }
 
@@ -409,12 +431,11 @@ app.post('/chat-dialogue', async (req, res) => {
 
         【重要：現在の状況】
         - **現在は ${currentDateTime} です。**
-        - **わからないことや最新の情報、天気予報が必要な場合は、提供されたGoogle検索ツールを使って調べてください。**
-        - **相手を呼ぶときは必ず「${name}さん」と呼んでください。**
-        - **表記ルール**: 人名、地名、難しい漢字には必ず『漢字(ふりがな)』の形式で読み仮名を振ってください（例: 狩野英孝(かのえいこう)、筑後市(ちくごし)）。
+        - **表記ルール**: **読み間違いやすい**人名、地名、難読漢字、英単語のみ『漢字(ふりがな)』の形式で読み仮名を振ってください。**一般的な簡単な漢字には絶対にふりがなを振らないでください。**
         
+        ${activeQuestionPrompt}
+        ${profileUsagePrompt}
         ${locationPrompt}
-
         ${contextPrompt}
 
         【出力について】
@@ -433,8 +454,6 @@ app.post('/chat-dialogue', async (req, res) => {
 
         try {
             const toolsConfig = image ? undefined : [{ google_search: {} }];
-            
-            // ★修正: JSON強制は完全に削除
             const model = genAI.getGenerativeModel({ 
                 model: MODEL_FAST,
                 tools: toolsConfig
@@ -468,11 +487,7 @@ app.post('/chat-dialogue', async (req, res) => {
             }
         }
         
-        // ★修正: サーバー側で受け取ったテキストをJSONに包む
-        // これでクライアント側はパースエラーを起こさない
         let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-        
-        // 念のためシステムログのような行があれば削除
         cleanText = cleanText.split('\n').filter(line => {
             return !/^(?:System|User|Model|Assistant|Thinking|Display)[:：]/i.test(line);
         }).join(' ');
@@ -497,7 +512,6 @@ app.post('/lunch-reaction', async (req, res) => {
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
         const isSpecial = (count % 10 === 0);
         
-        // MODEL_FAST (gemini-2.5-flash) を使用
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
             safetySettings: [
@@ -533,7 +547,6 @@ app.post('/lunch-reaction', async (req, res) => {
 app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;
-        // MODEL_FAST (gemini-2.5-flash) を使用
         const model = genAI.getGenerativeModel({ model: MODEL_FAST });
         let prompt = "";
         let mood = "excited";
@@ -599,7 +612,7 @@ wss.on('connection', async (clientWs, req) => {
                 5. とにかく何でも知っているにゃ。
 
                 【表記と発音のルール】
-                1. **ふりがな**: 人名、地名、難しい漢字には必ず『漢字(ふりがな)』の形式で読み仮名を振ること（例: 筑後市(ちくごし)、狩野英孝(かのえいこう)）。
+                1. **ふりがな**: **読み間違いやすい**人名、地名、難読漢字、英単語のみ『漢字(ふりがな)』の形式で読み仮名を振ること（例: 筑後市(ちくごし)、狩野英孝(かのえいこう)、iPhone(アイフォーン)）。**一般的な簡単な漢字（例: 有名、僕、歌、面白い、好き など）には絶対にふりがなを振らないでください。**
                 2. **音声重複防止**: 音声で話すときは、テキストにある『漢字(ふりがな)』をそのまま読まず、括弧内のふりがなのみを読み上げること（例: 「筑後市」と書いてあっても「ちくごし」とだけ発音する）。
 
                 【最重要：位置情報の取り扱い】
