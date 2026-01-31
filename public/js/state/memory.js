@@ -1,4 +1,4 @@
-// --- js/state/memory.js (v302.0: 図鑑上限500拡張版) ---
+// --- js/state/memory.js (v305.0: マップ位置情報対応版) ---
 
 (function(global) {
     const Memory = {};
@@ -110,8 +110,8 @@
         return context;
     };
 
-    // ★修正: 図鑑の上限を500に変更
-    Memory.addToCollection = async function(userId, itemName, imageBase64, description = "", realDescription = "") {
+    // ★修正: location 引数を追加し、位置情報も保存
+    Memory.addToCollection = async function(userId, itemName, imageBase64, description = "", realDescription = "", location = null) {
         console.log(`[Memory] addToCollection: ${itemName}`);
         try {
             const profile = await Memory.getUserProfile(userId);
@@ -125,7 +125,8 @@
                 image: imageBase64,
                 date: new Date().toISOString(),
                 description: description,
-                realDescription: realDescription
+                realDescription: realDescription,
+                location: location // 位置情報を保存
             };
 
             profile.collection.unshift(newItem); 

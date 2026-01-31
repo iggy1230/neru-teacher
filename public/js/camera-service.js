@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v308.0: 図鑑撮影時位置情報待機版) ---
+// --- js/camera-service.js (v309.0: 位置情報保存対応版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -237,7 +237,8 @@ window.captureAndIdentifyItem = async function() {
             body: JSON.stringify({ 
                 image: base64Data,
                 name: currentUser ? currentUser.name : "生徒",
-                location: locationData // 位置情報
+                location: locationData, // 位置情報
+                address: window.currentAddress // 詳細住所
             })
         });
 
@@ -264,10 +265,13 @@ window.captureAndIdentifyItem = async function() {
         if (data.itemName && window.NellMemory) {
             const description = data.description || "（解説はないにゃ）";
             const realDescription = data.realDescription || "";
-            await window.NellMemory.addToCollection(currentUser.id, data.itemName, treasureDataUrl, description, realDescription);
+            // ★修正: locationData を渡す
+            await window.NellMemory.addToCollection(currentUser.id, data.itemName, treasureDataUrl, description, realDescription, locationData);
             
             const notif = document.createElement('div');
-            notif.innerText = `📖 図鑑に「${data.itemName}」を登録したにゃ！`;
+            // ふりがなを除去して表示
+            const cleanName = data.itemName.replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
+            notif.innerText = `📖 図鑑に「${cleanName}」を登録したにゃ！`;
             notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #00bcd4; color:#006064; padding:15px 25px; border-radius:30px; font-weight:900; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 10px 25px rgba(0,0,0,0.3);";
             document.body.appendChild(notif);
             setTimeout(() => notif.remove(), 4000);

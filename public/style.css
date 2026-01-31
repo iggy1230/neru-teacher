@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v305.0: UI配置調整版) --- */
+/* --- style.css (完全版 v306.0: マップスタイル追加版) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -1077,4 +1077,22 @@ button { font-family: inherit; }
     cursor: pointer;
     border: 2px solid white;
     box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+/* ★新: マップピンのスタイル */
+.map-pin-icon {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    border: 3px solid #fff;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+    background-size: cover;
+    background-position: center;
+    background-color: #eee;
+    transition: transform 0.2s;
+}
+.map-pin-icon:hover {
+    transform: scale(1.2);
+    z-index: 1000 !important;
+    border-color: #ffeb3b;
 }
