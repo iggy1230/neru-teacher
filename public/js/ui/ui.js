@@ -1,7 +1,9 @@
-// --- js/ui/ui.js (完全版 v310.0: 相互リンク対応版) ---
+// --- js/ui/ui.js (v328.0: 図鑑ソート・通し番号対応版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
+// 図鑑のソートモード (初期値: 登録番号降順 = 新しい順)
+window.collectionSortMode = 'desc'; 
 
 // ==========================================
 // 音量管理 (直接操作)
@@ -80,6 +82,11 @@ window.generateRarityString = function(rarity) {
         images += `<img src="${imgPath}" class="rarity-img" alt="🐾">`;
     }
     return `<div class="rarity-mark rarity-${r}">${images}</div>`;
+};
+
+// 通し番号フォーマット (No.001)
+window.formatCollectionNumber = function(num) {
+    return "No." + String(num).padStart(3, '0');
 };
 
 // ==========================================
@@ -225,19 +232,27 @@ window.updateProgress = function(p) {
 // 図鑑 (Collection)
 // ==========================================
 
-// ★追加: グローバルから詳細を開くためのラッパー
-window.openCollectionDetailByIndex = function(index) {
+window.openCollectionDetailByIndex = function(originalIndex) {
     if (!window.NellMemory || !currentUser) return;
     window.NellMemory.getUserProfile(currentUser.id).then(profile => {
-        if (profile && profile.collection && profile.collection[index]) {
-            // モーダルが非表示なら表示する
+        // 配列は [最新 ... 最古] の順。
+        // originalIndex は配列上のインデックス
+        if (profile && profile.collection && profile.collection[originalIndex]) {
             const modal = document.getElementById('collection-modal');
             if (modal && modal.classList.contains('hidden')) {
                 modal.classList.remove('hidden');
             }
-            window.showCollectionDetail(profile.collection[index], index);
+            // 通し番号を計算: 全長 - インデックス
+            const collectionNumber = profile.collection.length - originalIndex;
+            window.showCollectionDetail(profile.collection[originalIndex], originalIndex, collectionNumber);
         }
     });
+};
+
+// ★修正: ソート変更時のハンドラ
+window.changeCollectionSort = function(select) {
+    window.collectionSortMode = select.value;
+    window.renderCollectionList(); // 再描画
 };
 
 window.showCollection = async function() {
@@ -245,13 +260,31 @@ window.showCollection = async function() {
     const modal = document.getElementById('collection-modal');
     if (!modal) return;
     
+    // ヘッダー部分（件数、マップボタン、ソートプルダウン）
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 80vh; display: flex; flex-direction: column;">
-            <h3 style="text-align:center; margin:0 0 15px 0; color:#f57f17; flex-shrink: 0;">📖 お宝図鑑</h3>
-            <button onclick="closeCollection(); showMap();" class="main-btn" style="margin-bottom:10px; background:#29b6f6; box-shadow: 0 4px 0 #0288d1; padding:10px; font-size:0.9rem;">🗺️ 足あとマップを見る</button>
+            <h3 style="text-align:center; margin:0 0 10px 0; color:#f57f17; flex-shrink: 0;">📖 お宝図鑑</h3>
+            
+            <div style="flex-shrink:0; display:flex; flex-direction:column; gap:8px; margin-bottom:10px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                     <button onclick="closeCollection(); showMap();" class="main-btn" style="width:auto; margin:0; padding:8px 15px; font-size:0.85rem; background:#29b6f6; box-shadow: 0 3px 0 #0288d1;">🗺️ 足あとマップ</button>
+                     <div id="collection-count-badge" style="background:#fff; padding:5px 10px; border-radius:15px; font-weight:bold; color:#555; border:1px solid #ccc; font-size:0.9rem;">全 0 件</div>
+                </div>
+                
+                <div style="display:flex; align-items:center; gap:5px; justify-content:flex-end;">
+                    <span style="font-size:0.8rem; font-weight:bold; color:#666;">並び替え:</span>
+                    <select onchange="changeCollectionSort(this)" style="padding:5px; border-radius:5px; border:1px solid #ccc; font-size:0.8rem;">
+                        <option value="desc" ${window.collectionSortMode === 'desc' ? 'selected' : ''}>登録番号 (降順)</option>
+                        <option value="asc" ${window.collectionSortMode === 'asc' ? 'selected' : ''}>登録番号 (昇順)</option>
+                        <option value="rarity" ${window.collectionSortMode === 'rarity' ? 'selected' : ''}>レアリティ順</option>
+                    </select>
+                </div>
+            </div>
+
             <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap:10px; flex: 1; overflow-y:auto; padding:5px;">
                 <p style="width:100%; text-align:center;">読み込み中にゃ...</p>
             </div>
+            
             <div style="text-align:center; margin-top:15px; flex-shrink: 0;">
                 <button onclick="closeCollection()" class="main-btn gray-btn" style="width:auto; padding:10px 30px;">閉じる</button>
             </div>
@@ -259,46 +292,88 @@ window.showCollection = async function() {
     `;
     modal.classList.remove('hidden');
 
+    window.renderCollectionList();
+};
+
+// ★修正: リスト描画ロジック（ソート対応）
+window.renderCollectionList = async function() {
+    const grid = document.getElementById('collection-grid');
+    const countBadge = document.getElementById('collection-count-badge');
+    if (!grid) return;
+
+    grid.innerHTML = '';
     const profile = await window.NellMemory.getUserProfile(currentUser.id);
     const collection = profile.collection || [];
-    const grid = document.getElementById('collection-grid');
-    grid.innerHTML = '';
-    
-    if (collection.length === 0) {
+    const totalCount = collection.length;
+
+    if (countBadge) countBadge.innerText = `全 ${totalCount} 件`;
+
+    if (totalCount === 0) {
         grid.innerHTML = '<p style="width:100%; text-align:center; color:#888;">まだ何もないにゃ。<br>「ネル先生のお宝図鑑」でカメラを見せてにゃ！</p>';
         return;
     }
 
-    collection.forEach((item, index) => {
+    // データに「元のインデックス」と「通し番号」を付与してマッピング
+    // collection[0] が最新 => 通し番号は totalCount
+    // collection[totalCount-1] が最古 => 通し番号は 1
+    let items = collection.map((item, index) => ({
+        ...item,
+        originalIndex: index,
+        number: totalCount - index
+    }));
+
+    // ソート実行
+    if (window.collectionSortMode === 'asc') {
+        // 昇順 (No.1 -> No.Max)
+        items.sort((a, b) => a.number - b.number);
+    } else if (window.collectionSortMode === 'desc') {
+        // 降順 (No.Max -> No.1) デフォルトなので何もしない、またはソート
+        items.sort((a, b) => b.number - a.number);
+    } else if (window.collectionSortMode === 'rarity') {
+        // レアリティ降順 -> 同じなら登録番号降順
+        items.sort((a, b) => {
+            const rA = a.rarity || 1;
+            const rB = b.rarity || 1;
+            if (rA !== rB) return rB - rA;
+            return b.number - a.number;
+        });
+    }
+
+    items.forEach(item => {
         const div = document.createElement('div');
         div.style.cssText = "background:white; border-radius:12px; padding:8px; box-shadow:0 3px 6px rgba(0,0,0,0.15); text-align:center; border:2px solid #fff176; position:relative; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center; aspect-ratio: 0.85; transition:transform 0.1s;";
         
-        div.onclick = () => window.showCollectionDetail(item, index); 
+        div.onclick = () => window.showCollectionDetail(item, item.originalIndex, item.number); 
         div.onmousedown = () => div.style.transform = "scale(0.95)";
         div.onmouseup = () => div.style.transform = "scale(1.0)";
 
         const img = document.createElement('img');
         img.src = item.image;
-        img.style.cssText = "width:100%; height:auto; max-height:75%; object-fit:contain; margin-bottom:5px; filter:drop-shadow(0 2px 2px rgba(0,0,0,0.1));";
+        img.style.cssText = "width:100%; height:auto; max-height:60%; object-fit:contain; margin-bottom:5px; filter:drop-shadow(0 2px 2px rgba(0,0,0,0.1));";
         
-        const name = document.createElement('div');
         const rarityMark = window.generateRarityString(item.rarity);
         const displayName = window.cleanDisplayString(item.name);
+        const numberStr = window.formatCollectionNumber(item.number);
         
-        name.innerHTML = `${rarityMark}<br>${displayName}`;
-        name.style.cssText = "font-size:0.8rem; font-weight:bold; color:#555; width:100%; line-height:1.2; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;";
+        const infoDiv = document.createElement('div');
+        infoDiv.style.width = "100%";
+        infoDiv.innerHTML = `
+            <div style="font-size:0.7rem; color:#888; font-weight:bold;">${numberStr}</div>
+            <div style="margin-bottom:2px;">${rarityMark}</div>
+            <div style="font-size:0.75rem; font-weight:bold; color:#555; line-height:1.2; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">${displayName}</div>
+        `;
 
         div.appendChild(img);
-        div.appendChild(name);
+        div.appendChild(infoDiv);
         grid.appendChild(div);
     });
 };
 
-window.showCollectionDetail = function(item, index) {
+// ★修正: 通し番号(collectionNumber)を受け取るように変更
+window.showCollectionDetail = function(item, originalIndex, collectionNumber) {
     const modal = document.getElementById('collection-modal');
     if (!modal) return;
     
-    // マップから呼ばれた場合のために表示を強制
     modal.classList.remove('hidden');
 
     const dateStr = item.date ? new Date(item.date).toLocaleDateString() : "";
@@ -307,8 +382,8 @@ window.showCollectionDetail = function(item, index) {
     const description = window.cleanDisplayString(item.description || "（ネル先生の解説はまだないみたいだにゃ…）");
     const realDescription = window.cleanDisplayString(item.realDescription || "（まだ情報がないみたいだにゃ…）");
     const rarityMark = window.generateRarityString(item.rarity);
+    const numberStr = window.formatCollectionNumber(collectionNumber);
 
-    // ★追加: 地図へ飛ぶボタンのHTML
     let mapBtnHtml = "";
     if (item.location && item.location.lat && item.location.lon) {
         mapBtnHtml = `<button onclick="window.closeCollection(); window.showMap(${item.location.lat}, ${item.location.lon});" class="mini-teach-btn" style="background:#29b6f6; width:auto; margin-left:10px;">🗺️ 地図で見る</button>`;
@@ -322,10 +397,12 @@ window.showCollectionDetail = function(item, index) {
                     ${mapBtnHtml}
                 </div>
                 <h3 style="margin:0; color:#f57f17; font-size:1.1rem;">お宝データ</h3>
-                <button onclick="deleteCollectionItem(${index})" class="mini-teach-btn" style="background:#ff5252;">削除</button>
+                <button onclick="deleteCollectionItem(${originalIndex})" class="mini-teach-btn" style="background:#ff5252;">削除</button>
             </div>
             
             <div style="flex:1; overflow-y:auto; background:white; border-radius:10px; padding:20px; box-shadow:inset 0 0 10px rgba(0,0,0,0.05);">
+                <div style="text-align:center; font-size:1.2rem; font-weight:900; color:#aaa; margin-bottom:5px;">${numberStr}</div>
+                
                 <div style="text-align:center; margin-bottom:15px;">
                     <img src="${item.image}" style="width:100%; max-width:280px; height:auto; object-fit:contain; border-radius:50%; border:5px solid #ffd700; box-shadow:0 4px 10px rgba(0,0,0,0.2);">
                 </div>
@@ -365,6 +442,7 @@ window.deleteCollectionItem = async function(index) {
     if (!confirm("本当にこのお宝を削除するにゃ？")) return;
     if (window.NellMemory && currentUser) {
         await window.NellMemory.deleteFromCollection(currentUser.id, index);
+        // 削除後は再描画が必要。showCollectionを呼んでリストに戻す
         window.showCollection(); 
     }
 };
@@ -380,7 +458,6 @@ window.closeCollection = function() {
 
 window.mapInstance = null;
 
-// ★修正: 特定の座標へズーム可能に
 window.showMap = async function(targetLat, targetLon) {
     if (!currentUser) return;
     
@@ -390,7 +467,6 @@ window.showMap = async function(targetLat, targetLon) {
 
     switchScreen('screen-map');
     
-    // マップ初期化
     if (!window.mapInstance) {
         window.mapInstance = L.map('map-container');
         
@@ -407,11 +483,10 @@ window.showMap = async function(targetLat, targetLon) {
         let centerLon = 139.6917;
         let zoomLevel = 15;
         
-        // ターゲット指定があればそこへ飛ぶ
         if (targetLat && targetLon) {
             centerLat = targetLat;
             centerLon = targetLon;
-            zoomLevel = 18; // ズームイン
+            zoomLevel = 18;
         } else if (window.currentLocation && window.currentLocation.lat) {
             centerLat = window.currentLocation.lat;
             centerLon = window.currentLocation.lon;
@@ -433,6 +508,7 @@ window.renderMapMarkers = async function() {
 
     const profile = await window.NellMemory.getUserProfile(currentUser.id);
     const collection = profile.collection || [];
+    const totalCount = collection.length;
     
     let hasMarkers = false;
     
@@ -451,12 +527,16 @@ window.renderMapMarkers = async function() {
             const displayName = window.cleanDisplayString(item.name);
             const dateStr = item.date ? new Date(item.date).toLocaleDateString() : "";
             const rarityMark = window.generateRarityString(item.rarity);
+            
+            // 通し番号計算 (マップ上でも表示)
+            const collectionNumber = totalCount - index;
+            const numberStr = window.formatCollectionNumber(collectionNumber);
 
             const marker = L.marker([item.location.lat, item.location.lon], { icon: icon }).addTo(window.mapInstance);
             
-            // ★修正: ポップアップに「図鑑で見る」ボタンを追加
             marker.bindPopup(`
                 <div style="text-align:center;">
+                    <div style="font-size:0.7rem; color:#888; font-weight:bold;">${numberStr}</div>
                     <img src="${item.image}" style="width:100px; height:100px; object-fit:contain; margin-bottom:5px;"><br>
                     <strong>${displayName}</strong><br>
                     <div>${rarityMark}</div>
@@ -807,7 +887,6 @@ window.sendHttpText = async function(context) {
     window.addLogItem('user', text);
     window.addToSessionHistory('user', text);
 
-    // ★追加: 未登録情報の検出ロジック
     let missingInfo = [];
     if (window.NellMemory && currentUser) {
         try {
@@ -830,7 +909,7 @@ window.sendHttpText = async function(context) {
                 history: window.chatSessionHistory,
                 location: window.currentLocation,
                 address: window.currentAddress,
-                missingInfo: missingInfo // ★サーバーへ送信
+                missingInfo: missingInfo 
             })
         });
 
