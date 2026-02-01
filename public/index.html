@@ -1,4 +1,4 @@
-<!-- index.html (完全版 v308.0: 相互移動ボタン追加版) -->
+<!-- index.html (完全版 v309.0: モード階層化・整理版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -57,7 +57,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v308.0-MapLink</div>
+            <div class="version-tag">Build: v309.0-MenuGroups</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -91,24 +91,51 @@
             <div id="loading-models" style="text-align:center; font-size:0.7rem; margin-top:5px;">AI準備中...</div>
         </section>
 
-        <!-- 3. ロビー -->
+        <!-- 3. ロビー (メニュー整理版) -->
         <section id="screen-lobby" class="screen hidden">
             <div class="lobby-top"><div class="id-card-wrap mini-id"><img id="current-student-avatar" class="id-base-img"><button onclick="startEditProfile()" class="edit-profile-btn"><img src="assets/images/items/enpitu.png"></button></div></div>
             <div class="karikari-counter">🍖 カリカリ: <span id="karikari-count">0</span></div>
             <div class="lobby-menu">
                 <button onclick="openTimerModal()" class="main-btn pink-btn" style="background:#ff7043; box-shadow: 0 4px 0 #d84315;">⏱️ ネル先生タイマー</button>
-                <button onclick="selectMode('explain')" class="main-btn blue-btn">💡 教えてネル先生</button>
-                <button onclick="selectMode('grade')" class="main-btn red-btn">💯 採点ネル先生</button>
-                <button onclick="selectMode('review')" class="main-btn orange-btn">🔥 復習ノート</button>
-                <button onclick="showGame()" class="main-btn yellow-btn">🎮 カリカリ・キャッチ</button>
-                <button onclick="selectMode('simple-chat')" class="main-btn green-btn">👩‍🏫 ネル先生の個別指導</button>
-                <button onclick="selectMode('chat-free')" class="main-btn green-btn" style="background:#4db6ac; box-shadow: 0 4px 0 #00897b;">💬 放課後おしゃべりタイム</button>
+                <button onclick="switchScreen('screen-classroom')" class="main-btn green-btn">🏫 教室</button>
+                <button onclick="switchScreen('screen-lunchroom')" class="main-btn orange-btn">🍽️ 給食室</button>
+                <button onclick="switchScreen('screen-staffroom')" class="main-btn purple-btn">👩‍🏫 職員室</button>
                 <button onclick="selectMode('chat')" class="main-btn" style="background:#5c6bc0; box-shadow: 0 4px 0 #3949ab;">💎 ネル先生のお宝図鑑</button>
                 <button onclick="showMap()" class="main-btn" style="background:#29b6f6; box-shadow: 0 4px 0 #0288d1;">🗺️ 足あとマップ</button>
-                <button onclick="selectMode('lunch')" class="main-btn pink-btn">🍽️ おいしい給食</button>
-                <button onclick="showAttendance()" class="main-btn purple-btn">📅 出席簿をみる</button>
-                <button onclick="openMemoryManager()" class="main-btn gray-btn" style="background:#607d8b; border:none; box-shadow:0 4px 0 #455a64;">📝 プロフィール</button>
                 <button onclick="backToTitle()" class="main-btn gray-btn">👋 帰宅する</button>
+            </div>
+        </section>
+
+        <!-- 3-1. 教室サブメニュー (新設) -->
+        <section id="screen-classroom" class="screen hidden">
+            <h2 class="section-title">🏫 教室</h2>
+            <div class="lobby-menu" style="margin-top: 20px;">
+                <button onclick="selectMode('explain')" class="main-btn blue-btn">💡 教えてネル先生</button>
+                <button onclick="selectMode('grade')" class="main-btn red-btn">💯 採点ネル先生</button>
+                <button onclick="selectMode('simple-chat')" class="main-btn green-btn">👩‍🏫 ネル先生の個別指導</button>
+                <button onclick="selectMode('chat-free')" class="main-btn green-btn" style="background:#4db6ac; box-shadow: 0 4px 0 #00897b;">💬 放課後おしゃべりタイム</button>
+                <button onclick="selectMode('review')" class="main-btn orange-btn">🔥 復習ノート</button>
+                <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
+            </div>
+        </section>
+
+        <!-- 3-2. 給食室サブメニュー (新設) -->
+        <section id="screen-lunchroom" class="screen hidden">
+            <h2 class="section-title">🍽️ 給食室</h2>
+            <div class="lobby-menu" style="margin-top: 20px;">
+                <button onclick="showGame()" class="main-btn yellow-btn">🎮 カリカリ・キャッチ</button>
+                <button onclick="selectMode('lunch')" class="main-btn pink-btn">🍽️ おいしい給食</button>
+                <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
+            </div>
+        </section>
+
+        <!-- 3-3. 職員室サブメニュー (新設) -->
+        <section id="screen-staffroom" class="screen hidden">
+            <h2 class="section-title">👩‍🏫 職員室</h2>
+            <div class="lobby-menu" style="margin-top: 20px;">
+                <button onclick="openMemoryManager()" class="main-btn gray-btn" style="background:#607d8b; border:none; box-shadow:0 4px 0 #455a64;">📝 プロフィール</button>
+                <button onclick="showAttendance()" class="main-btn purple-btn">📅 出席簿をみる</button>
+                <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
             </div>
         </section>
 
