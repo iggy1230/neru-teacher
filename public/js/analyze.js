@@ -1,4 +1,4 @@
-// --- js/analyze.js (v333.0: タイマー調整版) ---
+// --- js/analyze.js (v336.0: タイマー音声タイミング完全調整版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -277,6 +277,22 @@ window.sendHttpText = async function(context) {
     window.addLogItem('user', text);
     window.addToSessionHistory('user', text);
 
+    // 記憶コンテキスト取得
+    let missingInfo = [];
+    let memoryContext = "";
+    
+    if (window.NellMemory && currentUser) {
+        try {
+            const profile = await window.NellMemory.getUserProfile(currentUser.id);
+            if (!profile.birthday) missingInfo.push("誕生日");
+            if (!profile.likes || profile.likes.length === 0) missingInfo.push("好きなもの");
+            if (!profile.weaknesses || profile.weaknesses.length === 0) missingInfo.push("苦手なもの");
+            memoryContext = await window.NellMemory.generateContextString(currentUser.id);
+        } catch(e) {
+            console.warn("Memory access error:", e);
+        }
+    }
+
     try {
         window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
         
@@ -288,7 +304,9 @@ window.sendHttpText = async function(context) {
                 name: currentUser ? currentUser.name : "生徒",
                 history: window.chatSessionHistory,
                 location: window.currentLocation,
-                address: window.currentAddress
+                address: window.currentAddress,
+                missingInfo: missingInfo,
+                memoryContext: memoryContext 
             })
         });
 
@@ -400,7 +418,6 @@ window.closeTimerModal = function() {
 };
 window.setTimer = function(minutes) {
     if (window.studyTimerRunning) return;
-    // 分単位なので60倍。0.5なら30秒。
     window.studyTimerValue += minutes * 60;
     window.updateTimerDisplay();
 };
@@ -435,16 +452,11 @@ window.toggleTimer = function() {
         
         window.studyTimerInterval = setInterval(() => {
             if (window.studyTimerValue > 0) {
-                // ★修正: 残り11秒〜2秒の時に、次の秒数(10〜1)を読み上げる（1秒先読み）
-                if (window.studyTimerValue <= 11 && window.studyTimerValue > 1) {
-                    const speakVal = window.studyTimerValue - 1;
-                    const counts = {
-                        10: "じゅう！", 9: "きゅう！", 8: "はち！", 7: "なな！", 6: "ろく！",
-                        5: "ご！", 4: "よん！", 3: "さん！", 2: "に！", 1: "いち！"
-                    };
-                    if (counts[speakVal]) {
-                        window.updateNellMessage(counts[speakVal], "excited", false, true);
-                    }
+                // ★修正: 1秒先読み再生 (残り2秒で「1」を鳴らす)
+                if (window.studyTimerValue <= 11 && window.studyTimerValue >= 2) {
+                     const soundIndex = window.studyTimerValue - 1;
+                     const sfx = window.sfxCountdown[soundIndex];
+                     if (sfx) window.safePlay(sfx);
                 }
 
                 window.studyTimerValue--;
@@ -460,11 +472,14 @@ window.toggleTimer = function() {
                 window.studyTimerRunning = false;
                 document.getElementById('timer-toggle-btn').innerText = "スタート！";
                 document.getElementById('timer-toggle-btn').className = "main-btn pink-btn";
-                // 終了チャイム
-                if(window.safePlay) window.safePlay(window.sfxChime); 
-                window.updateNellMessage("時間だにゃ！お疲れ様だにゃ〜。さ、ゆっくり休むにゃ。", "happy", false, true);
-                document.getElementById('mini-timer-display').classList.add('hidden');
-                window.openTimerModal();
+                
+                // ★修正: 最後の「1」の再生完了を待って（1秒後）チャイムを鳴らす
+                setTimeout(() => {
+                    if(window.safePlay) window.safePlay(window.sfxChime); 
+                    window.updateNellMessage("時間だにゃ！お疲れ様だにゃ〜。さ、ゆっくり休むにゃ。", "happy", false, true);
+                    document.getElementById('mini-timer-display').classList.add('hidden');
+                    window.openTimerModal();
+                }, 1000); 
             }
         }, 1000);
     }

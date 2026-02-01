@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (v328.0: 図鑑ソート・通し番号対応版) ---
+// --- js/ui/ui.js (v328.0: 記憶コンテキスト連携対応版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -235,24 +235,20 @@ window.updateProgress = function(p) {
 window.openCollectionDetailByIndex = function(originalIndex) {
     if (!window.NellMemory || !currentUser) return;
     window.NellMemory.getUserProfile(currentUser.id).then(profile => {
-        // 配列は [最新 ... 最古] の順。
-        // originalIndex は配列上のインデックス
         if (profile && profile.collection && profile.collection[originalIndex]) {
             const modal = document.getElementById('collection-modal');
             if (modal && modal.classList.contains('hidden')) {
                 modal.classList.remove('hidden');
             }
-            // 通し番号を計算: 全長 - インデックス
             const collectionNumber = profile.collection.length - originalIndex;
             window.showCollectionDetail(profile.collection[originalIndex], originalIndex, collectionNumber);
         }
     });
 };
 
-// ★修正: ソート変更時のハンドラ
 window.changeCollectionSort = function(select) {
     window.collectionSortMode = select.value;
-    window.renderCollectionList(); // 再描画
+    window.renderCollectionList(); 
 };
 
 window.showCollection = async function() {
@@ -260,7 +256,6 @@ window.showCollection = async function() {
     const modal = document.getElementById('collection-modal');
     if (!modal) return;
     
-    // ヘッダー部分（件数、マップボタン、ソートプルダウン）
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 80vh; display: flex; flex-direction: column;">
             <h3 style="text-align:center; margin:0 0 10px 0; color:#f57f17; flex-shrink: 0;">📖 お宝図鑑</h3>
@@ -295,7 +290,6 @@ window.showCollection = async function() {
     window.renderCollectionList();
 };
 
-// ★修正: リスト描画ロジック（ソート対応）
 window.renderCollectionList = async function() {
     const grid = document.getElementById('collection-grid');
     const countBadge = document.getElementById('collection-count-badge');
@@ -313,24 +307,17 @@ window.renderCollectionList = async function() {
         return;
     }
 
-    // データに「元のインデックス」と「通し番号」を付与してマッピング
-    // collection[0] が最新 => 通し番号は totalCount
-    // collection[totalCount-1] が最古 => 通し番号は 1
     let items = collection.map((item, index) => ({
         ...item,
         originalIndex: index,
         number: totalCount - index
     }));
 
-    // ソート実行
     if (window.collectionSortMode === 'asc') {
-        // 昇順 (No.1 -> No.Max)
         items.sort((a, b) => a.number - b.number);
     } else if (window.collectionSortMode === 'desc') {
-        // 降順 (No.Max -> No.1) デフォルトなので何もしない、またはソート
         items.sort((a, b) => b.number - a.number);
     } else if (window.collectionSortMode === 'rarity') {
-        // レアリティ降順 -> 同じなら登録番号降順
         items.sort((a, b) => {
             const rA = a.rarity || 1;
             const rB = b.rarity || 1;
@@ -369,7 +356,6 @@ window.renderCollectionList = async function() {
     });
 };
 
-// ★修正: 通し番号(collectionNumber)を受け取るように変更
 window.showCollectionDetail = function(item, originalIndex, collectionNumber) {
     const modal = document.getElementById('collection-modal');
     if (!modal) return;
@@ -442,7 +428,6 @@ window.deleteCollectionItem = async function(index) {
     if (!confirm("本当にこのお宝を削除するにゃ？")) return;
     if (window.NellMemory && currentUser) {
         await window.NellMemory.deleteFromCollection(currentUser.id, index);
-        // 削除後は再描画が必要。showCollectionを呼んでリストに戻す
         window.showCollection(); 
     }
 };
@@ -528,7 +513,6 @@ window.renderMapMarkers = async function() {
             const dateStr = item.date ? new Date(item.date).toLocaleDateString() : "";
             const rarityMark = window.generateRarityString(item.rarity);
             
-            // 通し番号計算 (マップ上でも表示)
             const collectionNumber = totalCount - index;
             const numberStr = window.formatCollectionNumber(collectionNumber);
 
@@ -887,14 +871,23 @@ window.sendHttpText = async function(context) {
     window.addLogItem('user', text);
     window.addToSessionHistory('user', text);
 
+    // ★修正: メモリ参照ロジックの追加
     let missingInfo = [];
+    let memoryContext = "";
+    
     if (window.NellMemory && currentUser) {
         try {
+            // プロファイル取得
             const profile = await window.NellMemory.getUserProfile(currentUser.id);
             if (!profile.birthday) missingInfo.push("誕生日");
             if (!profile.likes || profile.likes.length === 0) missingInfo.push("好きなもの");
             if (!profile.weaknesses || profile.weaknesses.length === 0) missingInfo.push("苦手なもの");
-        } catch(e) {}
+            
+            // コンテキスト文字列生成
+            memoryContext = await window.NellMemory.generateContextString(currentUser.id);
+        } catch(e) {
+            console.warn("Memory access error:", e);
+        }
     }
 
     try {
@@ -909,7 +902,8 @@ window.sendHttpText = async function(context) {
                 history: window.chatSessionHistory,
                 location: window.currentLocation,
                 address: window.currentAddress,
-                missingInfo: missingInfo 
+                missingInfo: missingInfo,
+                memoryContext: memoryContext // ★追加: 記憶データを送信
             })
         });
 

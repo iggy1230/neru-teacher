@@ -1,4 +1,4 @@
-// --- js/constants.js (v330.0: チャイム音源パス修正版) ---
+// --- js/constants.js (v331.0: カウントダウン音声追加版) ---
 
 // ==========================================
 // グローバル変数・状態フラグ
@@ -37,7 +37,6 @@ function createAudio(path) {
 }
 
 // システム音
-// ★修正: ファイル名をユーザー指定の「Jpn_sch_chime.mp3」に変更
 window.sfxChime = createAudio('assets/sounds/system/Jpn_sch_chime.mp3');
 window.sfxBtn = createAudio('assets/sounds/ui/botan1.mp3'); 
 window.sfxOver = createAudio('assets/sounds/system/gameover.mp3');
@@ -52,6 +51,12 @@ window.sfxHirameku = createAudio('assets/sounds/voice/hirameku.mp3');
 window.sfxMaru = createAudio('assets/sounds/ui/maru.mp3');
 window.sfxBatu = createAudio('assets/sounds/ui/batu.mp3');
 window.sfxDoor = createAudio('assets/sounds/system/class_door1.mp3');
+
+// ★追加: カウントダウン音声 (1.wav ～ 10.wav)
+window.sfxCountdown = {};
+for (let i = 1; i <= 10; i++) {
+    window.sfxCountdown[i] = createAudio(`assets/sounds/voice/${i}.wav`);
+}
 
 // ゲーム用コメント
 window.gameHitComments = ["うまいにゃ！", "すごいにゃ！", "さすがにゃ！", "がんばれにゃ！"];
