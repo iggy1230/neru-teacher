@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v309.0: 図鑑番号スタイル追加版) --- */
+/* --- style.css (完全版 v311.0: iPhoneカメラ軽量化対応版) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -176,7 +176,7 @@ button { font-family: inherit; }
 #main-back-btn {
     position: absolute;
     top: 10px;
-    left: 150px; /* ★修正: 音量バーの右側に配置 */
+    left: 150px; 
     width: auto !important;
     margin: 0 !important;
     padding: 8px 20px !important;
@@ -588,7 +588,7 @@ button { font-family: inherit; }
 
 .mini-timer-display {
     position: fixed;
-    top: 60px; /* ★修正: 音量バーの下に配置 */
+    top: 60px;
     left: 10px; 
     background: #fff3e0; 
     padding: 8px 15px;
@@ -1080,7 +1080,7 @@ button { font-family: inherit; }
     box-shadow: 0 1px 3px rgba(0,0,0,0.3);
 }
 
-/* ★新: マップピンのスタイル */
+/* マップピンのスタイル */
 .map-pin-icon {
     width: 50px;
     height: 50px;
@@ -1098,7 +1098,7 @@ button { font-family: inherit; }
     border-color: #ffeb3b;
 }
 
-/* ★新: レアリティマーク画像 (肉球) */
+/* レアリティマーク画像 (肉球) */
 .rarity-mark {
     display: flex;
     justify-content: center;
@@ -1109,11 +1109,32 @@ button { font-family: inherit; }
     width: 16px; 
     height: 16px; 
     object-fit: contain;
-    /* 色調整が必要ならfilterを使うが、画像そのものを使うなら不要 */
     filter: drop-shadow(1px 1px 0px rgba(255, 255, 255, 0.8));
 }
 
-/* アニメーション用（レア度高） */
 .rarity-5 .rarity-img {
     animation: bounce 1s infinite alternate;
+}
+
+/* 
+   ★追加: カメラ起動時の軽量化モード 
+   iPhone等の描画負荷を軽減するため、重いエフェクトを無効化
+*/
+.camera-active .volume-controls-fixed,
+.camera-active .glass-card,
+.camera-active .whiteboard-overlay,
+.camera-active .memory-modal-overlay {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: rgba(255, 255, 255, 0.95); /* ぼかしの代わりにベタ塗り(少し透過) */
+}
+
+/* カメラ起動中は背景画像を非表示にして描画負荷を下げる */
+.camera-active body::before {
+    display: none !important;
+}
+
+/* 背景画像の代わりに単色背景 */
+.camera-active body {
+    background-color: #fff9f0;
 }

@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v327.0: 画像サイズ・通信量最適化版) ---
+// --- js/camera-service.js (v341.0: iPhone音声・図鑑登録修正版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -9,37 +9,52 @@ window.startPreviewCamera = async function(videoId = 'live-chat-video', containe
     const container = document.getElementById(containerId);
     if (!video || !container) return;
 
+    document.body.classList.add('camera-active');
+
     try {
         if (window.previewStream) {
             window.previewStream.getTracks().forEach(t => t.stop());
         }
         try {
-            // 通信量節約のため、カメラ自体の要求解像度も少し抑える（HDクラス）
+            // iPhone負荷軽減: VGA 15fps
             window.previewStream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+                video: { 
+                    facingMode: "environment", 
+                    width: { ideal: 640 }, 
+                    height: { ideal: 480 },
+                    frameRate: { ideal: 15 }
+                },
                 audio: false 
             });
         } catch(e) {
             window.previewStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
         }
         video.srcObject = window.previewStream;
+        video.setAttribute('playsinline', true);
         await video.play();
         container.style.display = 'block';
 
     } catch (e) {
         console.warn("[Preview] Camera init failed:", e);
+        document.body.classList.remove('camera-active'); 
         alert("カメラが使えないにゃ…。");
     }
 };
 
 window.stopPreviewCamera = function() {
+    document.body.classList.remove('camera-active');
+
     if (window.previewStream) {
         window.previewStream.getTracks().forEach(t => t.stop());
         window.previewStream = null;
     }
     ['live-chat-video', 'live-chat-video-embedded', 'live-chat-video-simple', 'live-chat-video-free'].forEach(vid => {
         const v = document.getElementById(vid);
-        if(v) v.srcObject = null;
+        if(v) {
+            v.pause();
+            v.srcObject = null;
+            v.load();
+        }
     });
     ['live-chat-video-container', 'live-chat-video-container-embedded', 'live-chat-video-container-simple', 'live-chat-video-container-free'].forEach(cid => {
         const c = document.getElementById(cid);
@@ -94,8 +109,6 @@ window.toggleTreasureCamera = function() {
     }
 };
 
-// ★修正: 図鑑用画像のサイズダウン (400px, quality 0.7)
-// これでサムネイルとしての視認性は保ちつつ、容量を削減
 window.createTreasureImage = function(sourceCanvas) {
     const OUTPUT_SIZE = 400; 
     const canvas = document.createElement('canvas');
@@ -127,8 +140,6 @@ window.createTreasureImage = function(sourceCanvas) {
     return canvas.toDataURL('image/jpeg', 0.7);
 };
 
-// ★修正: AI送信用画像のサイズダウン (1024px, quality 0.7)
-// 文字認識精度を維持しつつ、パケットを節約するライン
 window.processImageForAI = function(sourceCanvas) { 
     const MAX_WIDTH = 1024; 
     const QUALITY = 0.7;
@@ -147,11 +158,10 @@ window.processImageForAI = function(sourceCanvas) {
 const getLocation = () => {
     return new Promise((resolve) => {
         if (!navigator.geolocation) return resolve(null);
-        
         const timeoutId = setTimeout(() => {
             console.warn("GPS Timeout (Fallback)");
             resolve(null);
-        }, 10000); 
+        }, 8000); // タイムアウト短縮
 
         navigator.geolocation.getCurrentPosition(
             (pos) => {
@@ -167,16 +177,34 @@ const getLocation = () => {
                 console.warn("GPS Error (Fallback):", err); 
                 resolve(null); 
             },
-            { timeout: 10000, enableHighAccuracy: true }
+            { timeout: 8000, enableHighAccuracy: true }
         );
     });
 };
 
+// ★修正: iPhoneでの音声・登録不具合対策
 window.captureAndIdentifyItem = async function() {
     if (window.isLiveImageSending) return;
     
-    if (window.isAlwaysListening && window.continuousRecognition) {
+    // 1. 音声入力停止
+    if (typeof window.stopAlwaysOnListening === 'function') {
+        window.stopAlwaysOnListening();
+    } else if (window.isAlwaysListening && window.continuousRecognition) {
         try { window.continuousRecognition.stop(); } catch(e){}
+    }
+
+    // 2. ★iOS対策: ボタン押下直後に音声コンテキストを再開＆効果音をアンロック
+    if (window.initAudioContext) {
+        window.initAudioContext().catch(e => console.warn("AudioContext init error:", e));
+    }
+    if (window.sfxHirameku) {
+        const originalVol = window.sfxHirameku.volume;
+        window.sfxHirameku.volume = 0; // 無音で
+        window.sfxHirameku.play().then(() => {
+            window.sfxHirameku.pause();
+            window.sfxHirameku.currentTime = 0;
+            window.sfxHirameku.volume = originalVol; // 音量戻す
+        }).catch(e => {}); // エラーは無視
     }
 
     const video = document.getElementById('live-chat-video');
@@ -187,76 +215,78 @@ window.captureAndIdentifyItem = async function() {
     window.isLiveImageSending = true;
     const btn = document.getElementById('live-camera-btn');
     if (btn) {
-        btn.innerHTML = "<span>📡</span> 場所と物を解析中にゃ...";
+        btn.innerHTML = "<span>📡</span> 写真を準備中にゃ...";
         btn.style.backgroundColor = "#ccc";
         btn.disabled = true;
     }
 
     let locationData = window.currentLocation;
     
-    if (!locationData || locationData.accuracy > 1000) {
-        console.log("位置情報の精度向上を待機中...");
-        if(typeof window.updateNellMessage === 'function') {
-            window.updateNellMessage("ん？詳しい場所を調べてるにゃ…ちょっと待ってにゃ…", "thinking", false, true);
+    try {
+        // 画像キャプチャと圧縮処理
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        // ★エラーハンドリング: 画像処理でのクラッシュ防止
+        let compressedDataUrl, base64Data, treasureDataUrl;
+        try {
+            compressedDataUrl = window.processImageForAI(canvas);
+            base64Data = compressedDataUrl.split(',')[1];
+            treasureDataUrl = window.createTreasureImage(canvas);
+        } catch (imgErr) {
+            throw new Error("画像の処理に失敗したにゃ。メモリ不足かもしれないにゃ。");
         }
-        
-        for (let i = 0; i < 6; i++) {
-            await new Promise(r => setTimeout(r, 500));
-            if (window.currentLocation && window.currentLocation.accuracy <= 1000) {
-                locationData = window.currentLocation;
-                break;
+
+        const flash = document.createElement('div');
+        flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;";
+        document.body.appendChild(flash);
+        setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
+
+        if(typeof window.updateNellMessage === 'function') {
+            window.updateNellMessage("詳しい場所を調べてるにゃ…", "thinking", false, true);
+        }
+
+        // GPS精度待ち
+        if (!locationData || locationData.accuracy > 1000) {
+            for (let i = 0; i < 4; i++) { // 待ち時間短縮
+                await new Promise(r => setTimeout(r, 500));
+                if (window.currentLocation && window.currentLocation.accuracy <= 1000) {
+                    locationData = window.currentLocation;
+                    break;
+                }
             }
         }
-    }
-    
-    locationData = window.currentLocation;
-
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    // ★修正: AI送信用に圧縮
-    const compressedDataUrl = window.processImageForAI(canvas);
-    const base64Data = compressedDataUrl.split(',')[1];
-    
-    // ★修正: 図鑑用にも圧縮版生成
-    const treasureDataUrl = window.createTreasureImage(canvas);
-
-    const flash = document.createElement('div');
-    flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;";
-    document.body.appendChild(flash);
-    setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
-
-    if(typeof window.updateNellMessage === 'function') {
-        window.updateNellMessage("ん？何を見つけたのかにゃ…？", "thinking", false, true);
-    }
-
-    if (!locationData) {
-        console.log("Using fallback GPS...");
-        try {
-            locationData = await getLocation();
-        } catch(e) {
-            console.warn("Fallback GPS failed");
+        
+        // フォールバックGPS
+        if (!locationData) {
+            console.log("Using fallback GPS...");
+            try {
+                locationData = await getLocation();
+            } catch(e) {
+                console.warn("Fallback GPS failed");
+            }
         }
-    } else {
-        console.log("Using cached GPS:", locationData);
-    }
 
-    try {
+        if(typeof window.updateNellMessage === 'function') {
+            window.updateNellMessage("ん？何を見つけたのかにゃ…？", "thinking", false, true);
+        }
+
+        // API送信
         const res = await fetch('/identify-item', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-                image: base64Data, // 圧縮済みデータ
+                image: base64Data, 
                 name: currentUser ? currentUser.name : "生徒",
                 location: locationData, 
                 address: window.currentAddress
             })
         });
 
-        if (!res.ok) throw new Error("Server response not ok");
+        if (!res.ok) throw new Error("サーバー通信エラーだにゃ");
 
         const data = await res.json();
         
@@ -287,12 +317,16 @@ window.captureAndIdentifyItem = async function() {
             notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #00bcd4; color:#006064; padding:15px 25px; border-radius:30px; font-weight:900; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 10px 25px rgba(0,0,0,0.3);";
             document.body.appendChild(notif);
             setTimeout(() => notif.remove(), 4000);
+            
+            // ★再生: ここで分析完了音が鳴るはず（アンロック済みなら）
             if(window.safePlay) window.safePlay(window.sfxHirameku);
         }
 
     } catch (e) {
         console.error("Identify Error:", e);
-        if(typeof window.updateNellMessage === 'function') window.updateNellMessage("よく見えなかったにゃ…もう一回見せてにゃ？", "thinking", false, true);
+        if(typeof window.updateNellMessage === 'function') {
+            window.updateNellMessage(`エラーだにゃ…: ${e.message || "解析失敗"}`, "thinking", false, true);
+        }
     } finally {
         window.isLiveImageSending = false;
         
@@ -303,8 +337,13 @@ window.captureAndIdentifyItem = async function() {
             btn.disabled = false;
         }
         
-        if (window.isAlwaysListening && window.currentMode === 'chat') {
-            try { window.continuousRecognition.start(); } catch(e){}
+        // ★修正: 完了後に音声入力を再開
+        if (window.currentMode === 'chat') {
+            if (typeof window.startAlwaysOnListening === 'function') {
+                window.startAlwaysOnListening();
+            } else if (window.isAlwaysListening) {
+                try { window.continuousRecognition.start(); } catch(e){}
+            }
         }
     }
 };
@@ -315,6 +354,9 @@ window.startHomeworkWebcam = async function() {
     const shutter = document.getElementById('camera-shutter-btn');
     const cancel = document.getElementById('camera-cancel-btn');
     if (!modal || !video) return;
+
+    document.body.classList.add('camera-active');
+
     try {
         let constraints = { video: { facingMode: "environment" } };
         try { window.homeworkStream = await navigator.mediaDevices.getUserMedia(constraints); } 
@@ -343,8 +385,14 @@ window.startHomeworkWebcam = async function() {
 window.closeHomeworkCamera = function() {
     const modal = document.getElementById('camera-modal');
     const video = document.getElementById('camera-video');
+    
+    document.body.classList.remove('camera-active');
+
     if (window.homeworkStream) { window.homeworkStream.getTracks().forEach(t => t.stop()); window.homeworkStream = null; }
-    if (video) video.srcObject = null;
+    if (video) {
+        video.srcObject = null;
+        video.load(); 
+    }
     if (modal) modal.classList.add('hidden');
 };
 
@@ -421,6 +469,20 @@ window.initCustomCropper = function() {
         document.getElementById('upload-controls').classList.remove('hidden'); 
     }; 
     document.getElementById('cropper-ok-btn').onclick = () => { 
+        // ★iOS対策: 決定ボタンを押した瞬間に音声をアンロック
+        if (window.sfxHirameku) {
+            const originalVol = window.sfxHirameku.volume;
+            window.sfxHirameku.volume = 0;
+            window.sfxHirameku.play().then(() => {
+                window.sfxHirameku.pause();
+                window.sfxHirameku.currentTime = 0;
+                window.sfxHirameku.volume = originalVol;
+            }).catch(e => {});
+        }
+        if (window.initAudioContext) {
+            window.initAudioContext().catch(()=>{});
+        }
+
         modal.classList.add('hidden'); 
         window.onmousemove = null; window.ontouchmove = null; 
         const croppedBase64 = window.performPerspectiveCrop(canvas, window.cropPoints); 
@@ -460,7 +522,6 @@ window.performPerspectiveCrop = function(sourceCanvas, points) {
     if (w < 1) w = 1; if (h < 1) h = 1; 
     const tempCv = document.createElement('canvas'); tempCv.width = w; tempCv.height = h; 
     const ctx = tempCv.getContext('2d'); ctx.drawImage(sourceCanvas, minX, minY, w, h, 0, 0, w, h); 
-    // ★修正: 圧縮処理を通す
     return window.processImageForAI(tempCv).split(',')[1]; 
 };
 
@@ -470,6 +531,10 @@ window.performPerspectiveCrop = function(sourceCanvas, points) {
 
 window.startAnalysis = async function(b64) {
     if (window.isAnalyzing) return;
+    
+    // ★分析中は音声入力を完全停止
+    if (typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
+
     window.isAnalyzing = true; 
     document.getElementById('cropper-modal').classList.add('hidden'); 
     document.getElementById('thinking-view').classList.remove('hidden'); 
@@ -543,6 +608,12 @@ window.startAnalysis = async function(b64) {
                 if(typeof window.renderProblemSelection === 'function') window.renderProblemSelection(); 
                 if(typeof window.updateNellMessage === 'function') window.updateNellMessage(doneMsg, "happy", false); 
             } 
+            
+            // ★完了後に音声入力再開 (モードに応じて)
+            if (window.currentMode === 'explain' || window.currentMode === 'grade' || window.currentMode === 'review') {
+                if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
+            }
+
         }, 1500); 
     } catch (err) { 
         console.error("Analysis Error:", err); 
@@ -550,6 +621,11 @@ window.startAnalysis = async function(b64) {
         document.getElementById('thinking-view').classList.add('hidden'); document.getElementById('upload-controls').classList.remove('hidden'); 
         if(backBtn) backBtn.classList.remove('hidden'); 
         if(typeof window.updateNellMessage === 'function') window.updateNellMessage("うまく読めなかったにゃ…もう一度お願いにゃ！", "thinking", false); 
+        
+        // ★エラー時も再開
+        if (window.currentMode === 'explain' || window.currentMode === 'grade' || window.currentMode === 'review') {
+            if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
+        }
     }
 };
 
@@ -623,7 +699,6 @@ window.captureAndSendLiveImage = function(context = 'main') {
     document.body.appendChild(notif);
     setTimeout(() => notif.remove(), 2000);
     
-    // ★修正: 圧縮処理を通す
     const compressedDataUrl = window.processImageForAI(canvas);
     const base64Data = compressedDataUrl.split(',')[1];
     
@@ -673,9 +748,6 @@ window.captureAndSendLiveImage = function(context = 'main') {
     setTimeout(() => { window.ignoreIncomingAudio = false; }, 300);
 };
 
-// ==========================================
-// HTTPチャット用画像送信 (圧縮版)
-// ==========================================
 window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
     if (window.isLiveImageSending) return;
     
@@ -703,7 +775,6 @@ window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     
-    // ★修正: 圧縮処理を通す
     const compressedDataUrl = window.processImageForAI(canvas);
     const base64Data = compressedDataUrl.split(',')[1];
     
@@ -714,6 +785,13 @@ window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
 
     if(typeof window.addLogItem === 'function') window.addLogItem('user', '（画像送信）');
 
+    let memoryContext = "";
+    if (window.NellMemory && currentUser) {
+        try {
+            memoryContext = await window.NellMemory.generateContextString(currentUser.id);
+        } catch(e) {}
+    }
+
     try {
         if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
 
@@ -721,12 +799,13 @@ window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-                image: base64Data, // 圧縮済み
+                image: base64Data, 
                 text: "この問題を教えてください。",
                 name: currentUser ? currentUser.name : "生徒",
                 history: window.chatSessionHistory,
                 location: window.currentLocation,
-                address: window.currentAddress // 追加
+                address: window.currentAddress,
+                memoryContext: memoryContext
             })
         });
 

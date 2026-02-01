@@ -1,4 +1,4 @@
-// --- js/analyze.js (v336.0: タイマー音声タイミング完全調整版) ---
+// --- js/analyze.js (v341.0: 宿題分析中音声オフ・同期版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -441,6 +441,29 @@ window.toggleTimer = function() {
         document.getElementById('timer-toggle-btn').className = "main-btn blue-btn";
     } else {
         if (window.studyTimerValue <= 0) return alert("時間をセットしてにゃ！");
+        
+        // iOS対策: タイマー開始時に全カウントダウン音声を「音量0」で一瞬だけ再生・停止
+        if (window.sfxCountdown) {
+            Object.values(window.sfxCountdown).forEach(audio => {
+                const originalVol = audio.volume;
+                audio.volume = 0;
+                audio.play().then(() => {
+                    audio.pause();
+                    audio.currentTime = 0;
+                    audio.volume = originalVol; 
+                }).catch(e => {});
+            });
+            if (window.sfxChime) {
+                const vol = window.sfxChime.volume;
+                window.sfxChime.volume = 0;
+                window.sfxChime.play().then(()=>{
+                    window.sfxChime.pause();
+                    window.sfxChime.currentTime = 0;
+                    window.sfxChime.volume = vol;
+                }).catch(()=>{});
+            }
+        }
+
         window.studyTimerRunning = true;
         window.studyTimerCheck = 0;
         document.getElementById('timer-toggle-btn').innerText = "一時停止";
@@ -452,7 +475,6 @@ window.toggleTimer = function() {
         
         window.studyTimerInterval = setInterval(() => {
             if (window.studyTimerValue > 0) {
-                // ★修正: 1秒先読み再生 (残り2秒で「1」を鳴らす)
                 if (window.studyTimerValue <= 11 && window.studyTimerValue >= 2) {
                      const soundIndex = window.studyTimerValue - 1;
                      const sfx = window.sfxCountdown[soundIndex];
@@ -473,7 +495,6 @@ window.toggleTimer = function() {
                 document.getElementById('timer-toggle-btn').innerText = "スタート！";
                 document.getElementById('timer-toggle-btn').className = "main-btn pink-btn";
                 
-                // ★修正: 最後の「1」の再生完了を待って（1秒後）チャイムを鳴らす
                 setTimeout(() => {
                     if(window.safePlay) window.safePlay(window.sfxChime); 
                     window.updateNellMessage("時間だにゃ！お疲れ様だにゃ〜。さ、ゆっくり休むにゃ。", "happy", false, true);
@@ -670,7 +691,6 @@ window.checkOneProblem = function(id) {
 };
 window.updateMarkDisplay = function(id, isCorrect) { const container = document.getElementById(`grade-item-${id}`); const markElem = document.getElementById(`mark-${id}`); if (container && markElem) { if (isCorrect) { markElem.innerText = "⭕"; markElem.style.color = "#ff5252"; container.style.backgroundColor = "#fff5f5"; } else { markElem.innerText = "❌"; markElem.style.color = "#4a90e2"; container.style.backgroundColor = "#f0f8ff"; } } };
 
-// ★修正箇所: 正解数カウントの初期値を0にし、満点判定を修正
 window.updateGradingMessage = function() { 
     let correctCount = 0; 
     window.transcribedProblems.forEach(p => { if (p.is_correct) correctCount++; }); 
