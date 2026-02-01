@@ -1,4 +1,4 @@
-// --- js/analyze.js (v317.0: 住所重複排除・クライアント側住所特定版) ---
+// --- js/analyze.js (v333.0: タイマー調整版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -17,11 +17,9 @@ window.fetchAddressFromCoords = async function(lat, lon) {
             const data = await res.json();
             const addr = data.address;
             
-            // ★修正: 重複排除ロジック
             let fullAddress = "";
 
             const appendIfNew = (str) => {
-                // すでに含まれているかチェック (例: "筑後市"の後に"筑後市"を足さない)
                 if (str && !fullAddress.includes(str)) {
                     fullAddress += str;
                 }
@@ -75,12 +73,9 @@ window.startLocationWatch = function() {
             const lat = pos.coords.latitude;
             const lon = pos.coords.longitude;
 
-            // 精度が良い場合、または初回の場合に更新
             if (!window.currentLocation || newAccuracy < window.currentLocation.accuracy) {
                 window.currentLocation = { lat: lat, lon: lon, accuracy: newAccuracy };
                 console.log(`★位置更新: 精度${Math.round(newAccuracy)}m`);
-                
-                // 住所も更新（負荷軽減のため、精度が良くなった時だけ呼ぶ）
                 window.fetchAddressFromCoords(lat, lon);
             }
         },
@@ -100,7 +95,6 @@ window.stopLocationWatch = function() {
 // 1. UI操作・モード選択関数
 // ==========================================
 
-// ★ selectMode
 window.selectMode = function(m) {
     try {
         window.currentMode = m; 
@@ -113,7 +107,6 @@ window.selectMode = function(m) {
             document.getElementById('screen-main').classList.remove('hidden');
         }
 
-        // 画面要素のリセット
         const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'simple-chat-view', 'chat-free-view', 'lunch-view', 'grade-sheet-container', 'hint-detail-container', 'embedded-chat-section'];
         ids.forEach(id => { 
             const el = document.getElementById(id); 
@@ -139,7 +132,6 @@ window.selectMode = function(m) {
         const backBtn = document.getElementById('main-back-btn');
         if (backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = window.backToLobby; }
         
-        // 既存の機能を停止
         if(typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
         if (typeof window.stopLiveChat === 'function') window.stopLiveChat();
         if(typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera(); 
@@ -152,25 +144,24 @@ window.selectMode = function(m) {
         if(miniKarikari) miniKarikari.classList.remove('hidden');
         if(typeof window.updateMiniKarikari === 'function') window.updateMiniKarikari();
         
-        // モードごとの初期化
         if (m === 'chat') { 
             document.getElementById('chat-view').classList.remove('hidden'); 
             window.updateNellMessage("お宝を見せてにゃ！お話もできるにゃ！", "excited", false); 
             document.getElementById('conversation-log').classList.remove('hidden');
             if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
-            window.startLocationWatch(); // 位置・住所監視開始
+            window.startLocationWatch();
         } 
         else if (m === 'simple-chat') {
             document.getElementById('simple-chat-view').classList.remove('hidden');
             window.updateNellMessage("今日はお話だけするにゃ？", "gentle", false);
             document.getElementById('conversation-log').classList.remove('hidden');
             if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
-            window.startLocationWatch(); // 位置・住所監視開始
+            window.startLocationWatch();
         }
         else if (m === 'chat-free') {
             document.getElementById('chat-free-view').classList.remove('hidden');
             window.updateNellMessage("何でも話していいにゃ！", "happy", false);
-            window.startLocationWatch(); // 位置・住所監視開始
+            window.startLocationWatch();
         }
         else if (m === 'lunch') { 
             document.getElementById('lunch-view').classList.remove('hidden'); 
@@ -231,7 +222,6 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     const targetId = isGameHidden ? 'nell-text' : 'nell-text-game';
     const el = document.getElementById(targetId);
     
-    // --- 表示用テキストのクリーニング ---
     let cleanText = t || "";
 
     cleanText = cleanText.split('\n').filter(line => {
@@ -290,7 +280,6 @@ window.sendHttpText = async function(context) {
     try {
         window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
         
-        // ★修正: 住所情報(address)も送信
         const res = await fetch('/chat-dialogue', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -299,7 +288,7 @@ window.sendHttpText = async function(context) {
                 name: currentUser ? currentUser.name : "生徒",
                 history: window.chatSessionHistory,
                 location: window.currentLocation,
-                address: window.currentAddress // 確定した詳細住所
+                address: window.currentAddress
             })
         });
 
@@ -399,7 +388,7 @@ window.setSubject = function(s) {
 window.setAnalyzeMode = function(type) { window.analysisType = 'precision'; };
 
 // ==========================================
-// ★ タイマー関連
+// ★ タイマー関連 (カウントダウン音修正)
 // ==========================================
 
 window.openTimerModal = function() {
@@ -411,6 +400,7 @@ window.closeTimerModal = function() {
 };
 window.setTimer = function(minutes) {
     if (window.studyTimerRunning) return;
+    // 分単位なので60倍。0.5なら30秒。
     window.studyTimerValue += minutes * 60;
     window.updateTimerDisplay();
 };
@@ -445,6 +435,18 @@ window.toggleTimer = function() {
         
         window.studyTimerInterval = setInterval(() => {
             if (window.studyTimerValue > 0) {
+                // ★修正: 残り11秒〜2秒の時に、次の秒数(10〜1)を読み上げる（1秒先読み）
+                if (window.studyTimerValue <= 11 && window.studyTimerValue > 1) {
+                    const speakVal = window.studyTimerValue - 1;
+                    const counts = {
+                        10: "じゅう！", 9: "きゅう！", 8: "はち！", 7: "なな！", 6: "ろく！",
+                        5: "ご！", 4: "よん！", 3: "さん！", 2: "に！", 1: "いち！"
+                    };
+                    if (counts[speakVal]) {
+                        window.updateNellMessage(counts[speakVal], "excited", false, true);
+                    }
+                }
+
                 window.studyTimerValue--;
                 window.studyTimerCheck++;
                 window.updateTimerDisplay();
@@ -458,6 +460,7 @@ window.toggleTimer = function() {
                 window.studyTimerRunning = false;
                 document.getElementById('timer-toggle-btn').innerText = "スタート！";
                 document.getElementById('timer-toggle-btn').className = "main-btn pink-btn";
+                // 終了チャイム
                 if(window.safePlay) window.safePlay(window.sfxChime); 
                 window.updateNellMessage("時間だにゃ！お疲れ様だにゃ〜。さ、ゆっくり休むにゃ。", "happy", false, true);
                 document.getElementById('mini-timer-display').classList.add('hidden');
