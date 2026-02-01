@@ -1,4 +1,4 @@
-// --- js/constants.js (v303.0: 音量制御確認版) ---
+// --- js/constants.js (v330.0: チャイム音源パス修正版) ---
 
 // ==========================================
 // グローバル変数・状態フラグ
@@ -37,7 +37,8 @@ function createAudio(path) {
 }
 
 // システム音
-window.sfxChime = createAudio('assets/sounds/system/jpn_sch_chime.mp3');
+// ★修正: ファイル名をユーザー指定の「Jpn_sch_chime.mp3」に変更
+window.sfxChime = createAudio('assets/sounds/system/Jpn_sch_chime.mp3');
 window.sfxBtn = createAudio('assets/sounds/ui/botan1.mp3'); 
 window.sfxOver = createAudio('assets/sounds/system/gameover.mp3');
 window.sfxBunseki = createAudio('assets/sounds/system/bunseki.mp3');
