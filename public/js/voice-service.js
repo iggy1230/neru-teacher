@@ -1,4 +1,4 @@
-// --- js/voice-service.js (v329.0: 修正・整理版) ---
+// --- js/voice-service.js (v337.0: iOS非対応アナウンス追加版) ---
 
 // ==========================================
 // 音声再生・停止
@@ -14,11 +14,27 @@ window.stopAudioPlayback = function() {
 };
 
 // ==========================================
-// 常時聞き取り (Speech Recognition)
+// 常時聞き取り (Speech Recognition) - 個別指導用
 // ==========================================
 window.startAlwaysOnListening = function() {
+    // ブラウザが音声認識に対応しているかチェック
     if (!('webkitSpeechRecognition' in window)) {
-        console.warn("Speech Recognition not supported.");
+        console.warn("Speech Recognition not supported on this browser/device.");
+        
+        // ★修正: iPhoneなどで非対応の場合、ユーザーに通知する
+        // ただし、何度も言うとうるさいので、一度だけ、またはコンソールに出すだけにするか、
+        // ネル先生に優しく言わせる
+        if (window.currentMode === 'simple-chat' || window.currentMode === 'explain' || window.currentMode === 'grade' || window.currentMode === 'review') {
+             // 画面下部のテキストエリア付近にヒントを出すなどの処理が望ましいが、
+             // ここではネル先生が一言案内する形にする（会話の邪魔にならない程度に）
+             // 既に何か喋っている場合は言わない
+             if (!window.isNellSpeaking && !window.iosAlertShown) {
+                 window.iosAlertShown = true; // フラグを立てて連呼防止
+                 if(typeof window.updateNellMessage === 'function') {
+                     window.updateNellMessage("iPhoneの人は、キーボードのマイクボタンを使って話しかけてにゃ！", "normal", false, true);
+                 }
+             }
+        }
         return;
     }
 
@@ -146,7 +162,7 @@ window.stopAlwaysOnListening = function() {
 };
 
 // ==========================================
-// リアルタイムチャット (WebSocket)
+// リアルタイムチャット (WebSocket) - 放課後おしゃべり用
 // ==========================================
 
 window.stopLiveChat = function() {
