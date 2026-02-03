@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v341.0: iPhone音声・図鑑登録修正版) ---
+// --- js/camera-service.js (v361.0: iPhoneメモリ対策・軽量化版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -110,7 +110,8 @@ window.toggleTreasureCamera = function() {
 };
 
 window.createTreasureImage = function(sourceCanvas) {
-    const OUTPUT_SIZE = 400; 
+    // 図鑑用サムネイルは小さくて良い
+    const OUTPUT_SIZE = 300; 
     const canvas = document.createElement('canvas');
     canvas.width = OUTPUT_SIZE;
     canvas.height = OUTPUT_SIZE;
@@ -120,29 +121,15 @@ window.createTreasureImage = function(sourceCanvas) {
     const sx = (sourceCanvas.width - size) / 2;
     const sy = (sourceCanvas.height - size) / 2;
     
-    ctx.fillStyle = "#ffffff";
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(OUTPUT_SIZE/2, OUTPUT_SIZE/2, OUTPUT_SIZE/2, 0, Math.PI * 2);
-    ctx.closePath();
-    ctx.clip();
     ctx.drawImage(sourceCanvas, sx, sy, size, size, 0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
-    ctx.restore();
-    
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(OUTPUT_SIZE/2, OUTPUT_SIZE/2, OUTPUT_SIZE/2 - 5, 0, Math.PI * 2);
-    ctx.strokeStyle = '#ffd700'; 
-    ctx.lineWidth = 8;
-    ctx.stroke();
-    ctx.restore();
     
     return canvas.toDataURL('image/jpeg', 0.7);
 };
 
 window.processImageForAI = function(sourceCanvas) { 
-    const MAX_WIDTH = 1024; 
-    const QUALITY = 0.7;
+    // ★修正: iPhoneでのクラッシュを防ぐため、解像度と画質を下げる
+    const MAX_WIDTH = 800; // 1024 -> 800
+    const QUALITY = 0.6;   // 0.7 -> 0.6
 
     let w = sourceCanvas.width; 
     let h = sourceCanvas.height; 
@@ -161,7 +148,7 @@ const getLocation = () => {
         const timeoutId = setTimeout(() => {
             console.warn("GPS Timeout (Fallback)");
             resolve(null);
-        }, 8000); // タイムアウト短縮
+        }, 5000); // タイムアウト短縮
 
         navigator.geolocation.getCurrentPosition(
             (pos) => {
@@ -177,12 +164,12 @@ const getLocation = () => {
                 console.warn("GPS Error (Fallback):", err); 
                 resolve(null); 
             },
-            { timeout: 8000, enableHighAccuracy: true }
+            { timeout: 5000, enableHighAccuracy: false } // HighAccuracyオフで高速化
         );
     });
 };
 
-// ★修正: iPhoneでの音声・登録不具合対策
+// iPhoneでの音声・登録不具合対策
 window.captureAndIdentifyItem = async function() {
     if (window.isLiveImageSending) return;
     
@@ -193,18 +180,18 @@ window.captureAndIdentifyItem = async function() {
         try { window.continuousRecognition.stop(); } catch(e){}
     }
 
-    // 2. ★iOS対策: ボタン押下直後に音声コンテキストを再開＆効果音をアンロック
+    // 2. iOS対策: 音声アンロック
     if (window.initAudioContext) {
         window.initAudioContext().catch(e => console.warn("AudioContext init error:", e));
     }
     if (window.sfxHirameku) {
         const originalVol = window.sfxHirameku.volume;
-        window.sfxHirameku.volume = 0; // 無音で
+        window.sfxHirameku.volume = 0; 
         window.sfxHirameku.play().then(() => {
             window.sfxHirameku.pause();
             window.sfxHirameku.currentTime = 0;
-            window.sfxHirameku.volume = originalVol; // 音量戻す
-        }).catch(e => {}); // エラーは無視
+            window.sfxHirameku.volume = originalVol;
+        }).catch(e => {});
     }
 
     const video = document.getElementById('live-chat-video');
@@ -223,19 +210,16 @@ window.captureAndIdentifyItem = async function() {
     let locationData = window.currentLocation;
     
     try {
-        // 画像キャプチャと圧縮処理
         const canvas = document.createElement('canvas');
         canvas.width = video.videoWidth || 640;
         canvas.height = video.videoHeight || 480;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        // ★エラーハンドリング: 画像処理でのクラッシュ防止
-        let compressedDataUrl, base64Data, treasureDataUrl;
+        let compressedDataUrl, base64Data;
         try {
             compressedDataUrl = window.processImageForAI(canvas);
             base64Data = compressedDataUrl.split(',')[1];
-            treasureDataUrl = window.createTreasureImage(canvas);
         } catch (imgErr) {
             throw new Error("画像の処理に失敗したにゃ。メモリ不足かもしれないにゃ。");
         }
@@ -249,25 +233,9 @@ window.captureAndIdentifyItem = async function() {
             window.updateNellMessage("詳しい場所を調べてるにゃ…", "thinking", false, true);
         }
 
-        // GPS精度待ち
-        if (!locationData || locationData.accuracy > 1000) {
-            for (let i = 0; i < 4; i++) { // 待ち時間短縮
-                await new Promise(r => setTimeout(r, 500));
-                if (window.currentLocation && window.currentLocation.accuracy <= 1000) {
-                    locationData = window.currentLocation;
-                    break;
-                }
-            }
-        }
-        
-        // フォールバックGPS
+        // GPS簡易取得
         if (!locationData) {
-            console.log("Using fallback GPS...");
-            try {
-                locationData = await getLocation();
-            } catch(e) {
-                console.warn("Fallback GPS failed");
-            }
+            try { locationData = await getLocation(); } catch(e) {}
         }
 
         if(typeof window.updateNellMessage === 'function') {
@@ -306,10 +274,41 @@ window.captureAndIdentifyItem = async function() {
             window.addToSessionHistory('nell', speech);
         }
 
-        if (data.itemName && window.NellMemory) {
-            const description = data.description || "（解説はないにゃ）";
-            const realDescription = data.realDescription || "";
-            await window.NellMemory.addToCollection(currentUser.id, data.itemName, treasureDataUrl, description, realDescription, locationData, data.rarity || 1);
+        if (data.itemName && window.NellMemory && window.generateTradingCard) {
+            // 通し番号決定
+            let collectionCount = 0;
+            try {
+                const profile = await window.NellMemory.getUserProfile(currentUser.id);
+                if (profile && Array.isArray(profile.collection)) {
+                    collectionCount = profile.collection.length;
+                }
+            } catch (e) {}
+            const nextNo = collectionCount + 1;
+
+            // ★カード生成 (ここでエラーが出ると困るのでtryで囲む)
+            let cardDataUrl = null;
+            try {
+                cardDataUrl = await window.generateTradingCard(base64Data, data, currentUser, nextNo);
+            } catch (genErr) {
+                console.error("Card Gen Error:", genErr);
+                // カード生成失敗時は元の画像を使う
+                cardDataUrl = compressedDataUrl;
+            }
+            
+            // ★メモリ解放: 大きな文字列を解放する
+            base64Data = null; 
+            compressedDataUrl = null;
+
+            // 図鑑に登録
+            await window.NellMemory.addToCollection(
+                currentUser.id, 
+                data.itemName, 
+                cardDataUrl, 
+                data.description, 
+                data.realDescription, 
+                locationData, 
+                data.rarity || 1
+            );
             
             const notif = document.createElement('div');
             const cleanName = data.itemName.replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
@@ -318,7 +317,6 @@ window.captureAndIdentifyItem = async function() {
             document.body.appendChild(notif);
             setTimeout(() => notif.remove(), 4000);
             
-            // ★再生: ここで分析完了音が鳴るはず（アンロック済みなら）
             if(window.safePlay) window.safePlay(window.sfxHirameku);
         }
 
@@ -337,7 +335,7 @@ window.captureAndIdentifyItem = async function() {
             btn.disabled = false;
         }
         
-        // ★修正: 完了後に音声入力を再開
+        // 完了後に音声入力を再開
         if (window.currentMode === 'chat') {
             if (typeof window.startAlwaysOnListening === 'function') {
                 window.startAlwaysOnListening();
@@ -469,7 +467,7 @@ window.initCustomCropper = function() {
         document.getElementById('upload-controls').classList.remove('hidden'); 
     }; 
     document.getElementById('cropper-ok-btn').onclick = () => { 
-        // ★iOS対策: 決定ボタンを押した瞬間に音声をアンロック
+        // iOS対策: 決定ボタンを押した瞬間に音声をアンロック
         if (window.sfxHirameku) {
             const originalVol = window.sfxHirameku.volume;
             window.sfxHirameku.volume = 0;
@@ -532,7 +530,7 @@ window.performPerspectiveCrop = function(sourceCanvas, points) {
 window.startAnalysis = async function(b64) {
     if (window.isAnalyzing) return;
     
-    // ★分析中は音声入力を完全停止
+    // 分析中は音声入力を完全停止
     if (typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
 
     window.isAnalyzing = true; 
@@ -609,7 +607,7 @@ window.startAnalysis = async function(b64) {
                 if(typeof window.updateNellMessage === 'function') window.updateNellMessage(doneMsg, "happy", false); 
             } 
             
-            // ★完了後に音声入力再開 (モードに応じて)
+            // 完了後に音声入力再開 (モードに応じて)
             if (window.currentMode === 'explain' || window.currentMode === 'grade' || window.currentMode === 'review') {
                 if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
             }
@@ -622,7 +620,7 @@ window.startAnalysis = async function(b64) {
         if(backBtn) backBtn.classList.remove('hidden'); 
         if(typeof window.updateNellMessage === 'function') window.updateNellMessage("うまく読めなかったにゃ…もう一度お願いにゃ！", "thinking", false); 
         
-        // ★エラー時も再開
+        // エラー時も再開
         if (window.currentMode === 'explain' || window.currentMode === 'grade' || window.currentMode === 'review') {
             if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
         }
@@ -800,7 +798,7 @@ window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 image: base64Data, 
-                text: "この問題を教えてください。",
+                text: "この写真に写っているものについて解説してください", 
                 name: currentUser ? currentUser.name : "生徒",
                 history: window.chatSessionHistory,
                 location: window.currentLocation,

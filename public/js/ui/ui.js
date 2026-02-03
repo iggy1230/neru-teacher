@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (v328.0: 記憶コンテキスト連携対応版) ---
+// --- js/ui/ui.js (v353.0: カード表示完全修正版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -40,7 +40,7 @@ window.updateVolumeUI = function() {
 window.applyVolumeToAll = function() {
     const targetVol = window.isMuted ? 0 : window.appVolume;
     
-    // 1. Audio Elements (constants.jsで定義された効果音たち)
+    // 1. Audio Elements
     if (window.audioList) {
         window.audioList.forEach(audio => {
             if (audio === window.sfxBunseki) {
@@ -51,9 +51,8 @@ window.applyVolumeToAll = function() {
         });
     }
     
-    // 2. Web Audio API Master Gain (TTS & Realtime Chat)
+    // 2. Web Audio API Master Gain
     if (window.masterGainNode && window.audioCtx) {
-        // 現在時刻で即座に変更
         window.masterGainNode.gain.setValueAtTime(targetVol, window.audioCtx.currentTime);
     }
 };
@@ -66,9 +65,7 @@ window.applyVolumeToAll = function() {
 window.cleanDisplayString = function(text) {
     if (!text) return "";
     let clean = text;
-    // 1. マークダウンの太字(**)などを削除
     clean = clean.replace(/\*\*/g, "");
-    // 2. 「漢字/英単語(ふりがな)」のふりがな部分を削除して、元の単語だけ残す
     clean = clean.replace(/[\(（][ぁ-んァ-ンー\s　]+[\)）]/g, "");
     return clean;
 };
@@ -102,7 +99,7 @@ window.switchScreen = function(to) {
     } else {
         console.error(`Screen not found: ${to}`);
     }
-    window.updateVolumeUI(); // 画面遷移時にUI状態を確認
+    window.updateVolumeUI(); 
 };
 
 window.startApp = async function() {
@@ -229,7 +226,7 @@ window.updateProgress = function(p) {
 };
 
 // ==========================================
-// 図鑑 (Collection)
+// 図鑑 (Collection) - カード化対応
 // ==========================================
 
 window.openCollectionDetailByIndex = function(originalIndex) {
@@ -257,7 +254,7 @@ window.showCollection = async function() {
     if (!modal) return;
     
     modal.innerHTML = `
-        <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 80vh; display: flex; flex-direction: column;">
+        <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 85vh; display: flex; flex-direction: column;">
             <h3 style="text-align:center; margin:0 0 10px 0; color:#f57f17; flex-shrink: 0;">📖 お宝図鑑</h3>
             
             <div style="flex-shrink:0; display:flex; flex-direction:column; gap:8px; margin-bottom:10px;">
@@ -276,7 +273,8 @@ window.showCollection = async function() {
                 </div>
             </div>
 
-            <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap:10px; flex: 1; overflow-y:auto; padding:5px;">
+            <!-- カード型グリッド -->
+            <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap:10px; flex: 1; overflow-y:auto; padding:5px;">
                 <p style="width:100%; text-align:center;">読み込み中にゃ...</p>
             </div>
             
@@ -328,7 +326,8 @@ window.renderCollectionList = async function() {
 
     items.forEach(item => {
         const div = document.createElement('div');
-        div.style.cssText = "background:white; border-radius:12px; padding:8px; box-shadow:0 3px 6px rgba(0,0,0,0.15); text-align:center; border:2px solid #fff176; position:relative; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center; aspect-ratio: 0.85; transition:transform 0.1s;";
+        // 縦横比をカード（約2:3）に合わせる
+        div.style.cssText = "background:white; border-radius:8px; padding:4px; box-shadow:0 3px 6px rgba(0,0,0,0.15); text-align:center; border:1px solid #ddd; position:relative; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; aspect-ratio: 0.68; transition:transform 0.1s; overflow:hidden;";
         
         div.onclick = () => window.showCollectionDetail(item, item.originalIndex, item.number); 
         div.onmousedown = () => div.style.transform = "scale(0.95)";
@@ -336,19 +335,13 @@ window.renderCollectionList = async function() {
 
         const img = document.createElement('img');
         img.src = item.image;
-        img.style.cssText = "width:100%; height:auto; max-height:60%; object-fit:contain; margin-bottom:5px; filter:drop-shadow(0 2px 2px rgba(0,0,0,0.1));";
+        // 画像を枠いっぱいに表示
+        img.style.cssText = "width:100%; height:100%; object-fit:cover; border-radius:4px;";
         
-        const rarityMark = window.generateRarityString(item.rarity);
-        const displayName = window.cleanDisplayString(item.name);
-        const numberStr = window.formatCollectionNumber(item.number);
-        
+        // オーバーレイ情報（番号のみ控えめに）
         const infoDiv = document.createElement('div');
-        infoDiv.style.width = "100%";
-        infoDiv.innerHTML = `
-            <div style="font-size:0.7rem; color:#888; font-weight:bold;">${numberStr}</div>
-            <div style="margin-bottom:2px;">${rarityMark}</div>
-            <div style="font-size:0.75rem; font-weight:bold; color:#555; line-height:1.2; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">${displayName}</div>
-        `;
+        infoDiv.style.cssText = "position:absolute; bottom:0; left:0; width:100%; background:rgba(255,255,255,0.8); padding:2px; font-size:0.7rem; font-weight:bold; color:#555;";
+        infoDiv.innerText = window.formatCollectionNumber(item.number);
 
         div.appendChild(img);
         div.appendChild(infoDiv);
@@ -362,59 +355,25 @@ window.showCollectionDetail = function(item, originalIndex, collectionNumber) {
     
     modal.classList.remove('hidden');
 
-    const dateStr = item.date ? new Date(item.date).toLocaleDateString() : "";
-    
-    const displayItemName = window.cleanDisplayString(item.name);
-    const description = window.cleanDisplayString(item.description || "（ネル先生の解説はまだないみたいだにゃ…）");
-    const realDescription = window.cleanDisplayString(item.realDescription || "（まだ情報がないみたいだにゃ…）");
-    const rarityMark = window.generateRarityString(item.rarity);
-    const numberStr = window.formatCollectionNumber(collectionNumber);
-
     let mapBtnHtml = "";
     if (item.location && item.location.lat && item.location.lon) {
         mapBtnHtml = `<button onclick="window.closeCollection(); window.showMap(${item.location.lat}, ${item.location.lon});" class="mini-teach-btn" style="background:#29b6f6; width:auto; margin-left:10px;">🗺️ 地図で見る</button>`;
     }
 
+    // ★カード画像のみを表示するレイアウト (余計なHTML装飾を排除)
     modal.innerHTML = `
-        <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 80vh; display: flex; flex-direction: column;">
+        <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 90vh; display: flex; flex-direction: column;">
             <div style="flex-shrink:0; display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
                 <div>
-                    <button onclick="showCollection()" class="mini-teach-btn" style="background:#8d6e63;">← 戻る</button>
+                    <button onclick="showCollection()" class="mini-teach-btn" style="background:#8d6e63;">← 一覧</button>
                     ${mapBtnHtml}
                 </div>
-                <h3 style="margin:0; color:#f57f17; font-size:1.1rem;">お宝データ</h3>
                 <button onclick="deleteCollectionItem(${originalIndex})" class="mini-teach-btn" style="background:#ff5252;">削除</button>
             </div>
             
-            <div style="flex:1; overflow-y:auto; background:white; border-radius:10px; padding:20px; box-shadow:inset 0 0 10px rgba(0,0,0,0.05);">
-                <div style="text-align:center; font-size:1.2rem; font-weight:900; color:#aaa; margin-bottom:5px;">${numberStr}</div>
-                
-                <div style="text-align:center; margin-bottom:15px;">
-                    <img src="${item.image}" style="width:100%; max-width:280px; height:auto; object-fit:contain; border-radius:50%; border:5px solid #ffd700; box-shadow:0 4px 10px rgba(0,0,0,0.2);">
-                </div>
-                
-                <div style="text-align:center; margin-bottom:5px;">${rarityMark}</div>
-                <div style="font-size:1.6rem; font-weight:900; color:#e65100; text-align:center; margin-bottom:15px; border-bottom:2px dashed #ffcc80; padding-bottom:10px;">
-                    ${displayItemName}
-                </div>
-                
-                <div style="background:#fff3e0; padding:15px; border-radius:10px; position:relative; border:2px solid #ffe0b2; margin-bottom: 20px;">
-                    <div style="position:absolute; top:-12px; left:15px; background:#ff9800; color:white; font-size:0.8rem; padding:2px 10px; border-radius:15px; font-weight:bold; box-shadow:0 2px 4px rgba(0,0,0,0.1);">ネル先生の解説</div>
-                    <p style="margin:10px 0 0 0; font-size:1rem; line-height:1.6; color:#5d4037;">
-                        ${description}
-                    </p>
-                </div>
-
-                <div style="background:#e3f2fd; padding:15px; border-radius:10px; position:relative; border:2px solid #90caf9;">
-                    <div style="position:absolute; top:-12px; left:15px; background:#1e88e5; color:white; font-size:0.8rem; padding:2px 10px; border-radius:15px; font-weight:bold; box-shadow:0 2px 4px rgba(0,0,0,0.1);">🎓 ほんとうのこと</div>
-                    <p style="margin:10px 0 0 0; font-size:0.95rem; line-height:1.6; color:#0d47a1;">
-                        ${realDescription}
-                    </p>
-                </div>
-                
-                <div style="text-align:right; font-size:0.7rem; color:#aaa; margin-top:15px;">
-                    発見日: ${dateStr}
-                </div>
+            <div style="flex:1; overflow-y:auto; background:transparent; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px;">
+                <!-- 画像そのものを表示 (影付き) -->
+                <img src="${item.image}" style="width:auto; max-width:100%; height:auto; max-height:100%; object-fit:contain; border-radius:15px; box-shadow:0 10px 25px rgba(0,0,0,0.4);">
             </div>
             
             <div style="text-align:center; margin-top:10px; flex-shrink:0;">
@@ -493,7 +452,6 @@ window.renderMapMarkers = async function() {
 
     const profile = await window.NellMemory.getUserProfile(currentUser.id);
     const collection = profile.collection || [];
-    const totalCount = collection.length;
     
     let hasMarkers = false;
     
@@ -511,21 +469,16 @@ window.renderMapMarkers = async function() {
             
             const displayName = window.cleanDisplayString(item.name);
             const dateStr = item.date ? new Date(item.date).toLocaleDateString() : "";
-            const rarityMark = window.generateRarityString(item.rarity);
             
-            const collectionNumber = totalCount - index;
-            const numberStr = window.formatCollectionNumber(collectionNumber);
-
+            // 地図のポップアップでも、カード画像を表示
             const marker = L.marker([item.location.lat, item.location.lon], { icon: icon }).addTo(window.mapInstance);
             
             marker.bindPopup(`
-                <div style="text-align:center;">
-                    <div style="font-size:0.7rem; color:#888; font-weight:bold;">${numberStr}</div>
-                    <img src="${item.image}" style="width:100px; height:100px; object-fit:contain; margin-bottom:5px;"><br>
+                <div style="text-align:center; width: 150px;">
+                    <img src="${item.image}" style="width:100%; height:auto; border-radius:5px; margin-bottom:5px; box-shadow:0 2px 5px rgba(0,0,0,0.2);">
                     <strong>${displayName}</strong><br>
-                    <div>${rarityMark}</div>
                     <span style="font-size:0.8rem; color:#666;">${dateStr}</span><br>
-                    <button onclick="window.openCollectionDetailByIndex(${index})" class="mini-teach-btn" style="margin-top:5px; background:#ff85a1;">📖 図鑑で見る</button>
+                    <button onclick="window.openCollectionDetailByIndex(${index})" class="mini-teach-btn" style="margin-top:5px; background:#ff85a1;">📖 詳しく見る</button>
                 </div>
             `);
         }
@@ -669,12 +622,10 @@ function renderProfileView(container, profile) {
         
         recents.forEach(item => {
             const itemDiv = document.createElement('div');
-            itemDiv.style.cssText = "flex-shrink: 0; width: 80px; text-align: center; font-size: 0.7rem;";
+            itemDiv.style.cssText = "flex-shrink: 0; width: 60px; text-align: center; font-size: 0.7rem;";
             const cleanName = window.cleanDisplayString(item.name);
-            const rarityMark = window.generateRarityString(item.rarity);
             itemDiv.innerHTML = `
-                <img src="${item.image}" style="width:50px; height:50px; object-fit:cover; border-radius:8px; border:2px solid #ffb74d;">
-                <div style="font-size:0.6rem;">${rarityMark}</div>
+                <img src="${item.image}" style="width:100%; height:auto; object-fit:cover; border-radius:4px; border:1px solid #ffb74d; aspect-ratio:0.68;">
                 <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%; margin-top:2px;">${cleanName}</div>
             `;
             listDiv.appendChild(itemDiv);
@@ -871,19 +822,16 @@ window.sendHttpText = async function(context) {
     window.addLogItem('user', text);
     window.addToSessionHistory('user', text);
 
-    // ★修正: メモリ参照ロジックの追加
     let missingInfo = [];
     let memoryContext = "";
     
     if (window.NellMemory && currentUser) {
         try {
-            // プロファイル取得
             const profile = await window.NellMemory.getUserProfile(currentUser.id);
             if (!profile.birthday) missingInfo.push("誕生日");
             if (!profile.likes || profile.likes.length === 0) missingInfo.push("好きなもの");
             if (!profile.weaknesses || profile.weaknesses.length === 0) missingInfo.push("苦手なもの");
             
-            // コンテキスト文字列生成
             memoryContext = await window.NellMemory.generateContextString(currentUser.id);
         } catch(e) {
             console.warn("Memory access error:", e);
@@ -903,7 +851,7 @@ window.sendHttpText = async function(context) {
                 location: window.currentLocation,
                 address: window.currentAddress,
                 missingInfo: missingInfo,
-                memoryContext: memoryContext // ★追加: 記憶データを送信
+                memoryContext: memoryContext 
             })
         });
 
