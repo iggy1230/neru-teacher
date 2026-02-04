@@ -1,4 +1,4 @@
-// --- js/state/user.js (v320.0: Storage初期化対応版) ---
+// --- js/state/user.js (完全版 v375.0: レベル対応版) ---
 
 // Firebase初期化
 let app, auth, db, storage; // storageを追加
@@ -55,6 +55,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (doc.exists) {
                     currentUser = doc.data();
                     if (currentUser.isGoogleUser === undefined) currentUser.isGoogleUser = true;
+                    // クイズレベルの初期化
+                    if (!currentUser.quizLevels) currentUser.quizLevels = { "全ジャンル": 1 };
                     login(currentUser, true); 
                 }
             }
@@ -79,9 +81,11 @@ window.startGoogleLogin = function() {
             if (doc.exists) {
                 currentUser = doc.data();
                 currentUser.isGoogleUser = true; 
+                // クイズレベルの初期化
+                if (!currentUser.quizLevels) currentUser.quizLevels = { "全ジャンル": 1 };
                 login(currentUser, true);
             } else {
-                currentUser = { id: user.uid, isGoogleUser: true };
+                currentUser = { id: user.uid, isGoogleUser: true, quizLevels: { "全ジャンル": 1 } };
                 window.isGoogleEnrollment = true;
                 alert("はじめましてだにゃ！\nGoogleアカウントで入学手続きをするにゃ！");
                 showEnrollment();
@@ -351,19 +355,68 @@ async function processAndCompleteEnrollment() {
         // パス修正
         if (!finalPhoto) finalPhoto = (window.isEditMode && currentUser) ? currentUser.photo : "assets/images/items/student-id-base.png";
         
+        // クイズレベルの初期化を含むユーザーデータ作成
+        const defaultQuizLevels = { "全ジャンル": 1 };
+
         let updatedUser;
         if (window.isGoogleEnrollment || (currentUser && currentUser.isGoogleUser)) {
             const uid = currentUser.id;
-            updatedUser = { id: uid, name, grade, photo: finalPhoto, isGoogleUser: true, karikari: (currentUser && currentUser.karikari) || 100, history: (currentUser && currentUser.history) || {}, mistakes: (currentUser && currentUser.mistakes) || [], attendance: (currentUser && currentUser.attendance) || {}, memory: (currentUser && currentUser.memory) || "", lastLogin: (currentUser && currentUser.lastLogin) || "", streak: (currentUser && currentUser.streak) || 0 };
+            updatedUser = { 
+                id: uid, 
+                name, 
+                grade, 
+                photo: finalPhoto, 
+                isGoogleUser: true, 
+                karikari: (currentUser && currentUser.karikari) || 100, 
+                history: (currentUser && currentUser.history) || {}, 
+                mistakes: (currentUser && currentUser.mistakes) || [], 
+                attendance: (currentUser && currentUser.attendance) || {}, 
+                memory: (currentUser && currentUser.memory) || "", 
+                lastLogin: (currentUser && currentUser.lastLogin) || "", 
+                streak: (currentUser && currentUser.streak) || 0,
+                quizLevels: (currentUser && currentUser.quizLevels) || defaultQuizLevels
+            };
             if (db) await db.collection("users").doc(uid).set(updatedUser, { merge: true });
             currentUser = updatedUser; window.isGoogleEnrollment = false; updateNellMessage(`${currentUser.name}さんの学生証ができたにゃ！`, "excited"); switchScreen('screen-lobby');
         } else {
             if (window.isEditMode && currentUser) {
                 const idx = users.findIndex(u => u.id === currentUser.id);
-                if (idx !== -1) { users[idx].name = name; users[idx].grade = grade; users[idx].photo = finalPhoto; currentUser = users[idx]; localStorage.setItem('nekoneko_users', JSON.stringify(users)); const avatar = document.getElementById('current-student-avatar'); if (avatar) avatar.src = currentUser.photo; updateNellMessage(`${currentUser.name}さんの情報を更新したにゃ！`, "happy"); switchScreen('screen-lobby'); }
+                if (idx !== -1) { 
+                    users[idx].name = name; 
+                    users[idx].grade = grade; 
+                    users[idx].photo = finalPhoto; 
+                    // クイズレベルの維持または初期化
+                    if (!users[idx].quizLevels) users[idx].quizLevels = defaultQuizLevels;
+                    
+                    currentUser = users[idx]; 
+                    localStorage.setItem('nekoneko_users', JSON.stringify(users)); 
+                    const avatar = document.getElementById('current-student-avatar'); 
+                    if (avatar) avatar.src = currentUser.photo; 
+                    updateNellMessage(`${currentUser.name}さんの情報を更新したにゃ！`, "happy"); 
+                    switchScreen('screen-lobby'); 
+                }
             } else {
-                const newUser = { id: Date.now(), name, grade, photo: finalPhoto, karikari: 100, isGoogleUser: false, history: {}, mistakes: [], attendance: {}, memory: "", lastLogin: "", streak: 0 };
-                users.push(newUser); localStorage.setItem('nekoneko_users', JSON.stringify(users)); window.justEnrolledId = newUser.id; renderUserList(); alert("入学おめでとうにゃ！🌸"); switchScreen('screen-gate');
+                const newUser = { 
+                    id: Date.now(), 
+                    name, 
+                    grade, 
+                    photo: finalPhoto, 
+                    karikari: 100, 
+                    isGoogleUser: false, 
+                    history: {}, 
+                    mistakes: [], 
+                    attendance: {}, 
+                    memory: "", 
+                    lastLogin: "", 
+                    streak: 0,
+                    quizLevels: defaultQuizLevels
+                };
+                users.push(newUser); 
+                localStorage.setItem('nekoneko_users', JSON.stringify(users)); 
+                window.justEnrolledId = newUser.id; 
+                renderUserList(); 
+                alert("入学おめでとうにゃ！🌸"); 
+                switchScreen('screen-gate');
             }
         }
         document.getElementById('new-student-name').value = ""; document.getElementById('new-student-grade').value = ""; enrollFile = null; updateIDPreviewText(); const slot = document.getElementById('id-photo-slot'); if(slot) slot.innerHTML = '';
@@ -386,6 +439,7 @@ function login(user, isGoogle = false) {
     try { sfxDoor.currentTime = 0; sfxDoor.play(); } catch(e){}
     currentUser = user; 
     if (!currentUser.attendance) currentUser.attendance = {}; 
+    if (!currentUser.quizLevels) currentUser.quizLevels = { "全ジャンル": 1 }; // 念のため
     
     // 出席＆ボーナス判定
     const today = new Date().toISOString().split('T')[0]; 

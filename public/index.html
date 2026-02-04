@@ -1,4 +1,4 @@
-<!-- index.html (完全版 v312.0: カード生成スクリプト追加版) -->
+<!-- index.html (完全版 v376.0: レベル選択・ID対応版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -38,6 +38,18 @@
         .log-role { font-weight: bold; margin-right: 5px; }
         .log-user .log-role { color: #2196f3; }
         .log-nell .log-role { color: #ff85a1; }
+        #kanji-canvas { border: 4px solid #8d6e63; border-radius: 10px; background: white; touch-action: none; cursor: crosshair; }
+        
+        /* ミニテスト・ウルトラクイズ用ボタン */
+        .minitest-option-btn, .quiz-option-btn {
+            display: block; width: 100%; margin: 8px 0; padding: 15px;
+            border: 2px solid #ddd; border-radius: 10px; background: white;
+            font-size: 1rem; font-weight: bold; color: #333; cursor: pointer;
+            box-shadow: 0 2px 0 #ccc; text-align: left;
+        }
+        .minitest-option-btn:active, .quiz-option-btn:active { transform: translateY(2px); box-shadow: none; }
+        .minitest-correct, .quiz-correct { background: #e8f5e9 !important; border-color: #4caf50 !important; color: #2e7d32 !important; }
+        .minitest-wrong, .quiz-wrong { background: #ffebee !important; border-color: #ef5350 !important; color: #c62828 !important; }
     </style>
 </head>
 <body>
@@ -46,7 +58,6 @@
     <div id="mini-karikari-display" class="mini-karikari-display hidden"><span>🍖</span><span id="mini-karikari-count">0</span></div>
     <div id="mini-timer-display" class="mini-timer-display hidden" onclick="openTimerModal()"><span>⏱️</span> <span id="mini-timer-text">00:00</span></div>
     
-    <!-- 音量コントロール (左上固定・即時操作) -->
     <div class="volume-controls-fixed" id="volume-panel">
         <button id="mute-btn" onclick="toggleMuteDirect()" class="volume-icon-btn">🔊</button>
         <input type="range" id="direct-volume-slider" min="0" max="100" value="50" oninput="changeVolumeDirect(this)" class="volume-slider-bar">
@@ -57,7 +68,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v312.0-CardGen</div>
+            <div class="version-tag">Build: v376.0-QuizLevelSel</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -91,25 +102,28 @@
             <div id="loading-models" style="text-align:center; font-size:0.7rem; margin-top:5px;">AI準備中...</div>
         </section>
 
-        <!-- 3. ロビー (メニュー整理版) -->
+        <!-- 3. ロビー -->
         <section id="screen-lobby" class="screen hidden">
             <div class="lobby-top"><div class="id-card-wrap mini-id"><img id="current-student-avatar" class="id-base-img"><button onclick="startEditProfile()" class="edit-profile-btn"><img src="assets/images/items/enpitu.png"></button></div></div>
             <div class="karikari-counter">🍖 カリカリ: <span id="karikari-count">0</span></div>
             <div class="lobby-menu">
                 <button onclick="openTimerModal()" class="main-btn pink-btn" style="background:#ff7043; box-shadow: 0 4px 0 #d84315;">⏱️ ネル先生タイマー</button>
                 <button onclick="switchScreen('screen-classroom')" class="main-btn green-btn">🏫 教室</button>
+                <button onclick="switchScreen('screen-playground')" class="main-btn yellow-btn" style="background:#fbc02d; box-shadow: 0 4px 0 #f57f17;">🏀 体育館</button>
                 <button onclick="switchScreen('screen-lunchroom')" class="main-btn orange-btn">🍽️ 給食室</button>
                 <button onclick="switchScreen('screen-staffroom')" class="main-btn purple-btn">👩‍🏫 職員室</button>
+                
                 <button onclick="selectMode('chat')" class="main-btn" style="background:#5c6bc0; box-shadow: 0 4px 0 #3949ab;">💎 ネル先生のお宝図鑑</button>
                 <button onclick="showMap()" class="main-btn" style="background:#29b6f6; box-shadow: 0 4px 0 #0288d1;">🗺️ 足あとマップ</button>
                 <button onclick="backToTitle()" class="main-btn gray-btn">👋 帰宅する</button>
             </div>
         </section>
 
-        <!-- 3-1. 教室サブメニュー (新設) -->
+        <!-- 3-1. 教室サブメニュー -->
         <section id="screen-classroom" class="screen hidden">
             <h2 class="section-title">🏫 教室</h2>
             <div class="lobby-menu" style="margin-top: 20px;">
+                <button onclick="showMinitestMenu()" class="main-btn orange-btn" style="background:#ff9800; box-shadow:0 4px 0 #e65100;">📝 ネル先生のミニテスト</button>
                 <button onclick="selectMode('explain')" class="main-btn blue-btn">💡 教えてネル先生</button>
                 <button onclick="selectMode('grade')" class="main-btn red-btn">💯 採点ネル先生</button>
                 <button onclick="selectMode('simple-chat')" class="main-btn green-btn">👩‍🏫 ネル先生の個別指導</button>
@@ -119,22 +133,61 @@
             </div>
         </section>
 
-        <!-- 3-2. 給食室サブメニュー (新設) -->
+        <!-- 11. ミニテスト画面 -->
+        <section id="screen-minitest" class="screen hidden">
+            <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-minitest"></div><div class="chat-bubble"><p id="nell-text-minitest">ミニテストを始めるにゃ！</p></div></div>
+            <h2 class="section-title" style="margin-top:10px; color:#ff9800;">📝 ミニテスト</h2>
+            
+            <div id="minitest-subject-select" class="glass-card" style="text-align:center; padding:20px;">
+                <p style="font-weight:bold; margin-bottom:15px;">教科を選んでにゃ！</p>
+                <button onclick="startMinitest('こくご')" class="main-btn pink-btn">こくご</button>
+                <button onclick="startMinitest('さんすう')" class="main-btn blue-btn">さんすう</button>
+                <button onclick="startMinitest('りか')" class="main-btn green-btn">りか・せいかつ</button>
+                <button onclick="startMinitest('しゃかい')" class="main-btn orange-btn">しゃかい</button>
+            </div>
+
+            <div id="minitest-game-area" class="glass-card hidden" style="padding:15px;">
+                <p id="minitest-progress" style="text-align:right; font-size:0.9rem; color:#888;">1/5問目</p>
+                <p id="minitest-question" style="font-size:1.2rem; font-weight:bold; margin:10px 0; min-height:60px;">読み込み中...</p>
+                <div id="minitest-options"></div>
+                <div id="minitest-explanation-area" class="hidden" style="margin-top:15px; background:#fff3e0; padding:10px; border-radius:10px; border:2px solid #ffb74d;">
+                    <p style="font-weight:bold; color:#e65100;">💡 解説</p>
+                    <p id="minitest-explanation-text" style="font-size:0.95rem;">ここに解説が入ります</p>
+                    <button onclick="nextMinitestQuestion()" class="main-btn" style="margin-top:10px; background:#ff9800;">次の問題へ</button>
+                </div>
+            </div>
+
+            <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
+        </section>
+
+        <!-- 3-2. 給食室サブメニュー -->
         <section id="screen-lunchroom" class="screen hidden">
             <h2 class="section-title">🍽️ 給食室</h2>
             <div class="lobby-menu" style="margin-top: 20px;">
-                <button onclick="showGame()" class="main-btn yellow-btn">🎮 カリカリ・キャッチ</button>
                 <button onclick="selectMode('lunch')" class="main-btn pink-btn">🍽️ おいしい給食</button>
                 <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
             </div>
         </section>
 
-        <!-- 3-3. 職員室サブメニュー (新設) -->
+        <!-- 3-3. 職員室サブメニュー -->
         <section id="screen-staffroom" class="screen hidden">
             <h2 class="section-title">👩‍🏫 職員室</h2>
             <div class="lobby-menu" style="margin-top: 20px;">
                 <button onclick="openMemoryManager()" class="main-btn gray-btn" style="background:#607d8b; border:none; box-shadow:0 4px 0 #455a64;">📝 プロフィール</button>
                 <button onclick="showAttendance()" class="main-btn purple-btn">📅 出席簿をみる</button>
+                <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
+            </div>
+        </section>
+
+        <!-- 3-4. 体育館サブメニュー -->
+        <section id="screen-playground" class="screen hidden">
+            <h2 class="section-title" style="color:#fbc02d; text-shadow: 2px 2px 0 #fff;">🏀 体育館</h2>
+            <div class="lobby-menu" style="margin-top: 20px;">
+                <button onclick="showDanmakuGame()" class="main-btn red-btn" style="background:#d32f2f; box-shadow:0 4px 0 #b71c1c;">🤖 VS ロボット掃除機</button>
+                <button onclick="showGame()" class="main-btn yellow-btn">🍖 カリカリ・キャッチ</button>
+                <button onclick="showQuizGame()" class="main-btn blue-btn" style="background:#42a5f5; box-shadow:0 4px 0 #1e88e5;">🎤 ネル先生ウルトラクイズ</button>
+                <button onclick="showRiddleGame()" class="main-btn pink-btn" style="background:#e91e63; box-shadow:0 4px 0 #ad1457;">❓ ネル先生のなぞなぞ</button>
+                <button onclick="showKanjiMenu()" class="main-btn purple-btn" style="background:#ab47bc; box-shadow:0 4px 0 #7b1fa2;">✍️ ネル先生の漢字ドリル</button>
                 <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
             </div>
         </section>
@@ -161,11 +214,153 @@
             </div>
         </section>
         
-        <!-- 5. ゲーム画面 -->
+        <!-- 5. ゲーム画面 (カリカリキャッチ) -->
         <section id="screen-game" class="screen hidden">
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-game"></div><div class="chat-bubble"><p id="nell-text-game">カリカリキャッチで遊ぶにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px;">🍖 カリカリ・キャッチ</h2>
             <div class="game-container"><canvas id="game-canvas" width="320" height="400"></canvas><div class="game-ui"><p>スコア: <span id="game-score">0</span></p><button id="start-game-btn" class="main-btn pink-btn" style="width: auto;">スタート！</button></div></div>
+            <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
+        </section>
+
+        <!-- 8. 弾幕ゲーム画面 -->
+        <section id="screen-danmaku" class="screen hidden">
+            <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-danmaku"></div><div class="chat-bubble"><p id="nell-text-danmaku">ロボット掃除機からカリカリを守るにゃ！</p></div></div>
+            <h2 class="section-title" style="margin-top:10px; color:#d32f2f;">🤖 VS ロボット掃除機</h2>
+            <div class="game-container">
+                <canvas id="danmaku-canvas" width="340" height="400" style="background:#e0e0e0; border:4px solid #555; border-radius:10px; box-shadow:0 4px 10px rgba(0,0,0,0.3); touch-action:none;"></canvas>
+                <div class="game-ui">
+                    <p>スコア: <span id="danmaku-score">0</span></p>
+                    <button id="start-danmaku-btn" onclick="startDanmakuGame()" class="main-btn red-btn" style="width: auto;">スタート！</button>
+                </div>
+            </div>
+            <p style="font-size:0.8rem; color:white; text-align:center; margin-top:5px;">※茶色のカリカリだけ取ってね！他はダメ！<br>画面をドラッグして移動</p>
+            <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
+        </section>
+
+        <!-- 9. クイズ画面 (4択ボタン対応・レベル選択対応) -->
+        <section id="screen-quiz" class="screen hidden">
+            <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-quiz"></div><div class="chat-bubble"><p id="nell-text-quiz">ウルトラクイズに挑戦だにゃ！</p></div></div>
+            <h2 class="section-title" style="margin-top:10px; color:#42a5f5;">🎤 ウルトラクイズ</h2>
+            
+            <!-- ジャンル選択エリア -->
+            <div id="quiz-genre-select" class="glass-card" style="text-align:center; padding:20px;">
+                <p style="font-weight:bold; margin-bottom:15px; font-size:1.1rem;">ジャンルを選んでにゃ！</p>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                    <button id="btn-quiz-all" onclick="showLevelSelection('全ジャンル')" class="main-btn pink-btn" style="grid-column: span 2;">全ジャンル</button>
+                    <button id="btn-quiz-general" onclick="showLevelSelection('一般知識')" class="main-btn blue-btn">一般知識</button>
+                    <button id="btn-quiz-trivia" onclick="showLevelSelection('雑学')" class="main-btn orange-btn">雑学</button>
+                    <button id="btn-quiz-entertainment" onclick="showLevelSelection('芸能・スポーツ')" class="main-btn green-btn">芸能・スポーツ</button>
+                    <button id="btn-quiz-history" onclick="showLevelSelection('歴史・地理・社会')" class="main-btn purple-btn">歴史・地理・社会</button>
+                    <button id="btn-quiz-game" onclick="showLevelSelection('ゲーム')" class="main-btn yellow-btn">ゲーム</button>
+                    <!-- ★追加: マイクラ・ロブロックスボタン (IDを付与) -->
+                    <button id="btn-quiz-minecraft" onclick="showLevelSelection('マインクラフト')" class="main-btn green-btn" style="background:#4caf50;">マインクラフト</button>
+                    <button id="btn-quiz-roblox" onclick="showLevelSelection('ロブロックス')" class="main-btn red-btn" style="background:#e53935;">ロブロックス</button>
+                </div>
+            </div>
+
+            <!-- ★新規: レベル選択エリア (デフォルト非表示) -->
+            <div id="quiz-level-select" class="glass-card hidden" style="text-align:center; padding:20px;">
+                <p style="font-weight:bold; margin-bottom:15px; font-size:1.1rem;">レベルを選ぶにゃ！</p>
+                <div id="level-buttons-container" style="display:flex; flex-direction:column; gap:10px;">
+                    <!-- JSでボタン生成 -->
+                </div>
+                <button onclick="backToQuizGenre()" class="main-btn gray-btn" style="margin-top:15px;">ジャンル選択に戻る</button>
+            </div>
+
+            <!-- クイズプレイエリア -->
+            <div id="quiz-game-area" class="glass-card hidden" style="text-align:center; padding:20px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                    <span id="quiz-genre-label" style="background:#eee; padding:3px 8px; border-radius:10px; font-size:0.8rem; color:#666;">ジャンル</span>
+                    <span id="quiz-progress" style="font-weight:bold; color:#42a5f5;">1/5 問目</span>
+                </div>
+                
+                <p id="quiz-question-text" style="font-size:1.2rem; font-weight:bold; color:#333; min-height:80px; display:flex; align-items:center; justify-content:center;">読み込み中...</p>
+                
+                <!-- 選択肢ボタンエリア -->
+                <div id="quiz-options-container" style="margin-top:10px;"></div>
+
+                <div id="quiz-mic-status" style="margin-top:10px; font-weight:bold; color:#e91e63; min-height:1.5em;"></div>
+                <p style="font-size:0.9rem; color:#666; margin-top:5px;">マイクで答えてもOKだにゃ！</p>
+                
+                <!-- 正解表示エリア -->
+                <div id="quiz-answer-display" class="hidden" style="margin-top:15px; padding:10px; background:#e3f2fd; border-radius:10px; border:2px solid #2196f3; color:#0d47a1; font-weight:bold;">
+                    正解は... <span id="quiz-answer-text" style="font-size:1.5rem; display:block;"></span>
+                </div>
+
+                <div id="quiz-controls" style="display:flex; gap:10px; justify-content:center; margin-top:15px;">
+                    <button onclick="requestQuizHint()" class="main-btn green-btn" style="flex:1;">💡 ヒント</button>
+                    <button onclick="giveUpQuiz()" class="main-btn gray-btn" style="flex:1;">🏳️ ギブアップ</button>
+                    <button id="next-quiz-btn" onclick="nextQuiz()" class="main-btn blue-btn hidden" style="flex:1;">次の問題へ</button>
+                </div>
+            </div>
+
+            <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
+        </section>
+
+        <!-- ★新規: なぞなぞ画面 -->
+        <section id="screen-riddle" class="screen hidden">
+            <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-riddle"></div><div class="chat-bubble"><p id="nell-text-riddle">なぞなぞを出すにゃ！</p></div></div>
+            <h2 class="section-title" style="margin-top:10px; color:#e91e63;">❓ なぞなぞ</h2>
+            
+            <div class="glass-card" style="text-align:center; padding:20px;">
+                <p id="riddle-question-text" style="font-size:1.3rem; font-weight:bold; color:#333; min-height:100px; display:flex; align-items:center; justify-content:center;">スタートボタンを押してにゃ！</p>
+                
+                <div id="riddle-mic-status" style="margin-top:10px; font-weight:bold; color:#e91e63; min-height:1.5em;"></div>
+                <p style="font-size:0.9rem; color:#666; margin-top:5px;">マイクに向かって答えを言ってね！</p>
+
+                <!-- 正解表示エリア -->
+                <div id="riddle-answer-display" class="hidden" style="margin-top:15px; padding:10px; background:#fce4ec; border-radius:10px; border:2px solid #e91e63; color:#880e4f; font-weight:bold;">
+                    正解は... <span id="riddle-answer-text" style="font-size:1.5rem; display:block;"></span>
+                </div>
+
+                <div id="riddle-controls" style="display:none; gap:10px; justify-content:center; margin-top:15px;">
+                    <button onclick="giveUpRiddle()" class="main-btn gray-btn" style="flex:1;">答えを見る</button>
+                    <button id="next-riddle-btn" onclick="nextRiddle()" class="main-btn pink-btn hidden" style="flex:1;">次の問題</button>
+                </div>
+                
+                <button id="start-riddle-btn" onclick="startRiddle()" class="main-btn pink-btn">スタート！</button>
+            </div>
+
+            <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
+        </section>
+
+        <!-- 10. 漢字ドリル画面 -->
+        <section id="screen-kanji" class="screen hidden">
+            <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-kanji"></div><div class="chat-bubble"><p id="nell-text-kanji">漢字の練習だにゃ！</p></div></div>
+            <h2 class="section-title" style="margin-top:10px; color:#ab47bc;">✍️ 漢字ドリル</h2>
+            <div class="glass-card" style="text-align:center; padding:15px;">
+                <!-- モード選択メニュー -->
+                <div id="kanji-menu-container">
+                    <p style="font-weight:bold; margin-bottom:15px;">どの練習をする？</p>
+                    <button onclick="startKanjiSet('reading')" class="main-btn blue-btn" style="background:#29b6f6;">📖 読み (5問)</button>
+                    <button onclick="startKanjiSet('writing')" class="main-btn orange-btn" style="background:#ff7043;">✍️ 書き取り (5問)</button>
+                </div>
+
+                <!-- ゲームエリア -->
+                <div id="kanji-game-container" class="hidden">
+                    <p id="kanji-progress" style="font-size:0.9rem; color:#888; text-align:right;">1/5問目</p>
+                    <p id="kanji-question-text" style="font-size:1.5rem; font-weight:900; color:#4a148c; margin-bottom:10px;">読み込み中...</p>
+                    
+                    <canvas id="kanji-canvas" width="300" height="300" class="hidden"></canvas>
+                    
+                    <div id="kanji-mic-container" class="hidden" style="height:200px; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+                        <div style="font-size:4rem;">🎤</div>
+                        <p style="margin-top:10px; font-weight:bold; color:#e91e63;">声で答えを言ってにゃ！</p>
+                    </div>
+
+                    <div id="kanji-controls" style="display:none; gap:10px; margin-top:10px; flex-wrap:wrap;">
+                        <button id="clear-kanji-btn" onclick="clearKanjiCanvas()" class="main-btn gray-btn" style="flex:1;">消す</button>
+                        <button id="check-kanji-btn" onclick="checkKanji()" class="main-btn purple-btn" style="flex:1;">採点！</button>
+                        <button id="giveup-kanji-btn" onclick="giveUpKanji()" class="main-btn gray-btn" style="flex:1;">🏳️ ギブアップ</button>
+                    </div>
+                    
+                    <button id="next-kanji-btn" onclick="nextKanjiQuestion()" class="main-btn" style="background:#ec407a; margin-top:10px; display:none;">次の問題</button>
+
+                    <div id="kanji-answer-display" class="hidden" style="margin-top:15px; padding:10px; background:#f3e5f5; border-radius:10px; border:2px solid #9c27b0; color:#4a148c; font-weight:bold;">
+                        正解は... <span id="kanji-answer-text" style="font-size:2rem; display:block;"></span>
+                    </div>
+                </div>
+            </div>
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
 
@@ -206,7 +401,7 @@
     <script src="js/config/firebase-config.js"></script>
     <script src="js/constants.js"></script>
     <script src="js/state/memory.js"></script> 
-    <script src="js/card-generator.js"></script> <!-- ★新規追加 -->
+    <script src="js/card-generator.js"></script>
     <script src="js/audio/audio.js"></script>
     <script src="js/ui/ui.js"></script>
     <script src="js/state/user.js"></script>
@@ -215,4 +410,1145 @@
     <script src="js/game-engine.js"></script>
     <script src="js/analyze.js"></script>
 </body>
-</html>
+</html>--- START OF FILE style.css ---
+
+/* --- style.css (完全版 v376.0: レベル選択・ID対応版) --- */
+
+:root {
+    --primary-pink: #ff8fa3;
+    --primary-blue: #6cd4ff;
+    --primary-orange: #ffb46e;
+    --primary-yellow: #ffe066;
+    --primary-green: #88e0a0;
+    --primary-purple: #cd99ff;
+    --primary-red: #ff8585;
+    --primary-gray: #b0bec5;
+    
+    --text-color: #333;
+    --bg-color: #fff9f0;
+}
+
+* {
+    box-sizing: border-box;
+    touch-action: manipulation;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: 'M PLUS Rounded 1c', 'Sawarabi Gothic', sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    overflow-x: hidden;
+    position: relative;
+    width: 100%;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+}
+
+body::before {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100vh;
+    background-image: url('assets/images/background/classroom-bg.png');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    z-index: -1;
+}
+
+button { font-family: inherit; }
+.hidden { display: none !important; }
+
+#app-container {
+    max-width: 600px;
+    margin: 0 auto;
+    min-height: 100vh;
+    position: relative;
+    padding-bottom: 40px;
+    overflow: hidden;
+}
+
+.screen {
+    padding: 20px;
+    padding-bottom: 80px;
+    min-height: 100vh;
+    width: 100%;
+    box-sizing: border-box;
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* タイトル画面 */
+.title-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: url('assets/images/background/neru-title-bg.png');
+    background-size: cover;
+    background-position: center;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
+    z-index: 2000;
+}
+
+.main-title {
+    margin-top: 80px;
+    font-size: 3rem;
+    color: #d81b60;
+    text-shadow: 4px 4px 0 #fff, -2px -2px 0 #fff;
+    text-align: center;
+    font-weight: 900;
+    animation: floatingTitle 3s ease-in-out infinite;
+}
+
+@keyframes floatingTitle {
+    0% { transform: translateY(0); }
+    50% { transform: translateY(-15px); }
+    100% { transform: translateY(0); }
+}
+
+.title-btn-container {
+    margin-bottom: 200px;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+}
+
+.title-start-btn {
+    background: #ff5252;
+    color: white;
+    font-size: 1.3rem;
+    padding: 15px 40px;
+    border-radius: 50px;
+    border: 4px solid #fff;
+    box-shadow: 0 6px 0 #d32f2f, 0 10px 10px rgba(0, 0, 0, 0.3);
+    width: fit-content !important; 
+    min-width: auto;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+
+.version-tag {
+    position: absolute;
+    bottom: 10px;
+    left: 0;
+    width: 100%;
+    text-align: center;
+    font-size: 0.7rem;
+    color: rgba(0, 0, 0, 0.4);
+    pointer-events: none;
+}
+
+/* ボタン共通 */
+.main-btn {
+    display: block;
+    width: 100%;
+    margin: 0 0 12px 0;
+    padding: 15px;
+    border: none;
+    border-radius: 30px;
+    font-size: 1.1rem;
+    font-weight: bold;
+    color: white;
+    cursor: pointer;
+    box-shadow: 0 4px 0 rgba(0, 0, 0, 0.15);
+    transition: transform 0.1s;
+    text-align: center;
+    text-decoration: none;
+    text-shadow: 1px 1px 0 rgba(0,0,0,0.1);
+}
+
+.main-btn:active { transform: translateY(2px); box-shadow: none; }
+.main-btn:disabled { background: #ccc !important; box-shadow: none; cursor: not-allowed; }
+
+.pink-btn { background: var(--primary-pink); box-shadow: 0 4px 0 #e06b85; }
+.blue-btn { background: var(--primary-blue); box-shadow: 0 4px 0 #4ba3cc; }
+.orange-btn { background: var(--primary-orange); box-shadow: 0 4px 0 #e09230; }
+.yellow-btn { background: var(--primary-yellow); box-shadow: 0 4px 0 #e0c240; color: #5d4037; text-shadow: none; }
+.green-btn { background: var(--primary-green); box-shadow: 0 4px 0 #5cad72; }
+.purple-btn { background: var(--primary-purple); box-shadow: 0 4px 0 #9c6cc4; }
+.red-btn { background: var(--primary-red); box-shadow: 0 4px 0 #e06060; }
+.gray-btn { background: var(--primary-gray); box-shadow: 0 4px 0 #78909c; }
+
+#main-back-btn {
+    position: absolute;
+    top: 10px;
+    left: 150px; 
+    width: auto !important;
+    margin: 0 !important;
+    padding: 8px 20px !important;
+    z-index: 100;
+    font-size: 1rem;
+    box-shadow: 0 2px 0 #78909c;
+}
+
+/* 校門 */
+#screen-gate {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: url('assets/images/background/classroom0-bg.png');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    z-index: 1500;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 20px 20px 20px;
+}
+
+#screen-gate > * {
+    width: 100%;
+    max-width: 600px;
+}
+
+.section-title {
+    text-align: center;
+    font-size: 1.5rem;
+    color: white;
+    text-shadow: 2px 2px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000;
+    margin: 20px 0;
+    font-weight: 900;
+    flex-shrink: 0;
+}
+
+.gate-layout {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    margin-top: auto;
+    margin-bottom: 20px;
+    align-items: flex-end;
+}
+
+.right-user-list {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: 15px;
+    justify-items: center;
+    align-content: end;
+}
+
+.user-card {
+    background: transparent;
+    padding: 0;
+    text-align: center;
+    cursor: pointer;
+    position: relative;
+    width: 100px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    z-index: 1;
+}
+
+.user-card:hover, .user-card:active {
+    transform: scale(2.0) translateY(-20px);
+    z-index: 1000;
+}
+
+.user-card img {
+    width: 80px;
+    height: 80px;
+    object-fit: contain;
+    border-radius: 8px;
+    background-color: transparent !important;
+    filter: drop-shadow(0 4px 4px rgba(0, 0, 0, 0.3));
+    display: block;
+    margin: 0 auto;
+}
+
+.card-karikari-badge {
+    position: static;
+    transform: none;
+    margin-top: 5px;
+    background: rgba(255, 255, 255, 0.95);
+    color: #d84315;
+    font-size: 0.8rem;
+    font-weight: bold;
+    padding: 2px 8px;
+    border-radius: 10px;
+    border: 1px solid #ffab91;
+    pointer-events: none;
+    white-space: nowrap;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* 学生証 */
+.id-card-wrap {
+    position: relative;
+    width: 100%;
+    max-width: 320px;
+    height: auto;
+    margin: 0 auto 20px;
+    background-color: transparent;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.id-base-img {
+    display: block; 
+    width: 100%;
+    height: auto !important;
+    position: relative !important;
+    z-index: 1;
+}
+
+#id-photo-slot {
+    display: block; 
+    position: absolute;
+    z-index: 2;
+    top: 35.75%;
+    left: 5.5%;
+    width: 30.5%;
+    height: 45%;
+    background-color: #ddd;
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+#id-photo-slot img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover !important;
+    display: block;
+}
+
+#id-photo-preview-canvas { display: none; }
+
+.id-text-overlay {
+    display: block; 
+    position: absolute;
+    color: #333;
+    font-weight: bold;
+    font-family: 'M PLUS Rounded 1c', sans-serif;
+    pointer-events: none;
+    z-index: 3;
+    white-space: nowrap;
+    text-align: left;
+    line-height: 1;
+}
+
+.id-grade-text { top: 38.5%; left: 56%; font-size: 1.3rem; }
+.id-name-text { top: 54.25%; left: 56%; font-size: 1.3rem; }
+
+@media (max-width: 350px) {
+    .id-grade-text, .id-name-text { font-size: 1.1rem; }
+}
+
+.styled-input, .styled-select {
+    width: 100%;
+    padding: 12px;
+    margin: 10px 0;
+    display: block;
+    border: 2px solid #ff85a1;
+    border-radius: 10px;
+    font-size: 1rem;
+}
+
+.upload-buttons-container {
+    margin: 15px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* ロビー */
+.lobby-top { text-align: center; margin: 20px 0; }
+.mini-id { 
+    transform: scale(0.8); 
+    margin-bottom: 0; 
+    transform-origin: top center;
+    box-shadow: none !important; 
+    background: transparent !important; 
+}
+
+.edit-profile-btn {
+    position: absolute;
+    top: 85px; 
+    right: 20px;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: var(--primary-pink); 
+    color: white;
+    border: 3px solid white;
+    font-size: 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+    z-index: 100;
+}
+
+.edit-profile-btn:active { transform: scale(0.9); }
+
+.edit-profile-btn img {
+    width: 54px; 
+    height: 54px; 
+    object-fit: contain;
+    pointer-events: none;
+}
+
+.karikari-counter {
+    text-align: center;
+    font-size: 1.2rem;
+    font-weight: bold;
+    color: #d84315;
+    background: #fff3e0;
+    padding: 5px 15px;
+    border-radius: 20px;
+    display: block; 
+    width: fit-content; 
+    margin: -20px auto 15px auto; 
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.lobby-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+}
+
+/* メイン画面レイアウト */
+.operation-layout { margin-top: 50px; width: 100%; }
+.nell-chat { display: flex; align-items: flex-end; margin-bottom: 15px; }
+.nell-avatar-wrap { position: relative; width: 100px; height: 100px; flex-shrink: 0; }
+.nell-img { width: 100%; height: 100%; object-fit: contain; }
+
+.chat-bubble {
+    background: white;
+    border-radius: 20px 20px 20px 0;
+    padding: 15px;
+    margin-left: 10px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    position: relative;
+    flex-grow: 1;
+}
+
+.chat-bubble::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: -10px;
+    border-width: 10px 10px 0 0;
+    border-style: solid;
+    border-color: white transparent transparent transparent;
+}
+
+.chat-bubble p { margin: 0; font-size: 1rem; line-height: 1.5; }
+
+.chalkboard {
+    background: #2e7d32;
+    color: white;
+    padding: 15px;
+    border: 8px solid #a1887f;
+    border-radius: 5px;
+    margin: 10px 0;
+    font-family: 'Kiwi Maru', serif;
+    min-height: 100px;
+    box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.2);
+    width: 100%;
+}
+
+.work-area {
+    background: rgba(255, 255, 255, 0.8);
+    border-radius: 20px;
+    padding: 15px;
+    margin: 10px 0;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+    width: 100%;
+}
+
+.camera-btn-large {
+    display: block;
+    width: 100%;
+    padding: 30px 0;
+    background: #66bb6a;
+    color: white;
+    font-weight: bold;
+    font-size: 1.2rem;
+    border-radius: 15px;
+    text-align: center;
+    cursor: pointer;
+    box-shadow: 0 6px 0 #388e3c;
+    margin-bottom: 10px;
+}
+
+.camera-btn-large:active { transform: translateY(2px); box-shadow: 0 2px 0 #388e3c; }
+
+.answer-box {
+    background: #fff3e0;
+    border: 3px solid #ffb74d;
+    border-radius: 10px;
+    padding: 15px;
+    margin-top: 15px;
+    text-align: center;
+    font-size: 1.2rem;
+    color: #e65100;
+    font-weight: bold;
+    animation: popIn 0.3s ease;
+}
+
+@keyframes popIn {
+    0% { transform: scale(0.8); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+}
+
+/* ゲーム */
+.game-container {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+}
+
+#game-canvas {
+    border: 4px solid #8d6e63;
+    border-radius: 10px;
+    background: #2e7d32;
+    box-shadow: 0 4px 0 rgba(0, 0, 0, 0.1);
+    width: 100%;
+    max-width: 350px;
+    height: auto;
+    display: block;
+}
+
+.game-ui { text-align: center; margin-top: 10px; }
+.game-ui p { font-size: 1.2rem; font-weight: bold; color: #d84315; }
+
+/* 問題リスト・採点結果 */
+.problem-selection-card {
+    display: flex;
+    flex-direction: column;
+    height: auto; 
+    min-height: 400px;
+}
+
+.problem-scroll-area {
+    flex: 1;
+    overflow-y: auto;
+    padding: 5px;
+}
+
+.grade-item {
+    background: white;
+    border: 2px solid #eee;
+    border-radius: 10px;
+    padding: 10px;
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+}
+
+.mini-teach-btn {
+    background: #2196f3;
+    color: white;
+    border: none;
+    border-radius: 15px;
+    padding: 5px 10px;
+    font-size: 0.8rem;
+    margin-left: auto;
+    flex-shrink: 0;
+    cursor: pointer;
+}
+
+/* カリカリ・タイマー表示（固定） */
+.mini-karikari-display {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    background: rgba(255, 255, 255, 0.95);
+    padding: 5px 10px;
+    border-radius: 20px;
+    font-weight: bold;
+    color: #d84315;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.mini-timer-display {
+    position: fixed;
+    top: 60px;
+    left: 10px; 
+    background: #fff3e0; 
+    padding: 8px 15px;
+    border-radius: 25px;
+    font-weight: 900;
+    font-size: 1.2rem;
+    font-family: 'Kiwi Maru', serif; 
+    color: #e64a19; 
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border: 3px solid #ffab91;
+    cursor: pointer;
+    transition: transform 0.1s;
+}
+
+.mini-timer-display:active {
+    transform: scale(0.95);
+}
+
+.glass-card {
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 15px;
+    padding: 15px;
+    width: 100%;
+}
+
+/* 出席簿 */
+#attendance-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr); 
+    gap: 4px;
+    padding: 5px;
+    background: #fff;
+    border-radius: 10px;
+    width: 100%;
+}
+
+.attendance-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 5px;
+    max-height: 400px;
+    overflow-y: auto;
+    padding: 5px;
+}
+
+.day-box {
+    background: white;
+    border-radius: 5px;
+    padding: 2px;
+    text-align: center;
+    font-size: 0.7rem; 
+    aspect-ratio: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    border: 1px solid #eee;
+}
+
+/* ローディング */
+.loader-inspect-img {
+    width: 200px;
+    display: block;
+    margin: 0 auto;
+    animation: bounce 1s infinite alternate;
+}
+
+.progress-bar {
+    height: 10px;
+    background: #ff85a1;
+    width: 0%;
+    transition: width 0.3s;
+    border-radius: 5px;
+}
+
+.progress-container {
+    width: 80%;
+    background: #eee;
+    height: 10px;
+    border-radius: 5px;
+    margin: 10px auto;
+    overflow: hidden;
+}
+
+/* カメラ・クロッパーモーダル */
+.camera-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.camera-container {
+    position: relative;
+    width: 100%;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+#camera-video, #cropper-img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.camera-guide-box {
+    position: absolute;
+    width: 85%;
+    aspect-ratio: 3/4;
+    border: 3px solid rgba(255, 255, 255, 0.8);
+    border-radius: 10px;
+    pointer-events: none;
+}
+
+.camera-guide-box p {
+    color: white;
+    background: rgba(0, 0, 0, 0.5);
+    padding: 5px 10px;
+    border-radius: 15px;
+    margin-top: -40px;
+    font-weight: bold;
+}
+
+.camera-controls {
+    width: 100%;
+    height: 120px;
+    background: #222;
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    padding-bottom: 20px;
+}
+
+#camera-modal .camera-controls {
+    justify-content: center;
+    position: relative;
+}
+
+#camera-modal #camera-cancel-btn {
+    position: absolute;
+    right: 20px;
+    bottom: 30px;
+}
+
+.camera-shutter-btn {
+    width: 70px;
+    height: 70px;
+    border-radius: 50%;
+    background: white;
+    border: 5px solid #ccc;
+    cursor: pointer;
+}
+
+.camera-shutter-btn:active {
+    transform: scale(0.9);
+    background: #ff5252;
+}
+
+.cropper-wrapper {
+    position: relative;
+    width: 100%;
+    flex: 1;
+    background: #222;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+    touch-action: none;
+}
+
+#crop-canvas {
+    max-width: 95%;
+    max-height: 80vh;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+}
+
+.crop-handle {
+    position: absolute;
+    width: 40px;
+    height: 40px;
+    background: rgba(255, 255, 255, 0.4);
+    border: 3px solid #ff4081;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 100;
+    touch-action: none;
+}
+
+.crop-handle:active {
+    background: #ff4081;
+    transform: translate(-50%, -50%) scale(1.2);
+}
+
+#crop-lines polyline {
+    fill: none;
+    stroke: #ff4081;
+    stroke-width: 3;
+    stroke-dasharray: 5;
+}
+
+/* 記憶管理モーダル & Flexbox修正 */
+.memory-modal-overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.6); z-index: 9999;
+    display: flex; align-items: center; justify-content: center;
+}
+.memory-modal-content {
+    background: #fff; width: 90%; max-width: 500px; 
+    max-height: 80vh; 
+    height: auto; 
+    border-radius: 15px; padding: 20px;
+    display: flex; flex-direction: column; 
+    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+}
+.memory-list {
+    flex: 1; 
+    overflow-y: auto; 
+    margin: 15px 0;
+    border: 1px solid #eee; border-radius: 8px; padding: 10px;
+    background: #fafafa;
+}
+.memory-item {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    background: white; padding: 10px; margin-bottom: 8px;
+    border-radius: 8px; border-bottom: 2px solid #eee;
+}
+.memory-meta {
+    font-size: 0.7rem; color: #888; margin-bottom: 4px;
+}
+.memory-text {
+    font-weight: bold; font-size: 0.9rem; color: #333; word-break: break-all;
+}
+.memory-role-user { color: #2196f3; }
+.memory-role-nell { color: #ff85a1; }
+.delete-mem-btn {
+    background: #ff5252; color: white; border: none;
+    border-radius: 5px; padding: 5px 10px; cursor: pointer;
+    font-size: 0.8rem; flex-shrink: 0; margin-left: 10px;
+}
+
+/* --- タイマー関連 --- */
+.timer-box {
+    background: #fff; 
+    border: 3px solid #ff85a1; 
+    border-radius: 15px;
+    padding: 10px; 
+    margin: 10px 0; 
+    text-align: center;
+}
+.timer-display { 
+    font-size: 2rem; 
+    font-weight: 900; 
+    color: #333; 
+    font-family: monospace; 
+}
+.timer-controls { 
+    display: flex; 
+    justify-content: center; 
+    gap: 5px; 
+    margin-top: 5px; 
+    flex-wrap: wrap; 
+}
+.timer-btn {
+    background: #ffb74d; 
+    color: white; 
+    border: none; 
+    padding: 8px 12px;
+    border-radius: 20px; 
+    font-weight: bold; 
+    cursor: pointer; 
+    font-size: 0.9rem;
+}
+
+/* --- Liveカメラ関連 --- */
+.mini-cam-btn {
+    background: #4a90e2; 
+    color: white; 
+    border: none; 
+    padding: 12px 15px;
+    border-radius: 20px; 
+    font-weight: bold; 
+    cursor: pointer; 
+    width: 100%;
+    margin-top: 10px; 
+    box-shadow: 0 4px 0 #2a609e; 
+    display: flex;
+    align-items: center; 
+    justify-content: center; 
+    gap: 8px;
+}
+.mini-cam-btn:active { 
+    transform: translateY(2px); 
+    box-shadow: 0 2px 0 #2a609e; 
+}
+
+#live-chat-video-container {
+    width: 100%; 
+    max-width: 320px; 
+    aspect-ratio: 4/3;
+    border-radius: 10px; 
+    overflow: hidden;
+    border: 4px solid #4a90e2; 
+    margin: 10px auto; 
+    background: #000;
+    display: none;
+}
+#live-chat-video {
+    width: 100%; 
+    height: 100%; 
+    object-fit: cover;
+}
+
+/* --- ホワイトボード --- */
+.whiteboard-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6); 
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 3000;
+    animation: fadeIn 0.3s ease;
+}
+
+.whiteboard-board {
+    background: #fff;
+    border: 8px solid #8d6e63; 
+    border-radius: 15px;
+    padding: 20px;
+    width: 90%;
+    max-width: 350px;
+    min-height: 250px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    background-color: #fdfbf7; 
+    position: relative;
+}
+
+.whiteboard-text {
+    font-size: 5rem; 
+    font-weight: 900;
+    font-family: 'Kiwi Maru', serif; 
+    color: #333;
+    margin: 20px 0;
+    text-align: center;
+    word-break: break-all;
+    line-height: 1.2;
+}
+
+.close-board-btn {
+    background: #ff5252;
+    color: white;
+    border: none;
+    padding: 10px 30px;
+    border-radius: 30px;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 4px 0 #d32f2f;
+    font-size: 1rem;
+}
+
+.close-board-btn:active {
+    transform: translateY(2px);
+    box-shadow: 0 2px 0 #d32f2f;
+}
+
+/* --- 記憶管理タブ --- */
+.memory-tab {
+    flex: 1;
+    background: none;
+    border: none;
+    padding: 8px;
+    font-weight: bold;
+    color: #888;
+    border-bottom: 3px solid transparent;
+    cursor: pointer;
+}
+.memory-tab.active {
+    color: #ff85a1;
+    border-bottom: 3px solid #ff85a1;
+}
+
+/* プロフィールタグ */
+.profile-section {
+    margin-bottom: 15px;
+}
+.profile-title {
+    font-size: 0.9rem;
+    color: #555;
+    font-weight: bold;
+    margin-bottom: 5px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+.profile-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+.profile-tag {
+    background: #e3f2fd;
+    color: #1565c0;
+    padding: 4px 10px;
+    border-radius: 15px;
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+.profile-tag-delete {
+    background: none;
+    border: none;
+    color: #ef5350;
+    font-weight: bold;
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0;
+    margin-left: 5px;
+}
+
+.settings-btn-fixed {
+    display: none !important;
+}
+
+/* 音量コントロール固定表示 */
+.volume-controls-fixed {
+    position: fixed; 
+    top: 10px; 
+    left: 10px; 
+    z-index: 9999;
+    display: flex; 
+    align-items: center; 
+    gap: 5px;
+    background: rgba(255, 255, 255, 0.7); 
+    border-radius: 20px; 
+    padding: 5px 10px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    backdrop-filter: blur(2px);
+}
+
+.volume-icon-btn {
+    background: transparent;
+    border: none;
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+}
+
+.volume-slider-bar {
+    width: 80px; 
+    height: 6px; 
+    -webkit-appearance: none; 
+    background: #ccc; 
+    border-radius: 5px; 
+    outline: none;
+}
+
+.volume-slider-bar::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #ff85a1;
+    cursor: pointer;
+    border: 2px solid white;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+/* マップピンのスタイル */
+.map-pin-icon {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    border: 3px solid #fff;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+    background-size: cover;
+    background-position: center;
+    background-color: #eee;
+    transition: transform 0.2s;
+}
+.map-pin-icon:hover {
+    transform: scale(1.2);
+    z-index: 1000 !important;
+    border-color: #ffeb3b;
+}
+
+/* レアリティマーク画像 (肉球) */
+.rarity-mark {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 2px;
+}
+.rarity-img {
+    width: 16px; 
+    height: 16px; 
+    object-fit: contain;
+    filter: drop-shadow(1px 1px 0px rgba(255, 255, 255, 0.8));
+}
+
+.rarity-5 .rarity-img {
+    animation: bounce 1s infinite alternate;
+}
+
+/* 
+   ★追加: カメラ起動時の軽量化モード 
+   iPhone等の描画負荷を軽減するため、重いエフェクトを無効化
+*/
+.camera-active .volume-controls-fixed,
+.camera-active .glass-card,
+.camera-active .whiteboard-overlay,
+.camera-active .memory-modal-overlay {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: rgba(255, 255, 255, 0.95); /* ぼかしの代わりにベタ塗り(少し透過) */
+}
+
+/* カメラ起動中は背景画像を非表示にして描画負荷を下げる */
+.camera-active body::before {
+    display: none !important;
+}
+
+/* 背景画像の代わりに単色背景 */
+.camera-active body {
+    background-color: #fff9f0;
+}

@@ -1,4 +1,4 @@
-// --- server.js (完全版 v358.0: 「知ってたにゃ？」廃止版) ---
+// --- server.js (完全版 v377.0: マイクラ・ロブロックス追加版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -24,7 +24,7 @@ const publicDir = path.join(__dirname, 'public');
 app.use(express.static(publicDir));
 
 // --- AI Model Constants ---
-const MODEL_HOMEWORK = "gemini-2.5-pro";
+const MODEL_HOMEWORK = "gemini-3-flash-preview";
 const MODEL_FAST = "gemini-2.5-flash";
 const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025";
 
@@ -74,12 +74,9 @@ function getSubjectInstructions(subject) {
     }
 }
 
-// 読み間違い補正関数
 function fixPronunciation(text) {
     if (!text) return "";
     let t = text;
-
-    // --- 算数・数学用語 ---
     t = t.replace(/角/g, "かく"); 
     t = t.replace(/辺/g, "へん");
     t = t.replace(/真分数/g, "しんぶんすう");
@@ -88,8 +85,6 @@ function fixPronunciation(text) {
     t = t.replace(/約分/g, "やくぶん");
     t = t.replace(/通分/g, "つうぶん");
     t = t.replace(/直角/g, "ちょっかく");
-    
-    // --- 記号 ---
     t = t.replace(/\+/g, "たす");
     t = t.replace(/＋/g, "たす");
     t = t.replace(/\-/g, "ひく");
@@ -98,13 +93,282 @@ function fixPronunciation(text) {
     t = t.replace(/＝/g, "わ");
     t = t.replace(/×/g, "かける");
     t = t.replace(/÷/g, "わる");
-
     return t;
 }
 
 // ==========================================
 // API Endpoints
 // ==========================================
+
+// --- クイズ生成 API (ジャンル拡張版) ---
+app.post('/generate-quiz', async (req, res) => {
+    try {
+        const { grade, genre, level } = req.body; // level: 1~5
+        const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
+        
+        let targetGenre = genre;
+        // 「全ジャンル」選択時のプール（マイクラ・ロブロックスは含めない）
+        if (!targetGenre || targetGenre === "全ジャンル") {
+            const baseGenres = ["一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム"];
+            targetGenre = baseGenres[Math.floor(Math.random() * baseGenres.length)];
+        }
+
+        const currentLevel = level || 1;
+        let difficultyDesc = "";
+        switch(parseInt(currentLevel)) {
+            case 1: difficultyDesc = `小学${grade}年生でも簡単にわかる、基礎的な問題`; break;
+            case 2: difficultyDesc = `小学${grade}年生が少し考えればわかる問題`; break;
+            case 3: difficultyDesc = `高学年～中学生レベルの知識が必要な問題`; break;
+            case 4: difficultyDesc = `大人でも間違えるかもしれない難しい問題`; break;
+            case 5: difficultyDesc = `非常にマニアック、または高度な知識が必要な超難問（クイズ王レベル）`; break;
+            default: difficultyDesc = `標準的な問題`;
+        }
+
+        const prompt = `
+        「${targetGenre}」に関する4択クイズを1問作成してください。
+        
+        【難易度設定: レベル${currentLevel}】
+        - ${difficultyDesc}
+        
+        【重要：禁止事項】
+        - **挨拶不要。すぐに問題文から始めてください。**
+        - **なぞなぞは禁止です。**
+
+        【出力JSONフォーマット】
+        {
+            "question": "問題文（「問題！〇〇はどれ？」のように、読み上げに適した文章）",
+            "options": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"],
+            "answer": "正解の選択肢の文字列（optionsに含まれるものと完全一致させること）",
+            "explanation": "正解の解説（子供向けに優しく、語尾は『にゃ』）",
+            "actual_genre": "${targetGenre}" 
+        }
+        `;
+
+        const result = await model.generateContent(prompt);
+        const text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        res.json(JSON.parse(text));
+    } catch (e) {
+        console.error("Quiz Gen Error:", e);
+        res.status(500).json({ error: "クイズが作れなかったにゃ…" });
+    }
+});
+
+// --- なぞなぞ生成 API ---
+app.post('/generate-riddle', async (req, res) => {
+    try {
+        const { grade } = req.body;
+        const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
+
+        const prompt = `
+        小学${grade}年生向けの「なぞなぞ」を1問作成してください。
+        
+        【ルール】
+        - 4択ではありません。考えて答える形式の問題にしてください。
+        - 答えは子供が知っている単語で。
+
+        【出力JSONフォーマット】
+        {
+            "question": "問題文（挨拶なし。すぐに問題を読み上げる）",
+            "answer": "正解の単語（ひらがな）",
+            "accepted_answers": ["正解の別名", "漢字表記", "カタカナ表記"] 
+        }
+        `;
+
+        const result = await model.generateContent(prompt);
+        const text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        res.json(JSON.parse(text));
+    } catch (e) {
+        console.error("Riddle Gen Error:", e);
+        res.status(500).json({ error: "なぞなぞが思いつかないにゃ…" });
+    }
+});
+
+// --- ミニテスト生成 API ---
+app.post('/generate-minitest', async (req, res) => {
+    try {
+        const { grade, subject } = req.body;
+        const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
+
+        const prompt = `
+        小学${grade}年生の「${subject}」に関する4択クイズを1問作成してください。
+        
+        【ルール】
+        - 低学年で「理科」「社会」が指定された場合は、「生活科」または一般的な科学・社会常識の問題にしてください。
+        - 問題は簡単すぎず、難しすぎないレベルで。
+        - 選択肢は4つ作成し、そのうち1つが正解です。
+
+        【出力JSONフォーマット】
+        {
+            "question": "問題文",
+            "options": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"],
+            "answer": "正解の選択肢の文字列（optionsに含まれるものと同じ）",
+            "explanation": "正解の解説（子供向けに優しく、語尾は『にゃ』）"
+        }
+        `;
+
+        const result = await model.generateContent(prompt);
+        const text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        res.json(JSON.parse(text));
+    } catch (e) {
+        console.error("MiniTest Gen Error:", e);
+        res.status(500).json({ error: "問題が作れなかったにゃ…" });
+    }
+});
+
+// --- 漢字ドリル生成 API (読み上げ問題のネタバレ防止) ---
+app.post('/generate-kanji', async (req, res) => {
+    try {
+        const { grade, mode } = req.body; // mode: 'reading' or 'writing'
+        const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
+        
+        let typeInstruction = "";
+        if (mode === 'reading') {
+            typeInstruction = `
+            「読み（漢字の読み仮名を答える）」問題を作成してください。
+            **重要: 単体の漢字ではなく、短い文章やフレーズの中で使われている漢字の読みを問う形式にしてください。**
+            例: 「山へ行く」の「山」の読み方は？
+            `;
+        } else {
+            typeInstruction = "「書き取り（文章の穴埋めで漢字を書く）」問題を作成してください。";
+        }
+
+        const prompt = `
+        小学${grade}年生で習う漢字の問題をランダムに1問作成してください。
+        ${typeInstruction}
+
+        【最重要：読み上げテキスト(question_speech)のルール】
+        - **「読み問題」の場合、出題対象の漢字そのものを絶対に発音してはいけません。**
+        - 例: 正解が「山(やま)」の場合、「『やま』へ行くの『やま』の読み方は？」と読み上げると、答えを言ってしまっています。
+        - **必ず「『画面の赤くなっている漢字』の読み方は？」や「『この漢字』の読み方はなにかな？」のように、指示語を使って漢字を指し示し、音読み・訓読みを含め一切の読み方を言わないでください。**
+
+        【出力JSONフォーマット】
+        {
+            "type": "${mode}",
+            "kanji": "正解となる漢字",
+            "reading": "正解となる読み仮名（ひらがな）",
+            "question_display": "画面に表示する問題文（例: 『『山』へ行く』 または 『□□(しょうぶ)をする』）",
+            "question_speech": "ネル先生が読み上げる問題文（答えを含まないこと！）"
+        }
+        `;
+
+        const result = await model.generateContent(prompt);
+        const text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        res.json(JSON.parse(text));
+    } catch (e) {
+        console.error("Kanji Gen Error:", e);
+        res.status(500).json({ error: "漢字が見つからないにゃ…" });
+    }
+});
+
+// --- 漢字採点 API ---
+app.post('/check-kanji', async (req, res) => {
+    try {
+        const { image, targetKanji } = req.body;
+        const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
+
+        const prompt = `
+        これは子供が学習アプリで書いた手書きの漢字画像です。
+        書かれている文字が、ターゲットの漢字「${targetKanji}」として認識できるか判定してください。
+
+        【判定ルール】
+        1. **子供の字です**: 多少のバランスの崩れ、線の歪み、太さは許容してください。
+        2. **構成要素**: 漢字を構成するパーツ（偏と旁など）が正しく配置されていれば「正解」としてください。
+        3. **厳格すぎないこと**: 書写のテストではありません。「何て書いてあるか読める」レベルなら正解にしてください。
+
+        【出力JSONフォーマット】
+        {
+            "is_correct": true または false,
+            "comment": "ネル先生としてのコメント。正解なら『すごい！』と褒める。不正解なら『惜しい！〇〇の部分がちょっと違うかも？』と優しく教える。"
+        }
+        `;
+
+        const result = await model.generateContent([
+            prompt,
+            { inlineData: { mime_type: "image/png", data: image } }
+        ]);
+        
+        const text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        res.json(JSON.parse(text));
+    } catch (e) {
+        console.error("Kanji Check Error:", e);
+        res.status(500).json({ is_correct: false, comment: "よく見えなかったにゃ…もう一回書いてみてにゃ？" });
+    }
+});
+
+// --- HTTPチャット会話 ---
+app.post('/chat-dialogue', async (req, res) => {
+    try {
+        let { text, name, image, history, location, address, missingInfo, memoryContext, currentQuizData } = req.body;
+        
+        const now = new Date();
+        const currentDateTime = now.toLocaleString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+
+        let systemPrompt = `
+        あなたは猫の「ネル先生」です。相手は「${name}」さん。
+        現在は ${currentDateTime} です。
+        相手を呼ぶときは必ず「${name}さん」と呼んでください。
+        `;
+
+        if (currentQuizData) {
+            systemPrompt += `
+            【現在、ユーザーは以下の問題に挑戦中です】
+            問題: ${currentQuizData.question}
+            正解: ${currentQuizData.answer}
+            
+            ユーザーの発言: 「${text}」
+            
+            指示:
+            - 正解は教えず、ヒントを出してください。
+            - 雑談ならクイズに関連付けて返してください。
+            `;
+        } else {
+            systemPrompt += `
+            【生徒についての記憶】
+            ${memoryContext || "（まだ情報はありません）"}
+            `;
+            if (location) {
+               systemPrompt += `\n現在地座標: ${location.lat}, ${location.lon}`;
+               if(address) systemPrompt += `\n住所: ${address}`;
+            }
+        }
+
+        let contextPrompt = "";
+        if (history && history.length > 0) {
+            contextPrompt = "【直近の会話】\n" + history.map(h => `${h.role === 'user' ? name : 'ネル'}: ${h.text}`).join("\n");
+        }
+
+        const prompt = `
+        ${systemPrompt}
+        ${contextPrompt}
+        
+        ユーザー: ${text}
+        ネル先生: 
+        `;
+
+        let result;
+        const toolsConfig = image ? undefined : [{ google_search: {} }];
+        const model = genAI.getGenerativeModel({ model: MODEL_FAST, tools: toolsConfig });
+
+        if (image) {
+            result = await model.generateContent([
+                prompt,
+                { inlineData: { mime_type: "image/jpeg", data: image } }
+            ]);
+        } else {
+            result = await model.generateContent(prompt);
+        }
+        
+        const responseText = result.response.text().trim();
+        let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+        cleanText = cleanText.split('\n').filter(line => !/^(?:System|User|Model|Assistant|Thinking|Display)[:：]/i.test(line)).join(' ');
+
+        res.json({ speech: cleanText });
+
+    } catch (error) {
+        console.error("Chat API Fatal Error:", error);
+        res.status(200).json({ speech: "ごめんにゃ、頭が回らないにゃ…。" });
+    }
+});
 
 // --- TTS ---
 app.post('/synthesize', async (req, res) => {
@@ -115,7 +379,6 @@ app.post('/synthesize', async (req, res) => {
         let speakText = text;
         speakText = speakText.replace(/[\*#_`~]/g, "");
         speakText = speakText.replace(/([a-zA-Z0-9一-龠々ヶァ-ヴー]+)\s*[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$2');
-
         speakText = fixPronunciation(speakText);
 
         let rate = "1.1"; let pitch = "+2st";
@@ -286,7 +549,7 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
-// --- ★ お宝図鑑用 画像解析API (レアリティ厳格化 + 店舗名特定) ---
+// --- お宝図鑑用 画像解析 ---
 app.post('/identify-item', async (req, res) => {
     try {
         const { image, name, location, address } = req.body;
@@ -339,7 +602,7 @@ app.post('/identify-item', async (req, res) => {
 
         【解説のルール】
         1. **ネル先生の解説**: 猫視点でのユーモラスな解説。語尾は「にゃ」。
-        2. **呼び方ルール**: **相手を呼ぶときは必ず『${name}さん』とさん付けで呼びかけてください。呼び捨ては厳禁です。解説の最後に「知ってたにゃ？」などの定型的な問いかけは入れないでください。**
+        2. **呼び方ルール**: **解説の最後に、「${name}さんはこれ知ってたにゃ？」のように、名前を呼びかけて質問するフレーズは絶対に含めないでください。** 説明だけで完結させてください。
         3. **本当の解説**: 子供向けの学習図鑑のような、正確でためになる豆知識や説明。です・ます調。
         4. **ふりがな**: **読み間違いやすい**人名、地名、難読漢字、英単語のみ『漢字(ふりがな)』の形式で読み仮名を振ってください。**一般的な簡単な漢字には絶対にふりがなを振らないでください。**
         5. **場所の言及ルール**: 撮影されたものが「建物」や「風景」ではなく、持ち運び可能な「商品」や「小物」の場合、解説文の中で**「ここは〇〇市〇〇町〜」のような撮影場所への言及は絶対にしないでください**。違和感があります。
@@ -391,147 +654,6 @@ app.post('/identify-item', async (req, res) => {
     } catch (error) {
         console.error("Identify Error:", error);
         res.status(500).json({ error: "解析失敗", speechText: "よく見えなかったにゃ…もう一回見せてにゃ？", itemName: null });
-    }
-});
-
-// --- HTTPチャット会話 (修正版: 呼び方ルール強化) ---
-app.post('/chat-dialogue', async (req, res) => {
-    try {
-        let { text, name, image, history, location, address, missingInfo, memoryContext } = req.body;
-        
-        const now = new Date();
-        const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' };
-        const currentDateTime = now.toLocaleString('ja-JP', dateOptions);
-
-        let contextPrompt = "";
-        if (history && Array.isArray(history) && history.length > 0) {
-            contextPrompt = "【これまでの会話の流れ（直近）】\n";
-            history.forEach(h => {
-                const speaker = h.role === 'user' ? `${name}` : 'ネル先生';
-                contextPrompt += `${speaker}: ${h.text}\n`;
-            });
-            contextPrompt += "\nユーザーの言葉に主語がなくても、この流れを汲んで自然に返答してください。\n";
-        }
-
-        let activeQuestionPrompt = "";
-        if (missingInfo && missingInfo.length > 0) {
-            const targetInfo = missingInfo[Math.floor(Math.random() * missingInfo.length)];
-            let specificQuestion = "";
-            switch(targetInfo) {
-                case "誕生日": specificQuestion = "そういえば、誕生日はいつにゃ？お祝いしたいにゃ！"; break;
-                case "好きなもの": specificQuestion = "ねえねえ、好きな漫画やキャラクターはあるにゃ？"; break;
-                case "苦手なもの": specificQuestion = "実は苦手な教科とか、嫌いな食べ物ってあるにゃ？"; break;
-                default: specificQuestion = "もっとキミのことを教えてほしいにゃ！趣味とかあるにゃ？"; break;
-            }
-
-            activeQuestionPrompt = `
-            【重要ミッション：プロフィールの穴埋め】
-            現在、ユーザーの「${targetInfo}」の情報がまだ登録されていません。
-            **今回の会話の最後に、自然な流れで以下のような質問をして情報を引き出してください。**
-            質問例: 「${specificQuestion}」
-            `;
-        }
-
-        const profileUsagePrompt = `
-        【記憶の活用】
-        もし会話が途切れそうなら、これまでの会話履歴やプロフィールにある「好きなもの」や「最近の話題」に関連した話を振ってください。
-        `;
-
-        let locationPrompt = "";
-        if (address) {
-            locationPrompt = `
-            【最優先情報：現在地】
-            クライアント特定住所: **${address}**
-            禁止事項: 座標の数値（${location.lat}など）はセリフに入れないでください。
-            `;
-            text += `\n（システム情報：現在地は「${address}」です。）`;
-        } else if (location && location.lat) {
-            locationPrompt = `GPS座標: ${location.lat}, ${location.lon}`;
-            text += `\n（システム情報：現在の座標は ${location.lat}, ${location.lon} です。）`;
-        }
-
-        // ★修正: 呼び方ルールを強化
-        let prompt = `
-        あなたは猫の「ネル先生」です。相手は「${name}」さん。
-        以下のユーザーの発言（または画像）に対して、子供にもわかるように答えてください。
-
-        【重要：現在の状況】
-        - **現在は ${currentDateTime} です。**
-        - **呼び方ルール**: **相手を呼ぶときは必ず「${name}さん」と呼んでください。絶対に呼び捨てにしないでください。**
-        - **表記ルール**: **読み間違いやすい**人名、地名、難読漢字、英単語のみ『漢字(ふりがな)』の形式で読み仮名を振ってください。**一般的な簡単な漢字には絶対にふりがなを振らないでください。**
-        
-        【生徒についての記憶 (プロフィール)】
-        ${memoryContext || "（まだ情報はありません）"}
-
-        ${activeQuestionPrompt}
-        ${profileUsagePrompt}
-        ${locationPrompt}
-        ${contextPrompt}
-
-        【出力について】
-        **形式は自由なテキストで構いません。JSONにする必要はありません。**
-        ネル先生として、親しみやすく「にゃ」をつけて話してください。
-        
-        ユーザー発言: ${text}
-        `;
-
-        if (image) {
-             prompt += `\n（画像が添付されています。画像の内容について解説してください）`;
-        }
-
-        let result;
-        let responseText;
-
-        try {
-            const toolsConfig = image ? undefined : [{ google_search: {} }];
-            const model = genAI.getGenerativeModel({ 
-                model: MODEL_FAST,
-                tools: toolsConfig
-            });
-
-            if (image) {
-                result = await model.generateContent([
-                    prompt,
-                    { inlineData: { mime_type: "image/jpeg", data: image } }
-                ]);
-            } else {
-                result = await model.generateContent(prompt);
-            }
-            responseText = result.response.text().trim();
-
-        } catch (genError) {
-            console.warn("Generation failed. Retrying without tools...", genError.message);
-            const modelFallback = genAI.getGenerativeModel({ model: MODEL_FAST });
-            try {
-                if (image) {
-                    result = await modelFallback.generateContent([
-                        prompt,
-                        { inlineData: { mime_type: "image/jpeg", data: image } }
-                    ]);
-                } else {
-                    result = await modelFallback.generateContent(prompt);
-                }
-                responseText = result.response.text().trim();
-            } catch (retryError) {
-                throw retryError;
-            }
-        }
-        
-        let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-        cleanText = cleanText.split('\n').filter(line => {
-            return !/^(?:System|User|Model|Assistant|Thinking|Display)[:：]/i.test(line);
-        }).join(' ');
-
-        const jsonResponse = { 
-            speech: cleanText, 
-            board: "" 
-        };
-        
-        res.json(jsonResponse);
-
-    } catch (error) {
-        console.error("Chat API Fatal Error:", error);
-        res.status(200).json({ speech: "ごめんにゃ、今ちょっと混み合ってて頭が回らないにゃ…。少し待ってから話しかけてにゃ。", board: "（通信混雑中）" });
     }
 });
 

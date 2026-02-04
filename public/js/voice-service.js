@@ -1,4 +1,4 @@
-// --- js/voice-service.js (v337.0: iOS非対応アナウンス追加版) ---
+// --- js/voice-service.js (完全版 v373.0: なぞなぞモード対応版) ---
 
 // ==========================================
 // 音声再生・停止
@@ -13,23 +13,29 @@ window.stopAudioPlayback = function() {
     if (window.cancelNellSpeech) window.cancelNellSpeech();
 };
 
+function shouldInterrupt(text) {
+    if (!text) return false;
+    const cleanText = text.trim();
+    if (cleanText.length === 0) return false;
+    const stopKeywords = [
+        "違う", "ちがう", "待って", "まって", "ストップ", "やめて", "うるさい", "静か", "しずか",
+        "ねえ", "ちょっと", "あの", "先生", "せんせい", "あのね", "stop", "wait"
+    ];
+    const isStopCommand = stopKeywords.some(w => cleanText.includes(w));
+    const isLongEnough = cleanText.length >= 6;
+    return isStopCommand || isLongEnough;
+}
+
 // ==========================================
-// 常時聞き取り (Speech Recognition) - 個別指導用
+// 常時聞き取り (Speech Recognition)
 // ==========================================
 window.startAlwaysOnListening = function() {
-    // ブラウザが音声認識に対応しているかチェック
     if (!('webkitSpeechRecognition' in window)) {
-        console.warn("Speech Recognition not supported on this browser/device.");
-        
-        // ★修正: iPhoneなどで非対応の場合、ユーザーに通知する
-        // ただし、何度も言うとうるさいので、一度だけ、またはコンソールに出すだけにするか、
-        // ネル先生に優しく言わせる
+        console.warn("Speech Recognition not supported.");
+        // iPhone警告 (一度だけ)
         if (window.currentMode === 'simple-chat' || window.currentMode === 'explain' || window.currentMode === 'grade' || window.currentMode === 'review') {
-             // 画面下部のテキストエリア付近にヒントを出すなどの処理が望ましいが、
-             // ここではネル先生が一言案内する形にする（会話の邪魔にならない程度に）
-             // 既に何か喋っている場合は言わない
              if (!window.isNellSpeaking && !window.iosAlertShown) {
-                 window.iosAlertShown = true; // フラグを立てて連呼防止
+                 window.iosAlertShown = true; 
                  if(typeof window.updateNellMessage === 'function') {
                      window.updateNellMessage("iPhoneの人は、キーボードのマイクボタンを使って話しかけてにゃ！", "normal", false, true);
                  }
@@ -39,107 +45,140 @@ window.startAlwaysOnListening = function() {
     }
 
     if (window.continuousRecognition) {
-        try { window.continuousRecognition.stop(); } catch(e){}
+        return;
     }
 
     window.isAlwaysListening = true;
     window.continuousRecognition = new webkitSpeechRecognition();
     window.continuousRecognition.lang = 'ja-JP';
-    window.continuousRecognition.interimResults = false;
+    window.continuousRecognition.interimResults = true;
     window.continuousRecognition.maxAlternatives = 1;
 
     window.continuousRecognition.onresult = async (event) => {
-        const text = event.results[0][0].transcript;
-        if (!text || text.trim() === "") return;
+        let interimTranscript = '';
+        let finalTranscript = '';
 
-        // 割り込み判定
-        const stopKeywords = ["違う", "ちがう", "待って", "まって", "ストップ", "やめて", "うるさい", "静か", "しずか"];
-        const isStopCommand = stopKeywords.some(w => text.includes(w));
-        const isLongEnough = text.length >= 10;
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+                finalTranscript += event.results[i][0].transcript;
+            } else {
+                interimTranscript += event.results[i][0].transcript;
+            }
+        }
 
         if (window.isNellSpeaking) {
-            if (isLongEnough || isStopCommand) {
+            if (shouldInterrupt(interimTranscript) || shouldInterrupt(finalTranscript)) {
                 console.log("[Interruption] Stopping audio.");
                 if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
-                if (isStopCommand) return; 
-            } else {
-                return;
+                window.stopAudioPlayback();
             }
         }
-        
-        console.log(`[User Said] ${text}`);
-        window.continuousRecognition.stop();
-        
-        // 音声認識結果を表示
-        let targetId = 'user-speech-text-embedded';
-        if (window.currentMode === 'simple-chat') targetId = 'user-speech-text-simple';
-        
-        const embeddedText = document.getElementById(targetId);
-        if (embeddedText) embeddedText.innerText = text;
 
-        if(typeof window.addLogItem === 'function') window.addLogItem('user', text);
-        if(typeof window.addToSessionHistory === 'function') window.addToSessionHistory('user', text);
+        if (finalTranscript && finalTranscript.trim() !== "") {
+            const text = finalTranscript;
+            console.log(`[User Said] ${text}`);
 
-        // 記憶データ取得
-        let missingInfo = [];
-        let memoryContext = "";
-        if (window.NellMemory && currentUser) {
-            try {
-                const profile = await window.NellMemory.getUserProfile(currentUser.id);
-                if (!profile.birthday) missingInfo.push("誕生日");
-                if (!profile.likes || profile.likes.length === 0) missingInfo.push("好きなもの");
-                if (!profile.weaknesses || profile.weaknesses.length === 0) missingInfo.push("苦手なもの");
-                memoryContext = await window.NellMemory.generateContextString(currentUser.id);
-            } catch(e) {}
-        }
-
-        try {
-            const res = await fetch('/chat-dialogue', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    text: text, 
-                    name: currentUser ? currentUser.name : "生徒",
-                    history: window.chatSessionHistory,
-                    location: window.currentLocation,
-                    address: window.currentAddress,
-                    missingInfo: missingInfo,
-                    memoryContext: memoryContext
-                })
-            });
+            // 1. クイズモードの場合の回答判定
+            if (window.currentMode === 'quiz' && typeof window.checkQuizAnswer === 'function') {
+                const isAnswer = window.checkQuizAnswer(text);
+                if (isAnswer) return; 
+            }
             
-            if(res.ok) {
-                const data = await res.json();
-                const speechText = data.speech || data.reply || "ごめんにゃ、よくわからなかったにゃ"; 
-                
-                if(typeof window.addLogItem === 'function') window.addLogItem('nell', speechText);
-                if(typeof window.addToSessionHistory === 'function') window.addToSessionHistory('nell', speechText);
-                
-                if(typeof window.updateNellMessage === 'function') {
-                    await window.updateNellMessage(speechText, "normal", true, true);
-                }
-                
-                let boardId = 'embedded-chalkboard';
-                if (window.currentMode === 'simple-chat') boardId = 'chalkboard-simple';
-                const embedBoard = document.getElementById(boardId);
-                
-                if (embedBoard && data.board && data.board.trim() !== "") {
-                    embedBoard.innerText = data.board;
-                    embedBoard.classList.remove('hidden');
-                }
+            // 2. 漢字ドリル（読み問題）の判定
+            if (window.currentMode === 'kanji' && typeof window.checkKanjiReading === 'function') {
+                const isCorrect = window.checkKanjiReading(text);
+                if (isCorrect) return; 
             }
-        } catch(e) {
-            console.error("Chat Error:", e);
-        } finally {
-            if (window.isAlwaysListening && (window.currentMode === 'chat' || window.currentMode === 'explain' || window.currentMode === 'grade' || window.currentMode === 'review' || window.currentMode === 'simple-chat')) {
-                try { window.continuousRecognition.start(); } catch(e){}
+
+            // 3. なぞなぞモードの判定 (★新規)
+            if (window.currentMode === 'riddle' && typeof window.checkRiddleAnswer === 'function') {
+                const isCorrect = window.checkRiddleAnswer(text);
+                if (isCorrect) return;
+            }
+
+            // --- 通常の会話・チャット処理 ---
+            
+            let targetId = 'user-speech-text-embedded';
+            if (window.currentMode === 'simple-chat') targetId = 'user-speech-text-simple';
+            
+            const embeddedText = document.getElementById(targetId);
+            if (embeddedText) embeddedText.innerText = text;
+
+            if(typeof window.addLogItem === 'function') window.addLogItem('user', text);
+            if(typeof window.addToSessionHistory === 'function') window.addToSessionHistory('user', text);
+
+            let missingInfo = [];
+            let memoryContext = "";
+            if (window.NellMemory && currentUser) {
+                try {
+                    const profile = await window.NellMemory.getUserProfile(currentUser.id);
+                    if (!profile.birthday) missingInfo.push("誕生日");
+                    if (!profile.likes || profile.likes.length === 0) missingInfo.push("好きなもの");
+                    if (!profile.weaknesses || profile.weaknesses.length === 0) missingInfo.push("苦手なもの");
+                    memoryContext = await window.NellMemory.generateContextString(currentUser.id);
+                } catch(e) {}
+            }
+            
+            // クイズ中のコンテキスト
+            let currentQuizData = null;
+            if (window.currentMode === 'quiz' && window.currentQuiz) {
+                currentQuizData = window.currentQuiz;
+            }
+
+            try {
+                window.continuousRecognition.stop(); 
+
+                const res = await fetch('/chat-dialogue', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        text: text, 
+                        name: currentUser ? currentUser.name : "生徒",
+                        history: window.chatSessionHistory,
+                        location: window.currentLocation,
+                        address: window.currentAddress,
+                        missingInfo: missingInfo,
+                        memoryContext: memoryContext,
+                        currentQuizData: currentQuizData 
+                    })
+                });
+                
+                if(res.ok) {
+                    const data = await res.json();
+                    const speechText = data.speech || data.reply || "ごめんにゃ、よくわからなかったにゃ"; 
+                    
+                    if(typeof window.addLogItem === 'function') window.addLogItem('nell', speechText);
+                    if(typeof window.addToSessionHistory === 'function') window.addToSessionHistory('nell', speechText);
+                    
+                    if(typeof window.updateNellMessage === 'function') {
+                        await window.updateNellMessage(speechText, "normal", true, true);
+                    }
+                    
+                    let boardId = 'embedded-chalkboard';
+                    if (window.currentMode === 'simple-chat') boardId = 'chalkboard-simple';
+                    const embedBoard = document.getElementById(boardId);
+                    if (embedBoard && data.board && data.board.trim() !== "") {
+                        embedBoard.innerText = data.board;
+                        embedBoard.classList.remove('hidden');
+                    }
+                }
+            } catch(e) {
+                console.error("Chat Error:", e);
+            } finally {
+                if (window.isAlwaysListening) {
+                    try { window.continuousRecognition.start(); } catch(e){}
+                }
             }
         }
     };
 
     window.continuousRecognition.onend = () => {
-        if (window.isAlwaysListening && (window.currentMode === 'chat' || window.currentMode === 'explain' || window.currentMode === 'grade' || window.currentMode === 'review' || window.currentMode === 'simple-chat') && !window.isNellSpeaking) {
-            try { window.continuousRecognition.start(); } catch(e){}
+        if (window.isAlwaysListening) {
+            setTimeout(() => { 
+                try { window.continuousRecognition.start(); } catch(e){} 
+            }, 300);
+        } else {
+            window.continuousRecognition = null;
         }
     };
 
@@ -162,7 +201,7 @@ window.stopAlwaysOnListening = function() {
 };
 
 // ==========================================
-// リアルタイムチャット (WebSocket) - 放課後おしゃべり用
+// リアルタイムチャット (WebSocket)
 // ==========================================
 
 window.stopLiveChat = function() {
@@ -183,7 +222,7 @@ window.stopLiveChat = function() {
         window.audioContext.close(); 
     }
     window.audioContext = null;
-    window.audioCtx = null; // audio.jsの変数もクリア
+    window.audioCtx = null; 
 
     window.isNellSpeaking = false; 
     if(window.stopSpeakingTimer) clearTimeout(window.stopSpeakingTimer); 
@@ -387,13 +426,14 @@ window.startMicrophone = async function() {
                 for (let i = event.resultIndex; i < event.results.length; ++i) {
                     currentText += event.results[i][0].transcript;
                 }
-                const cleanText = currentText.trim();
-                const stopKeywords = ["違う", "ちがう", "待って", "まって", "ストップ", "やめて", "うるさい", "静か", "しずか"];
-                if (window.isNellSpeaking && cleanText.length > 0) {
-                    const isLongEnough = cleanText.length >= 10;
-                    const isStopCommand = stopKeywords.some(w => cleanText.includes(w));
-                    if (isLongEnough || isStopCommand) window.stopAudioPlayback();
+                
+                if (window.isNellSpeaking) {
+                    if (shouldInterrupt(currentText)) {
+                        console.log("[LiveChat Interruption]", currentText);
+                        window.stopAudioPlayback();
+                    }
                 }
+
                 for (let i = event.resultIndex; i < event.results.length; ++i) { 
                     if (event.results[i].isFinal) { 
                         const userText = event.results[i][0].transcript;
@@ -479,215 +519,3 @@ window.playLivePcmAudio = function(base64) {
 window.floatTo16BitPCM = function(float32Array) { const buffer = new ArrayBuffer(float32Array.length * 2); const view = new DataView(buffer); let offset = 0; for (let i = 0; i < float32Array.length; i++, offset += 2) { let s = Math.max(-1, Math.min(1, float32Array[i])); view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true); } return buffer; };
 window.downsampleBuffer = function(buffer, sampleRate, outSampleRate) { if (outSampleRate >= sampleRate) return buffer; const ratio = sampleRate / outSampleRate; const newLength = Math.round(buffer.length / ratio); const result = new Float32Array(newLength); let offsetResult = 0, offsetBuffer = 0; while (offsetResult < result.length) { const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio); let accum = 0, count = 0; for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) { accum += buffer[i]; count++; } result[offsetResult] = accum / count; offsetResult++; offsetBuffer = nextOffsetBuffer; } return result; };
 window.arrayBufferToBase64 = function(buffer) { let binary = ''; const bytes = new Uint8Array(buffer); for (let i = 0; i < bytes.byteLength; i++) { binary += String.fromCharCode(bytes[i]); } return window.btoa(binary); };
-
-// ==========================================
-// WebSocketチャット用画像送信 (圧縮版)
-// ==========================================
-window.captureAndSendLiveImage = function(context = 'main') {
-    if (context === 'main') {
-        if (window.currentMode === 'chat-free') context = 'free';
-        else if (window.activeChatContext === 'embedded') context = 'embedded';
-        else if (window.currentMode === 'simple-chat') context = 'simple';
-    }
-    
-    if (context === 'embedded' || context === 'simple') {
-        window.captureAndSendLiveImageHttp(context);
-        return;
-    }
-
-    if (!window.liveSocket || window.liveSocket.readyState !== WebSocket.OPEN) {
-        return alert("まずは「おはなしする」でネル先生とつながってにゃ！");
-    }
-    if (window.isLiveImageSending) return; 
-    
-    let videoId = 'live-chat-video-free';
-    let containerId = 'live-chat-video-container-free';
-    const video = document.getElementById(videoId);
-    const btn = document.getElementById('live-camera-btn-free');
-
-    if (!video || !video.srcObject || !video.srcObject.active) {
-        if (typeof window.startPreviewCamera === 'function') {
-            window.startPreviewCamera(videoId, containerId).then(() => {
-                if (btn) {
-                    btn.innerHTML = "<span>📸</span> 撮影して送信";
-                    btn.style.backgroundColor = "#ff5252";
-                }
-            });
-        } else {
-            alert("カメラ機能が読み込まれていないにゃ...");
-        }
-        return;
-    }
-
-    window.stopAudioPlayback();
-    window.ignoreIncomingAudio = true; 
-    window.isLiveImageSending = true;
-    
-    if (btn) {
-        btn.innerHTML = "<span>📡</span> 送信中にゃ...";
-        btn.style.backgroundColor = "#ccc";
-    }
-    window.isMicMuted = true;
-
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    
-    const notif = document.createElement('div');
-    notif.innerText = `📝 問題を送ったにゃ！`;
-    notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #8bc34a; color:#558b2f; padding:10px 20px; border-radius:30px; font-weight:bold; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 4px 10px rgba(0,0,0,0.2);";
-    document.body.appendChild(notif);
-    setTimeout(() => notif.remove(), 2000);
-    
-    // ★修正: 圧縮処理を通す
-    const compressedDataUrl = window.processImageForAI(canvas);
-    const base64Data = compressedDataUrl.split(',')[1];
-    
-    const flash = document.createElement('div');
-    flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;";
-    document.body.appendChild(flash);
-    setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
-
-    const videoContainer = document.getElementById('live-chat-video-container-free');
-    if (videoContainer) {
-        const oldPreview = document.getElementById('snapshot-preview-overlay');
-        if(oldPreview) oldPreview.remove();
-        const previewImg = document.createElement('img');
-        previewImg.id = 'snapshot-preview-overlay';
-        previewImg.src = compressedDataUrl;
-        previewImg.style.cssText = "position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; z-index:10; border:4px solid #ffeb3b; box-sizing:border-box; animation: fadeIn 0.2s;";
-        videoContainer.style.position = "relative"; 
-        videoContainer.appendChild(previewImg);
-        setTimeout(() => { if(previewImg && previewImg.parentNode) previewImg.remove(); }, 3000);
-    }
-
-    if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ん？どれどれ…", "thinking", false, false);
-    
-    if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN) {
-        let promptText = "（ユーザーが勉強の問題や画像を見せました）この画像の内容を詳しく、子供にもわかるように丁寧に教えてください。図鑑登録は不要です。";
-        window.liveSocket.send(JSON.stringify({ 
-            clientContent: { 
-                turns: [{ role: "user", parts: [ { text: promptText }, { inlineData: { mime_type: "image/jpeg", data: base64Data } } ] }],
-                turnComplete: true 
-            } 
-        }));
-    }
-
-    setTimeout(() => {
-        window.isLiveImageSending = false;
-        window.isMicMuted = false;
-        
-        if (typeof window.stopPreviewCamera === 'function') {
-            window.stopPreviewCamera();
-        }
-        
-        if (btn) {
-             btn.innerHTML = "<span>📷</span> 写真を見せてお話";
-             btn.style.backgroundColor = "#009688";
-        }
-    }, 3000);
-    setTimeout(() => { window.ignoreIncomingAudio = false; }, 300);
-};
-
-// ==========================================
-// HTTPチャット用画像送信 (圧縮版)
-// ==========================================
-window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
-    if (window.isLiveImageSending) return;
-    
-    if (window.isAlwaysListening && window.continuousRecognition) {
-        try { window.continuousRecognition.stop(); } catch(e){}
-    }
-    
-    let videoId, btnId, activeColor;
-    if (context === 'embedded') { videoId = 'live-chat-video-embedded'; btnId = 'live-camera-btn-embedded'; activeColor = '#66bb6a'; }
-    else if (context === 'simple') { videoId = 'live-chat-video-simple'; btnId = 'live-camera-btn-simple'; activeColor = '#66bb6a'; }
-
-    const video = document.getElementById(videoId);
-    if (!video || !video.srcObject || !video.srcObject.active) return alert("カメラが動いてないにゃ...");
-    
-    window.isLiveImageSending = true;
-    const btn = document.getElementById(btnId);
-    if (btn) {
-        btn.innerHTML = "<span>📡</span> 送信中にゃ...";
-        btn.style.backgroundColor = "#ccc";
-    }
-
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    
-    // ★修正: 圧縮処理を通す
-    const compressedDataUrl = window.processImageForAI(canvas);
-    const base64Data = compressedDataUrl.split(',')[1];
-    
-    const flash = document.createElement('div');
-    flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;";
-    document.body.appendChild(flash);
-    setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
-
-    if(typeof window.addLogItem === 'function') window.addLogItem('user', '（画像送信）');
-
-    // ★修正: 記憶コンテキスト取得
-    let memoryContext = "";
-    if (window.NellMemory && currentUser) {
-        try {
-            memoryContext = await window.NellMemory.generateContextString(currentUser.id);
-        } catch(e) {}
-    }
-
-    try {
-        if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
-
-        const res = await fetch('/chat-dialogue', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                image: base64Data, 
-                text: "この問題を教えてください。",
-                name: currentUser ? currentUser.name : "生徒",
-                history: window.chatSessionHistory,
-                location: window.currentLocation,
-                address: window.currentAddress,
-                memoryContext: memoryContext // ★送信
-            })
-        });
-
-        if (!res.ok) throw new Error("Server response not ok");
-        const data = await res.json();
-        
-        const speechText = data.speech || data.reply || "教えてあげるにゃ！";
-        
-        if(typeof window.addLogItem === 'function') window.addLogItem('nell', speechText);
-        if(typeof window.addToSessionHistory === 'function') window.addToSessionHistory('nell', speechText);
-        
-        if(typeof window.updateNellMessage === 'function') await window.updateNellMessage(speechText, "happy", true, true);
-        
-        let boardId = (context === 'embedded') ? 'embedded-chalkboard' : 'chalkboard-simple';
-        const embedBoard = document.getElementById(boardId);
-        if (embedBoard && data.board && data.board.trim() !== "") {
-            embedBoard.innerText = data.board;
-            embedBoard.classList.remove('hidden');
-        }
-
-    } catch(e) {
-        console.error("HTTP Image Error:", e);
-        if(typeof window.updateNellMessage === 'function') window.updateNellMessage("よく見えなかったにゃ…もう一回お願いにゃ！", "thinking", false, true);
-    } finally {
-        window.isLiveImageSending = false;
-        
-        if(typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera(); 
-        if (btn) {
-            btn.innerHTML = "<span>📷</span> カメラで見せて質問";
-            btn.style.backgroundColor = activeColor;
-        }
-        
-        if (window.isAlwaysListening) {
-             try { window.continuousRecognition.start(); } catch(e){}
-        }
-    }
-};
