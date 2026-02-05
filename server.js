@@ -1,5 +1,3 @@
-// --- server.js (完全版 v377.0: マイクラ・ロブロックス追加版) ---
-
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import express from 'express';
@@ -24,8 +22,8 @@ const publicDir = path.join(__dirname, 'public');
 app.use(express.static(publicDir));
 
 // --- AI Model Constants ---
-const MODEL_HOMEWORK = "gemini-3-flash-preview";
-const MODEL_FAST = "gemini-2.5-flash";
+const MODEL_HOMEWORK = "gemini-3-pro-preview";
+const MODEL_FAST = "gemini-3-flash-preview";
 const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025";
 
 // --- Server Log ---
@@ -34,7 +32,12 @@ async function appendToServerLog(name, text) {
     try {
         let data = {};
         try { data = JSON.parse(await fs.readFile(MEMORY_FILE, 'utf8')); } catch {}
-        const timestamp = new Date().toLocaleString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+        const timestamp = new Date().toLocaleString('ja-JP', { 
+            timeZone: 'Asia/Tokyo', 
+            hour: '2-digit', 
+            minute: '2-digit',
+            hour12: false 
+        });
         const newLog = `[${timestamp}] ${text}`;
         let currentLogs = data[name] || [];
         currentLogs.push(newLog);
@@ -100,14 +103,13 @@ function fixPronunciation(text) {
 // API Endpoints
 // ==========================================
 
-// --- クイズ生成 API (ジャンル拡張版) ---
+// --- クイズ生成 API ---
 app.post('/generate-quiz', async (req, res) => {
     try {
-        const { grade, genre, level } = req.body; // level: 1~5
+        const { grade, genre, level } = req.body; 
         const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
         
         let targetGenre = genre;
-        // 「全ジャンル」選択時のプール（マイクラ・ロブロックスは含めない）
         if (!targetGenre || targetGenre === "全ジャンル") {
             const baseGenres = ["一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム"];
             targetGenre = baseGenres[Math.floor(Math.random() * baseGenres.length)];
@@ -215,10 +217,10 @@ app.post('/generate-minitest', async (req, res) => {
     }
 });
 
-// --- 漢字ドリル生成 API (読み上げ問題のネタバレ防止) ---
+// --- 漢字ドリル生成 API ---
 app.post('/generate-kanji', async (req, res) => {
     try {
-        const { grade, mode } = req.body; // mode: 'reading' or 'writing'
+        const { grade, mode } = req.body; 
         const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
         
         let typeInstruction = "";
@@ -227,6 +229,7 @@ app.post('/generate-kanji', async (req, res) => {
             「読み（漢字の読み仮名を答える）」問題を作成してください。
             **重要: 単体の漢字ではなく、短い文章やフレーズの中で使われている漢字の読みを問う形式にしてください。**
             例: 「山へ行く」の「山」の読み方は？
+            **★重要: 画面表示用テキスト(question_display)では、出題対象の漢字を <span style='color:red;'>漢字</span> タグで囲んでください。**
             `;
         } else {
             typeInstruction = "「書き取り（文章の穴埋めで漢字を書く）」問題を作成してください。";
@@ -238,7 +241,6 @@ app.post('/generate-kanji', async (req, res) => {
 
         【最重要：読み上げテキスト(question_speech)のルール】
         - **「読み問題」の場合、出題対象の漢字そのものを絶対に発音してはいけません。**
-        - 例: 正解が「山(やま)」の場合、「『やま』へ行くの『やま』の読み方は？」と読み上げると、答えを言ってしまっています。
         - **必ず「『画面の赤くなっている漢字』の読み方は？」や「『この漢字』の読み方はなにかな？」のように、指示語を使って漢字を指し示し、音読み・訓読みを含め一切の読み方を言わないでください。**
 
         【出力JSONフォーマット】
@@ -246,7 +248,7 @@ app.post('/generate-kanji', async (req, res) => {
             "type": "${mode}",
             "kanji": "正解となる漢字",
             "reading": "正解となる読み仮名（ひらがな）",
-            "question_display": "画面に表示する問題文（例: 『『山』へ行く』 または 『□□(しょうぶ)をする』）",
+            "question_display": "画面に表示する問題文（例: 『<span style='color:red;'>山</span>へ行く』 または 『□□(しょうぶ)をする』）",
             "question_speech": "ネル先生が読み上げる問題文（答えを含まないこと！）"
         }
         `;
@@ -269,11 +271,9 @@ app.post('/check-kanji', async (req, res) => {
         const prompt = `
         これは子供が学習アプリで書いた手書きの漢字画像です。
         書かれている文字が、ターゲットの漢字「${targetKanji}」として認識できるか判定してください。
-
         【判定ルール】
         1. **子供の字です**: 多少のバランスの崩れ、線の歪み、太さは許容してください。
         2. **構成要素**: 漢字を構成するパーツ（偏と旁など）が正しく配置されていれば「正解」としてください。
-        3. **厳格すぎないこと**: 書写のテストではありません。「何て書いてあるか読める」レベルなら正解にしてください。
 
         【出力JSONフォーマット】
         {
@@ -298,10 +298,15 @@ app.post('/check-kanji', async (req, res) => {
 // --- HTTPチャット会話 ---
 app.post('/chat-dialogue', async (req, res) => {
     try {
-        let { text, name, image, history, location, address, missingInfo, memoryContext, currentQuizData } = req.body;
+        let { text, name, image, history, location, address, missingInfo, memoryContext, currentQuizData, currentRiddleData, currentMinitestData } = req.body;
         
         const now = new Date();
-        const currentDateTime = now.toLocaleString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+        const currentDateTime = now.toLocaleString('ja-JP', { 
+            timeZone: 'Asia/Tokyo', 
+            hour: '2-digit', 
+            minute: '2-digit',
+            hour12: false
+        });
 
         let systemPrompt = `
         あなたは猫の「ネル先生」です。相手は「${name}」さん。
@@ -309,17 +314,25 @@ app.post('/chat-dialogue', async (req, res) => {
         相手を呼ぶときは必ず「${name}さん」と呼んでください。
         `;
 
-        if (currentQuizData) {
-            systemPrompt += `
-            【現在、ユーザーは以下の問題に挑戦中です】
-            問題: ${currentQuizData.question}
-            正解: ${currentQuizData.answer}
+        let problemContext = null;
+        if (currentQuizData) problemContext = { type: "クイズ", ...currentQuizData };
+        else if (currentRiddleData) problemContext = { type: "なぞなぞ", ...currentRiddleData };
+        else if (currentMinitestData) problemContext = { type: "ミニテスト", ...currentMinitestData };
+
+        if (problemContext) {
+             systemPrompt += `
+            【現在、ユーザーは「${problemContext.type}」に挑戦中です】
+            問題: ${problemContext.question}
+            正解: ${problemContext.answer}
+            （選択肢がある場合）: ${JSON.stringify(problemContext.options || [])}
             
             ユーザーの発言: 「${text}」
             
-            指示:
-            - 正解は教えず、ヒントを出してください。
-            - 雑談ならクイズに関連付けて返してください。
+            【★重要指示: 出題モード (厳守)】
+            - **現在は学習・ゲームモード中です。出題中の問題に関する話題以外には一切反応しないでください。**
+            - ユーザーが雑談や関係ない質問をした場合は、「今は問題に集中するにゃ！」や「それはあとで話すにゃ。答えはなにかな？」と軽くかわして、問題への回答を促してください。
+            - 正解は直接教えず、ヒントを出してください。
+            - ユーザーが答えを言った場合は、正解か不正解かを判定し、褒めるか励ましてください。
             `;
         } else {
             systemPrompt += `
@@ -782,6 +795,12 @@ wss.on('connection', async (clientWs, req) => {
 
                 【生徒についての記憶】
                 ${statusContext}
+                
+                【重要: 会話スタイルの指示】
+                - **回答は必ず一文か二文で短くすること。** 長々とした説明は禁止です。
+                - 子供と会話のキャッチボールをすることを最優先してください。
+                - 相手の反応を待ってから次の発言をしてください。
+                - 楽しそうに、親しみやすく振る舞ってください。
                 `;
 
                 const tools = [

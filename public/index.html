@@ -1,4 +1,4 @@
-<!-- index.html (完全版 v376.0: レベル選択・ID対応版) -->
+<!-- index.html (完全版 v378.0: ポケモンクイズ追加版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -68,7 +68,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v376.0-QuizLevelSel</div>
+            <div class="version-tag">Build: v378.0-Pokemon</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -252,9 +252,10 @@
                     <button id="btn-quiz-entertainment" onclick="showLevelSelection('芸能・スポーツ')" class="main-btn green-btn">芸能・スポーツ</button>
                     <button id="btn-quiz-history" onclick="showLevelSelection('歴史・地理・社会')" class="main-btn purple-btn">歴史・地理・社会</button>
                     <button id="btn-quiz-game" onclick="showLevelSelection('ゲーム')" class="main-btn yellow-btn">ゲーム</button>
-                    <!-- ★追加: マイクラ・ロブロックスボタン (IDを付与) -->
+                    <!-- ★追加: マイクラ・ロブロックス・ポケモンボタン -->
                     <button id="btn-quiz-minecraft" onclick="showLevelSelection('マインクラフト')" class="main-btn green-btn" style="background:#4caf50;">マインクラフト</button>
                     <button id="btn-quiz-roblox" onclick="showLevelSelection('ロブロックス')" class="main-btn red-btn" style="background:#e53935;">ロブロックス</button>
+                    <button id="btn-quiz-pokemon" onclick="showLevelSelection('ポケモン')" class="main-btn blue-btn" style="background:#0288d1; grid-column: span 2;">ポケモン</button>
                 </div>
             </div>
 

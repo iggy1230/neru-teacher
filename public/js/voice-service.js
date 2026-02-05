@@ -1,4 +1,4 @@
-// --- js/voice-service.js (完全版 v373.0: なぞなぞモード対応版) ---
+// --- js/voice-service.js (完全版 v379.0: 問題モード会話制限対応版) ---
 
 // ==========================================
 // 音声再生・停止
@@ -90,7 +90,7 @@ window.startAlwaysOnListening = function() {
                 if (isCorrect) return; 
             }
 
-            // 3. なぞなぞモードの判定 (★新規)
+            // 3. なぞなぞモードの判定
             if (window.currentMode === 'riddle' && typeof window.checkRiddleAnswer === 'function') {
                 const isCorrect = window.checkRiddleAnswer(text);
                 if (isCorrect) return;
@@ -119,10 +119,19 @@ window.startAlwaysOnListening = function() {
                 } catch(e) {}
             }
             
-            // クイズ中のコンテキスト
+            // 問題データの取得（あれば）
             let currentQuizData = null;
+            let currentRiddleData = null;
+            let currentMinitestData = null;
+
             if (window.currentMode === 'quiz' && window.currentQuiz) {
                 currentQuizData = window.currentQuiz;
+            } else if (window.currentMode === 'riddle' && window.currentRiddle) {
+                currentRiddleData = window.currentRiddle;
+            } else if (window.currentMode === 'minitest' && window.currentMinitest) {
+                currentMinitestData = window.currentMinitest;
+            } else if (window.currentMode === 'kanji' && window.currentMinitest) { // 漢字もminitest変数で代用している場合
+                currentMinitestData = window.currentMinitest;
             }
 
             try {
@@ -139,7 +148,9 @@ window.startAlwaysOnListening = function() {
                         address: window.currentAddress,
                         missingInfo: missingInfo,
                         memoryContext: memoryContext,
-                        currentQuizData: currentQuizData 
+                        currentQuizData: currentQuizData,
+                        currentRiddleData: currentRiddleData, // ★追加
+                        currentMinitestData: currentMinitestData // ★追加
                     })
                 });
                 
