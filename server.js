@@ -22,7 +22,6 @@ const publicDir = path.join(__dirname, 'public');
 app.use(express.static(publicDir));
 
 // --- AI Model Constants ---
-// ★変更: 最新のFlashモデルに変更
 const MODEL_HOMEWORK = "gemini-3-pro-preview";
 const MODEL_FAST = "gemini-2.5-flash"; 
 const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025";
@@ -162,7 +161,6 @@ app.post('/generate-riddle', async (req, res) => {
         const { grade } = req.body;
         const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
 
-        // なぞなぞのパターンをランダム決定して質を上げる
         const patterns = [
             {
                 type: "言葉遊び・ダジャレ",
@@ -616,7 +614,9 @@ app.post('/identify-item', async (req, res) => {
             指示:
             1. **広域の確定**: ユーザーは「${address}」にいます。
             2. **詳細スポットの特定**: この住所（${address}）の中にある、画像に写っているようなものをGoogle検索で特定してください。
-            3. 解説の冒頭で「ここは${address}の〇〇（詳細スポット名）だにゃ！」と明言してください。
+            3. **重要: 場所の呼び方**: 解説の冒頭で場所を言う際は、**住所の細かい部分（大字、字、番地、道路名、バイパス名など）は絶対に省略**し、「都道府県＋市町村名」＋「スポット名」の形式にしてください。
+               - 悪い例: 「ここは福岡県筑後市大字前津室岡八女筑後バイパスのよらん野だにゃ！」
+               - 良い例: 「ここは福岡県筑後市のよらん野だにゃ！」
             `;
         } else if (location && location.lat && location.lon) {
             locationInfo = `
@@ -656,6 +656,9 @@ app.post('/identify-item', async (req, res) => {
            - 画像が**「建物」「風景」「観光地」の場合**: 「ここは〇〇（詳細地名）だにゃ！」と場所を紹介してOKです。
            - 画像が**「商品」「小物」「生き物」など持ち運び可能なものの場合**: **詳細な住所（町名・番地・店名）への言及は禁止です。** 言及する場合でも、「〇〇市で見つけたにゃ！」や「〇〇県にいるんだにゃ！」のように、**市町村または都道府県レベルの広域地名**にとどめてください。「〇〇店で売ってる」のような店名の特定もしないでください（違和感があるため）。
         6. **禁止事項**: 座標の数値をそのままユーザーへの返答に入れないでください。
+        7. **住所の省略（最重要）**: 解説文の中で場所を言うときは、**「大字」「字」「番地」「道路名」などの細かい住所は絶対に含めないでください。** 「都道府県＋市町村名」までで止めてください。
+           - ×: 福岡県筑後市大字前津室岡八女筑後バイパスの…
+           - ○: 福岡県筑後市の…
 
         【出力フォーマット (JSON)】
         \`\`\`json
