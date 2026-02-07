@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (完全版 v373.1: なぞなぞモード対応版・修正版) ---
+// --- js/ui/ui.js (完全版 v381.0: ロビー遷移時の完全停止対応版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -88,7 +88,15 @@ window.formatCollectionNumber = function(num) {
 // ==========================================
 
 window.switchScreen = function(to) {
-    document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+    // ★最適化: 画面切り替え時に古い画面の重い要素をクリアする
+    document.querySelectorAll('.screen').forEach(s => {
+        s.classList.add('hidden');
+        // 図鑑画面から抜ける場合、中身を空にしてメモリを解放
+        if (s.id === 'screen-map' && to !== 'screen-map') {
+            // Leafletマップのメモリリーク対策は別途実施
+        }
+    });
+
     const target = document.getElementById(to);
     if (target) {
         target.classList.remove('hidden');
@@ -126,17 +134,31 @@ window.backToGate = function() {
 };
 
 window.backToLobby = function(suppressGreeting = false) {
-    switchScreen('screen-lobby');
+    // ★重要: ロビーに戻るとき、すべてのバックグラウンドプロセスを強制停止
     
+    // 1. 音声再生の停止 (TTS, LiveStream, SFX)
+    if (typeof window.stopAudioPlayback === 'function') window.stopAudioPlayback(); // Voice Service (Web Audio)
+    if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();   // Audio Service (TTS fetch)
+    
+    // 2. 音声認識・WebSocketの停止
     if (typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
     if (typeof window.stopLiveChat === 'function') window.stopLiveChat();
+    
+    // 3. カメラの停止
     if (typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera();
-    if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
-
-    // ゲーム停止
+    
+    // 4. ゲームループの停止
     if (typeof window.stopDanmakuGame === 'function') window.stopDanmakuGame();
+    window.gameRunning = false; // カリカリキャッチ用
 
+    // 5. 分析フラグのリセット
     if (window.isAnalyzing !== undefined) window.isAnalyzing = false;
+    
+    // 6. モードのリセット
+    window.currentMode = null;
+
+    // 画面切り替え
+    switchScreen('screen-lobby');
 
     const shouldGreet = (typeof suppressGreeting === 'boolean') ? !suppressGreeting : true;
     if (shouldGreet && typeof currentUser !== 'undefined' && currentUser) {
@@ -231,7 +253,7 @@ window.updateProgress = function(p) {
 };
 
 // ==========================================
-// 図鑑 (Collection)
+// 図鑑 (Collection) - ★最適化済み
 // ==========================================
 
 window.openCollectionDetailByIndex = function(originalIndex) {
@@ -291,6 +313,7 @@ window.showCollection = async function() {
     window.renderCollectionList();
 };
 
+// ★改善: 少しずつ描画する（チャンクレンダリング）でフリーズを防止
 window.renderCollectionList = async function() {
     const grid = document.getElementById('collection-grid');
     const countBadge = document.getElementById('collection-count-badge');
@@ -308,7 +331,10 @@ window.renderCollectionList = async function() {
         return;
     }
 
+    // ソート用のデータ作成（軽量化）
     let items = collection.map((item, index) => ({
+        // 画像はBase64で重いので、この時点では参照のみにしておく手もあるが、
+        // 既存ロジックを大きく変えずにレンダリング側で対処する。
         ...item,
         originalIndex: index,
         number: totalCount - index
@@ -327,26 +353,51 @@ window.renderCollectionList = async function() {
         });
     }
 
-    items.forEach(item => {
-        const div = document.createElement('div');
-        div.style.cssText = "background:white; border-radius:8px; padding:4px; box-shadow:0 3px 6px rgba(0,0,0,0.15); text-align:center; border:1px solid #ddd; position:relative; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; aspect-ratio: 0.68; transition:transform 0.1s; overflow:hidden;";
-        
-        div.onclick = () => window.showCollectionDetail(item, item.originalIndex, item.number); 
-        div.onmousedown = () => div.style.transform = "scale(0.95)";
-        div.onmouseup = () => div.style.transform = "scale(1.0)";
+    // ★Chunked Rendering Logic
+    const CHUNK_SIZE = 12; // 一度に描画する数
+    let currentIndex = 0;
 
-        const img = document.createElement('img');
-        img.src = item.image;
-        img.style.cssText = "width:100%; height:100%; object-fit:cover; border-radius:4px;";
-        
-        const infoDiv = document.createElement('div');
-        infoDiv.style.cssText = "position:absolute; bottom:0; left:0; width:100%; background:rgba(255,255,255,0.8); padding:2px; font-size:0.7rem; font-weight:bold; color:#555;";
-        infoDiv.innerText = window.formatCollectionNumber(item.number);
+    function renderChunk() {
+        if (!document.getElementById('collection-grid')) return; // モーダルが閉じられていたら停止
 
-        div.appendChild(img);
-        div.appendChild(infoDiv);
-        grid.appendChild(div);
-    });
+        const fragment = document.createDocumentFragment();
+        const chunk = items.slice(currentIndex, currentIndex + CHUNK_SIZE);
+
+        chunk.forEach(item => {
+            const div = document.createElement('div');
+            // content-visibility: auto で描画負荷をブラウザに任せる
+            div.style.cssText = "background:white; border-radius:8px; padding:4px; box-shadow:0 3px 6px rgba(0,0,0,0.15); text-align:center; border:1px solid #ddd; position:relative; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; aspect-ratio: 0.68; transition:transform 0.1s; overflow:hidden; content-visibility: auto;";
+            
+            div.onclick = () => window.showCollectionDetail(item, item.originalIndex, item.number); 
+            div.onmousedown = () => div.style.transform = "scale(0.95)";
+            div.onmouseup = () => div.style.transform = "scale(1.0)";
+
+            const img = document.createElement('img');
+            img.src = item.image;
+            // ★最適化: 遅延読み込みと非同期デコード
+            img.loading = "lazy";
+            img.decoding = "async";
+            img.style.cssText = "width:100%; height:100%; object-fit:cover; border-radius:4px;";
+            
+            const infoDiv = document.createElement('div');
+            infoDiv.style.cssText = "position:absolute; bottom:0; left:0; width:100%; background:rgba(255,255,255,0.8); padding:2px; font-size:0.7rem; font-weight:bold; color:#555;";
+            infoDiv.innerText = window.formatCollectionNumber(item.number);
+
+            div.appendChild(img);
+            div.appendChild(infoDiv);
+            fragment.appendChild(div);
+        });
+
+        grid.appendChild(fragment);
+        currentIndex += CHUNK_SIZE;
+
+        if (currentIndex < items.length) {
+            // 次のフレームで続きを描画（UIブロック防止）
+            requestAnimationFrame(renderChunk);
+        }
+    }
+
+    renderChunk();
 };
 
 window.showCollectionDetail = function(item, originalIndex, collectionNumber) {
@@ -360,6 +411,7 @@ window.showCollectionDetail = function(item, originalIndex, collectionNumber) {
         mapBtnHtml = `<button onclick="window.closeCollection(); window.showMap(${item.location.lat}, ${item.location.lon});" class="mini-teach-btn" style="background:#29b6f6; width:auto; margin-left:10px;">🗺️ 地図で見る</button>`;
     }
 
+    // ★画像のみ表示、他のリスト要素は隠れているのでDOMは比較的軽い
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 90vh; display: flex; flex-direction: column;">
             <div style="flex-shrink:0; display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
@@ -371,7 +423,7 @@ window.showCollectionDetail = function(item, originalIndex, collectionNumber) {
             </div>
             
             <div style="flex:1; overflow-y:auto; background:transparent; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px;">
-                <img src="${item.image}" style="width:auto; max-width:100%; height:auto; max-height:100%; object-fit:contain; border-radius:15px; box-shadow:0 10px 25px rgba(0,0,0,0.4);">
+                <img src="${item.image}" decoding="async" style="width:auto; max-width:100%; height:auto; max-height:100%; object-fit:contain; border-radius:15px; box-shadow:0 10px 25px rgba(0,0,0,0.4);">
             </div>
             
             <div style="text-align:center; margin-top:10px; flex-shrink:0;">
@@ -391,7 +443,15 @@ window.deleteCollectionItem = async function(index) {
 
 window.closeCollection = function() {
     const modal = document.getElementById('collection-modal');
-    if (modal) modal.classList.add('hidden');
+    if (modal) {
+        modal.classList.add('hidden');
+        // ★メモリ対策: モーダルを閉じるときに中身を空にして画像を解放する
+        setTimeout(() => {
+            if (modal.classList.contains('hidden')) {
+                modal.innerHTML = "";
+            }
+        }, 300);
+    }
 };
 
 // ==========================================
@@ -442,6 +502,7 @@ window.showMap = async function(targetLat, targetLon) {
 window.renderMapMarkers = async function() {
     if (!window.mapInstance || !window.NellMemory || !currentUser) return;
     
+    // 既存マーカーのクリア
     window.mapInstance.eachLayer((layer) => {
         if (layer instanceof L.Marker) {
             window.mapInstance.removeLayer(layer);
@@ -453,12 +514,16 @@ window.renderMapMarkers = async function() {
     
     let hasMarkers = false;
     
-    collection.forEach((item, index) => {
+    // ★最適化: マーカーが多すぎる場合は最新の50件に制限する
+    const displayCollection = collection.slice(0, 50);
+    
+    displayCollection.forEach((item, index) => {
         if (item.location && item.location.lat && item.location.lon) {
             hasMarkers = true;
             
             const icon = L.divIcon({
                 className: 'custom-div-icon',
+                // アイコン画像も遅延させる
                 html: `<div class="map-pin-icon" style="background-image: url('${item.image}');"></div>`,
                 iconSize: [50, 50],
                 iconAnchor: [25, 25],
@@ -468,12 +533,11 @@ window.renderMapMarkers = async function() {
             const displayName = window.cleanDisplayString(item.name);
             const dateStr = item.date ? new Date(item.date).toLocaleDateString() : "";
             
-            // 地図のポップアップでも、カード画像を表示
             const marker = L.marker([item.location.lat, item.location.lon], { icon: icon }).addTo(window.mapInstance);
             
             marker.bindPopup(`
                 <div style="text-align:center; width: 150px;">
-                    <img src="${item.image}" style="width:100%; height:auto; border-radius:5px; margin-bottom:5px; box-shadow:0 2px 5px rgba(0,0,0,0.2);">
+                    <img src="${item.image}" loading="lazy" style="width:100%; height:auto; border-radius:5px; margin-bottom:5px; box-shadow:0 2px 5px rgba(0,0,0,0.2);">
                     <strong>${displayName}</strong><br>
                     <span style="font-size:0.8rem; color:#666;">${dateStr}</span><br>
                     <button onclick="window.openCollectionDetailByIndex(${index})" class="mini-teach-btn" style="margin-top:5px; background:#ff85a1;">📖 詳しく見る</button>
@@ -623,7 +687,7 @@ function renderProfileView(container, profile) {
             itemDiv.style.cssText = "flex-shrink: 0; width: 60px; text-align: center; font-size: 0.7rem;";
             const cleanName = window.cleanDisplayString(item.name);
             itemDiv.innerHTML = `
-                <img src="${item.image}" style="width:100%; height:auto; object-fit:cover; border-radius:4px; border:1px solid #ffb74d; aspect-ratio:0.68;">
+                <img src="${item.image}" loading="lazy" style="width:100%; height:auto; object-fit:cover; border-radius:4px; border:1px solid #ffb74d; aspect-ratio:0.68;">
                 <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%; margin-top:2px;">${cleanName}</div>
             `;
             listDiv.appendChild(itemDiv);
@@ -667,7 +731,10 @@ function renderLogView(container) {
     `;
     container.appendChild(ctrlDiv);
 
-    [...history].reverse().forEach((item, index) => {
+    // ログが多い場合は直近50件のみ表示（メモリ対策）
+    const displayHistory = [...history].reverse().slice(0, 50);
+
+    displayHistory.forEach((item, index) => {
         const originalIndex = history.length - 1 - index;
         
         const div = document.createElement('div');
@@ -741,6 +808,12 @@ document.addEventListener('click', (e) => {
 window.addLogItem = function(role, text) {
     const container = document.getElementById('log-content');
     if (!container) return;
+    
+    // ログが多すぎる場合は古いものを削除
+    if (container.children.length > 50) {
+        container.removeChild(container.firstChild);
+    }
+
     const div = document.createElement('div');
     div.className = `log-item log-${role}`;
     const name = role === 'user' ? (currentUser ? currentUser.name : 'あなた') : 'ネル先生';
@@ -896,10 +969,3 @@ window.sendHttpText = async function(context) {
 
 window.sendEmbeddedText = function() { window.sendHttpText('embedded'); };
 window.sendSimpleText = function() { window.sendHttpText('simple'); };
-
-// ==========================================
-// ★ モード選択ロジック削除
-// ==========================================
-// 前回の回答でここにあった selectMode の定義は、
-// バグの原因となるため削除しました。
-// riddleモードへの遷移は game-engine.js の showRiddleGame 内で完結させています。

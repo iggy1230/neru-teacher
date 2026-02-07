@@ -1,4 +1,4 @@
-// --- js/analyze.js (v341.0: 宿題分析中音声オフ・同期版) ---
+// --- js/analyze.js (v342.0: 競合回避・整理版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -190,155 +190,6 @@ window.selectMode = function(m) {
 };
 
 // ==========================================
-// ログ管理
-// ==========================================
-
-window.addLogItem = function(role, text) {
-    const container = document.getElementById('log-content');
-    if (!container) return;
-    const div = document.createElement('div');
-    div.className = `log-item log-${role}`;
-    const name = role === 'user' ? (currentUser ? currentUser.name : 'あなた') : 'ネル先生';
-    div.innerHTML = `<span class="log-role">${name}:</span><span>${text}</span>`;
-    container.appendChild(div);
-    container.scrollTop = container.scrollHeight;
-};
-
-window.addToSessionHistory = function(role, text) {
-    if (!window.chatSessionHistory) window.chatSessionHistory = [];
-    window.chatSessionHistory.push({ role: role, text: text });
-    if (window.chatSessionHistory.length > 10) {
-        window.chatSessionHistory.shift();
-    }
-};
-
-window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false, speak = true) {
-    if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN && window.currentMode !== 'chat') {
-        speak = false;
-    }
-
-    const gameScreen = document.getElementById('screen-game');
-    const isGameHidden = gameScreen ? gameScreen.classList.contains('hidden') : true;
-    const targetId = isGameHidden ? 'nell-text' : 'nell-text-game';
-    const el = document.getElementById(targetId);
-    
-    let cleanText = t || "";
-
-    cleanText = cleanText.split('\n').filter(line => {
-        const trimmed = line.trim();
-        if (!trimmed) return true;
-        if (/^(?:System|User|Model|Assistant|Display|Thinking)[:：]/i.test(trimmed)) return false;
-        if (/^\*\*.*\*\*$/.test(trimmed)) return false;
-        if (/^\[.*\]$/.test(trimmed)) return false;
-        const hasJapanese = /[ぁ-んァ-ン一-龠]/.test(line);
-        if (!hasJapanese && /[a-zA-Z]/.test(line)) return false;
-        return true;
-    }).join('\n');
-
-    cleanText = cleanText.replace(/(?:\[|【)DISPLAY[:：].*?(?:\]|】)/gi, "");
-    cleanText = cleanText.replace(/^\s*[\(（【\[].*?[\)）】\]]/gm, ""); 
-    cleanText = cleanText.replace(/[\(（【\[].*?[\)）】\]]\s*$/gm, "");
-    cleanText = cleanText.trim();
-    
-    if (el) el.innerText = cleanText;
-    
-    if (t && t.includes("もぐもぐ")) { if(window.safePlay) window.safePlay(window.sfxBori); }
-    
-    if (saveToMemory) { window.saveToNellMemory('nell', cleanText); }
-    
-    if (speak && typeof speakNell === 'function') {
-        let textForSpeech = cleanText.replace(/【.*?】/g, "").replace(/\[.*?\]/g, "").trim();
-        textForSpeech = textForSpeech.replace(/🐾/g, "");
-        if (textForSpeech.length > 0) {
-            await speakNell(textForSpeech, mood);
-        }
-    }
-};
-
-// ==========================================
-// 汎用テキスト送信
-// ==========================================
-
-window.sendHttpText = async function(context) {
-    let inputId;
-    if (context === 'embedded') { inputId = 'embedded-text-input'; }
-    else if (context === 'simple') { inputId = 'simple-text-input'; }
-    else return;
-
-    const input = document.getElementById(inputId);
-    if (!input) return;
-    const text = input.value.trim();
-    if (!text) return;
-
-    if (window.isAlwaysListening && window.continuousRecognition) {
-        try { window.continuousRecognition.stop(); } catch(e){}
-    }
-    
-    window.addLogItem('user', text);
-    window.addToSessionHistory('user', text);
-
-    // 記憶コンテキスト取得
-    let missingInfo = [];
-    let memoryContext = "";
-    
-    if (window.NellMemory && currentUser) {
-        try {
-            const profile = await window.NellMemory.getUserProfile(currentUser.id);
-            if (!profile.birthday) missingInfo.push("誕生日");
-            if (!profile.likes || profile.likes.length === 0) missingInfo.push("好きなもの");
-            if (!profile.weaknesses || profile.weaknesses.length === 0) missingInfo.push("苦手なもの");
-            memoryContext = await window.NellMemory.generateContextString(currentUser.id);
-        } catch(e) {
-            console.warn("Memory access error:", e);
-        }
-    }
-
-    try {
-        window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
-        
-        const res = await fetch('/chat-dialogue', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                text: text, 
-                name: currentUser ? currentUser.name : "生徒",
-                history: window.chatSessionHistory,
-                location: window.currentLocation,
-                address: window.currentAddress,
-                missingInfo: missingInfo,
-                memoryContext: memoryContext 
-            })
-        });
-
-        if(res.ok) {
-            const data = await res.json();
-            const speechText = data.speech || data.reply || "教えてあげるにゃ！";
-            window.addLogItem('nell', speechText);
-            window.addToSessionHistory('nell', speechText);
-            await window.updateNellMessage(speechText, "happy", true, true);
-            
-            let boardId = (context === 'embedded') ? 'embedded-chalkboard' : 'chalkboard-simple';
-            const embedBoard = document.getElementById(boardId);
-            if (embedBoard && data.board && data.board.trim() !== "") {
-                embedBoard.innerText = data.board;
-                embedBoard.classList.remove('hidden');
-            }
-            input.value = ""; 
-        }
-    } catch(e) {
-        console.error("Text Chat Error:", e);
-        window.updateNellMessage("ごめん、ちょっとわからなかったにゃ。", "thinking", false, true);
-    } finally {
-        if (window.isAlwaysListening) {
-             try { window.continuousRecognition.start(); } catch(e){}
-        }
-    }
-};
-
-window.sendEmbeddedText = function() { window.sendHttpText('embedded'); };
-window.sendSimpleText = function() { window.sendHttpText('simple'); };
-
-// ==========================================
 // 3. その他共通機能
 // ==========================================
 
@@ -399,14 +250,14 @@ window.setSubject = function(s) {
     window.updateNellMessage(`${window.currentSubject}の問題をみせてにゃ！`, "happy", false); 
     const btnFast = document.getElementById('mode-btn-fast');
     const btnPrec = document.getElementById('mode-btn-precision');
-    if (btnFast) { btnFast.innerText = "📷 ネル先生に宿題を見せる"; btnFast.className = "main-btn"; btnFast.style.background = "#ff85a1"; btnFast.style.width = "100%"; btnFast.onclick = null; }
+    if (btnFast) { btnFast.innerText = "📷 ネル先生に宿題を見せる"; btnFast.className = "main-btn"; btnFast.style.background = "#ff85a1"; btn.style.width = "100%"; btnFast.onclick = null; }
     if (btnPrec) btnPrec.style.display = "none";
 };
 
 window.setAnalyzeMode = function(type) { window.analysisType = 'precision'; };
 
 // ==========================================
-// ★ タイマー関連 (カウントダウン音修正)
+// ★ タイマー関連
 // ==========================================
 
 window.openTimerModal = function() {
@@ -442,7 +293,6 @@ window.toggleTimer = function() {
     } else {
         if (window.studyTimerValue <= 0) return alert("時間をセットしてにゃ！");
         
-        // iOS対策: タイマー開始時に全カウントダウン音声を「音量0」で一瞬だけ再生・停止
         if (window.sfxCountdown) {
             Object.values(window.sfxCountdown).forEach(audio => {
                 const originalVol = audio.volume;
@@ -521,7 +371,6 @@ window.showKarikariEffect = function(amount) { const container = document.queryS
 window.giveLunch = function() { 
     if (currentUser.karikari < 1) return window.updateNellMessage("カリカリがないにゃ……", "thinking", false); 
     
-    // まず「もぐもぐ」を表示・発話
     window.updateNellMessage("もぐもぐ……", "normal", false); 
     
     currentUser.karikari--; 
@@ -533,7 +382,6 @@ window.giveLunch = function() {
     fetch('/lunch-reaction', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ count: window.lunchCount, name: currentUser.name }) })
         .then(r => r.json())
         .then(d => { 
-            // サーバーからのレスポンスが返ったら即座に反映
             window.updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy", true); 
         })
         .catch(e => { 

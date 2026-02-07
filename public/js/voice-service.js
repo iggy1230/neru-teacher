@@ -1,4 +1,4 @@
-// --- js/voice-service.js (完全版 v379.0: 問題モード会話制限対応版) ---
+// --- js/voice-service.js (完全版 v387.0: iPhone認識復旧＆ダイナミックノイズゲート版) ---
 
 // ==========================================
 // 音声再生・停止
@@ -17,17 +17,22 @@ function shouldInterrupt(text) {
     if (!text) return false;
     const cleanText = text.trim();
     if (cleanText.length === 0) return false;
+    
     const stopKeywords = [
         "違う", "ちがう", "待って", "まって", "ストップ", "やめて", "うるさい", "静か", "しずか",
         "ねえ", "ちょっと", "あの", "先生", "せんせい", "あのね", "stop", "wait"
     ];
+    
     const isStopCommand = stopKeywords.some(w => cleanText.includes(w));
-    const isLongEnough = cleanText.length >= 6;
+    
+    // PC版用: 15文字以上の長いフレーズでない限り、割り込みとみなさない（相槌などはスルー）
+    const isLongEnough = cleanText.length >= 15;
+    
     return isStopCommand || isLongEnough;
 }
 
 // ==========================================
-// 常時聞き取り (Speech Recognition)
+// 常時聞き取り (Speech Recognition - PC/Android用)
 // ==========================================
 window.startAlwaysOnListening = function() {
     if (!('webkitSpeechRecognition' in window)) {
@@ -66,11 +71,17 @@ window.startAlwaysOnListening = function() {
             }
         }
 
+        // PC/Android版: ネル先生が話している最中の処理
         if (window.isNellSpeaking) {
-            if (shouldInterrupt(interimTranscript) || shouldInterrupt(finalTranscript)) {
+            const textToCheck = finalTranscript || interimTranscript;
+            
+            if (shouldInterrupt(textToCheck)) {
                 console.log("[Interruption] Stopping audio.");
                 if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
                 window.stopAudioPlayback();
+            } else {
+                // 短い発言（相槌など）なら無視
+                return; 
             }
         }
 
@@ -130,7 +141,7 @@ window.startAlwaysOnListening = function() {
                 currentRiddleData = window.currentRiddle;
             } else if (window.currentMode === 'minitest' && window.currentMinitest) {
                 currentMinitestData = window.currentMinitest;
-            } else if (window.currentMode === 'kanji' && window.currentMinitest) { // 漢字もminitest変数で代用している場合
+            } else if (window.currentMode === 'kanji' && window.currentMinitest) { 
                 currentMinitestData = window.currentMinitest;
             }
 
@@ -149,8 +160,8 @@ window.startAlwaysOnListening = function() {
                         missingInfo: missingInfo,
                         memoryContext: memoryContext,
                         currentQuizData: currentQuizData,
-                        currentRiddleData: currentRiddleData, // ★追加
-                        currentMinitestData: currentMinitestData // ★追加
+                        currentRiddleData: currentRiddleData, 
+                        currentMinitestData: currentMinitestData
                     })
                 });
                 
@@ -212,7 +223,7 @@ window.stopAlwaysOnListening = function() {
 };
 
 // ==========================================
-// リアルタイムチャット (WebSocket)
+// リアルタイムチャット (WebSocket - iPhone/Safari用)
 // ==========================================
 
 window.stopLiveChat = function() {
@@ -482,9 +493,27 @@ window.startMicrophone = async function() {
         const source = window.audioContext.createMediaStreamSource(window.mediaStream); 
         window.workletNode = new AudioWorkletNode(window.audioContext, 'pcm-processor'); 
         source.connect(window.workletNode); 
+        
+        // ★修正: ダイナミック・ノイズゲート
         window.workletNode.port.onmessage = (event) => { 
             if (window.isMicMuted) return;
             if (!window.liveSocket || window.liveSocket.readyState !== WebSocket.OPEN) return; 
+            
+            // 音量（RMS）を簡易計算
+            const float32Data = event.data;
+            let sum = 0;
+            for (let i = 0; i < float32Data.length; i += 4) { // 処理軽減のため間引き
+                sum += float32Data[i] * float32Data[i];
+            }
+            const rms = Math.sqrt(sum / (float32Data.length / 4));
+
+            // ★ここが重要: 
+            // ネル先生が話している時は、閾値を高くする（＝かなり大きな声じゃないと反応しない）
+            // 普段は低くして反応を良くする
+            const threshold = window.isNellSpeaking ? 0.02 : 0.002;
+
+            if (rms < threshold) return;
+
             const downsampled = window.downsampleBuffer(event.data, window.audioContext.sampleRate, 16000); 
             window.liveSocket.send(JSON.stringify({ base64Audio: window.arrayBufferToBase64(window.floatTo16BitPCM(downsampled)) })); 
         }; 

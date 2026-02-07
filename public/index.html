@@ -1,4 +1,4 @@
-<!-- index.html (完全版 v378.0: ポケモンクイズ追加版) -->
+<!-- index.html (完全版 v385.0: クイズボタン配置・会話中断抑制対応版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -68,7 +68,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v378.0-Pokemon</div>
+            <div class="version-tag">Build: v385.0-VoiceFix</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -227,7 +227,7 @@
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-danmaku"></div><div class="chat-bubble"><p id="nell-text-danmaku">ロボット掃除機からカリカリを守るにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px; color:#d32f2f;">🤖 VS ロボット掃除機</h2>
             <div class="game-container">
-                <canvas id="danmaku-canvas" width="340" height="400" style="background:#e0e0e0; border:4px solid #555; border-radius:10px; box-shadow:0 4px 10px rgba(0,0,0,0.3); touch-action:none;"></canvas>
+                <canvas id="danmaku-canvas" width="340" height="400" style="background:#fff9c4; border:4px solid #555; border-radius:10px; box-shadow:0 4px 10px rgba(0,0,0,0.3); touch-action:none;"></canvas>
                 <div class="game-ui">
                     <p>スコア: <span id="danmaku-score">0</span></p>
                     <button id="start-danmaku-btn" onclick="startDanmakuGame()" class="main-btn red-btn" style="width: auto;">スタート！</button>
@@ -252,10 +252,10 @@
                     <button id="btn-quiz-entertainment" onclick="showLevelSelection('芸能・スポーツ')" class="main-btn green-btn">芸能・スポーツ</button>
                     <button id="btn-quiz-history" onclick="showLevelSelection('歴史・地理・社会')" class="main-btn purple-btn">歴史・地理・社会</button>
                     <button id="btn-quiz-game" onclick="showLevelSelection('ゲーム')" class="main-btn yellow-btn">ゲーム</button>
-                    <!-- ★追加: マイクラ・ロブロックス・ポケモンボタン -->
+                    <!-- ★修正: 配置変更 -->
                     <button id="btn-quiz-minecraft" onclick="showLevelSelection('マインクラフト')" class="main-btn green-btn" style="background:#4caf50;">マインクラフト</button>
                     <button id="btn-quiz-roblox" onclick="showLevelSelection('ロブロックス')" class="main-btn red-btn" style="background:#e53935;">ロブロックス</button>
-                    <button id="btn-quiz-pokemon" onclick="showLevelSelection('ポケモン')" class="main-btn blue-btn" style="background:#0288d1; grid-column: span 2;">ポケモン</button>
+                    <button id="btn-quiz-pokemon" onclick="showLevelSelection('ポケモン')" class="main-btn blue-btn" style="background:#0288d1;">ポケモン</button>
                 </div>
             </div>
 

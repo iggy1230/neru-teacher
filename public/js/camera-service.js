@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v361.0: iPhoneメモリ対策・軽量化版) ---
+// --- js/camera-service.js (v381.0: メモリ最適化・クリーンアップ強化版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -45,7 +45,11 @@ window.stopPreviewCamera = function() {
     document.body.classList.remove('camera-active');
 
     if (window.previewStream) {
-        window.previewStream.getTracks().forEach(t => t.stop());
+        // ★最適化: トラックを完全に停止し、参照を切る
+        window.previewStream.getTracks().forEach(t => {
+            t.stop();
+            t.enabled = false;
+        });
         window.previewStream = null;
     }
     ['live-chat-video', 'live-chat-video-embedded', 'live-chat-video-simple', 'live-chat-video-free'].forEach(vid => {
@@ -53,7 +57,7 @@ window.stopPreviewCamera = function() {
         if(v) {
             v.pause();
             v.srcObject = null;
-            v.load();
+            v.load(); // ★重要: メモリ解放のためにload()を呼ぶ
         }
     });
     ['live-chat-video-container', 'live-chat-video-container-embedded', 'live-chat-video-container-simple', 'live-chat-video-container-free'].forEach(cid => {
@@ -123,6 +127,10 @@ window.createTreasureImage = function(sourceCanvas) {
     
     ctx.drawImage(sourceCanvas, sx, sy, size, size, 0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
     
+    // ★最適化: 使い終わったcanvasを即座に縮小
+    sourceCanvas.width = 1;
+    sourceCanvas.height = 1;
+
     return canvas.toDataURL('image/jpeg', 0.7);
 };
 
@@ -138,7 +146,14 @@ window.processImageForAI = function(sourceCanvas) {
     } 
     const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h; 
     const ctx = canvas.getContext('2d'); ctx.drawImage(sourceCanvas, 0, 0, w, h); 
-    return canvas.toDataURL('image/jpeg', QUALITY); 
+    
+    const dataUrl = canvas.toDataURL('image/jpeg', QUALITY);
+    
+    // ★最適化: Canvasメモリの即時解放
+    canvas.width = 1; canvas.height = 1;
+    sourceCanvas.width = 1; sourceCanvas.height = 1;
+    
+    return dataUrl; 
 };
 
 // GPS取得ヘルパー
@@ -520,7 +535,13 @@ window.performPerspectiveCrop = function(sourceCanvas, points) {
     if (w < 1) w = 1; if (h < 1) h = 1; 
     const tempCv = document.createElement('canvas'); tempCv.width = w; tempCv.height = h; 
     const ctx = tempCv.getContext('2d'); ctx.drawImage(sourceCanvas, minX, minY, w, h, 0, 0, w, h); 
-    return window.processImageForAI(tempCv).split(',')[1]; 
+    
+    const result = window.processImageForAI(tempCv).split(',')[1];
+    
+    // ★最適化: 一時Canvasをクリア
+    tempCv.width = 1; tempCv.height = 1;
+    
+    return result; 
 };
 
 // ==========================================
