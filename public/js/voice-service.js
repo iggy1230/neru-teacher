@@ -1,4 +1,4 @@
-// --- js/voice-service.js (完全版 v387.0: iPhone認識復旧＆ダイナミックノイズゲート版) ---
+// --- js/voice-service.js (完全版 v388.0: 自己ループ防止・エコー対策強化版) ---
 
 // ==========================================
 // 音声再生・停止
@@ -18,6 +18,21 @@ function shouldInterrupt(text) {
     const cleanText = text.trim();
     if (cleanText.length === 0) return false;
     
+    // 現在のネル先生のセリフを取得（自己発話判定用）
+    let currentNellText = "";
+    const nellTextEl = document.getElementById('nell-text') || document.getElementById('nell-text-game') || document.getElementById('nell-text-quiz') || document.getElementById('nell-text-riddle') || document.getElementById('nell-text-minitest');
+    if (nellTextEl) {
+        currentNellText = nellTextEl.innerText.replace(/\s+/g, "");
+    }
+
+    // ★自己発話フィルター: 認識されたテキストが、現在のセリフに含まれていたら「自分の声」とみなして無視（中断しない）
+    // (例: セリフ「からあげ弁当だにゃ」 -> 認識「からあげ弁当」 -> 無視)
+    const cleanInput = cleanText.replace(/\s+/g, "");
+    if (currentNellText.length > 0 && currentNellText.includes(cleanInput)) {
+        console.log(`[Echo Cancel] Self-voice detected: "${cleanInput}" in "${currentNellText}"`);
+        return false; // 中断しない
+    }
+
     const stopKeywords = [
         "違う", "ちがう", "待って", "まって", "ストップ", "やめて", "うるさい", "静か", "しずか",
         "ねえ", "ちょっと", "あの", "先生", "せんせい", "あのね", "stop", "wait"
@@ -25,10 +40,34 @@ function shouldInterrupt(text) {
     
     const isStopCommand = stopKeywords.some(w => cleanText.includes(w));
     
-    // PC版用: 15文字以上の長いフレーズでない限り、割り込みとみなさない（相槌などはスルー）
+    // 15文字以上の長いフレーズなら割り込み許可
     const isLongEnough = cleanText.length >= 15;
     
     return isStopCommand || isLongEnough;
+}
+
+// 自己発話判定（会話送信用）
+function isSelfEcho(text) {
+    if (!text) return false;
+    let currentNellText = "";
+    // 現在表示中のすべてのネル先生セリフ要素をチェック
+    const ids = ['nell-text', 'nell-text-game', 'nell-text-quiz', 'nell-text-riddle', 'nell-text-minitest'];
+    for (const id of ids) {
+        const el = document.getElementById(id);
+        if (el && el.offsetParent !== null) { // 表示されているものだけ
+            currentNellText = el.innerText.replace(/\s+/g, "");
+            break; 
+        }
+    }
+    
+    const cleanInput = text.replace(/\s+/g, "");
+    // 入力がセリフの一部、またはセリフが入力の一部ならエコーとみなす
+    if (currentNellText.length > 0) {
+        if (currentNellText.includes(cleanInput) || cleanInput.includes(currentNellText)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // ==========================================
@@ -80,13 +119,19 @@ window.startAlwaysOnListening = function() {
                 if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
                 window.stopAudioPlayback();
             } else {
-                // 短い発言（相槌など）なら無視
-                return; 
+                return; // 割り込み条件を満たさないなら無視
             }
         }
 
         if (finalTranscript && finalTranscript.trim() !== "") {
             const text = finalTranscript;
+            
+            // ★自己発話（エコー）チェック
+            if (isSelfEcho(text)) {
+                console.log(`[Ignored] Self-echo detected: ${text}`);
+                return;
+            }
+
             console.log(`[User Said] ${text}`);
 
             // 1. クイズモードの場合の回答判定
@@ -494,25 +539,25 @@ window.startMicrophone = async function() {
         window.workletNode = new AudioWorkletNode(window.audioContext, 'pcm-processor'); 
         source.connect(window.workletNode); 
         
-        // ★修正: ダイナミック・ノイズゲート
         window.workletNode.port.onmessage = (event) => { 
             if (window.isMicMuted) return;
             if (!window.liveSocket || window.liveSocket.readyState !== WebSocket.OPEN) return; 
             
-            // 音量（RMS）を簡易計算
+            // ★【iPhone対策】ネル先生が話している最中は、マイクデータをサーバーに送らない（エコーバック防止）
+            // マイク停止ではなくデータ送信だけ止めるので、話し終われば即再開される
+            if (window.isNellSpeaking) {
+                return;
+            }
+
+            // ノイズゲート処理 (小さな音は無視)
             const float32Data = event.data;
             let sum = 0;
-            for (let i = 0; i < float32Data.length; i += 4) { // 処理軽減のため間引き
+            for (let i = 0; i < float32Data.length; i += 4) { 
                 sum += float32Data[i] * float32Data[i];
             }
             const rms = Math.sqrt(sum / (float32Data.length / 4));
-
-            // ★ここが重要: 
-            // ネル先生が話している時は、閾値を高くする（＝かなり大きな声じゃないと反応しない）
-            // 普段は低くして反応を良くする
-            const threshold = window.isNellSpeaking ? 0.02 : 0.002;
-
-            if (rms < threshold) return;
+            
+            if (rms < 0.005) return; // 閾値調整
 
             const downsampled = window.downsampleBuffer(event.data, window.audioContext.sampleRate, 16000); 
             window.liveSocket.send(JSON.stringify({ base64Audio: window.arrayBufferToBase64(window.floatTo16BitPCM(downsampled)) })); 

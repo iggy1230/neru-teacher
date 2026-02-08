@@ -1,4 +1,4 @@
-// --- js/game-engine.js (完全版 v384.0: 画像パス修正・キャッシュ対策版) ---
+// --- js/game-engine.js (完全版 v390.2: 神経衰弱ユーザー名対応版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -825,7 +825,7 @@ window.finishQuizSet = function() {
 };
 
 // ==========================================
-// 4. ★新規: ネル先生のなぞなぞ (修正版)
+// 4. ネル先生のなぞなぞ
 // ==========================================
 
 let riddleState = {
@@ -1277,4 +1277,396 @@ window.checkMinitestAnswer = function(selectedAnswer, btnElement) {
         expText.innerText = ""; 
         expArea.classList.remove('hidden');
     }
+};
+
+// ==========================================
+// 7. お宝神経衰弱 (Memory Game)
+// ==========================================
+
+let memoryGameState = {
+    cards: [],
+    flippedCards: [],
+    nellMemory: {}, // { index: cardId } - ネル先生が覚えているカード
+    turn: 'player', // 'player' or 'nell'
+    difficulty: 'weak',
+    scores: { player: 0, nell: 0 },
+    isProcessing: false,
+    settings: {
+        weak: { memoryRate: 0.1, errorRate: 0.5, reward: 10 },
+        normal: { memoryRate: 0.5, errorRate: 0.2, reward: 20 },
+        strong: { memoryRate: 0.9, errorRate: 0.05, reward: 50 }
+    }
+};
+
+window.showMemoryGame = function() {
+    window.switchScreen('screen-memory-game');
+    document.getElementById('memory-difficulty-select').classList.remove('hidden');
+    document.getElementById('memory-game-board').classList.add('hidden');
+    window.updateNellMessage("お宝図鑑のカードで神経衰弱勝負にゃ！強さを選んでにゃ！", "excited");
+    
+    // 既存のモーダルを隠す
+    document.getElementById('memory-match-modal').classList.add('hidden');
+};
+
+window.startMemoryGame = async function(difficulty) {
+    if (!currentUser) return;
+    
+    // プレイヤー名の表示更新 (HTML側IDへ反映)
+    const playerName = currentUser.name || "ユーザー";
+    const nameEl = document.getElementById('memory-name-player');
+    if(nameEl) nameEl.innerText = playerName;
+
+    memoryGameState.difficulty = difficulty;
+    memoryGameState.scores = { player: 0, nell: 0 };
+    memoryGameState.turn = 'player';
+    memoryGameState.isProcessing = false;
+    memoryGameState.flippedCards = [];
+    memoryGameState.nellMemory = {};
+    
+    document.getElementById('memory-difficulty-select').classList.add('hidden');
+    document.getElementById('memory-game-board').classList.remove('hidden');
+    
+    document.getElementById('memory-score-player').innerText = '0';
+    document.getElementById('memory-score-nell').innerText = '0';
+    document.getElementById('memory-turn-indicator').innerText = `${playerName}さんの番だにゃ！`;
+    
+    window.updateNellMessage("カードを配るにゃ！", "normal");
+    
+    await window.createCardDeck();
+};
+
+window.createCardDeck = async function() {
+    const grid = document.getElementById('memory-grid');
+    grid.innerHTML = '';
+    
+    // お宝図鑑からカードを取得
+    let collection = [];
+    if (window.NellMemory) {
+        const profile = await window.NellMemory.getUserProfile(currentUser.id);
+        if (profile && profile.collection) {
+            collection = profile.collection;
+        }
+    }
+    
+    // ★重要: 所持カードが多い場合は、所持カードのみからランダム選出する
+    // コレクションをシャッフルしてから候補を選ぶ
+    let availableItems = [...collection];
+    availableItems.sort(() => Math.random() - 0.5);
+    
+    let selectedItems = [];
+    
+    // ★修正: ダミー画像を確実に存在するパスに変更
+    const dummyImages = [
+        'assets/images/characters/nell-normal.png',
+        'assets/images/characters/nell-happy.png', // 推測: なければnormalにフォールバック
+        'assets/images/characters/nell-thinking.png',
+        'assets/images/characters/nell-excited.png',
+        'assets/images/items/student-id-base.png',
+        'assets/images/characters/nell-kokugo.png',
+        'assets/images/characters/nell-sansu.png',
+        'assets/images/characters/nell-rika.png',
+        'assets/images/characters/nell-shakai.png'
+    ];
+    
+    for (let i = 0; i < 8; i++) {
+        let item;
+        if (i < availableItems.length) {
+            // 所持カードを使用
+            item = availableItems[i];
+        } else {
+            // 足りない分はダミー生成
+            const dummyIdx = i % dummyImages.length;
+            item = {
+                name: `お宝(仮)${i+1}`,
+                image: dummyImages[dummyIdx],
+                description: "まだ見つけていないお宝だにゃ。",
+                dummy: true
+            };
+        }
+        // ペアとして2つ追加
+        selectedItems.push({ ...item, id: i });
+        selectedItems.push({ ...item, id: i });
+    }
+    
+    // シャッフル
+    selectedItems.sort(() => Math.random() - 0.5);
+    
+    memoryGameState.cards = selectedItems.map((item, index) => ({
+        ...item,
+        index: index,
+        matched: false,
+        flipped: false
+    }));
+    
+    // カード描画
+    memoryGameState.cards.forEach(card => {
+        const cardEl = document.createElement('div');
+        cardEl.className = 'memory-card';
+        cardEl.id = `memory-card-${card.index}`;
+        
+        // ★修正: onclick属性ではなく、リスナーでバインド (変数のキャプチャミス防止)
+        cardEl.addEventListener('click', () => {
+            window.flipCard(card.index);
+        });
+        
+        // フォールバック付き画像表示
+        const imgSrc = card.image || 'assets/images/characters/nell-normal.png';
+        
+        cardEl.innerHTML = `
+            <div class="memory-card-inner">
+                <div class="memory-card-front">
+                    <div class="memory-card-img-container">
+                        <img src="${imgSrc}" class="memory-card-img" onerror="this.src='assets/images/characters/nell-normal.png'">
+                    </div>
+                    <div class="memory-card-name">${card.name}</div>
+                </div>
+                <div class="memory-card-back">🐾</div>
+            </div>
+        `;
+        grid.appendChild(cardEl);
+    });
+};
+
+window.flipCard = function(index) {
+    if (memoryGameState.isProcessing) return;
+    if (memoryGameState.turn !== 'player') return;
+    
+    const card = memoryGameState.cards[index];
+    if (card.flipped || card.matched) return;
+    
+    // カードをめくる
+    window.performFlip(index);
+    
+    if (memoryGameState.flippedCards.length === 2) {
+        window.checkMatch();
+    }
+};
+
+window.performFlip = function(index) {
+    const card = memoryGameState.cards[index];
+    card.flipped = true;
+    
+    const el = document.getElementById(`memory-card-${index}`);
+    if (el) el.classList.add('flipped');
+    
+    memoryGameState.flippedCards.push(card);
+    
+    if(window.safePlay) window.safePlay(window.sfxBtn);
+    
+    // ネル先生が覚える (確率判定)
+    const settings = memoryGameState.settings[memoryGameState.difficulty];
+    if (Math.random() < settings.memoryRate) {
+        memoryGameState.nellMemory[index] = card.id;
+    }
+};
+
+window.checkMatch = async function() {
+    memoryGameState.isProcessing = true;
+    
+    const [card1, card2] = memoryGameState.flippedCards;
+    const playerName = currentUser ? currentUser.name : 'ユーザー';
+    
+    if (card1.id === card2.id) {
+        // 正解！
+        card1.matched = true;
+        card2.matched = true;
+        
+        if (window.safePlay) window.safePlay(window.sfxHirameku);
+        
+        if (memoryGameState.turn === 'player') {
+            memoryGameState.scores.player++;
+            document.getElementById('memory-score-player').innerText = memoryGameState.scores.player;
+            window.updateNellMessage(`「${card1.name}」をゲットだにゃ！${playerName}さんすごいにゃ！`, "happy");
+        } else {
+            memoryGameState.scores.nell++;
+            document.getElementById('memory-score-nell').innerText = memoryGameState.scores.nell;
+            window.updateNellMessage(`ネル先生が「${card1.name}」をゲットしたにゃ！`, "excited");
+        }
+        
+        // ★解説演出
+        await window.showMatchModal(card1);
+        
+        memoryGameState.flippedCards = [];
+        
+        // ゲーム終了判定
+        const allMatched = memoryGameState.cards.every(c => c.matched);
+        if (allMatched) {
+            window.endMemoryGame();
+        } else {
+            // 正解した場合は続けてプレイ
+            memoryGameState.isProcessing = false;
+            if (memoryGameState.turn === 'nell') {
+                setTimeout(window.nellTurn, 1000);
+            }
+        }
+        
+    } else {
+        // 不正解
+        if (window.safePlay) window.safePlay(window.sfxBatu);
+        
+        // ★3秒待つ
+        setTimeout(() => {
+            const el1 = document.getElementById(`memory-card-${card1.index}`);
+            const el2 = document.getElementById(`memory-card-${card2.index}`);
+            if(el1) el1.classList.remove('flipped');
+            if(el2) el2.classList.remove('flipped');
+            
+            card1.flipped = false;
+            card2.flipped = false;
+            
+            memoryGameState.flippedCards = [];
+            
+            // ターン交代
+            memoryGameState.turn = (memoryGameState.turn === 'player') ? 'nell' : 'player';
+            const indicator = document.getElementById('memory-turn-indicator');
+            
+            if (memoryGameState.turn === 'nell') {
+                indicator.innerText = "ネル先生の番だにゃ...";
+                window.updateNellMessage("次はネル先生の番だにゃ。", "normal");
+                memoryGameState.isProcessing = false; // 一旦解除しないとnellTurnが動かないかも？いやnellTurn内でフラグ管理はしていない
+                setTimeout(window.nellTurn, 1000);
+            } else {
+                indicator.innerText = `${playerName}さんの番だにゃ！`;
+                window.updateNellMessage(`${playerName}さんの番だにゃ。`, "normal");
+                memoryGameState.isProcessing = false;
+            }
+            
+        }, 3000);
+    }
+};
+
+window.nellTurn = function() {
+    if (memoryGameState.turn !== 'nell') return;
+    memoryGameState.isProcessing = true;
+    
+    // 未マッチのカードを探す
+    const availableCards = memoryGameState.cards.filter(c => !c.matched);
+    if (availableCards.length === 0) return;
+    
+    const settings = memoryGameState.settings[memoryGameState.difficulty];
+    
+    // AI思考: ペアを知っているか？
+    let pairToFlip = null;
+    
+    // 記憶にあるカードからペアを探す
+    const knownIndices = Object.keys(memoryGameState.nellMemory).map(Number).filter(idx => !memoryGameState.cards[idx].matched);
+    
+    // ペア探索
+    for (let i = 0; i < knownIndices.length; i++) {
+        for (let j = i + 1; j < knownIndices.length; j++) {
+            const idx1 = knownIndices[i];
+            const idx2 = knownIndices[j];
+            if (memoryGameState.cards[idx1].id === memoryGameState.cards[idx2].id) {
+                // ペア発見！ミス確率判定
+                if (Math.random() > settings.errorRate) {
+                    pairToFlip = [idx1, idx2];
+                }
+                break;
+            }
+        }
+        if (pairToFlip) break;
+    }
+    
+    // 1枚目を決定
+    let firstIndex;
+    if (pairToFlip) {
+        firstIndex = pairToFlip[0];
+    } else {
+        // ランダム
+        const unknownCards = availableCards.filter(c => !knownIndices.includes(c.index));
+        if (unknownCards.length > 0) {
+            firstIndex = unknownCards[Math.floor(Math.random() * unknownCards.length)].index;
+        } else {
+            firstIndex = availableCards[Math.floor(Math.random() * availableCards.length)].index;
+        }
+    }
+    
+    window.performFlip(firstIndex);
+    
+    setTimeout(() => {
+        // 2枚目を決定
+        let secondIndex;
+        if (pairToFlip) {
+            secondIndex = pairToFlip[1];
+        } else {
+            // 1枚目と同じIDのカードを記憶しているか？
+            const firstCard = memoryGameState.cards[firstIndex];
+            const matchInMemory = knownIndices.find(idx => idx !== firstIndex && memoryGameState.cards[idx].id === firstCard.id);
+            
+            if (matchInMemory && Math.random() > settings.errorRate) {
+                secondIndex = matchInMemory;
+            } else {
+                // ランダム (1枚目以外)
+                const others = availableCards.filter(c => c.index !== firstIndex);
+                secondIndex = others[Math.floor(Math.random() * others.length)].index;
+            }
+        }
+        
+        window.performFlip(secondIndex);
+        
+        window.checkMatch();
+        
+    }, 1000);
+};
+
+window.showMatchModal = function(card) {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('memory-match-modal');
+        const img = document.getElementById('memory-match-img');
+        
+        img.src = card.image;
+        
+        modal.classList.remove('hidden');
+        
+        // ネル先生が読み上げ
+        // 解説文がなければ名前だけ
+        const textToSpeak = `「${card.name}」ゲットだにゃ！ ${card.description}`;
+        
+        // スキップ用関数
+        window.skipMemoryExplanation = () => {
+            window.cancelNellSpeech();
+            modal.classList.add('hidden');
+            resolve();
+            window.skipMemoryExplanation = null; // cleanup
+        };
+        
+        window.updateNellMessage(textToSpeak, "happy", false, true).then(() => {
+            // 読み上げ終わったら少し待って閉じる
+            if (!modal.classList.contains('hidden')) {
+                setTimeout(() => {
+                    if (window.skipMemoryExplanation) window.skipMemoryExplanation();
+                }, 1000);
+            }
+        });
+    });
+};
+
+window.endMemoryGame = function() {
+    const pScore = memoryGameState.scores.player;
+    const nScore = memoryGameState.scores.nell;
+    const settings = memoryGameState.settings[memoryGameState.difficulty];
+    const playerName = currentUser ? currentUser.name : 'ユーザー';
+    
+    let msg = "";
+    let mood = "normal";
+    
+    if (pScore > nScore) {
+        const reward = pScore * settings.reward;
+        msg = `${playerName}さんの勝ちだにゃ！すごいにゃ！報酬としてカリカリ${reward}個あげるにゃ！`;
+        mood = "excited";
+        window.giveGameReward(reward);
+    } else if (pScore < nScore) {
+        msg = `ネル先生の勝ちだにゃ！まだまだだにゃ〜。参加賞でカリカリ10個あげるにゃ。`;
+        mood = "happy";
+        window.giveGameReward(10);
+    } else {
+        const reward = pScore * settings.reward;
+        msg = `引き分けだにゃ！いい勝負だったにゃ！カリカリ${reward}個あげるにゃ！`;
+        mood = "happy";
+        window.giveGameReward(reward);
+    }
+    
+    window.updateNellMessage(msg, mood, false, true);
+    alert(msg);
+    window.showMemoryGame(); // メニューに戻る
 };
