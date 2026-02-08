@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (完全版 v381.0: ロビー遷移時の完全停止対応版) ---
+// --- js/ui/ui.js (完全版 v391.1: お宝図鑑重なり解消版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -253,7 +253,7 @@ window.updateProgress = function(p) {
 };
 
 // ==========================================
-// 図鑑 (Collection) - ★最適化済み
+// 図鑑 (Collection) - ★グリッド表示（重なりなし）に変更
 // ==========================================
 
 window.openCollectionDetailByIndex = function(originalIndex) {
@@ -300,7 +300,7 @@ window.showCollection = async function() {
                 </div>
             </div>
 
-            <!-- カード型グリッド -->
+            <!-- カード型グリッド: 重なり廃止のためpadding調整 -->
             <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap:10px; flex: 1; overflow-y:auto; padding:5px;">
                 <p style="width:100%; text-align:center;">読み込み中にゃ...</p>
             </div>
@@ -313,7 +313,7 @@ window.showCollection = async function() {
     window.renderCollectionList();
 };
 
-// ★改善: 少しずつ描画する（チャンクレンダリング）でフリーズを防止
+// ★改善: 少しずつ描画する（チャンクレンダリング）＋標準グリッド表示
 window.renderCollectionList = async function() {
     const grid = document.getElementById('collection-grid');
     const countBadge = document.getElementById('collection-count-badge');
@@ -331,10 +331,8 @@ window.renderCollectionList = async function() {
         return;
     }
 
-    // ソート用のデータ作成（軽量化）
+    // ソート用のデータ作成
     let items = collection.map((item, index) => ({
-        // 画像はBase64で重いので、この時点では参照のみにしておく手もあるが、
-        // 既存ロジックを大きく変えずにレンダリング側で対処する。
         ...item,
         originalIndex: index,
         number: totalCount - index
@@ -365,19 +363,44 @@ window.renderCollectionList = async function() {
 
         chunk.forEach(item => {
             const div = document.createElement('div');
-            // content-visibility: auto で描画負荷をブラウザに任せる
-            div.style.cssText = "background:white; border-radius:8px; padding:4px; box-shadow:0 3px 6px rgba(0,0,0,0.15); text-align:center; border:1px solid #ddd; position:relative; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; aspect-ratio: 0.68; transition:transform 0.1s; overflow:hidden; content-visibility: auto;";
             
-            div.onclick = () => window.showCollectionDetail(item, item.originalIndex, item.number); 
+            // ★修正: 重ね合わせ(margin-bottomマイナス)を完全に廃止し、標準的なカード表示にする
+            // タイトルが隠れる問題を根本解決
+            div.style.cssText = `
+                background: white;
+                border-radius: 8px;
+                padding: 4px;
+                box-shadow: 0 3px 6px rgba(0,0,0,0.15);
+                text-align: center;
+                border: 1px solid #ddd;
+                position: relative;
+                cursor: pointer;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: flex-start;
+                aspect-ratio: 0.68;
+                transition: transform 0.1s;
+                overflow: hidden;
+                margin-bottom: 0; /* ★マージンリセット */
+                z-index: 1;
+            `;
+            
             div.onmousedown = () => div.style.transform = "scale(0.95)";
             div.onmouseup = () => div.style.transform = "scale(1.0)";
+            
+            div.onclick = () => window.showCollectionDetail(item, item.originalIndex, item.number); 
 
             const img = document.createElement('img');
             img.src = item.image;
-            // ★最適化: 遅延読み込みと非同期デコード
             img.loading = "lazy";
             img.decoding = "async";
             img.style.cssText = "width:100%; height:100%; object-fit:cover; border-radius:4px;";
+            
+            // 画像エラー時はカードを非表示にする
+            img.onerror = () => {
+                div.style.display = 'none';
+            };
             
             const infoDiv = document.createElement('div');
             infoDiv.style.cssText = "position:absolute; bottom:0; left:0; width:100%; background:rgba(255,255,255,0.8); padding:2px; font-size:0.7rem; font-weight:bold; color:#555;";
@@ -392,7 +415,6 @@ window.renderCollectionList = async function() {
         currentIndex += CHUNK_SIZE;
 
         if (currentIndex < items.length) {
-            // 次のフレームで続きを描画（UIブロック防止）
             requestAnimationFrame(renderChunk);
         }
     }
@@ -411,7 +433,6 @@ window.showCollectionDetail = function(item, originalIndex, collectionNumber) {
         mapBtnHtml = `<button onclick="window.closeCollection(); window.showMap(${item.location.lat}, ${item.location.lon});" class="mini-teach-btn" style="background:#29b6f6; width:auto; margin-left:10px;">🗺️ 地図で見る</button>`;
     }
 
-    // ★画像のみ表示、他のリスト要素は隠れているのでDOMは比較的軽い
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 90vh; display: flex; flex-direction: column;">
             <div style="flex-shrink:0; display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">

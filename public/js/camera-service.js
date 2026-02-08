@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v381.0: メモリ最適化・クリーンアップ強化版) ---
+// --- js/camera-service.js (完全版 v391.0: アルバム登録対応版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -113,6 +113,103 @@ window.toggleTreasureCamera = function() {
     }
 };
 
+// ★追加: ファイルアップロードボタンのハンドラ
+window.uploadTreasureImage = function() {
+    const fileInput = document.getElementById('treasure-upload-input');
+    if (fileInput) fileInput.click();
+};
+
+// ★追加: EXIFから緯度経度を取得するヘルパー
+function convertDMSToDD(degrees, minutes, seconds, direction) {
+    let dd = degrees + minutes / 60 + seconds / (60 * 60);
+    if (direction == "S" || direction == "W") {
+        dd = dd * -1;
+    }
+    return dd;
+}
+
+function getGpsFromExif(file) {
+    return new Promise((resolve) => {
+        // EXIF.js が読み込まれているか確認
+        if (typeof EXIF === 'undefined') {
+            console.warn("EXIF-js not loaded.");
+            resolve(null);
+            return;
+        }
+        
+        EXIF.getData(file, function() {
+            const lat = EXIF.getTag(this, "GPSLatitude");
+            const lon = EXIF.getTag(this, "GPSLongitude");
+            const latRef = EXIF.getTag(this, "GPSLatitudeRef");
+            const lonRef = EXIF.getTag(this, "GPSLongitudeRef");
+            
+            if (lat && lon && latRef && lonRef) {
+                const decimalLat = convertDMSToDD(lat[0], lat[1], lat[2], latRef);
+                const decimalLon = convertDMSToDD(lon[0], lon[1], lon[2], lonRef);
+                console.log("EXIF GPS Found:", decimalLat, decimalLon);
+                resolve({ lat: decimalLat, lon: decimalLon, accuracy: 20 }); // 精度は適当に
+            } else {
+                resolve(null);
+            }
+        });
+    });
+}
+
+// ★追加: ファイル選択時の処理
+window.handleTreasureFile = async function(file) {
+    if (!file) return;
+    
+    // UI更新
+    const btn = document.getElementById('upload-treasure-btn');
+    if (btn) {
+        btn.innerHTML = "<span>📡</span> 解析中...";
+        btn.style.backgroundColor = "#ccc";
+        btn.disabled = true;
+    }
+    
+    // GPS取得 (EXIF)
+    let locationData = null;
+    try {
+        locationData = await getGpsFromExif(file);
+    } catch(e) {
+        console.warn("EXIF parse error:", e);
+    }
+    
+    // 画像読み込みとリサイズ
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        const img = new Image();
+        img.onload = async () => {
+            const canvas = document.createElement('canvas');
+            const MAX_WIDTH = 800;
+            const scale = Math.min(1, MAX_WIDTH / img.width);
+            canvas.width = img.width * scale;
+            canvas.height = img.height * scale;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            
+            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6);
+            const base64Data = compressedDataUrl.split(',')[1];
+            
+            // 共通解析ロジックへ
+            await window.analyzeTreasureImage(base64Data, locationData);
+            
+            // UI戻す
+            if (btn) {
+                btn.innerHTML = "<span>📁</span> アルバム";
+                btn.style.backgroundColor = "#4a90e2"; 
+                btn.disabled = false;
+            }
+            // inputリセット
+            const fileInput = document.getElementById('treasure-upload-input');
+            if(fileInput) fileInput.value = '';
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+};
+
+
 window.createTreasureImage = function(sourceCanvas) {
     // 図鑑用サムネイルは小さくて良い
     const OUTPUT_SIZE = 300; 
@@ -184,10 +281,8 @@ const getLocation = () => {
     });
 };
 
-// iPhoneでの音声・登録不具合対策
-window.captureAndIdentifyItem = async function() {
-    if (window.isLiveImageSending) return;
-    
+// ★追加: 共通の解析・登録ロジック
+window.analyzeTreasureImage = async function(base64Data, providedLocation = null) {
     // 1. 音声入力停止
     if (typeof window.stopAlwaysOnListening === 'function') {
         window.stopAlwaysOnListening();
@@ -209,55 +304,30 @@ window.captureAndIdentifyItem = async function() {
         }).catch(e => {});
     }
 
-    const video = document.getElementById('live-chat-video');
-    if (!video || !video.srcObject || !video.srcObject.active) {
-        return alert("カメラが動いてないにゃ...。");
+    const flash = document.createElement('div');
+    flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;";
+    document.body.appendChild(flash);
+    setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
+
+    if(typeof window.updateNellMessage === 'function') {
+        window.updateNellMessage("詳しい場所を調べてるにゃ…", "thinking", false, true);
     }
 
-    window.isLiveImageSending = true;
-    const btn = document.getElementById('live-camera-btn');
-    if (btn) {
-        btn.innerHTML = "<span>📡</span> 写真を準備中にゃ...";
-        btn.style.backgroundColor = "#ccc";
-        btn.disabled = true;
+    // GPS確定 (引数で渡されていなければ現在の位置情報を取得)
+    let locationData = providedLocation;
+    if (!locationData && window.currentLocation) {
+        locationData = window.currentLocation;
+    }
+    if (!locationData) {
+        try { locationData = await getLocation(); } catch(e) {}
     }
 
-    let locationData = window.currentLocation;
-    
+    if(typeof window.updateNellMessage === 'function') {
+        window.updateNellMessage("ん？何を見つけたのかにゃ…？", "thinking", false, true);
+    }
+
+    // API送信
     try {
-        const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth || 640;
-        canvas.height = video.videoHeight || 480;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-        let compressedDataUrl, base64Data;
-        try {
-            compressedDataUrl = window.processImageForAI(canvas);
-            base64Data = compressedDataUrl.split(',')[1];
-        } catch (imgErr) {
-            throw new Error("画像の処理に失敗したにゃ。メモリ不足かもしれないにゃ。");
-        }
-
-        const flash = document.createElement('div');
-        flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;";
-        document.body.appendChild(flash);
-        setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
-
-        if(typeof window.updateNellMessage === 'function') {
-            window.updateNellMessage("詳しい場所を調べてるにゃ…", "thinking", false, true);
-        }
-
-        // GPS簡易取得
-        if (!locationData) {
-            try { locationData = await getLocation(); } catch(e) {}
-        }
-
-        if(typeof window.updateNellMessage === 'function') {
-            window.updateNellMessage("ん？何を見つけたのかにゃ…？", "thinking", false, true);
-        }
-
-        // API送信
         const res = await fetch('/identify-item', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -265,7 +335,7 @@ window.captureAndIdentifyItem = async function() {
                 image: base64Data, 
                 name: currentUser ? currentUser.name : "生徒",
                 location: locationData, 
-                address: window.currentAddress
+                address: window.currentAddress // 現在の住所(ライブ用)
             })
         });
 
@@ -307,13 +377,9 @@ window.captureAndIdentifyItem = async function() {
             } catch (genErr) {
                 console.error("Card Gen Error:", genErr);
                 // カード生成失敗時は元の画像を使う
-                cardDataUrl = compressedDataUrl;
+                cardDataUrl = "data:image/jpeg;base64," + base64Data;
             }
             
-            // ★メモリ解放: 大きな文字列を解放する
-            base64Data = null; 
-            compressedDataUrl = null;
-
             // 図鑑に登録
             await window.NellMemory.addToCollection(
                 currentUser.id, 
@@ -341,15 +407,6 @@ window.captureAndIdentifyItem = async function() {
             window.updateNellMessage(`エラーだにゃ…: ${e.message || "解析失敗"}`, "thinking", false, true);
         }
     } finally {
-        window.isLiveImageSending = false;
-        
-        window.stopPreviewCamera(); 
-        if (btn) {
-            btn.innerHTML = "<span>📷</span> お宝を見せる（図鑑登録）";
-            btn.style.backgroundColor = "#ff85a1"; 
-            btn.disabled = false;
-        }
-        
         // 完了後に音声入力を再開
         if (window.currentMode === 'chat') {
             if (typeof window.startAlwaysOnListening === 'function') {
@@ -357,6 +414,50 @@ window.captureAndIdentifyItem = async function() {
             } else if (window.isAlwaysListening) {
                 try { window.continuousRecognition.start(); } catch(e){}
             }
+        }
+    }
+};
+
+// iPhoneでの音声・登録不具合対策 (カメラ撮影用ラッパー)
+window.captureAndIdentifyItem = async function() {
+    if (window.isLiveImageSending) return;
+
+    const video = document.getElementById('live-chat-video');
+    if (!video || !video.srcObject || !video.srcObject.active) {
+        return alert("カメラが動いてないにゃ...。");
+    }
+
+    window.isLiveImageSending = true;
+    const btn = document.getElementById('live-camera-btn');
+    if (btn) {
+        btn.innerHTML = "<span>📡</span> 写真を準備中にゃ...";
+        btn.style.backgroundColor = "#ccc";
+        btn.disabled = true;
+    }
+
+    try {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        let compressedDataUrl = window.processImageForAI(canvas);
+        let base64Data = compressedDataUrl.split(',')[1];
+        
+        // 共通処理呼び出し (カメラ撮影なので位置情報はnullで渡して内部で現在地取得させる)
+        await window.analyzeTreasureImage(base64Data, null);
+
+    } catch (e) {
+        console.error("Capture Error:", e);
+    } finally {
+        window.isLiveImageSending = false;
+        
+        window.stopPreviewCamera(); 
+        if (btn) {
+            btn.innerHTML = "<span>📷</span> お宝を見せる（図鑑登録）";
+            btn.style.backgroundColor = "#ff85a1"; 
+            btn.disabled = false;
         }
     }
 };
