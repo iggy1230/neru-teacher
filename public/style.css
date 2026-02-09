@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v391.0: アルバム登録対応版) --- */
+/* --- style.css (完全版 v402.0: 神経衰弱画像位置再調整版) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -897,7 +897,9 @@ button { font-family: inherit; }
     box-shadow: 0 2px 0 #2a609e; 
 }
 
-#live-chat-video-container {
+/* ★修正: クラス化してスタイルを統一 */
+#live-chat-video-container,
+.live-chat-video-wrapper {
     width: 100%; 
     max-width: 320px; 
     aspect-ratio: 4/3;
@@ -908,7 +910,9 @@ button { font-family: inherit; }
     background: #000;
     display: none;
 }
-#live-chat-video {
+
+#live-chat-video,
+.live-chat-video-elem {
     width: 100%; 
     height: 100%; 
     object-fit: cover;
@@ -1214,33 +1218,34 @@ button { font-family: inherit; }
     z-index: 1;
 }
 
-/* 写真部分のズーム表示設定 */
+/* 写真部分のズーム表示設定 (画像のみ見せる調整) */
 .memory-card-img-container {
     width: 100%;
-    height: 70%; /* 名前エリア拡張のため縮小 (75% -> 70%) */
-    overflow: hidden; /* 画像はみ出し防止 */
+    height: 75%; /* 75%に調整して名称エリアを確保 */
+    overflow: hidden; 
     position: relative;
     background: #f0f0f0;
-    border-bottom: 1px solid #eee;
     border-top-left-radius: 5px;
     border-top-right-radius: 5px;
+    border-bottom: 1px solid #eee;
 }
 
 .memory-card-img {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    object-position: center 20%;
+    /* 画像を下に移動させるために object-position を 5% に変更（上端基準に近づける） */
+    object-position: center 5%; 
     transform: scale(1.6);
-    transform-origin: center 30%;
+    transform-origin: center center;
 }
 
 .memory-card-name {
-    height: 30%; /* 名前エリア拡張 (25% -> 30%) */
+    height: 25%; /* 名称エリア */
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.55rem; /* 少し文字を小さくして収める */
+    font-size: 0.55rem;
     font-weight: bold;
     color: #333;
     padding: 1px 2px;
@@ -1251,4 +1256,65 @@ button { font-family: inherit; }
     border-bottom-right-radius: 5px;
     text-align: center;
     overflow: hidden;
+}
+
+/* ミニテスト・ウルトラクイズ用ボタン */
+.minitest-option-btn, .quiz-option-btn {
+    display: block; width: 100%; margin: 8px 0; padding: 15px;
+    border: 2px solid #ddd; border-radius: 10px; background: white;
+    font-size: 1rem; font-weight: bold; color: #333; cursor: pointer;
+    box-shadow: 0 2px 0 #ccc; text-align: left;
+}
+.minitest-option-btn:active, .quiz-option-btn:active { transform: translateY(2px); box-shadow: none; }
+.minitest-correct, .quiz-correct { background: #e8f5e9 !important; border-color: #4caf50 !important; color: #2e7d32 !important; }
+.minitest-wrong, .quiz-wrong { background: #ffebee !important; border-color: #ef5350 !important; color: #c62828 !important; }
+
+/* 
+   ★重要: お宝図鑑のカードアイテム用（JSからクラス付与）
+   強制的にマージンとトランスフォームをリセットし、重なりを防ぐ
+*/
+.collection-grid-item {
+    background: white;
+    border-radius: 8px;
+    padding: 4px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+    text-align: center;
+    border: 1px solid #ddd;
+    position: relative;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    aspect-ratio: 0.68;
+    overflow: hidden;
+    z-index: 1;
+    
+    /* 古いJSのインラインスタイルを強制上書き */
+    margin: 0 !important; 
+    transform: none !important;
+}
+
+.collection-grid-item:active {
+    transform: scale(0.98) !important;
+}
+
+.collection-grid-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 4px;
+}
+
+.collection-grid-item .info-badge {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background: rgba(255,255,255,0.9);
+    padding: 2px;
+    font-size: 0.7rem;
+    font-weight: bold;
+    color: #555;
+    border-top: 1px solid #eee;
 }

@@ -96,6 +96,9 @@ function fixPronunciation(text) {
     t = t.replace(/＝/g, "わ");
     t = t.replace(/×/g, "かける");
     t = t.replace(/÷/g, "わる");
+    // ★追加: 固有名詞の読み修正
+    t = t.replace(/はね丸/g, "ハネマル");
+    t = t.replace(/はね丸くん/g, "ハネマルクン");
     return t;
 }
 
@@ -107,7 +110,12 @@ function fixPronunciation(text) {
 app.post('/generate-quiz', async (req, res) => {
     try {
         const { grade, genre, level } = req.body; 
-        const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
+        
+        // Google検索ツールを有効化（JSONモードはOFF）
+        const model = genAI.getGenerativeModel({ 
+            model: MODEL_FAST, 
+            tools: [{ google_search: {} }] 
+        });
         
         let targetGenre = genre;
         if (!targetGenre || targetGenre === "全ジャンル") {
@@ -132,11 +140,21 @@ app.post('/generate-quiz', async (req, res) => {
         【難易度設定: レベル${currentLevel}】
         - ${difficultyDesc}
         
+        【最重要：Google検索による事実確認】
+        - **必ずGoogle検索ツールを使用して、問題文、正解、不正解の選択肢に含まれる用語（キャラクター名、技名、地名、エピソード）が実在するか確認してください。**
+        - 検索結果に存在しない、または曖昧な情報は絶対に使用しないでください。
+        - 特に「魔法陣グルグル」や「ジョジョ」などの作品モノの場合、原作（漫画・アニメ）に存在しない架空の設定、架空の技名、架空のキャラ名を捏造することは厳禁です。
+        - **「〇〇というキャラは存在するか？」「〇〇という技は正しいか？」を検索してからJSONを作成してください。**
+
         【重要：禁止事項】
         - **挨拶不要。すぐに問題文から始めてください。**
         - **なぞなぞは禁止です。**
+        - **毎回異なるキャラクター、異なるエピソードから出題してください。有名な主人公だけでなく、サブキャラクターや特定の名シーンについての問題も歓迎します。**
 
-        【出力JSONフォーマット】
+        【出力形式】
+        **必ず以下のJSON形式の文字列のみを出力してください。** 
+        Markdownのコードブロック(\`\`\`json 等)は含めても含めなくても構いませんが、余計な会話文は一切含めないでください。
+
         {
             "question": "問題文（「問題！〇〇はどれ？」のように、読み上げに適した文章）",
             "options": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"],
@@ -147,8 +165,25 @@ app.post('/generate-quiz', async (req, res) => {
         `;
 
         const result = await model.generateContent(prompt);
-        const text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        res.json(JSON.parse(text));
+        let text = result.response.text();
+        
+        // JSON抽出ロジック
+        text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+        const firstBrace = text.indexOf('{');
+        const lastBrace = text.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace !== -1) {
+            text = text.substring(firstBrace, lastBrace + 1);
+        }
+
+        let jsonResponse;
+        try {
+            jsonResponse = JSON.parse(text);
+        } catch (e) {
+            console.error("JSON Parse Error (Quiz): Raw Text:", result.response.text());
+            throw new Error("AIが有効なJSONを返しませんでした。");
+        }
+        
+        res.json(jsonResponse);
     } catch (e) {
         console.error("Quiz Gen Error:", e);
         res.status(500).json({ error: "クイズが作れなかったにゃ…" });
@@ -197,7 +232,7 @@ app.post('/generate-riddle', async (req, res) => {
         1. **子供が絶対に知っている単語**を答えにしてください。
         2. 問題文は、リズムよく、子供が聞いてワクワクするような言い回しにしてください。
         3. 答えは「名詞（モノの名前）」で終わるものに限定してください。
-        4. 難しすぎる知識や、マニアックな単語は禁止です。
+        4.難しすぎる知識や、マニアックな単語は禁止です。
         5. 挨拶不要。すぐに問題文のみを出力してください。
 
         【出力JSONフォーマット】
@@ -343,7 +378,9 @@ app.post('/chat-dialogue', async (req, res) => {
         let systemPrompt = `
         あなたは猫の「ネル先生」です。相手は「${name}」さん。
         現在は ${currentDateTime} です。
-        相手を呼ぶときは必ず「${name}さん」と呼んでください。
+        【最重要ルール: 呼び方】
+        **相手を呼ぶときは必ず「${name}さん」と呼んでください。**
+        **絶対に呼び捨てにしてはいけません。**
         `;
 
         let problemContext = null;
@@ -635,6 +672,9 @@ app.post('/identify-item', async (req, res) => {
         
         ${locationInfo}
 
+        【★最重要ルール: 呼び方】
+        **相手を呼ぶときは必ず「${name}さん」と呼んでください。絶対に呼び捨てにしてはいけません。**
+
         【★最重要ルール: 場所の整合性 (厳守)】
         - **画像検索の結果、見た目が有名な観光地（例: 奈良の公園、東京のタワー）に似ていても、提供された「住所」や「現在地」がそれらの場所と異なる場合は、絶対にその観光地名を採用しないでください。**
         - 必ず「提供された住所（${address || '現在地'}）」の中に存在する施設（公園、店、建物）として特定してください。
@@ -762,9 +802,9 @@ app.post('/game-reaction', async (req, res) => {
         let mood = "excited";
 
         if (type === 'start') {
-            prompt = `あなたはネル先生。「${name}さん」がゲーム開始。短く応援して。語尾は「にゃ」。`;
+            prompt = `あなたはネル先生。「${name}さん」がゲーム開始。短く応援して。必ず「${name}さん」と呼ぶこと。呼び捨て禁止。語尾は「にゃ」。`;
         } else if (type === 'end') {
-            prompt = `あなたはネル先生。ゲーム終了。「${name}さん」のスコアは${score}点。20文字以内でコメントして。語尾は「にゃ」。`;
+            prompt = `あなたはネル先生。ゲーム終了。「${name}さん」のスコアは${score}点。20文字以内でコメントして。必ず「${name}さん」と呼ぶこと。呼び捨て禁止。語尾は「にゃ」。`;
         } else {
             return res.json({ reply: "ナイスにゃ！", mood: "excited" });
         }
