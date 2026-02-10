@@ -1,4 +1,4 @@
-<!-- index.html (完全版 v401.0: クイズジャンル追加版) -->
+<!-- index.html (完全版 v405.0: クイズ間違い報告ボタン追加版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -40,7 +40,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v401.0-QuizUpdate</div>
+            <div class="version-tag">Build: v405.0-QuizFix</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -341,6 +341,13 @@
                     <button onclick="requestQuizHint()" class="main-btn green-btn" style="flex:1;">💡 ヒント</button>
                     <button onclick="giveUpQuiz()" class="main-btn gray-btn" style="flex:1;">🏳️ ギブアップ</button>
                     <button id="next-quiz-btn" onclick="nextQuiz()" class="main-btn blue-btn hidden" style="flex:1;">次の問題へ</button>
+                </div>
+
+                <!-- ★追加: 間違い報告ボタン -->
+                <div style="text-align:center; margin-top:15px;">
+                    <button onclick="window.reportQuizError()" class="main-btn" style="background:transparent; border:2px solid #bdbdbd; color:#757575; font-size:0.8rem; width:auto; padding:5px 15px; box-shadow:none;">
+                        ⚠️ 問題が間違ってる？
+                    </button>
                 </div>
             </div>
 
