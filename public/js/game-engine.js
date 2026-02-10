@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v406.0: クイズ修正機能追加版) ---
+// --- js/game-engine.js (v409.0: クイズ正誤判定厳格化版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -489,25 +489,100 @@ let quizState = {
     maxQuestions: 5,
     score: 0,
     currentQuizData: null,
-    nextQuizData: null,
+    // nextQuizData: null, // ★削除: キュー管理に移行
+    questionQueue: [], // ★追加: 問題の先行生成キュー
     genre: "全ジャンル",
     level: 1, 
     isFinished: false,
     history: [],
-    sessionId: 0 // ★追加: セッションID（競合対策）
+    sessionId: 0 
 };
 
-async function fetchQuizData(genre, level = 1) {
-    const res = await fetch('/generate-quiz', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            grade: currentUser ? currentUser.grade : "1",
-            genre: genre,
-            level: level 
-        })
-    });
-    return await res.json();
+// 単一のクイズ生成と整合性チェック（リトライロジックを内包）
+async function generateValidQuiz(genre, level, sessionId) {
+    const MAX_RETRIES = 5; 
+    let retryCount = 0;
+    let fallbackData = null;
+
+    while (retryCount < MAX_RETRIES) {
+        // セッションが変わっていたら中断
+        if (quizState.sessionId !== sessionId) return null;
+
+        let quizData = null;
+        try {
+            const res = await fetch('/generate-quiz', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    grade: currentUser ? currentUser.grade : "1",
+                    genre: genre,
+                    level: level 
+                })
+            });
+            if (res.ok) {
+                quizData = await res.json();
+            }
+        } catch (e) {
+            console.error("Fetch Error:", e);
+        }
+
+        if (quizData && quizData.question && quizData.answer) {
+             if (!fallbackData) fallbackData = quizData;
+
+             // 重複チェック
+             const isDuplicate = quizState.history.some(h => h === quizData.answer);
+             if (!isDuplicate) {
+                 return quizData; // 成功！
+             } else {
+                 console.log("Duplicate quiz detected in bg. Retrying...", quizData.answer);
+             }
+        } else {
+             console.log("Invalid quiz data in bg. Retrying...");
+        }
+        
+        retryCount++;
+        await new Promise(r => setTimeout(r, 1000));
+    }
+    
+    // リトライ上限に達した場合、フォールバックを使用
+    if (fallbackData) {
+        console.log("Max retries reached in bg. Using fallback.");
+        return fallbackData;
+    }
+
+    return null;
+}
+
+// バックグラウンドで問題を補充し続ける関数
+async function backgroundQuizFetcher(genre, level, sessionId) {
+    console.log(`[Quiz] Start background fetcher for session ${sessionId}`);
+    
+    // 全5問（maxQuestions）になるまで補充し続ける
+    while (quizState.history.length + quizState.questionQueue.length < quizState.maxQuestions) {
+        if (quizState.sessionId !== sessionId || quizState.isFinished) {
+            console.log("[Quiz] Background fetcher stopped (session changed or finished).");
+            return;
+        }
+
+        // キューが一杯なら少し待つ（念のため）
+        if (quizState.questionQueue.length >= 3) {
+            await new Promise(r => setTimeout(r, 2000));
+            continue;
+        }
+
+        const newQuiz = await generateValidQuiz(genre, level, sessionId);
+        
+        if (quizState.sessionId !== sessionId) return;
+
+        if (newQuiz) {
+            console.log("[Quiz] Pre-fetched 1 question.");
+            quizState.questionQueue.push(newQuiz);
+        } else {
+            console.warn("[Quiz] Failed to generate in background. Waiting...");
+            await new Promise(r => setTimeout(r, 2000));
+        }
+    }
+    console.log("[Quiz] Background fetcher completed.");
 }
 
 window.showQuizGame = function() {
@@ -585,9 +660,9 @@ window.startQuizSet = async function(genre, level) {
     quizState.score = 0;
     quizState.isFinished = false;
     quizState.currentQuizData = null;
-    quizState.nextQuizData = null;
+    quizState.questionQueue = []; // キューをリセット
     quizState.history = []; 
-    quizState.sessionId = Date.now(); // ★追加: セッションID更新
+    quizState.sessionId = Date.now(); 
 
     document.getElementById('quiz-genre-select').classList.add('hidden');
     document.getElementById('quiz-level-select').classList.add('hidden');
@@ -597,6 +672,10 @@ window.startQuizSet = async function(genre, level) {
 
     if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
 
+    // ★重要: 先行生成を開始（非同期で放置）
+    backgroundQuizFetcher(genre, level, quizState.sessionId);
+
+    // 1問目を表示へ
     window.nextQuiz();
 };
 
@@ -606,9 +685,7 @@ window.nextQuiz = async function() {
         return;
     }
 
-    // ★追加: 現在のセッションIDをキャプチャ
     const currentSessionId = quizState.sessionId;
-
     quizState.currentQuestionIndex++;
     document.getElementById('quiz-progress').innerText = `${quizState.currentQuestionIndex}/${quizState.maxQuestions} 問目`;
     
@@ -619,6 +696,7 @@ window.nextQuiz = async function() {
     const micStatus = document.getElementById('quiz-mic-status');
     const optionsContainer = document.getElementById('quiz-options-container');
 
+    // UI初期化
     qText.innerText = "問題を一生懸命作って、チェックしてるにゃ…";
     window.updateNellMessage("問題を一生懸命作って、チェックしてるにゃ…", "thinking");
     micStatus.innerText = "";
@@ -628,69 +706,71 @@ window.nextQuiz = async function() {
     optionsContainer.innerHTML = ""; 
     
     let quizData = null;
-    let retryCount = 0;
-    const MAX_RETRIES = 5; 
-    let fallbackData = null;
-
-    while (retryCount < MAX_RETRIES) {
-        // ★修正: セッションIDが一致している場合のみ、プリフェッチデータを使用
-        if (quizState.nextQuizData && !fallbackData && quizState.sessionId === currentSessionId) {
-            quizData = quizState.nextQuizData;
-            quizState.nextQuizData = null;
-        } else {
-            try {
-                // ★修正: ループ中にセッションが変わっていたら中断
-                if (quizState.sessionId !== currentSessionId) return;
-
-                quizData = await fetchQuizData(quizState.genre, quizState.level);
-            } catch (e) {
-                console.error("Fetch Error:", e);
-                quizData = null;
+    
+    // 1. まずキューを確認
+    if (quizState.questionQueue.length > 0) {
+        quizData = quizState.questionQueue.shift();
+    } else {
+        // 2. キューが空なら、少し待ってみる (最大10秒)
+        let waitCount = 0;
+        const MAX_WAIT = 10; 
+        
+        while (waitCount < MAX_WAIT) {
+            if (quizState.sessionId !== currentSessionId) return; 
+            if (quizState.questionQueue.length > 0) {
+                quizData = quizState.questionQueue.shift();
+                break;
+            }
+            await new Promise(r => setTimeout(r, 1000));
+            waitCount++;
+            
+            // 待機中メッセージ更新
+            if (waitCount === 5) {
+                 window.updateNellMessage("うーん、まだ確認中だにゃ…もうちょっと待ってにゃ！", "thinking");
             }
         }
+    }
 
-        if (quizData && quizData.question && quizData.answer) {
-             if (!fallbackData) fallbackData = quizData;
-
-             const isDuplicate = quizState.history.some(h => h === quizData.answer);
-             if (!isDuplicate) {
-                 break; 
-             } else {
-                 console.log("Duplicate quiz detected. Retrying...", quizData.answer);
-                 quizData = null; 
-             }
-        } else {
-             console.log("Invalid quiz data or fetch error. Retrying...", quizData);
-             quizData = null;
-        }
-        
-        retryCount++;
-        await new Promise(r => setTimeout(r, 1000));
-        
-        // ★修正: 待機後もセッションIDを確認
-        if (quizState.sessionId !== currentSessionId) return;
+    // 3. それでもダメなら、その場で直接サーバーにリクエスト (緊急生成)
+    if (!quizData) {
+        console.log("Queue empty. Fetching directly...");
+        window.updateNellMessage("お待たせ！今すぐ持ってくるにゃ！", "excited");
+        quizData = await generateValidQuiz(quizState.genre, quizState.level, currentSessionId);
     }
     
-    if (!quizData && fallbackData) {
-        console.log("Max retries reached. Using duplicate/fallback data.");
-        quizData = fallbackData;
-    }
-
+    // 4. それでもダメなら、エラー表示 (★修正: 画面遷移せずリトライボタンを表示)
     if (!quizData) {
-        qText.innerText = "問題が作れなかったにゃ…";
-        setTimeout(() => {
-            // エラー時もセッションが変わっていなければ再試行
-             if (quizState.sessionId === currentSessionId) window.showQuizGame();
-        }, 2000);
+        qText.innerText = "ごめんにゃ、問題が作れなかったにゃ…。";
+        window.updateNellMessage("ごめんにゃ、問題が作れなかったにゃ…。", "sad");
+        
+        // リトライボタンを手動で作成して配置
+        optionsContainer.innerHTML = "";
+        const retryBtn = document.createElement('button');
+        retryBtn.className = "main-btn orange-btn";
+        retryBtn.innerText = "もう一度トライ！";
+        retryBtn.onclick = () => {
+            // インデックスを戻して再度 nextQuiz を呼ぶ（実質リトライ）
+            quizState.currentQuestionIndex--; 
+            window.nextQuiz();
+        };
+        optionsContainer.appendChild(retryBtn);
+        
+        // 諦めて戻るボタン
+        const backBtn = document.createElement('button');
+        backBtn.className = "main-btn gray-btn";
+        backBtn.innerText = "あきらめて戻る";
+        backBtn.onclick = window.showQuizGame;
+        optionsContainer.appendChild(backBtn);
+        
         return;
     }
     
-    // ★最終確認: 画面反映前にセッションIDを確認
     if (quizState.sessionId !== currentSessionId) return;
 
+    // --- 出題処理 ---
     if (quizData && quizData.question) {
         quizState.history.push(quizData.answer);
-        if (quizState.history.length > 5) quizState.history.shift();
+        if (quizState.history.length > 10) quizState.history.shift(); // 履歴保持数を少し増やす
 
         window.currentQuiz = quizData; 
         quizState.currentQuizData = quizData;
@@ -718,23 +798,18 @@ window.nextQuiz = async function() {
 
         controls.style.display = 'flex';
         
-        // ★修正: プリフェッチ完了時にもセッションIDをチェックして保存
-        fetchQuizData(quizState.genre, quizState.level).then(data => { 
-            if (quizState.sessionId === currentSessionId) {
-                quizState.nextQuizData = data; 
-            }
-        }).catch(err => console.warn("Pre-fetch failed", err));
     } else {
         qText.innerText = "エラーだにゃ…";
     }
 };
 
+// ★修正: checkQuizAnswer の正誤判定をボタン/音声で厳密に分ける
 window.checkQuizAnswer = function(userAnswer, isButton = false) {
     if (!window.currentQuiz || window.currentMode !== 'quiz') return false; 
     if (!document.getElementById('quiz-answer-display').classList.contains('hidden')) return false;
 
     const correct = window.currentQuiz.answer;
-    const accepted = window.currentQuiz.accepted_answers || [];
+    // const accepted = window.currentQuiz.accepted_answers || []; // クイズAPIには通常含まれない
     
     const buttons = document.querySelectorAll('.quiz-option-btn');
     if (isButton) {
@@ -742,11 +817,22 @@ window.checkQuizAnswer = function(userAnswer, isButton = false) {
     }
 
     const cleanUserAnswer = userAnswer.trim();
+    const cleanCorrect = correct.trim();
+
     let isCorrect = false;
-    if (cleanUserAnswer.includes(correct) || accepted.some(a => cleanUserAnswer.includes(a))) {
-        isCorrect = true;
-    } else if (fuzzyContains(cleanUserAnswer, correct)) {
-        isCorrect = true;
+
+    if (isButton) {
+        // ★修正: ボタン選択時は完全一致のみ（サーバー側バリデーション済みのため安全）
+        if (cleanUserAnswer === cleanCorrect) {
+            isCorrect = true;
+        }
+    } else {
+        // 音声入力時はあいまい検索を許容
+        if (cleanUserAnswer.includes(cleanCorrect)) {
+            isCorrect = true;
+        } else if (fuzzyContains(cleanUserAnswer, cleanCorrect)) {
+            isCorrect = true;
+        }
     }
     
     const status = document.getElementById('quiz-mic-status');
@@ -757,15 +843,10 @@ window.checkQuizAnswer = function(userAnswer, isButton = false) {
         window.updateNellMessage(`ピンポン！正解だにゃ！答えは「${correct}」！`, "excited", false, true);
         quizState.score += 20; 
         
-        if (isButton) {
-            buttons.forEach(b => {
-                if (b.innerText === cleanUserAnswer) b.classList.add('quiz-correct');
-            });
-        } else {
-            buttons.forEach(b => {
-                if (b.innerText === correct) b.classList.add('quiz-correct');
-            });
-        }
+        // 正解ボタンをハイライト
+        buttons.forEach(b => {
+            if (b.innerText === correct) b.classList.add('quiz-correct');
+        });
 
         window.showQuizResult(true);
         return true; 
@@ -773,6 +854,8 @@ window.checkQuizAnswer = function(userAnswer, isButton = false) {
         if (isButton) {
             if(window.safePlay) window.safePlay(window.sfxBatu);
             window.updateNellMessage(`残念！正解は「${correct}」だったにゃ。`, "gentle", false, true);
+            
+            // 間違いボタンと正解ボタンをハイライト
             buttons.forEach(b => {
                 if (b.innerText === cleanUserAnswer) b.classList.add('quiz-wrong');
                 if (b.innerText === correct) b.classList.add('quiz-correct');
@@ -803,7 +886,7 @@ window.showQuizResult = function(isWin) {
     const ansText = document.getElementById('quiz-answer-text');
 
     const btns = controls.querySelectorAll('button:not(#next-quiz-btn)');
-    btns.forEach(b => b.classList.add('hidden'));
+    btns.forEach(b => b.classList.remove('hidden')); // 間違い報告ボタンを表示するためremove
     
     nextBtn.classList.remove('hidden');
     controls.style.display = 'flex';
