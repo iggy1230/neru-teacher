@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v414.0: ハイブリッド出題・ストック優先版) ---
+// --- js/game-engine.js (v415.0: 報告機能付き完全版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -579,12 +579,20 @@ async function fetchQuizFromGlobalStock(genre, level) {
         if (!snapshot.empty) {
             const doc = snapshot.docs[0];
             const data = doc.data();
+            
+            // ★報告カウントチェック: 報告が多い問題はスキップ (client-side filter)
+            if (data.bad_report_count >= 3) {
+                 console.log("[Quiz] Skipping bad quiz:", data.question);
+                 return null;
+            }
+
             // 一応クライアント側で履歴重複チェック
             const isDuplicate = quizState.history.some(h => h === data.answer);
             const isDuplicateInQueue = quizState.questionQueue.some(q => q.question === data.question);
             
             if (!isDuplicate && !isDuplicateInQueue) {
-                quiz = { ...data, isStock: true };
+                // ★IDも持たせる（報告用）
+                quiz = { ...data, isStock: true, docId: doc.id };
                 console.log("[Quiz] Fetched from Global Stock:", quiz.question);
             }
         }
@@ -594,7 +602,7 @@ async function fetchQuizFromGlobalStock(genre, level) {
     return quiz;
 }
 
-// ★修正: ハイブリッド方式のバックグラウンド生成ロジック
+// ハイブリッド方式のバックグラウンド生成ロジック
 // 最初の3問はストックから優先、残りはAPI生成
 async function backgroundQuizFetcher(genre, level, sessionId) {
     console.log(`[Quiz] Start hybrid fetcher: Aiming for 3 Stock + 2 API`);
@@ -627,8 +635,6 @@ async function backgroundQuizFetcher(genre, level, sessionId) {
                 source = "Stock";
             } else {
                 console.log("[Quiz] Stock dry or unavailable. Switching to API for this slot.");
-                // ストックがない場合は、今回はAPI生成に回す（カウントは増やさない＝次回もストックを試みる、または諦める？）
-                // ここでは「ストックがなければAPIで作る」というフォールバックとして扱う
             }
         }
 
@@ -669,6 +675,7 @@ async function saveQuizToGlobalStock(quiz) {
             level: quizState.level,
             fact_basis: quiz.fact_basis || "",
             random_id: randomId,
+            bad_report_count: 0, // ★追加: 初期値0
             created_at: new Date().toISOString(),
             creator_grade: currentUser.grade,
             creator_uid: currentUser.id 
@@ -676,6 +683,25 @@ async function saveQuizToGlobalStock(quiz) {
         console.log("Saved quiz to global stock:", docId);
     } catch(e) {
         console.error("Failed to save quiz to global:", e);
+    }
+}
+
+// ★追加: 悪い問題を報告する関数
+async function reportBadQuiz(docId) {
+    if (!db || !currentUser || !docId) return;
+    
+    if (confirm("この問題は間違いがあるか、適切ではないにゃ？\n報告して、みんなに出ないようにするにゃ？")) {
+        try {
+            const quizRef = db.collection("public_quizzes").doc(docId);
+            // incrementを使ってアトミックに更新
+            await quizRef.update({
+                bad_report_count: firebase.firestore.FieldValue.increment(1)
+            });
+            alert("報告ありがとうにゃ！ネル先生が確認しておくにゃ！");
+        } catch(e) {
+            console.error("Report failed:", e);
+            alert("報告できなかったにゃ...通信エラーかも？");
+        }
     }
 }
 
@@ -843,9 +869,9 @@ window.nextQuiz = async function() {
         quizData = await generateValidQuiz(quizState.genre, quizState.level, currentSessionId);
     }
     
-    // 4. それでもダメなら、エラー表示 & リトライUIを表示 (★修正: ストックをフォールバック利用)
+    // 4. それでもダメなら、エラー表示 & リトライUIを表示
     if (!quizData) {
-        // ★追加: エラー時のストック利用 (ランダム) - ジャンルフィルタリング有り
+        // エラー時のストック利用 (ランダム) - ジャンルフィルタリング有り
         let candidates = [];
         if (currentUser && currentUser.savedQuizzes && currentUser.savedQuizzes.length > 0) {
              candidates = currentUser.savedQuizzes.filter(q => {
@@ -1021,12 +1047,19 @@ window.showQuizResult = function(isWin) {
         ansText.innerText = window.currentQuiz.answer;
         ansDisplay.classList.remove('hidden');
 
-        // ★保存トグルボタンの追加
-        // 既存の保存ボタンがあれば削除
+        // 1. 保存トグルボタン (ローカル保存用)
+        // 既存ボタン削除
         const oldSaveBtn = document.getElementById('quiz-save-toggle-btn');
         if(oldSaveBtn) oldSaveBtn.remove();
+        
+        // 2. 報告ボタン (グローバルストック用)
+        // 既存ボタン削除
+        const oldReportBtn = document.getElementById('quiz-report-btn');
+        if(oldReportBtn) oldReportBtn.remove();
 
-        // 今回のクイズデータを検索
+        const gameArea = document.getElementById('quiz-game-area');
+
+        // 今回のクイズデータを検索 (保存用)
         const currentSessionQuiz = quizState.sessionQuizzes.find(q => q.question === window.currentQuiz.question);
         
         if (currentSessionQuiz) {
@@ -1041,16 +1074,31 @@ window.showQuizResult = function(isWin) {
             
             updateBtnStyle();
             saveBtn.style.marginTop = "10px";
-            saveBtn.style.width = "100%"; // 横幅いっぱい
+            saveBtn.style.width = "100%"; 
             
             saveBtn.onclick = () => {
                 currentSessionQuiz.shouldSave = !currentSessionQuiz.shouldSave;
                 updateBtnStyle();
             };
             
-            // クイズ結果エリア（quiz-game-area）の最後に挿入
-            const gameArea = document.getElementById('quiz-game-area');
             gameArea.appendChild(saveBtn);
+        }
+
+        // ★ストック由来なら報告ボタンを追加
+        if (window.currentQuiz.isStock && window.currentQuiz.docId) {
+            const reportBtn = document.createElement('button');
+            reportBtn.id = 'quiz-report-btn';
+            reportBtn.className = "main-btn";
+            reportBtn.innerText = "⚠️ 問題を報告する";
+            reportBtn.style.cssText = "margin-top:10px; width:100%; background:transparent; border:2px solid #ff5252; color:#ff5252; font-size:0.9rem;";
+            
+            reportBtn.onclick = () => {
+                reportBadQuiz(window.currentQuiz.docId);
+                reportBtn.disabled = true;
+                reportBtn.innerText = "報告しました";
+            };
+            
+            gameArea.appendChild(reportBtn);
         }
     }
 };
@@ -1142,6 +1190,8 @@ window.finishQuizSet = function() {
     // 保存ボタンを削除しておく（次の画面遷移のため）
     const oldSaveBtn = document.getElementById('quiz-save-toggle-btn');
     if(oldSaveBtn) oldSaveBtn.remove();
+    const oldReportBtn = document.getElementById('quiz-report-btn');
+    if(oldReportBtn) oldReportBtn.remove();
 
     window.showQuizGame();
 };
