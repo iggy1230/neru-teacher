@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (v420.0: お宝図鑑共有UI実装版) ---
+// --- js/ui/ui.js (v423.0: 非公開ボタン実装版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -466,13 +466,22 @@ window.showCollectionDetail = function(item, originalIndex, totalCount, isMine) 
         mapBtnHtml = `<button onclick="window.closeCollection(); window.showMap(${item.location.lat}, ${item.location.lon});" class="mini-teach-btn" style="background:#29b6f6; width:auto; margin-left:10px;">🗺️ 地図で見る</button>`;
     }
 
-    // 共有ボタン (自分のアイテムで、まだ共有していない場合)
+    // ★修正: 共有/非共有ボタンの切り替え
     let shareBtnHtml = "";
-    if (isMine && !item.isShared) {
-        shareBtnHtml = `<button onclick="shareCollectionItem(${originalIndex})" class="mini-teach-btn" style="background:#ff9800; width:auto;">✨ みんなに公開する</button>`;
-    } else if (isMine && item.isShared) {
-        shareBtnHtml = `<span style="font-size:0.8rem; color:#ff9800; font-weight:bold;">公開済み</span>`;
-    } else if (!isMine) {
+    if (isMine) {
+        if (!item.isShared) {
+            // まだ共有していない -> 公開ボタン
+            shareBtnHtml = `<button onclick="shareCollectionItem(${originalIndex})" class="mini-teach-btn" style="background:#ff9800; width:auto;">✨ みんなに公開する</button>`;
+        } else {
+            // 既に共有している -> 非公開に戻すボタン
+            shareBtnHtml = `
+                <div style="display:flex; flex-direction:column; align-items:center; gap:5px;">
+                    <span style="font-size:0.8rem; color:#ff9800; font-weight:bold;">みんなに公開中だにゃ！</span>
+                    <button onclick="unshareCollectionItem(${originalIndex})" class="mini-teach-btn" style="background:#78909c; width:auto;">🔒 非公開に戻す</button>
+                </div>`;
+        }
+    } else {
+        // 他人のアイテム
         shareBtnHtml = `<span style="font-size:0.8rem; color:#666;">発見者: <strong>${window.cleanDisplayString(item.discovererName || "誰か")}さん</strong></span>`;
     }
 
@@ -548,6 +557,25 @@ window.shareCollectionItem = async function(index) {
     } catch(e) {
         console.error(e);
         alert("公開できなかったにゃ...通信エラーかも？");
+    }
+};
+
+// ★追加: 非公開に戻す処理
+window.unshareCollectionItem = async function(index) {
+    if (!currentUser || !window.NellMemory) return;
+    if (!confirm("「みんなの図鑑」から削除して、非公開に戻すにゃ？")) return;
+    
+    try {
+        const result = await window.NellMemory.unshareFromPublicCollection(currentUser.id, index);
+        if (result === "SUCCESS") {
+            alert("非公開に戻したにゃ！");
+            window.openCollectionDetailByIndex(index);
+        } else if (result === "NOT_SHARED") {
+            alert("まだ公開されてないみたいだにゃ。");
+        }
+    } catch(e) {
+        console.error(e);
+        alert("エラーが発生したにゃ...");
     }
 };
 

@@ -1,4 +1,4 @@
-// --- js/state/memory.js (v421.0: ID型エラー修正版) ---
+// --- js/state/memory.js (v423.0: 非公開機能追加版) ---
 
 (function(global) {
     const Memory = {};
@@ -39,7 +39,6 @@
 
     Memory.getUserProfile = async function(userId) {
         let profile = null;
-        // ★修正: userIdを必ずStringにする (数値IDによるエラー回避)
         const safeId = String(userId);
 
         if (typeof db !== 'undefined' && db !== null) {
@@ -65,7 +64,6 @@
 
     Memory.saveUserProfile = async function(userId, profile) {
         if (Array.isArray(profile)) profile = profile[0] || Memory.createEmptyProfile();
-        // ★修正: userIdを必ずStringにする
         const safeId = String(userId);
         
         const profileStr = JSON.stringify(profile);
@@ -179,6 +177,12 @@
             const profile = await Memory.getUserProfile(userId);
             if (profile.collection && profile.collection[index]) {
                 const item = profile.collection[index];
+                
+                // 公開されている場合は公開コレクションからも削除
+                if (item.isShared) {
+                    await Memory.unshareFromPublicCollection(userId, index);
+                }
+
                 if (item.image && item.image.startsWith('http')) {
                     await deleteImageFromStorage(item.image);
                 }
@@ -205,7 +209,7 @@
             location: item.location,
             rarity: item.rarity,
             discovererName: discovererName,
-            discovererId: String(userId), // String化
+            discovererId: String(userId),
             sharedAt: new Date().toISOString()
         });
 
@@ -213,6 +217,41 @@
         await Memory.saveUserProfile(userId, profile);
 
         return "SUCCESS";
+    };
+
+    // ★追加: 公開を取り消す（非公開に戻す）
+    Memory.unshareFromPublicCollection = async function(userId, itemIndex) {
+        if (!db) throw new Error("Database not connected");
+        
+        const profile = await Memory.getUserProfile(userId);
+        if (!profile.collection || !profile.collection[itemIndex]) throw new Error("Item not found");
+        
+        const item = profile.collection[itemIndex];
+        if (!item.isShared) return "NOT_SHARED";
+
+        try {
+            // 画像URLと投稿者IDで検索して削除
+            // (ユニークIDを持っていないため、この方法で特定する)
+            const snapshot = await db.collection("public_collection")
+                .where("discovererId", "==", String(userId))
+                .where("image", "==", item.image)
+                .get();
+
+            const batch = db.batch();
+            snapshot.docs.forEach(doc => {
+                batch.delete(doc.ref);
+            });
+            await batch.commit();
+
+            // ローカルのフラグを戻す
+            item.isShared = false;
+            await Memory.saveUserProfile(userId, profile);
+            
+            return "SUCCESS";
+        } catch (e) {
+            console.error("Unshare Error:", e);
+            throw e;
+        }
     };
 
     Memory.getPublicCollection = async function() {

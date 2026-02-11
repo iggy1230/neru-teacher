@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v416.0: ランキング掲示板追加版) --- */
+/* --- style.css (完全版 v425.0: iOS Safari神経衰弱バグ修正版) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -1180,6 +1180,7 @@ button { font-family: inherit; }
     border-radius: 5px;
     /* 背景色を白にして透け防止 */
     background-color: #fff;
+    -webkit-transform-style: preserve-3d; /* iOS Safari fix */
 }
 
 .memory-card.flipped .memory-card-inner {
@@ -1193,8 +1194,9 @@ button { font-family: inherit; }
     -webkit-backface-visibility: hidden; /* Safari */
     backface-visibility: hidden;
     border-radius: 5px;
-    /* overflow: hidden;  Safariバグ回避のため削除 */
     background-color: #fff;
+    transform: translate3d(0,0,0); /* iOS Safari fix */
+    -webkit-transform: translate3d(0,0,0); /* iOS Safari fix */
 }
 
 .memory-card-back {
@@ -1313,10 +1315,13 @@ button { font-family: inherit; }
     width: 100%;
     background: rgba(255,255,255,0.9);
     padding: 2px;
-    font-size: 0.7rem;
+    font-size: 0.6rem;
     font-weight: bold;
     color: #555;
     border-top: 1px solid #eee;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* ★ランキング掲示板用スタイル (v416.0追加) */
@@ -1399,4 +1404,8 @@ button { font-family: inherit; }
     color: #e65100;
     font-size: 1.1rem;
     white-space: nowrap;
+}
+
+.memory-tab.active-tab {
+    font-weight: bold;
 }

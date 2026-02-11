@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v417.0: 作者表示＆いいね機能実装版) ---
+// --- js/game-engine.js (v424.0: 神経衰弱重複排除版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -185,8 +185,9 @@ window.drawGame = function() {
 };
 
 // ==========================================
-// 2. VS ロボット掃除機
+// 2. VS ロボット掃除機 (画像対応・ライフ制版)
 // ==========================================
+// ★修正: ルート相対パスに変更
 const DANMAKU_ASSETS_PATH = '/assets/images/game/souji/';
 
 const danmakuImages = {
@@ -213,13 +214,16 @@ let areDanmakuImagesLoaded = false;
 function loadDanmakuImages() {
     if (areDanmakuImagesLoaded) return;
     
+    // ★キャッシュ対策のタイムスタンプを追加
     const ts = new Date().getTime();
+    
     danmakuImages.player.crossOrigin = "Anonymous";
     danmakuImages.player.src = DANMAKU_ASSETS_PATH + 'neru_dot.png?v=' + ts;
     
     danmakuImages.boss.crossOrigin = "Anonymous";
     danmakuImages.boss.src = DANMAKU_ASSETS_PATH + 'runba_dot.png?v=' + ts;
     
+    // Goodアイテム読み込み
     danmakuImages.goods = goodItemsDef.map(def => {
         const img = new Image();
         img.crossOrigin = "Anonymous";
@@ -227,6 +231,7 @@ function loadDanmakuImages() {
         return { img: img, score: def.score, weight: def.weight };
     });
 
+    // Badアイテム読み込み
     danmakuImages.bads = badItemsDef.map(file => {
         const img = new Image();
         img.crossOrigin = "Anonymous";
@@ -803,6 +808,23 @@ window.startQuizSet = async function(genre, level) {
     quizState.sessionQuizzes = []; // セッションクイズ履歴をリセット
     quizState.history = []; 
     quizState.sessionId = Date.now(); 
+
+    // ★追加: 1問目にストックを利用 (ローカル)
+    if (currentUser && currentUser.savedQuizzes && currentUser.savedQuizzes.length > 0) {
+        // 現在のジャンルに合うものを探す
+        const candidates = currentUser.savedQuizzes.filter(q => {
+            if (genre === "全ジャンル") return true;
+            return q.genre === genre || q.actual_genre === genre;
+        });
+        
+        if (candidates.length > 0) {
+            // ランダムに1つ選ぶ
+            const stockQuiz = candidates[Math.floor(Math.random() * candidates.length)];
+            // キューに追加 (API生成より先に消費される)
+            quizState.questionQueue.push({ ...stockQuiz, isStock: true });
+            console.log("[Quiz] Added 1 local stock quiz to queue:", stockQuiz.question);
+        }
+    }
 
     document.getElementById('quiz-genre-select').classList.add('hidden');
     document.getElementById('quiz-level-select').classList.add('hidden');
@@ -1832,7 +1854,19 @@ window.createCardDeck = async function() {
         description: p.description
     }));
     
-    let allCandidates = [...collection, ...normalizedPublic];
+    // ★修正ポイント: 重複排除
+    let rawCandidates = [...collection, ...normalizedPublic];
+    
+    // 画像URLをキーにして重複を排除
+    const uniqueMap = new Map();
+    rawCandidates.forEach(item => {
+        if (!item.image) return;
+        if (!uniqueMap.has(item.image)) {
+            uniqueMap.set(item.image, item);
+        }
+    });
+    
+    let allCandidates = Array.from(uniqueMap.values());
     
     // シャッフルして候補を混ぜる
     allCandidates.sort(() => Math.random() - 0.5);
