@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (v399.0: 図鑑ナビゲーション追加版) ---
+// --- js/ui/ui.js (v410.0: ロビー遷移時の完全停止＆クイズ停止対応版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -137,8 +137,8 @@ window.backToLobby = function(suppressGreeting = false) {
     // ★重要: ロビーに戻るとき、すべてのバックグラウンドプロセスを強制停止
     
     // 1. 音声再生の停止 (TTS, LiveStream, SFX)
-    if (typeof window.stopAudioPlayback === 'function') window.stopAudioPlayback(); // Voice Service (Web Audio)
-    if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();   // Audio Service (TTS fetch)
+    if (typeof window.stopAudioPlayback === 'function') window.stopAudioPlayback();
+    if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
     
     // 2. 音声認識・WebSocketの停止
     if (typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
@@ -151,10 +151,21 @@ window.backToLobby = function(suppressGreeting = false) {
     if (typeof window.stopDanmakuGame === 'function') window.stopDanmakuGame();
     window.gameRunning = false; // カリカリキャッチ用
 
-    // 5. 分析フラグのリセット
+    // 5. GPS追跡の停止 (★追加)
+    if (typeof window.stopLocationWatch === 'function') window.stopLocationWatch();
+
+    // 6. クイズのバックグラウンド生成を停止 (★追加)
+    // sessionIdを変更することで、実行中のgenerateValidQuizやbackgroundQuizFetcherを中断させる
+    if (window.quizState) {
+        window.quizState.sessionId = Date.now(); // 無効なIDに更新
+        window.quizState.questionQueue = []; // キューもクリア
+        window.quizState.isFinished = true;
+    }
+
+    // 7. 分析フラグのリセット
     if (window.isAnalyzing !== undefined) window.isAnalyzing = false;
     
-    // 6. モードのリセット
+    // 8. モードのリセット
     window.currentMode = null;
 
     // 画面切り替え
@@ -256,7 +267,6 @@ window.updateProgress = function(p) {
 // 図鑑 (Collection) - ★グリッド表示・ナビゲーション付き
 // ==========================================
 
-// ★修正: 総数を取得して渡すように変更
 window.openCollectionDetailByIndex = function(originalIndex) {
     if (!window.NellMemory || !currentUser) return;
     window.NellMemory.getUserProfile(currentUser.id).then(profile => {
@@ -267,7 +277,6 @@ window.openCollectionDetailByIndex = function(originalIndex) {
             }
             const collectionNumber = profile.collection.length - originalIndex;
             const totalCount = profile.collection.length;
-            // 詳細表示へ（totalCountも渡す）
             window.showCollectionDetail(profile.collection[originalIndex], originalIndex, collectionNumber, totalCount);
         }
     });
@@ -303,7 +312,6 @@ window.showCollection = async function() {
                 </div>
             </div>
 
-            <!-- ★修正: グリッドレイアウトの定義 -->
             <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap:12px; flex: 1; overflow-y:auto; padding:5px;">
                 <p style="width:100%; text-align:center;">読み込み中にゃ...</p>
             </div>
@@ -379,9 +387,8 @@ window.renderCollectionList = async function() {
                 margin: 0;
             `;
             
-            div.onclick = () => window.openCollectionDetailByIndex(item.originalIndex); // originalIndexを使う
+            div.onclick = () => window.openCollectionDetailByIndex(item.originalIndex); 
 
-            // 画像表示 (全体を表示)
             const img = document.createElement('img');
             img.src = item.image;
             img.loading = "lazy";
@@ -403,7 +410,6 @@ window.renderCollectionList = async function() {
     renderChunk();
 };
 
-// ★修正: totalCount を受け取り、ナビゲーションボタンを表示する
 window.showCollectionDetail = function(item, originalIndex, collectionNumber, totalCount) {
     const modal = document.getElementById('collection-modal');
     if (!modal) return;
@@ -415,11 +421,6 @@ window.showCollectionDetail = function(item, originalIndex, collectionNumber, to
         mapBtnHtml = `<button onclick="window.closeCollection(); window.showMap(${item.location.lat}, ${item.location.lon});" class="mini-teach-btn" style="background:#29b6f6; width:auto; margin-left:10px;">🗺️ 地図で見る</button>`;
     }
 
-    // ナビゲーションボタンの生成
-    // originalIndex は 0 が最新。
-    // 左ボタン (Newer): index - 1
-    // 右ボタン (Older): index + 1
-    
     let leftBtnHtml = "";
     if (originalIndex > 0) {
         leftBtnHtml = `
@@ -479,7 +480,6 @@ window.closeCollection = function() {
     const modal = document.getElementById('collection-modal');
     if (modal) {
         modal.classList.add('hidden');
-        // ★メモリ対策: モーダルを閉じるときに中身を空にして画像を解放する
         setTimeout(() => {
             if (modal.classList.contains('hidden')) {
                 modal.innerHTML = "";
@@ -548,7 +548,6 @@ window.renderMapMarkers = async function() {
     
     let hasMarkers = false;
     
-    // ★最適化: マーカーが多すぎる場合は最新の50件に制限する
     const displayCollection = collection.slice(0, 50);
     
     displayCollection.forEach((item, index) => {
@@ -557,7 +556,6 @@ window.renderMapMarkers = async function() {
             
             const icon = L.divIcon({
                 className: 'custom-div-icon',
-                // アイコン画像も遅延させる
                 html: `<div class="map-pin-icon" style="background-image: url('${item.image}');"></div>`,
                 iconSize: [50, 50],
                 iconAnchor: [25, 25],

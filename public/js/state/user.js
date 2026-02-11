@@ -1,4 +1,4 @@
-// --- js/state/user.js (完全版 v375.0: レベル対応版) ---
+// --- js/state/user.js (完全版 v375.1: 保存クイズ対応版) ---
 
 // Firebase初期化
 let app, auth, db, storage; // storageを追加
@@ -57,6 +57,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (currentUser.isGoogleUser === undefined) currentUser.isGoogleUser = true;
                     // クイズレベルの初期化
                     if (!currentUser.quizLevels) currentUser.quizLevels = { "全ジャンル": 1 };
+                    // ★クイズ保存配列の初期化
+                    if (!currentUser.savedQuizzes) currentUser.savedQuizzes = [];
                     login(currentUser, true); 
                 }
             }
@@ -83,9 +85,16 @@ window.startGoogleLogin = function() {
                 currentUser.isGoogleUser = true; 
                 // クイズレベルの初期化
                 if (!currentUser.quizLevels) currentUser.quizLevels = { "全ジャンル": 1 };
+                // ★クイズ保存配列の初期化
+                if (!currentUser.savedQuizzes) currentUser.savedQuizzes = [];
                 login(currentUser, true);
             } else {
-                currentUser = { id: user.uid, isGoogleUser: true, quizLevels: { "全ジャンル": 1 } };
+                currentUser = { 
+                    id: user.uid, 
+                    isGoogleUser: true, 
+                    quizLevels: { "全ジャンル": 1 },
+                    savedQuizzes: [] // ★
+                };
                 window.isGoogleEnrollment = true;
                 alert("はじめましてだにゃ！\nGoogleアカウントで入学手続きをするにゃ！");
                 showEnrollment();
@@ -374,7 +383,8 @@ async function processAndCompleteEnrollment() {
                 memory: (currentUser && currentUser.memory) || "", 
                 lastLogin: (currentUser && currentUser.lastLogin) || "", 
                 streak: (currentUser && currentUser.streak) || 0,
-                quizLevels: (currentUser && currentUser.quizLevels) || defaultQuizLevels
+                quizLevels: (currentUser && currentUser.quizLevels) || defaultQuizLevels,
+                savedQuizzes: (currentUser && currentUser.savedQuizzes) || [] // ★
             };
             if (db) await db.collection("users").doc(uid).set(updatedUser, { merge: true });
             currentUser = updatedUser; window.isGoogleEnrollment = false; updateNellMessage(`${currentUser.name}さんの学生証ができたにゃ！`, "excited"); switchScreen('screen-lobby');
@@ -387,6 +397,8 @@ async function processAndCompleteEnrollment() {
                     users[idx].photo = finalPhoto; 
                     // クイズレベルの維持または初期化
                     if (!users[idx].quizLevels) users[idx].quizLevels = defaultQuizLevels;
+                    // ★
+                    if (!users[idx].savedQuizzes) users[idx].savedQuizzes = [];
                     
                     currentUser = users[idx]; 
                     localStorage.setItem('nekoneko_users', JSON.stringify(users)); 
@@ -409,7 +421,8 @@ async function processAndCompleteEnrollment() {
                     memory: "", 
                     lastLogin: "", 
                     streak: 0,
-                    quizLevels: defaultQuizLevels
+                    quizLevels: defaultQuizLevels,
+                    savedQuizzes: [] // ★
                 };
                 users.push(newUser); 
                 localStorage.setItem('nekoneko_users', JSON.stringify(users)); 
@@ -440,6 +453,7 @@ function login(user, isGoogle = false) {
     currentUser = user; 
     if (!currentUser.attendance) currentUser.attendance = {}; 
     if (!currentUser.quizLevels) currentUser.quizLevels = { "全ジャンル": 1 }; // 念のため
+    if (!currentUser.savedQuizzes) currentUser.savedQuizzes = []; // 念のため
     
     // 出席＆ボーナス判定
     const today = new Date().toISOString().split('T')[0]; 

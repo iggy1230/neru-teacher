@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v397.0: お宝位置情報優先＆放課後アルバム対応版) ---
+// --- js/camera-service.js (v410.0: 画像位置優先ロジック・完全版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -173,7 +173,6 @@ window.handleTreasureFile = async function(file) {
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
             const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6);
             const base64Data = compressedDataUrl.split(',')[1];
-            // 画像から位置情報が取れた場合は providedLocation として渡す
             await window.analyzeTreasureImage(base64Data, locationData);
             if (btn) {
                 btn.innerHTML = "<span>📁</span> アルバム";
@@ -251,7 +250,6 @@ window.analyzeTreasureImage = async function(base64Data, providedLocation = null
 
     try {
         // ★修正: providedLocation（画像EXIF由来）がある場合は、現在地の住所(address)を送らないようにする
-        // これにより、サーバー側は座標(location)を優先して場所を特定するようになる
         const addressToSend = providedLocation ? null : window.currentAddress;
 
         const res = await fetch('/identify-item', {
@@ -260,7 +258,7 @@ window.analyzeTreasureImage = async function(base64Data, providedLocation = null
                 image: base64Data, 
                 name: currentUser ? currentUser.name : "生徒", 
                 location: locationData, 
-                address: addressToSend // ここを修正
+                address: addressToSend 
             })
         });
         if (!res.ok) throw new Error("サーバー通信エラーだにゃ");
@@ -316,7 +314,6 @@ window.captureAndIdentifyItem = async function() {
 // ==========================================
 
 window.uploadFreeChatImage = function() {
-    // WebSocket接続確認
     if (!window.liveSocket || window.liveSocket.readyState !== WebSocket.OPEN) {
         return alert("まずは「おはなしする」ボタンを押して、ネル先生とつながってにゃ！");
     }
@@ -338,12 +335,10 @@ window.handleFreeChatImageFile = async function(file) {
         btn.disabled = true;
     }
 
-    // EXIFから位置情報を取得（念のため）
     let locationInfo = "";
     try {
         const loc = await getGpsFromExif(file);
         if (loc) {
-            // WebSocketでの位置情報の伝え方はプロンプトに埋め込むのが確実
             locationInfo = `（この写真の位置情報: 緯度${loc.lat}, 経度${loc.lon}）`;
         }
     } catch (e) {}
@@ -363,7 +358,6 @@ window.handleFreeChatImageFile = async function(file) {
             const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6);
             const base64Data = compressedDataUrl.split(',')[1];
 
-            // プレビュー表示
             const flash = document.createElement('div');
             flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;";
             document.body.appendChild(flash);
@@ -375,7 +369,6 @@ window.handleFreeChatImageFile = async function(file) {
             document.body.appendChild(notif);
             setTimeout(() => notif.remove(), 2000);
 
-            // WebSocket送信
             if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN) {
                 let promptText = `（ユーザーが画像を見せました${locationInfo}）この画像の内容について、子供にもわかるように楽しくおしゃべりしてください。`;
                 window.liveSocket.send(JSON.stringify({ 
