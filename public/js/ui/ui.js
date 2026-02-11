@@ -1,9 +1,11 @@
-// --- js/ui/ui.js (v410.0: ロビー遷移時の完全停止＆クイズ停止対応版) ---
+// --- js/ui/ui.js (v420.0: お宝図鑑共有UI実装版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
 // 図鑑のソートモード (初期値: 登録番号降順 = 新しい順)
 window.collectionSortMode = 'desc'; 
+// ★図鑑のタブモード (mine / public)
+window.collectionTabMode = 'mine';
 
 // ==========================================
 // 音量管理 (直接操作)
@@ -40,7 +42,6 @@ window.updateVolumeUI = function() {
 window.applyVolumeToAll = function() {
     const targetVol = window.isMuted ? 0 : window.appVolume;
     
-    // 1. Audio Elements
     if (window.audioList) {
         window.audioList.forEach(audio => {
             if (audio === window.sfxBunseki) {
@@ -51,7 +52,6 @@ window.applyVolumeToAll = function() {
         });
     }
     
-    // 2. Web Audio API Master Gain
     if (window.masterGainNode && window.audioCtx) {
         window.masterGainNode.gain.setValueAtTime(targetVol, window.audioCtx.currentTime);
     }
@@ -88,13 +88,8 @@ window.formatCollectionNumber = function(num) {
 // ==========================================
 
 window.switchScreen = function(to) {
-    // ★最適化: 画面切り替え時に古い画面の重い要素をクリアする
     document.querySelectorAll('.screen').forEach(s => {
         s.classList.add('hidden');
-        // 図鑑画面から抜ける場合、中身を空にしてメモリを解放
-        if (s.id === 'screen-map' && to !== 'screen-map') {
-            // Leafletマップのメモリリーク対策は別途実施
-        }
     });
 
     const target = document.getElementById(to);
@@ -102,7 +97,6 @@ window.switchScreen = function(to) {
         target.classList.remove('hidden');
         window.scrollTo({ top: 0, behavior: 'instant' });
         
-        // 運動場なら初期化
         if (to === 'screen-playground') {
             window.updateNellMessage("運動の時間だにゃ！", "excited", false);
         }
@@ -134,41 +128,24 @@ window.backToGate = function() {
 };
 
 window.backToLobby = function(suppressGreeting = false) {
-    // ★重要: ロビーに戻るとき、すべてのバックグラウンドプロセスを強制停止
-    
-    // 1. 音声再生の停止 (TTS, LiveStream, SFX)
     if (typeof window.stopAudioPlayback === 'function') window.stopAudioPlayback();
     if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
-    
-    // 2. 音声認識・WebSocketの停止
     if (typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
     if (typeof window.stopLiveChat === 'function') window.stopLiveChat();
-    
-    // 3. カメラの停止
     if (typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera();
-    
-    // 4. ゲームループの停止
     if (typeof window.stopDanmakuGame === 'function') window.stopDanmakuGame();
-    window.gameRunning = false; // カリカリキャッチ用
-
-    // 5. GPS追跡の停止 (★追加)
+    window.gameRunning = false; 
     if (typeof window.stopLocationWatch === 'function') window.stopLocationWatch();
 
-    // 6. クイズのバックグラウンド生成を停止 (★追加)
-    // sessionIdを変更することで、実行中のgenerateValidQuizやbackgroundQuizFetcherを中断させる
     if (window.quizState) {
-        window.quizState.sessionId = Date.now(); // 無効なIDに更新
-        window.quizState.questionQueue = []; // キューもクリア
+        window.quizState.sessionId = Date.now(); 
+        window.quizState.questionQueue = []; 
         window.quizState.isFinished = true;
     }
 
-    // 7. 分析フラグのリセット
     if (window.isAnalyzing !== undefined) window.isAnalyzing = false;
-    
-    // 8. モードのリセット
     window.currentMode = null;
 
-    // 画面切り替え
     switchScreen('screen-lobby');
 
     const shouldGreet = (typeof suppressGreeting === 'boolean') ? !suppressGreeting : true;
@@ -264,22 +241,55 @@ window.updateProgress = function(p) {
 };
 
 // ==========================================
-// 図鑑 (Collection) - ★グリッド表示・ナビゲーション付き
+// 図鑑 (Collection) - ★共有機能・タブ切り替え対応
 // ==========================================
 
-window.openCollectionDetailByIndex = function(originalIndex) {
-    if (!window.NellMemory || !currentUser) return;
-    window.NellMemory.getUserProfile(currentUser.id).then(profile => {
-        if (profile && profile.collection && profile.collection[originalIndex]) {
-            const modal = document.getElementById('collection-modal');
-            if (modal && modal.classList.contains('hidden')) {
-                modal.classList.remove('hidden');
-            }
-            const collectionNumber = profile.collection.length - originalIndex;
-            const totalCount = profile.collection.length;
-            window.showCollectionDetail(profile.collection[originalIndex], originalIndex, collectionNumber, totalCount);
+// タブ切り替え
+window.switchCollectionTab = function(tab) {
+    window.collectionTabMode = tab;
+    
+    // タブの見た目更新
+    const btnMine = document.getElementById('col-tab-mine');
+    const btnPublic = document.getElementById('col-tab-public');
+    if (btnMine && btnPublic) {
+        if (tab === 'mine') {
+            btnMine.classList.add('active-tab');
+            btnPublic.classList.remove('active-tab');
+        } else {
+            btnMine.classList.remove('active-tab');
+            btnPublic.classList.add('active-tab');
         }
-    });
+    }
+    
+    // リスト再描画
+    window.renderCollectionList();
+};
+
+window.openCollectionDetailByIndex = function(index) {
+    if (!window.NellMemory || !currentUser) return;
+
+    if (window.collectionTabMode === 'mine') {
+        window.NellMemory.getUserProfile(currentUser.id).then(profile => {
+            if (profile && profile.collection && profile.collection[index]) {
+                const modal = document.getElementById('collection-modal');
+                if (modal && modal.classList.contains('hidden')) modal.classList.remove('hidden');
+                
+                const item = profile.collection[index];
+                const totalCount = profile.collection.length;
+                window.showCollectionDetail(item, index, totalCount, true); // true = 自分の
+            }
+        });
+    } else {
+        // Publicモードの場合、window.publicCollectionCache から取得
+        if (window.publicCollectionCache && window.publicCollectionCache[index]) {
+            const item = window.publicCollectionCache[index];
+            const modal = document.getElementById('collection-modal');
+            if (modal && modal.classList.contains('hidden')) modal.classList.remove('hidden');
+            
+            const totalCount = window.publicCollectionCache.length;
+            window.showCollectionDetail(item, index, totalCount, false); // false = 他人の
+        }
+    }
 };
 
 window.changeCollectionSort = function(select) {
@@ -296,17 +306,23 @@ window.showCollection = async function() {
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 85vh; display: flex; flex-direction: column;">
             <h3 style="text-align:center; margin:0 0 10px 0; color:#f57f17; flex-shrink: 0;">📖 お宝図鑑</h3>
             
+            <!-- タブ -->
+            <div style="display:flex; gap:10px; margin-bottom:10px; flex-shrink:0;">
+                <button id="col-tab-mine" onclick="switchCollectionTab('mine')" class="memory-tab active-tab" style="flex:1; border-radius:10px; border:2px solid #f57f17; background:#fff; color:#f57f17;">じぶんの</button>
+                <button id="col-tab-public" onclick="switchCollectionTab('public')" class="memory-tab" style="flex:1; border-radius:10px; border:2px solid #8d6e63; background:#fff; color:#8d6e63;">みんなの</button>
+            </div>
+
             <div style="flex-shrink:0; display:flex; flex-direction:column; gap:8px; margin-bottom:10px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                      <button onclick="closeCollection(); showMap();" class="main-btn" style="width:auto; margin:0; padding:8px 15px; font-size:0.85rem; background:#29b6f6; box-shadow: 0 3px 0 #0288d1;">🗺️ 足あとマップ</button>
-                     <div id="collection-count-badge" style="background:#fff; padding:5px 10px; border-radius:15px; font-weight:bold; color:#555; border:1px solid #ccc; font-size:0.9rem;">全 0 件</div>
+                     <div id="collection-count-badge" style="background:#fff; padding:5px 10px; border-radius:15px; font-weight:bold; color:#555; border:1px solid #ccc; font-size:0.9rem;">読み込み中...</div>
                 </div>
                 
-                <div style="display:flex; align-items:center; gap:5px; justify-content:flex-end;">
+                <div id="collection-sort-area" style="display:flex; align-items:center; gap:5px; justify-content:flex-end;">
                     <span style="font-size:0.8rem; font-weight:bold; color:#666;">並び替え:</span>
                     <select onchange="changeCollectionSort(this)" style="padding:5px; border-radius:5px; border:1px solid #ccc; font-size:0.8rem;">
-                        <option value="desc" ${window.collectionSortMode === 'desc' ? 'selected' : ''}>登録番号 (降順)</option>
-                        <option value="asc" ${window.collectionSortMode === 'asc' ? 'selected' : ''}>登録番号 (昇順)</option>
+                        <option value="desc" ${window.collectionSortMode === 'desc' ? 'selected' : ''}>新しい順</option>
+                        <option value="asc" ${window.collectionSortMode === 'asc' ? 'selected' : ''}>古い順</option>
                         <option value="rarity" ${window.collectionSortMode === 'rarity' ? 'selected' : ''}>レアリティ順</option>
                     </select>
                 </div>
@@ -321,43 +337,64 @@ window.showCollection = async function() {
     `;
     modal.classList.remove('hidden');
 
+    window.collectionTabMode = 'mine'; // 初期は自分
     window.renderCollectionList();
 };
 
 window.renderCollectionList = async function() {
     const grid = document.getElementById('collection-grid');
     const countBadge = document.getElementById('collection-count-badge');
+    const sortArea = document.getElementById('collection-sort-area');
+    
     if (!grid) return;
 
-    grid.innerHTML = '';
-    const profile = await window.NellMemory.getUserProfile(currentUser.id);
-    const collection = profile.collection || [];
-    const totalCount = collection.length;
+    grid.innerHTML = '<p style="width:100%; text-align:center;">読み込み中にゃ...</p>';
+    
+    let items = [];
 
-    if (countBadge) countBadge.innerText = `全 ${totalCount} 件`;
+    if (window.collectionTabMode === 'mine') {
+        // 自分のコレクション
+        if (sortArea) sortArea.style.display = 'flex';
+        const profile = await window.NellMemory.getUserProfile(currentUser.id);
+        const collection = profile.collection || [];
+        
+        items = collection.map((item, index) => ({
+            ...item,
+            originalIndex: index,
+            number: collection.length - index
+        }));
 
-    if (totalCount === 0) {
-        grid.innerHTML = '<p style="width:100%; text-align:center; color:#888;">まだ何もないにゃ。<br>「ネル先生のお宝図鑑」でカメラを見せてにゃ！</p>';
-        return;
+        if (window.collectionSortMode === 'asc') {
+            items.sort((a, b) => a.number - b.number);
+        } else if (window.collectionSortMode === 'desc') {
+            items.sort((a, b) => b.number - a.number);
+        } else if (window.collectionSortMode === 'rarity') {
+            items.sort((a, b) => {
+                const rA = a.rarity || 1;
+                const rB = b.rarity || 1;
+                if (rA !== rB) return rB - rA;
+                return b.number - a.number;
+            });
+        }
+
+    } else {
+        // みんなのコレクション
+        if (sortArea) sortArea.style.display = 'none'; // 公開用は時系列固定
+        const publicItems = await window.NellMemory.getPublicCollection();
+        window.publicCollectionCache = publicItems; // 詳細表示用にキャッシュ
+        
+        items = publicItems.map((item, index) => ({
+            ...item,
+            originalIndex: index // キャッシュ配列のインデックス
+        }));
     }
 
-    let items = collection.map((item, index) => ({
-        ...item,
-        originalIndex: index,
-        number: totalCount - index
-    }));
+    if (countBadge) countBadge.innerText = `全 ${items.length} 件`;
+    grid.innerHTML = '';
 
-    if (window.collectionSortMode === 'asc') {
-        items.sort((a, b) => a.number - b.number);
-    } else if (window.collectionSortMode === 'desc') {
-        items.sort((a, b) => b.number - a.number);
-    } else if (window.collectionSortMode === 'rarity') {
-        items.sort((a, b) => {
-            const rA = a.rarity || 1;
-            const rB = b.rarity || 1;
-            if (rA !== rB) return rB - rA;
-            return b.number - a.number;
-        });
+    if (items.length === 0) {
+        grid.innerHTML = '<p style="width:100%; text-align:center; color:#888;">まだ何もないにゃ。</p>';
+        return;
     }
 
     const CHUNK_SIZE = 12;
@@ -395,6 +432,14 @@ window.renderCollectionList = async function() {
             img.decoding = "async";
             img.style.cssText = "width:100%; height:100%; object-fit:contain; display:block; background-color: #f9f9f9;";
             
+            // 公開タブの場合は発見者名を表示
+            if (window.collectionTabMode === 'public') {
+                const badge = document.createElement('div');
+                badge.className = "info-badge";
+                badge.innerText = `${window.cleanDisplayString(item.discovererName || "誰か")}さん`;
+                div.appendChild(badge);
+            }
+
             div.appendChild(img);
             fragment.appendChild(div);
         });
@@ -410,7 +455,7 @@ window.renderCollectionList = async function() {
     renderChunk();
 };
 
-window.showCollectionDetail = function(item, originalIndex, collectionNumber, totalCount) {
+window.showCollectionDetail = function(item, originalIndex, totalCount, isMine) {
     const modal = document.getElementById('collection-modal');
     if (!modal) return;
     
@@ -421,6 +466,23 @@ window.showCollectionDetail = function(item, originalIndex, collectionNumber, to
         mapBtnHtml = `<button onclick="window.closeCollection(); window.showMap(${item.location.lat}, ${item.location.lon});" class="mini-teach-btn" style="background:#29b6f6; width:auto; margin-left:10px;">🗺️ 地図で見る</button>`;
     }
 
+    // 共有ボタン (自分のアイテムで、まだ共有していない場合)
+    let shareBtnHtml = "";
+    if (isMine && !item.isShared) {
+        shareBtnHtml = `<button onclick="shareCollectionItem(${originalIndex})" class="mini-teach-btn" style="background:#ff9800; width:auto;">✨ みんなに公開する</button>`;
+    } else if (isMine && item.isShared) {
+        shareBtnHtml = `<span style="font-size:0.8rem; color:#ff9800; font-weight:bold;">公開済み</span>`;
+    } else if (!isMine) {
+        shareBtnHtml = `<span style="font-size:0.8rem; color:#666;">発見者: <strong>${window.cleanDisplayString(item.discovererName || "誰か")}さん</strong></span>`;
+    }
+
+    // 削除ボタン (自分のみ)
+    let deleteBtnHtml = "";
+    if (isMine) {
+        deleteBtnHtml = `<button onclick="deleteCollectionItem(${originalIndex})" class="mini-teach-btn" style="background:#ff5252;">削除</button>`;
+    }
+
+    // 左右ナビ
     let leftBtnHtml = "";
     if (originalIndex > 0) {
         leftBtnHtml = `
@@ -448,11 +510,11 @@ window.showCollectionDetail = function(item, originalIndex, collectionNumber, to
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 90vh; display: flex; flex-direction: column;">
             <div style="flex-shrink:0; display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                <div>
+                <div style="display:flex; gap:5px; align-items:center;">
                     <button onclick="showCollection()" class="mini-teach-btn" style="background:#8d6e63;">← 一覧</button>
                     ${mapBtnHtml}
                 </div>
-                <button onclick="deleteCollectionItem(${originalIndex})" class="mini-teach-btn" style="background:#ff5252;">削除</button>
+                ${deleteBtnHtml}
             </div>
             
             <div style="flex:1; overflow-y:auto; background:transparent; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px; position:relative;">
@@ -462,10 +524,31 @@ window.showCollectionDetail = function(item, originalIndex, collectionNumber, to
             </div>
             
             <div style="text-align:center; margin-top:10px; flex-shrink:0;">
+                ${shareBtnHtml}
+                <br><br>
                 <button onclick="closeCollection()" class="main-btn gray-btn" style="width:auto; padding:8px 30px; font-size:0.9rem;">閉じる</button>
             </div>
         </div>
     `;
+};
+
+window.shareCollectionItem = async function(index) {
+    if (!currentUser || !window.NellMemory) return;
+    if (!confirm("このお宝をみんなの図鑑に公開するにゃ？\n（名前が表示されます）")) return;
+    
+    try {
+        const result = await window.NellMemory.shareToPublicCollection(currentUser.id, index, currentUser.name);
+        if (result === "SUCCESS") {
+            alert("公開したにゃ！みんなが見れるようになったにゃ！");
+            // 再描画してボタンを「公開済み」にする
+            window.openCollectionDetailByIndex(index);
+        } else if (result === "ALREADY_SHARED") {
+            alert("もう公開済みだにゃ！");
+        }
+    } catch(e) {
+        console.error(e);
+        alert("公開できなかったにゃ...通信エラーかも？");
+    }
 };
 
 window.deleteCollectionItem = async function(index) {
@@ -572,7 +655,7 @@ window.renderMapMarkers = async function() {
                     <img src="${item.image}" loading="lazy" style="width:100%; height:auto; border-radius:5px; margin-bottom:5px; box-shadow:0 2px 5px rgba(0,0,0,0.2);">
                     <strong>${displayName}</strong><br>
                     <span style="font-size:0.8rem; color:#666;">${dateStr}</span><br>
-                    <button onclick="window.openCollectionDetailByIndex(${index})" class="mini-teach-btn" style="margin-top:5px; background:#ff85a1;">📖 詳しく見る</button>
+                    <button onclick="window.collectionTabMode='mine'; window.openCollectionDetailByIndex(${index})" class="mini-teach-btn" style="margin-top:5px; background:#ff85a1;">📖 詳しく見る</button>
                 </div>
             `);
         }

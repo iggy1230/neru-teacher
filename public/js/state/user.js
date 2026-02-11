@@ -1,7 +1,7 @@
-// --- js/state/user.js (完全版 v375.1: 保存クイズ対応版) ---
+// --- js/state/user.js (完全版 v421.0: 匿名認証対応版) ---
 
 // Firebase初期化
-let app, auth, db, storage; // storageを追加
+let app, auth, db, storage;
 if (typeof firebaseConfig === 'undefined') {
     console.warn("firebase-config.js が読み込まれていないか、設定されていません。");
 } else {
@@ -9,16 +9,16 @@ if (typeof firebaseConfig === 'undefined') {
         app = firebase.initializeApp(firebaseConfig);
         auth = firebase.auth();
         db = firebase.firestore();
-        storage = firebase.storage(); // Storage初期化
+        storage = firebase.storage();
     } else if (typeof firebase !== 'undefined') {
         app = firebase.app();
         auth = firebase.auth();
         db = firebase.firestore();
-        storage = firebase.storage(); // Storage初期化
+        storage = firebase.storage();
     }
 }
 
-// グローバルに公開（memory.js等から使うため）
+// グローバルに公開
 window.fireStorage = storage;
 
 let users = JSON.parse(localStorage.getItem('nekoneko_users')) || [];
@@ -50,24 +50,41 @@ document.addEventListener('DOMContentLoaded', () => {
     
     if (auth) {
         auth.onAuthStateChanged(async (user) => {
-            if (user && !currentUser) {
+            if (user) {
+                // ログイン済みならDBから取得を試みる
                 const doc = await db.collection("users").doc(user.uid).get();
                 if (doc.exists) {
-                    currentUser = doc.data();
-                    if (currentUser.isGoogleUser === undefined) currentUser.isGoogleUser = true;
-                    // クイズレベルの初期化
-                    if (!currentUser.quizLevels) currentUser.quizLevels = { "全ジャンル": 1 };
-                    // ★クイズ保存配列の初期化
-                    if (!currentUser.savedQuizzes) currentUser.savedQuizzes = [];
-                    login(currentUser, true); 
+                    const userData = doc.data();
+                    // ローカルストレージとも同期
+                    updateLocalUserList(userData);
+                    
+                    if (!currentUser) {
+                        currentUser = userData;
+                        if (currentUser.isGoogleUser === undefined) currentUser.isGoogleUser = !user.isAnonymous;
+                        if (!currentUser.quizLevels) currentUser.quizLevels = { "全ジャンル": 1 };
+                        if (!currentUser.savedQuizzes) currentUser.savedQuizzes = [];
+                        login(currentUser, true); 
+                    }
                 }
             }
         });
     }
 });
 
+function updateLocalUserList(userData) {
+    // ローカルストレージのリストを更新・追加
+    const idx = users.findIndex(u => u.id === userData.id);
+    if (idx !== -1) {
+        users[idx] = userData;
+    } else {
+        users.push(userData);
+    }
+    localStorage.setItem('nekoneko_users', JSON.stringify(users));
+    renderUserList();
+}
+
 window.logoutProcess = async function() {
-    if (auth && currentUser && currentUser.isGoogleUser) {
+    if (auth && currentUser) {
         try { await auth.signOut(); } catch(e) { console.error("Logout Error:", e); }
     }
     currentUser = null;
@@ -83,9 +100,7 @@ window.startGoogleLogin = function() {
             if (doc.exists) {
                 currentUser = doc.data();
                 currentUser.isGoogleUser = true; 
-                // クイズレベルの初期化
                 if (!currentUser.quizLevels) currentUser.quizLevels = { "全ジャンル": 1 };
-                // ★クイズ保存配列の初期化
                 if (!currentUser.savedQuizzes) currentUser.savedQuizzes = [];
                 login(currentUser, true);
             } else {
@@ -93,7 +108,7 @@ window.startGoogleLogin = function() {
                     id: user.uid, 
                     isGoogleUser: true, 
                     quizLevels: { "全ジャンル": 1 },
-                    savedQuizzes: [] // ★
+                    savedQuizzes: [] 
                 };
                 window.isGoogleEnrollment = true;
                 alert("はじめましてだにゃ！\nGoogleアカウントで入学手続きをするにゃ！");
@@ -114,7 +129,6 @@ function resetPreviewForEditing() {
     if (!window.isEditMode || window.isEditingInitialized) return;
     window.isEditingInitialized = true;
     const baseImg = document.getElementById('id-base-preview');
-    // パス修正
     if (baseImg) baseImg.src = 'assets/images/items/student-id-base.png';
     const nameEl = document.querySelector('.id-name-text');
     const gradeEl = document.querySelector('.id-grade-text');
@@ -155,7 +169,6 @@ window.showEnrollment = function() {
     if (title) title.innerText = "🎒 入学手続き"; if (btn) btn.innerText = "入学する！"; if (delBtn) delBtn.classList.add('hidden'); 
     if (nameInput) nameInput.value = ""; if (gradeInput) gradeInput.value = "";
     if (slot) { slot.innerHTML = ""; slot.style.display = 'block'; } 
-    // パス修正
     if (baseImg) baseImg.src = "assets/images/items/student-id-base.png";
     const nameEl = document.querySelector('.id-name-text'); const gradeEl = document.querySelector('.id-grade-text');
     if (nameEl) nameEl.style.display = 'block'; if (gradeEl) gradeEl.style.display = 'block'; enrollFile = null; updateIDPreviewText();
@@ -176,16 +189,19 @@ window.startEditProfile = function() {
 window.deleteCurrentUser = async function() {
     if (!currentUser) return;
     if (confirm(`本当に${currentUser.name}さんの学生証を削除するにゃ？\n（復元できないにゃ）`)) {
-        if (currentUser.isGoogleUser && db) {
+        const uid = String(currentUser.id); // String化
+        if (db) {
             try {
-                await db.collection("users").doc(currentUser.id).delete();
-                await db.collection("memories").doc(currentUser.id).delete();
-                auth.signOut();
-            } catch(e) { console.error("Firestore Delete Error:", e); alert("削除に失敗したにゃ..."); return; }
-        } else {
-            users = users.filter(u => u.id !== currentUser.id);
-            try { localStorage.setItem('nekoneko_users', JSON.stringify(users)); renderUserList(); } catch(err) {}
+                await db.collection("users").doc(uid).delete();
+                // 認証ユーザーならログアウト
+                if (auth && auth.currentUser) await auth.signOut();
+            } catch(e) { console.error("Firestore Delete Error:", e); }
         }
+        
+        // ローカルからも削除
+        users = users.filter(u => String(u.id) !== uid);
+        try { localStorage.setItem('nekoneko_users', JSON.stringify(users)); renderUserList(); } catch(err) {}
+        
         currentUser = null; alert("削除したにゃ..."); switchScreen('screen-gate');
     }
 };
@@ -285,11 +301,9 @@ function closeEnrollCamera() { const modal = document.getElementById('camera-mod
 async function renderForSave() {
     const img = new Image(); img.crossOrigin = "Anonymous"; 
     try { await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; 
-        // パス修正
         img.src = 'assets/images/items/student-id-base.png?' + new Date().getTime(); 
     }); } catch (e) { return null; }
     
-    // ★修正: 容量削減のため幅を300pxに縮小
     const BASE_W = 300; 
     const scaleFactor = BASE_W / img.width; 
     const canvas = document.createElement('canvas');
@@ -347,7 +361,6 @@ async function renderForSave() {
     }
     const nameVal = document.getElementById('new-student-name').value; const gradeVal = document.getElementById('new-student-grade').value; ctx.fillStyle = "#333"; const fontSize = 32 * rx; ctx.font = `bold ${fontSize}px 'M PLUS Rounded 1c', sans-serif`; ctx.textAlign = "left"; ctx.textBaseline = "middle"; const textX = 346 * rx; if (gradeVal) ctx.fillText(gradeVal + "年生", textX, 168 * ry + 1); if (nameVal) ctx.fillText(nameVal, textX, 231 * ry + 3);
     
-    // ★修正: PNG形式に戻す (サイズ縮小により容量対策済み)
     try { return canvas.toDataURL('image/png'); } catch (e) { return null; }
 }
 
@@ -361,78 +374,62 @@ async function processAndCompleteEnrollment() {
 
     try {
         let finalPhoto = await renderForSave(); 
-        // パス修正
         if (!finalPhoto) finalPhoto = (window.isEditMode && currentUser) ? currentUser.photo : "assets/images/items/student-id-base.png";
         
-        // クイズレベルの初期化を含むユーザーデータ作成
         const defaultQuizLevels = { "全ジャンル": 1 };
+        let userToSave = null;
+        let userUid = null;
 
-        let updatedUser;
-        if (window.isGoogleEnrollment || (currentUser && currentUser.isGoogleUser)) {
-            const uid = currentUser.id;
-            updatedUser = { 
-                id: uid, 
-                name, 
-                grade, 
-                photo: finalPhoto, 
-                isGoogleUser: true, 
-                karikari: (currentUser && currentUser.karikari) || 100, 
-                history: (currentUser && currentUser.history) || {}, 
-                mistakes: (currentUser && currentUser.mistakes) || [], 
-                attendance: (currentUser && currentUser.attendance) || {}, 
-                memory: (currentUser && currentUser.memory) || "", 
-                lastLogin: (currentUser && currentUser.lastLogin) || "", 
-                streak: (currentUser && currentUser.streak) || 0,
-                quizLevels: (currentUser && currentUser.quizLevels) || defaultQuizLevels,
-                savedQuizzes: (currentUser && currentUser.savedQuizzes) || [] // ★
-            };
-            if (db) await db.collection("users").doc(uid).set(updatedUser, { merge: true });
-            currentUser = updatedUser; window.isGoogleEnrollment = false; updateNellMessage(`${currentUser.name}さんの学生証ができたにゃ！`, "excited"); switchScreen('screen-lobby');
+        // ★修正: 匿名認証（ゲスト）またはGoogleログインでFirebaseに保存する
+        if (window.isGoogleEnrollment) {
+             // Googleログイン済みの場合 (uidはそのまま)
+             if (auth.currentUser) userUid = auth.currentUser.uid;
+        } else if (currentUser && currentUser.id && auth.currentUser) {
+             // 編集モード等 (uidはそのまま)
+             userUid = currentUser.id;
         } else {
-            if (window.isEditMode && currentUser) {
-                const idx = users.findIndex(u => u.id === currentUser.id);
-                if (idx !== -1) { 
-                    users[idx].name = name; 
-                    users[idx].grade = grade; 
-                    users[idx].photo = finalPhoto; 
-                    // クイズレベルの維持または初期化
-                    if (!users[idx].quizLevels) users[idx].quizLevels = defaultQuizLevels;
-                    // ★
-                    if (!users[idx].savedQuizzes) users[idx].savedQuizzes = [];
-                    
-                    currentUser = users[idx]; 
-                    localStorage.setItem('nekoneko_users', JSON.stringify(users)); 
-                    const avatar = document.getElementById('current-student-avatar'); 
-                    if (avatar) avatar.src = currentUser.photo; 
-                    updateNellMessage(`${currentUser.name}さんの情報を更新したにゃ！`, "happy"); 
-                    switchScreen('screen-lobby'); 
-                }
-            } else {
-                const newUser = { 
-                    id: Date.now(), 
-                    name, 
-                    grade, 
-                    photo: finalPhoto, 
-                    karikari: 100, 
-                    isGoogleUser: false, 
-                    history: {}, 
-                    mistakes: [], 
-                    attendance: {}, 
-                    memory: "", 
-                    lastLogin: "", 
-                    streak: 0,
-                    quizLevels: defaultQuizLevels,
-                    savedQuizzes: [] // ★
-                };
-                users.push(newUser); 
-                localStorage.setItem('nekoneko_users', JSON.stringify(users)); 
-                window.justEnrolledId = newUser.id; 
-                renderUserList(); 
-                alert("入学おめでとうにゃ！🌸"); 
-                switchScreen('screen-gate');
-            }
+             // ★ここが重要: 完全に新規の「入学（ゲスト）」の場合
+             // 匿名ログインを実行してUIDを取得する
+             if (auth) {
+                 const cred = await auth.signInAnonymously();
+                 userUid = cred.user.uid;
+             }
         }
+        
+        // 最終的なデータ構築
+        userToSave = { 
+            id: userUid || String(Date.now()), // フォールバック
+            name, 
+            grade, 
+            photo: finalPhoto, 
+            karikari: (currentUser && currentUser.karikari) || 100, 
+            history: (currentUser && currentUser.history) || {}, 
+            mistakes: (currentUser && currentUser.mistakes) || [], 
+            attendance: (currentUser && currentUser.attendance) || {}, 
+            memory: (currentUser && currentUser.memory) || "", 
+            lastLogin: (currentUser && currentUser.lastLogin) || "", 
+            streak: (currentUser && currentUser.streak) || 0,
+            quizLevels: (currentUser && currentUser.quizLevels) || defaultQuizLevels,
+            savedQuizzes: (currentUser && currentUser.savedQuizzes) || [],
+            isGoogleUser: !!(auth && auth.currentUser && !auth.currentUser.isAnonymous) 
+        };
+
+        // ★Firestoreに保存
+        if (db && userUid) {
+            await db.collection("users").doc(userUid).set(userToSave, { merge: true });
+        }
+        
+        // ローカルストレージにも保存（オフライン対応用）
+        updateLocalUserList(userToSave);
+
+        currentUser = userToSave; 
+        window.isGoogleEnrollment = false; 
+        
+        updateNellMessage(window.isEditMode ? `${currentUser.name}さんの情報を更新したにゃ！` : `${currentUser.name}さん、入学おめでとうだにゃ！`, "excited"); 
+        switchScreen('screen-lobby');
+
         document.getElementById('new-student-name').value = ""; document.getElementById('new-student-grade').value = ""; enrollFile = null; updateIDPreviewText(); const slot = document.getElementById('id-photo-slot'); if(slot) slot.innerHTML = '';
+
     } catch (err) { 
         if (err.name === 'QuotaExceededError') {
             alert("スマホの容量がいっぱいで保存できないにゃ…。\n古い学生証を削除するか、ブラウザのデータを整理してみてにゃ！");
@@ -448,12 +445,41 @@ async function processAndCompleteEnrollment() {
 
 function renderUserList() { const list = document.getElementById('user-list'); if(!list) return; list.innerHTML = users.length ? "" : "<p style='text-align:center; width:100%; color:white; font-weight:bold; opacity:0.8;'>まだ誰もいないにゃ</p>"; users.forEach(user => { const div = document.createElement('div'); div.className = "user-card"; div.innerHTML = `<img src="${user.photo}"><div class="card-karikari-badge">🍖${user.karikari || 0}</div>`; div.onclick = () => login(user, false); list.appendChild(div); }); }
 
-function login(user, isGoogle = false) { 
+// ★修正: ログイン処理（既存ユーザー選択時）
+async function login(user, isGoogle = false) { 
     try { sfxDoor.currentTime = 0; sfxDoor.play(); } catch(e){}
     currentUser = user; 
     if (!currentUser.attendance) currentUser.attendance = {}; 
-    if (!currentUser.quizLevels) currentUser.quizLevels = { "全ジャンル": 1 }; // 念のため
-    if (!currentUser.savedQuizzes) currentUser.savedQuizzes = []; // 念のため
+    if (!currentUser.quizLevels) currentUser.quizLevels = { "全ジャンル": 1 }; 
+    if (!currentUser.savedQuizzes) currentUser.savedQuizzes = []; 
+
+    // IDが数値（旧仕様のローカルユーザー）の場合、自動的に匿名認証に移行してデータ移行する
+    if (typeof user.id === 'number' && auth) {
+         try {
+             // 匿名ログイン
+             const cred = await auth.signInAnonymously();
+             const newUid = cred.user.uid;
+             
+             // 古いIDのデータを削除（ローカル）
+             users = users.filter(u => u.id !== user.id);
+             
+             // 新しいIDでデータを更新
+             currentUser.id = newUid;
+             currentUser.isGoogleUser = false;
+             
+             // DBに保存
+             await db.collection("users").doc(newUid).set(currentUser, { merge: true });
+             
+             // ローカルも更新
+             updateLocalUserList(currentUser);
+             console.log("Migrated local user to Anonymous Auth:", newUid);
+         } catch(e) {
+             console.error("Migration failed:", e);
+         }
+    } else if (auth && !auth.currentUser) {
+        // IDは文字列だが、セッションが切れている場合 -> 再ログインを試みる（匿名ユーザーなら自動復帰は難しいが、永続性設定があれば戻る）
+        // ここでは単純にfirestoreを見に行く
+    }
     
     // 出席＆ボーナス判定
     const today = new Date().toISOString().split('T')[0]; 
@@ -501,13 +527,13 @@ async function saveAndSync() {
     const miniKCounter = document.getElementById('mini-karikari-count');
     if (miniKCounter) miniKCounter.innerText = currentUser.karikari;
 
-    if (currentUser.isGoogleUser && db) {
+    // ★修正: Googleユーザーだけでなく、IDが文字列なら（＝匿名含む）同期する
+    if (typeof currentUser.id === 'string' && db) {
         try {
             await db.collection("users").doc(currentUser.id).set(currentUser, { merge: true });
         } catch(e) { console.error("Firestore sync error:", e); }
-    } else {
-        const idx = users.findIndex(u => u.id === currentUser.id); 
-        if (idx !== -1) users[idx] = currentUser; 
-        try { localStorage.setItem('nekoneko_users', JSON.stringify(users)); } catch(err) {} 
     }
+    
+    // ローカル同期
+    updateLocalUserList(currentUser);
 }

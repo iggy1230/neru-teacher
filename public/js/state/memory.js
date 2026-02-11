@@ -1,4 +1,4 @@
-// --- js/state/memory.js (v381.0: メモリ最適化版) ---
+// --- js/state/memory.js (v421.0: ID型エラー修正版) ---
 
 (function(global) {
     const Memory = {};
@@ -39,13 +39,18 @@
 
     Memory.getUserProfile = async function(userId) {
         let profile = null;
+        // ★修正: userIdを必ずStringにする (数値IDによるエラー回避)
+        const safeId = String(userId);
+
         if (typeof db !== 'undefined' && db !== null) {
             try {
-                const doc = await db.collection("users").doc(userId).get();
+                const doc = await db.collection("users").doc(safeId).get();
                 if (doc.exists && doc.data().profile) {
                     profile = doc.data().profile;
                 }
-            } catch(e) { console.error("Firestore Profile Load Error:", e); }
+            } catch(e) { 
+                console.error("Firestore Profile Load Error:", e); 
+            }
         }
         if (!profile) {
             const key = `nell_profile_${userId}`;
@@ -60,14 +65,15 @@
 
     Memory.saveUserProfile = async function(userId, profile) {
         if (Array.isArray(profile)) profile = profile[0] || Memory.createEmptyProfile();
+        // ★修正: userIdを必ずStringにする
+        const safeId = String(userId);
         
-        // ★最適化: プロフィール保存後に変数を解放
         const profileStr = JSON.stringify(profile);
         localStorage.setItem(`nell_profile_${userId}`, profileStr);
         
         if (typeof db !== 'undefined' && db !== null) {
             try {
-                await db.collection("users").doc(userId).set({ profile: profile }, { merge: true });
+                await db.collection("users").doc(safeId).set({ profile: profile }, { merge: true });
             } catch(e) { console.error("Firestore Profile Save Error:", e); }
         }
     };
@@ -76,7 +82,6 @@
         if (!chatLog || chatLog.length < 10) return;
         const currentProfile = await Memory.getUserProfile(userId);
         
-        // ★最適化: コレクションデータは重いので更新チェックから除外して送信サイズを減らす
         const { collection, ...profileForAnalysis } = currentProfile;
         
         try {
@@ -93,7 +98,7 @@
                 
                 const updatedProfile = {
                     ...newProfile,
-                    collection: collection || [] // 元のコレクションを戻す
+                    collection: collection || [] 
                 };
                 
                 await Memory.saveUserProfile(userId, updatedProfile);
@@ -122,9 +127,7 @@
         return context;
     };
 
-    // ★修正: rarity 引数を追加
     Memory.addToCollection = async function(userId, itemName, imageBase64, description = "", realDescription = "", location = null, rarity = 1) {
-        console.log(`[Memory] addToCollection: ${itemName}, Rarity: ${rarity}`);
         try {
             const profile = await Memory.getUserProfile(userId);
             if (!Array.isArray(profile.collection)) profile.collection = [];
@@ -138,9 +141,8 @@
                     const storageRef = window.fireStorage.ref().child(storagePath);
                     const snapshot = await storageRef.put(blob);
                     imageUrl = await snapshot.ref.getDownloadURL(); 
-                    console.log("Image uploaded to Storage:", imageUrl);
                 } catch (uploadError) {
-                    console.warn("Storage upload failed, falling back to Base64", uploadError);
+                    console.warn("Storage upload failed", uploadError);
                 }
             }
 
@@ -151,7 +153,8 @@
                 description: description,
                 realDescription: realDescription,
                 location: location,
-                rarity: rarity
+                rarity: rarity,
+                isShared: false
             };
 
             profile.collection.unshift(newItem); 
@@ -166,11 +169,6 @@
                 }
             }
             await Memory.saveUserProfile(userId, profile);
-            
-            // ★最適化: 処理が終わったら変数を解放
-            imageUrl = null;
-            imageBase64 = null;
-            
         } catch (e) {
             console.error("[Memory] Add Collection Error:", e);
         }
@@ -188,6 +186,59 @@
                 await Memory.saveUserProfile(userId, profile);
             }
         } catch(e) { console.error("[Memory] Delete Error:", e); }
+    };
+
+    Memory.shareToPublicCollection = async function(userId, itemIndex, discovererName) {
+        if (!db) throw new Error("Database not connected");
+        
+        const profile = await Memory.getUserProfile(userId);
+        if (!profile.collection || !profile.collection[itemIndex]) throw new Error("Item not found");
+        
+        const item = profile.collection[itemIndex];
+        if (item.isShared) return "ALREADY_SHARED";
+
+        await db.collection("public_collection").add({
+            name: item.name,
+            image: item.image,
+            description: item.description,
+            realDescription: item.realDescription,
+            location: item.location,
+            rarity: item.rarity,
+            discovererName: discovererName,
+            discovererId: String(userId), // String化
+            sharedAt: new Date().toISOString()
+        });
+
+        item.isShared = true;
+        await Memory.saveUserProfile(userId, profile);
+
+        return "SUCCESS";
+    };
+
+    Memory.getPublicCollection = async function() {
+        if (!db) return [];
+        try {
+            const snapshot = await db.collection("public_collection")
+                .orderBy("sharedAt", "desc")
+                .limit(50)
+                .get();
+            
+            if (snapshot.empty) return [];
+
+            return snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+        } catch (e) {
+            console.error("Fetch Public Collection Error:", e);
+            if (e.code === 'failed-precondition') {
+                 try {
+                     const snap2 = await db.collection("public_collection").limit(50).get();
+                     return snap2.docs.map(d => ({id:d.id, ...d.data()}));
+                 } catch(e2) { return []; }
+            }
+            return [];
+        }
     };
     
     Memory.deleteRawChatLogs = async function(userId, indicesToDelete) {

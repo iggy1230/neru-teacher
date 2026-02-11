@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v402.0: 神経衰弱画像位置再調整版) --- */
+/* --- style.css (完全版 v416.0: ランキング掲示板追加版) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -1317,4 +1317,86 @@ button { font-family: inherit; }
     font-weight: bold;
     color: #555;
     border-top: 1px solid #eee;
+}
+
+/* ★ランキング掲示板用スタイル (v416.0追加) */
+.ranking-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: white;
+    border-radius: 12px;
+    padding: 10px 15px;
+    margin-bottom: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    border: 1px solid #eee;
+}
+
+.top-rank {
+    background: #fff3e0;
+    border: 2px solid #ffb74d;
+    transform: scale(1.02);
+}
+
+.current-user-rank {
+    background: #e1f5fe;
+    border: 2px solid #29b6f6;
+}
+
+.rank-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 0; /* flex内で省略させるために必要 */
+}
+
+.rank-position {
+    width: 30px;
+    text-align: center;
+    font-weight: 900;
+    font-size: 1.2rem;
+    color: #555;
+}
+
+.rank-medal {
+    font-size: 1.5rem;
+}
+
+.rank-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 2px solid #fff;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    object-fit: contain;
+    background: #f0f0f0;
+}
+
+.rank-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.rank-name {
+    font-weight: bold;
+    font-size: 0.95rem;
+    color: #333;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.rank-grade {
+    font-size: 0.75rem;
+    color: #888;
+}
+
+.rank-right {
+    text-align: right;
+    font-weight: 900;
+    color: #e65100;
+    font-size: 1.1rem;
+    white-space: nowrap;
 }

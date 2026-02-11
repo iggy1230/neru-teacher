@@ -1,4 +1,4 @@
-<!-- index.html (完全版 v402.1: クイズジャンル「夏目友人帳」追加版) -->
+<!-- index.html (完全版 v416.0: 掲示板実装版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -40,7 +40,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v402.1-Natsume-Added</div>
+            <div class="version-tag">Build: v416.0-Ranking</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -85,6 +85,9 @@
                 <button onclick="switchScreen('screen-lunchroom')" class="main-btn orange-btn">🍽️ 給食室</button>
                 <button onclick="switchScreen('screen-staffroom')" class="main-btn purple-btn">👩‍🏫 職員室</button>
                 
+                <!-- ★新規: 掲示板ボタン -->
+                <button onclick="showRanking()" class="main-btn" style="background:#8d6e63; box-shadow: 0 4px 0 #5d4037;">📋 廊下の掲示板</button>
+
                 <button onclick="selectMode('chat')" class="main-btn" style="background:#5c6bc0; box-shadow: 0 4px 0 #3949ab;">💎 ネル先生のお宝図鑑</button>
                 <button onclick="showMap()" class="main-btn" style="background:#29b6f6; box-shadow: 0 4px 0 #0288d1;">🗺️ 足あとマップ</button>
                 <button onclick="backToTitle()" class="main-btn gray-btn">👋 帰宅する</button>
@@ -103,6 +106,18 @@
                 <button onclick="selectMode('review')" class="main-btn orange-btn">🔥 復習ノート</button>
                 <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
             </div>
+        </section>
+        
+        <!-- ★新規: 掲示板画面 -->
+        <section id="screen-ranking" class="screen hidden" style="padding-top:60px;">
+             <h2 class="section-title" style="color:#d84315; text-shadow: 2px 2px 0 #fff;">📋 廊下の掲示板</h2>
+             <div class="glass-card" style="min-height: 60vh; padding: 10px; background: #fff8e1; border: 4px solid #8d6e63;">
+                 <h3 style="text-align:center; margin:10px 0; color:#5d4037;">🏆 カリカリランキング</h3>
+                 <div id="ranking-list-container" style="max-height: 55vh; overflow-y: auto;">
+                     <!-- JSでリスト挿入 -->
+                 </div>
+             </div>
+             <button onclick="closeRanking()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
 
         <!-- 11. ミニテスト画面 -->
@@ -302,9 +317,9 @@
                     <button id="btn-quiz-minecraft" onclick="showLevelSelection('マインクラフト')" class="main-btn green-btn" style="background:#4caf50;">マインクラフト</button>
                     <button id="btn-quiz-roblox" onclick="showLevelSelection('ロブロックス')" class="main-btn red-btn" style="background:#e53935;">ロブロックス</button>
                     <button id="btn-quiz-pokemon" onclick="showLevelSelection('ポケモン')" class="main-btn blue-btn" style="background:#0288d1;">ポケモン</button>
+                    <!-- ここに追加 -->
                     <button id="btn-quiz-guruguru" onclick="showLevelSelection('魔法陣グルグル')" class="main-btn pink-btn" style="background:#f06292;">魔法陣グルグル</button>
                     <button id="btn-quiz-jojo" onclick="showLevelSelection('ジョジョの奇妙な冒険')" class="main-btn purple-btn" style="background:#7b1fa2;">ジョジョの奇妙な冒険</button>
-                    <!-- ここに追加 -->
                     <button id="btn-quiz-stpr" onclick="showLevelSelection('STPR')" class="main-btn" style="background:#ff5252;">STPR</button>
                     <button id="btn-quiz-natsume" onclick="showLevelSelection('夏目友人帳')" class="main-btn green-btn" style="background:#81c784;">夏目友人帳</button>
                 </div>
@@ -474,6 +489,7 @@
     <script src="js/card-generator.js"></script>
     <script src="js/audio/audio.js"></script>
     <script src="js/ui/ui.js"></script>
+    <script src="js/ui/ranking.js"></script> <!-- ★新規 -->
     <script src="js/state/user.js"></script>
     <script src="js/voice-service.js"></script>
     <script src="js/camera-service.js"></script>
