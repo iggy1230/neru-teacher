@@ -1,4 +1,3 @@
-import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import express from 'express';
 import cors from 'cors';
@@ -22,7 +21,8 @@ const publicDir = path.join(__dirname, 'public');
 app.use(express.static(publicDir));
 
 // --- AI Model Constants ---
-const MODEL_HOMEWORK = "gemini-3-pro-preview";
+// コスト削減のため、Gemini 2.0 Flash をメインに使用
+const MODEL_HOMEWORK = "gemini-2.5-flash";
 const MODEL_FAST = "gemini-2.5-flash"; 
 const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025";
 
@@ -48,18 +48,14 @@ async function appendToServerLog(name, text) {
 }
 
 // --- AI Initialization ---
-let genAI, ttsClient;
+let genAI;
 try {
-    if (!process.env.GEMINI_API_KEY) console.error("⚠️ GEMINI_API_KEY が設定されていません。");
-    genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    
-    if (process.env.GOOGLE_CREDENTIALS_JSON) {
-        try {
-            const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
-            ttsClient = new textToSpeech.TextToSpeechClient({ credentials });
-        } catch(e) { console.error("TTS Credential Error:", e.message); }
+    if (!process.env.GEMINI_API_KEY) {
+        console.error("⚠️ GEMINI_API_KEY が設定されていません。");
     } else {
-        ttsClient = new textToSpeech.TextToSpeechClient();
+        // APIキーのみで初期化
+        genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+        console.log("✅ Google Generative AI Initialized with API Key.");
     }
 } catch (e) { console.error("Init Error:", e.message); }
 
@@ -75,32 +71,6 @@ function getSubjectInstructions(subject) {
         case 'しゃかい': return `- **選択問題**: 記号選択問題（ア、イ、ウ...）の選択肢の文章もすべて書き出すこと。\n- **資料読み取り**: 地図やグラフ、年表の近くにある「最初の問題」を見逃さないこと。\n- **用語**: 歴史用語や地名は正確に（子供の字が崩れていても文脈から補正して）読み取ること。`;
         default: return `- 基本的にすべての文字、図表内の数値を拾うこと。`;
     }
-}
-
-function fixPronunciation(text) {
-    if (!text) return "";
-    let t = text;
-    t = t.replace(/角/g, "かく"); 
-    t = t.replace(/辺/g, "へん");
-    t = t.replace(/真分数/g, "しんぶんすう");
-    t = t.replace(/仮分数/g, "かぶんすう");
-    t = t.replace(/帯分数/g, "たいぶんすう");
-    t = t.replace(/約分/g, "やくぶん");
-    t = t.replace(/通分/g, "つうぶん");
-    t = t.replace(/直角/g, "ちょっかく");
-    t = t.replace(/\+/g, "たす");
-    t = t.replace(/＋/g, "たす");
-    t = t.replace(/\-/g, "ひく");
-    t = t.replace(/－/g, "ひく");
-    t = t.replace(/\=/g, "わ");
-    t = t.replace(/＝/g, "わ");
-    t = t.replace(/×/g, "かける");
-    t = t.replace(/÷/g, "わる");
-    // 固有名詞の読み修正
-    t = t.replace(/はね丸/g, "ハネマル");
-    t = t.replace(/はね丸くん/g, "ハネマルクン");
-    t = t.replace(/斑/g, "マダラ"); // ★追加
-    return t;
 }
 
 // ジャンルごとの信頼できる参照URLリスト
@@ -658,32 +628,8 @@ app.post('/chat-dialogue', async (req, res) => {
     }
 });
 
-// --- TTS ---
-app.post('/synthesize', async (req, res) => {
-    try {
-        if (!ttsClient) throw new Error("TTS Not Ready");
-        const { text, mood } = req.body;
-        
-        let speakText = text;
-        speakText = speakText.replace(/[\*#_`~]/g, "");
-        speakText = speakText.replace(/([a-zA-Z0-9一-龠々ヶァ-ヴー]+)\s*[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$2');
-        speakText = fixPronunciation(speakText);
-
-        let rate = "1.1"; let pitch = "+2st";
-        if (mood === "thinking") { rate = "1.0"; pitch = "0st"; }
-        if (mood === "gentle") { rate = "0.95"; pitch = "+1st"; }
-        if (mood === "excited") { rate = "1.2"; pitch = "+4st"; }
-        
-        const ssml = `<speak><prosody rate="${rate}" pitch="${pitch}">${speakText}</prosody></speak>`;
-        
-        const [response] = await ttsClient.synthesizeSpeech({
-            input: { ssml },
-            voice: { languageCode: 'ja-JP', name: 'ja-JP-Neural2-B' },
-            audioConfig: { audioEncoding: 'MP3' },
-        });
-        res.json({ audioContent: response.audioContent.toString('base64') });
-    } catch (err) { res.status(500).send(err.message); }
-});
+// --- TTS (サーバー側は削除) ---
+// クライアント側でWeb Speech APIを使用するため、/synthesize エンドポイントは削除しました。
 
 // --- Memory Update ---
 app.post('/update-memory', async (req, res) => {
@@ -1113,7 +1059,7 @@ wss.on('connection', async (clientWs, req) => {
 
                 geminiWs.send(JSON.stringify({
                     setup: {
-                        // MODEL_REALTIME (gemini-3-flash-preview) を使用
+                        // MODEL_REALTIME (gemini-2.0-flash-exp) を使用
                         model: `models/${MODEL_REALTIME}`,
                         generationConfig: { 
                             responseModalities: ["AUDIO"],
