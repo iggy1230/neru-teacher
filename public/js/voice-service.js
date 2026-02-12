@@ -1,4 +1,4 @@
-// --- js/voice-service.js (v391.0: マイク感度調整版) ---
+// --- js/voice-service.js (v431.0: 常時聞き取り廃止・ボタン送信最適化版) ---
 
 // ==========================================
 // 音声再生・停止
@@ -62,169 +62,80 @@ function isSelfEcho(text) {
 }
 
 // ==========================================
-// 常時聞き取り (Speech Recognition - HTTPチャット用)
+// 音声入力 (ブラウザ標準STT - 単発聞き取り)
 // ==========================================
-window.startAlwaysOnListening = function() {
-    if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN) {
-        return;
-    }
 
+window.isSpeechRecognitionRunning = false;
+
+// ボタンを押した時だけ呼ばれる音声入力（常時ではない）
+window.startVoiceInput = function(context) {
     if (!('webkitSpeechRecognition' in window)) {
-        console.warn("Speech Recognition not supported.");
-        if (window.currentMode === 'simple-chat' || window.currentMode === 'explain' || window.currentMode === 'grade' || window.currentMode === 'review') {
-             if (!window.isNellSpeaking && !window.iosAlertShown) {
-                 window.iosAlertShown = true; 
-                 if(typeof window.updateNellMessage === 'function') {
-                     window.updateNellMessage("iPhoneの人は、キーボードのマイクボタンを使って話しかけてにゃ！", "normal", false, true);
-                 }
-             }
-        }
-        return;
+        return alert("このブラウザは音声入力に対応していないにゃ。キーボードを使ってにゃ。");
     }
+    
+    if (window.isSpeechRecognitionRunning) return; // 二重起動防止
 
+    // WebSocketモード中はHTTPチャットのSTTをブロック
+    if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN) return;
+
+    window.isSpeechRecognitionRunning = true;
+    const recognition = new webkitSpeechRecognition();
+    recognition.lang = 'ja-JP';
+    recognition.interimResults = false; // 確定した結果のみ受け取る
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+        if (typeof window.updateNellMessage === 'function') {
+            window.updateNellMessage("聞いてるにゃ！お話ししてにゃ。", "happy", false, false);
+        }
+    };
+
+    recognition.onresult = async (event) => {
+        const text = event.results[0][0].transcript;
+        if (!text) return;
+
+        // エコーキャンセルチェック（自分やネル先生の声）
+        if (isSelfEcho(text)) return;
+
+        // 入力欄に反映して送信処理へ
+        if (context === 'embedded') {
+            const input = document.getElementById('embedded-text-input');
+            if(input) { input.value = text; window.sendHttpText('embedded'); }
+        } else if (context === 'simple') {
+            const input = document.getElementById('simple-text-input');
+            if(input) { input.value = text; window.sendHttpText('simple'); }
+        } else if (window.currentMode === 'quiz' && typeof window.checkQuizAnswer === 'function') {
+            // クイズ回答用
+            window.checkQuizAnswer(text);
+        } else if (window.currentMode === 'kanji' && typeof window.checkKanjiReading === 'function') {
+            // 漢字読み回答用
+            window.checkKanjiReading(text);
+        } else if (window.currentMode === 'riddle' && typeof window.checkRiddleAnswer === 'function') {
+            // なぞなぞ回答用
+            window.checkRiddleAnswer(text);
+        }
+    };
+
+    recognition.onend = () => {
+        window.isSpeechRecognitionRunning = false;
+    };
+
+    recognition.onerror = (event) => {
+        console.error("Speech Recognition Error:", event.error);
+        window.isSpeechRecognitionRunning = false;
+    };
+
+    recognition.start();
+};
+
+// ★重要: 古い「常時聞き取り」関数を無効化してコストを節約
+window.startAlwaysOnListening = function() {
+    // console.log("Always-on listening is disabled for cost optimization.");
+    window.isAlwaysListening = false;
     if (window.continuousRecognition) {
-        return;
+        try { window.continuousRecognition.stop(); } catch(e){}
+        window.continuousRecognition = null;
     }
-
-    window.isAlwaysListening = true;
-    window.continuousRecognition = new webkitSpeechRecognition();
-    window.continuousRecognition.lang = 'ja-JP';
-    window.continuousRecognition.interimResults = true;
-    window.continuousRecognition.maxAlternatives = 1;
-
-    window.continuousRecognition.onresult = async (event) => {
-        let interimTranscript = '';
-        let finalTranscript = '';
-
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-            if (event.results[i].isFinal) {
-                finalTranscript += event.results[i][0].transcript;
-            } else {
-                interimTranscript += event.results[i][0].transcript;
-            }
-        }
-
-        if (window.isNellSpeaking) {
-            const textToCheck = finalTranscript || interimTranscript;
-            if (shouldInterrupt(textToCheck)) {
-                if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
-                window.stopAudioPlayback();
-            } else {
-                return;
-            }
-        }
-
-        if (finalTranscript && finalTranscript.trim() !== "") {
-            const text = finalTranscript;
-            if (isSelfEcho(text)) return;
-
-            if (window.currentMode === 'quiz' && typeof window.checkQuizAnswer === 'function') {
-                if (window.checkQuizAnswer(text)) return; 
-            }
-            if (window.currentMode === 'kanji' && typeof window.checkKanjiReading === 'function') {
-                if (window.checkKanjiReading(text)) return; 
-            }
-            if (window.currentMode === 'riddle' && typeof window.checkRiddleAnswer === 'function') {
-                if (window.checkRiddleAnswer(text)) return;
-            }
-
-            let targetId = 'user-speech-text-embedded';
-            if (window.currentMode === 'simple-chat') targetId = 'user-speech-text-simple';
-            
-            const embeddedText = document.getElementById(targetId);
-            if (embeddedText) embeddedText.innerText = text;
-
-            if(typeof window.addLogItem === 'function') window.addLogItem('user', text);
-            if(typeof window.addToSessionHistory === 'function') window.addToSessionHistory('user', text);
-
-            let missingInfo = [];
-            let memoryContext = "";
-            if (window.NellMemory && currentUser) {
-                try {
-                    const profile = await window.NellMemory.getUserProfile(currentUser.id);
-                    if (!profile.birthday) missingInfo.push("誕生日");
-                    if (!profile.likes || profile.likes.length === 0) missingInfo.push("好きなもの");
-                    if (!profile.weaknesses || profile.weaknesses.length === 0) missingInfo.push("苦手なもの");
-                    memoryContext = await window.NellMemory.generateContextString(currentUser.id);
-                } catch(e) {}
-            }
-            
-            let currentQuizData = null;
-            let currentRiddleData = null;
-            let currentMinitestData = null;
-
-            if (window.currentMode === 'quiz' && window.currentQuiz) currentQuizData = window.currentQuiz;
-            else if (window.currentMode === 'riddle' && window.currentRiddle) currentRiddleData = window.currentRiddle;
-            else if (window.currentMode === 'minitest' && window.currentMinitest) currentMinitestData = window.currentMinitest;
-            else if (window.currentMode === 'kanji' && window.currentMinitest) currentMinitestData = window.currentMinitest;
-
-            try {
-                window.continuousRecognition.stop(); 
-
-                const res = await fetch('/chat-dialogue', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        text: text, 
-                        name: currentUser ? currentUser.name : "生徒",
-                        history: window.chatSessionHistory,
-                        location: window.currentLocation,
-                        address: window.currentAddress,
-                        missingInfo: missingInfo,
-                        memoryContext: memoryContext,
-                        currentQuizData: currentQuizData,
-                        currentRiddleData: currentRiddleData, 
-                        currentMinitestData: currentMinitestData
-                    })
-                });
-                
-                if(res.ok) {
-                    const data = await res.json();
-                    const speechText = data.speech || data.reply || "ごめんにゃ、よくわからなかったにゃ"; 
-                    
-                    if(typeof window.addLogItem === 'function') window.addLogItem('nell', speechText);
-                    if(typeof window.addToSessionHistory === 'function') window.addToSessionHistory('nell', speechText);
-                    
-                    if(typeof window.updateNellMessage === 'function') {
-                        await window.updateNellMessage(speechText, "normal", true, true);
-                    }
-                    
-                    let boardId = 'embedded-chalkboard';
-                    if (window.currentMode === 'simple-chat') boardId = 'chalkboard-simple';
-                    const embedBoard = document.getElementById(boardId);
-                    if (embedBoard && data.board && data.board.trim() !== "") {
-                        embedBoard.innerText = data.board;
-                        embedBoard.classList.remove('hidden');
-                    }
-                }
-            } catch(e) {
-                console.error("Chat Error:", e);
-            } finally {
-                if (window.isAlwaysListening) {
-                    try { window.continuousRecognition.start(); } catch(e){}
-                }
-            }
-        }
-    };
-
-    window.continuousRecognition.onend = () => {
-        if (window.isAlwaysListening) {
-            setTimeout(() => { 
-                try { window.continuousRecognition.start(); } catch(e){} 
-            }, 300);
-        } else {
-            window.continuousRecognition = null;
-        }
-    };
-
-    window.continuousRecognition.onerror = (event) => {
-        if (event.error !== 'no-speech') console.error("Rec Error:", event);
-        if (window.isAlwaysListening) {
-            setTimeout(() => { try { window.continuousRecognition.start(); } catch(e){} }, 1000);
-        }
-    };
-
-    try { window.continuousRecognition.start(); } catch(e) { console.log("Rec start failed", e); }
 };
 
 window.stopAlwaysOnListening = function() {
@@ -237,6 +148,7 @@ window.stopAlwaysOnListening = function() {
 
 // ==========================================
 // リアルタイムチャット (WebSocket - Gemini Realtime API用)
+// ※「おはなしする」モード専用。こちらは接続中は音声を送り続けますが、ボタンで切断可能
 // ==========================================
 
 window.stopLiveChat = function() {
