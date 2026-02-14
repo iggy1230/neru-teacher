@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v426.0: 分析制限＆セリフ調整版) ---
+// --- js/camera-service.js (v431.0: 詳細住所取得強化版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -45,7 +45,6 @@ window.stopPreviewCamera = function() {
     document.body.classList.remove('camera-active');
 
     if (window.previewStream) {
-        // ★最適化: トラックを完全に停止し、参照を切る
         window.previewStream.getTracks().forEach(t => {
             t.stop();
             t.enabled = false;
@@ -57,7 +56,7 @@ window.stopPreviewCamera = function() {
         if(v) {
             v.pause();
             v.srcObject = null;
-            v.load(); // ★重要: メモリ解放のためにload()を呼ぶ
+            v.load();
         }
     });
     ['live-chat-video-container', 'live-chat-video-container-embedded', 'live-chat-video-container-simple', 'live-chat-video-container-free'].forEach(cid => {
@@ -149,6 +148,55 @@ function getGpsFromExif(file) {
     });
 }
 
+// ★修正: 座標から詳細な住所文字列を取得する関数 (強化版)
+async function getAddressFromCoords(lat, lon) {
+    try {
+        // addressdetails=1 で詳細情報を取得
+        const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&accept_language=ja&zoom=18&addressdetails=1`;
+        const res = await fetch(url);
+        if (res.ok) {
+            const data = await res.json();
+            const addr = data.address;
+            let fullAddress = "";
+
+            // 1. 都道府県
+            if (addr.province) fullAddress += addr.province;
+            else if (addr.prefecture) fullAddress += addr.prefecture;
+            
+            // 2. 市区町村・郡
+            if (addr.city) fullAddress += addr.city;
+            if (addr.county) fullAddress += addr.county;
+            if (addr.town) fullAddress += addr.town;
+            if (addr.village) fullAddress += addr.village;
+            
+            // 3. 区・町名・字 (より詳細な地域名)
+            if (addr.ward) fullAddress += addr.ward;
+            if (addr.quarter) fullAddress += addr.quarter;
+            if (addr.neighbourhood) fullAddress += addr.neighbourhood;
+            if (addr.hamlet) fullAddress += addr.hamlet;
+            if (addr.suburb) fullAddress += addr.suburb;
+
+            // 4. 道路・番地
+            if (addr.road) fullAddress += ` ${addr.road}`;
+            if (addr.house_number) fullAddress += ` ${addr.house_number}`;
+
+            // 5. ★最重要: 建物名・施設名 (ピンポイント情報)
+            // Nominatimは施設名を amenity, shop, tourism, historic, building など様々なキーで返す
+            const specificLocation = addr.amenity || addr.shop || addr.tourism || addr.historic || addr.leisure || addr.building || addr.office;
+            
+            if (specificLocation) {
+                fullAddress += ` (${specificLocation})`;
+            }
+            
+            console.log("Resolved Detailed Address:", fullAddress);
+            return fullAddress;
+        }
+    } catch (e) {
+        console.warn("Reverse Geocoding failed:", e);
+    }
+    return null;
+}
+
 window.handleTreasureFile = async function(file) {
     if (!file) return;
     const btn = document.getElementById('upload-treasure-btn');
@@ -231,7 +279,18 @@ const getLocation = () => {
 };
 
 window.analyzeTreasureImage = async function(base64Data, providedLocation = null) {
-    if (typeof window.stopAlwaysOnListening === 'function') { window.stopAlwaysOnListening(); } else if (window.isAlwaysListening && window.continuousRecognition) { try { window.continuousRecognition.stop(); } catch(e){} }
+    // ★制限追加: 前回の分析から30秒以内なら実行しない
+    const now = Date.now();
+    if (window.lastAnalysisTime && (now - window.lastAnalysisTime < 30000)) {
+         if(typeof window.updateNellMessage === 'function') {
+             window.updateNellMessage("ちょっと待ってにゃ、目が回っちゃうにゃ…少し休ませてにゃ。", "thinking", false, true);
+         }
+         return;
+    }
+    window.lastAnalysisTime = now;
+
+    if (typeof window.stopAlwaysOnListening === 'function') { window.stopAlwaysOnListening(); }
+    
     if (window.initAudioContext) { window.initAudioContext().catch(e => console.warn("AudioContext init error:", e)); }
     if (window.sfxHirameku) { const originalVol = window.sfxHirameku.volume; window.sfxHirameku.volume = 0; window.sfxHirameku.play().then(() => { window.sfxHirameku.pause(); window.sfxHirameku.currentTime = 0; window.sfxHirameku.volume = originalVol; }).catch(e => {}); }
 
@@ -242,22 +301,38 @@ window.analyzeTreasureImage = async function(base64Data, providedLocation = null
 
     if(typeof window.updateNellMessage === 'function') { window.updateNellMessage("詳しい場所を調べてるにゃ…", "thinking", false, true); }
 
+    let addressToSend = null;
     let locationData = providedLocation;
-    if (!locationData && window.currentLocation) { locationData = window.currentLocation; }
-    if (!locationData) { try { locationData = await getLocation(); } catch(e) {} }
+    
+    // ★重要: 画像に位置情報があれば、クライアント側で詳細な住所文字列（施設名含む）に変換して確定させる
+    if (providedLocation && providedLocation.lat && providedLocation.lon) {
+         // EXIFあり -> 逆ジオコーディングして住所を確定
+         addressToSend = await getAddressFromCoords(providedLocation.lat, providedLocation.lon);
+         
+         // 取得できなかった場合は座標を文字列化して送る（サーバー側で処理させる）
+         if (!addressToSend) {
+             addressToSend = `緯度${providedLocation.lat}, 経度${providedLocation.lon}`;
+         }
+    } else {
+         // EXIFなし -> 現在地を使用
+         if (!window.currentLocation) {
+             try { window.currentLocation = await getLocation(); } catch(e) {}
+         }
+         locationData = window.currentLocation;
+         // 現在地の住所（すでにwindow.currentAddressに入っている可能性があるが念のため）
+         addressToSend = window.currentAddress;
+    }
 
     if(typeof window.updateNellMessage === 'function') { window.updateNellMessage("ん？何を見つけたのかにゃ…？", "thinking", false, true); }
 
     try {
-        const addressToSend = providedLocation ? null : window.currentAddress;
-
         const res = await fetch('/identify-item', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 image: base64Data, 
                 name: currentUser ? currentUser.name : "生徒", 
                 location: locationData, 
-                address: addressToSend 
+                address: addressToSend  // ★確定した住所文字列（最優先）
             })
         });
         if (!res.ok) throw new Error("サーバー通信エラーだにゃ");
@@ -286,7 +361,9 @@ window.analyzeTreasureImage = async function(base64Data, providedLocation = null
     } catch (e) {
         if(typeof window.updateNellMessage === 'function') { window.updateNellMessage(`エラーだにゃ…: ${e.message || "解析失敗"}`, "thinking", false, true); }
     } finally {
-        if (window.currentMode === 'chat') { if (typeof window.startAlwaysOnListening === 'function') { window.startAlwaysOnListening(); } else if (window.isAlwaysListening) { try { window.continuousRecognition.start(); } catch(e){} } }
+        if (window.currentMode === 'chat') { 
+            // 常時対話は再開しない
+        }
     }
 };
 

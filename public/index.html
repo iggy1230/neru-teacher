@@ -1,4 +1,4 @@
-<!-- index.html (完全版 v416.0: 掲示板実装版) -->
+<!-- index.html (完全版 v428.0: クイズ音声ボタン実装版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -40,7 +40,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v416.0-Ranking</div>
+            <div class="version-tag">Build: v428.0-QuizVoiceBtn</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -85,7 +85,7 @@
                 <button onclick="switchScreen('screen-lunchroom')" class="main-btn orange-btn">🍽️ 給食室</button>
                 <button onclick="switchScreen('screen-staffroom')" class="main-btn purple-btn">👩‍🏫 職員室</button>
                 
-                <!-- ★新規: 掲示板ボタン -->
+                <!-- 掲示板ボタン -->
                 <button onclick="showRanking()" class="main-btn" style="background:#8d6e63; box-shadow: 0 4px 0 #5d4037;">📋 廊下の掲示板</button>
 
                 <button onclick="selectMode('chat')" class="main-btn" style="background:#5c6bc0; box-shadow: 0 4px 0 #3949ab;">💎 ネル先生のお宝図鑑</button>
@@ -108,7 +108,7 @@
             </div>
         </section>
         
-        <!-- ★新規: 掲示板画面 -->
+        <!-- 掲示板画面 -->
         <section id="screen-ranking" class="screen hidden" style="padding-top:60px;">
              <h2 class="section-title" style="color:#d84315; text-shadow: 2px 2px 0 #fff;">📋 廊下の掲示板</h2>
              <div class="glass-card" style="min-height: 60vh; padding: 10px; background: #fff8e1; border: 4px solid #8d6e63;">
@@ -222,14 +222,13 @@
 
                     <div id="live-chat-video-container" class="live-chat-video-wrapper" style="margin-top:15px;"><video id="live-chat-video" class="live-chat-video-elem" autoplay playsinline muted></video></div></div></div>
                     
-                    <!-- 放課後おしゃべりタイム (ここを変更) -->
+                    <!-- 放課後おしゃべりタイム -->
                     <div id="chat-free-view" class="hidden">
                         <div class="glass-card" style="text-align:center; padding:20px;">
                             <h4 style="text-align:center; margin:0 0 10px 0; color:#00897b;">💬 放課後おしゃべりタイム</h4>
                             <p style="font-size:0.9rem; color:#666;">マイクを押して話しかけてね</p>
                             <button id="mic-btn-free" class="camera-btn-large" style="background:#4db6ac; box-shadow:none;" onclick="startLiveChat()">🎤 おはなしする</button>
                             
-                            <!-- カメラとアルバムボタンを並べて配置 -->
                             <div style="display:flex; gap:10px; margin-top:10px;">
                                 <button id="live-camera-btn-free" class="mini-cam-btn" onclick="captureAndSendLiveImage()" style="background:#009688; box-shadow:0 4px 0 #00796b; flex:1; margin-top:0;"><span>📷</span> 写真を見せてお話</button>
                                 <button id="upload-free-btn" class="mini-cam-btn" onclick="window.uploadFreeChatImage()" style="background:#4a90e2; box-shadow:0 4px 0 #2c5f96; flex:1; margin-top:0;"><span>📁</span> アルバム</button>
@@ -299,7 +298,7 @@
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
 
-        <!-- 9. クイズ画面 (4択ボタン対応・レベル選択対応) -->
+        <!-- 9. クイズ画面 (音声ボタン対応版) -->
         <section id="screen-quiz" class="screen hidden">
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-quiz"></div><div class="chat-bubble"><p id="nell-text-quiz">ウルトラクイズに挑戦だにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px; color:#42a5f5;">🎤 ウルトラクイズ</h2>
@@ -317,7 +316,6 @@
                     <button id="btn-quiz-minecraft" onclick="showLevelSelection('マインクラフト')" class="main-btn green-btn" style="background:#4caf50;">マインクラフト</button>
                     <button id="btn-quiz-roblox" onclick="showLevelSelection('ロブロックス')" class="main-btn red-btn" style="background:#e53935;">ロブロックス</button>
                     <button id="btn-quiz-pokemon" onclick="showLevelSelection('ポケモン')" class="main-btn blue-btn" style="background:#0288d1;">ポケモン</button>
-                    <!-- ここに追加 -->
                     <button id="btn-quiz-guruguru" onclick="showLevelSelection('魔法陣グルグル')" class="main-btn pink-btn" style="background:#f06292;">魔法陣グルグル</button>
                     <button id="btn-quiz-jojo" onclick="showLevelSelection('ジョジョの奇妙な冒険')" class="main-btn purple-btn" style="background:#7b1fa2;">ジョジョの奇妙な冒険</button>
                     <button id="btn-quiz-stpr" onclick="showLevelSelection('STPR')" class="main-btn" style="background:#ff5252;">STPR</button>
@@ -325,7 +323,7 @@
                 </div>
             </div>
 
-            <!-- ★新規: レベル選択エリア (デフォルト非表示) -->
+            <!-- レベル選択エリア (デフォルト非表示) -->
             <div id="quiz-level-select" class="glass-card hidden" style="text-align:center; padding:20px;">
                 <p style="font-weight:bold; margin-bottom:15px; font-size:1.1rem;">レベルを選ぶにゃ！</p>
                 <div id="level-buttons-container" style="display:flex; flex-direction:column; gap:10px;">
@@ -346,8 +344,13 @@
                 <!-- 選択肢ボタンエリア -->
                 <div id="quiz-options-container" style="margin-top:10px;"></div>
 
-                <div id="quiz-mic-status" style="margin-top:10px; font-weight:bold; color:#e91e63; min-height:1.5em;"></div>
-                <p style="font-size:0.9rem; color:#666; margin-top:5px;">マイクで答えてもOKだにゃ！</p>
+                <!-- ★新規: 音声回答ボタン -->
+                <div id="quiz-mic-area" style="margin-top:15px;">
+                    <button id="quiz-mic-btn" class="main-btn" style="background:#4db6ac; width:auto; padding:10px 20px; display:inline-flex; align-items:center; gap:8px; border-radius:30px;" onclick="window.startQuizVoiceInput()">
+                        <span style="font-size:1.5rem;">🎤</span> 声で答える
+                    </button>
+                    <div id="quiz-mic-status" style="margin-top:5px; font-weight:bold; color:#e91e63; min-height:1.5em;"></div>
+                </div>
                 
                 <!-- 正解表示エリア -->
                 <div id="quiz-answer-display" class="hidden" style="margin-top:15px; padding:10px; background:#e3f2fd; border-radius:10px; border:2px solid #2196f3; color:#0d47a1; font-weight:bold;">
@@ -360,7 +363,7 @@
                     <button id="next-quiz-btn" onclick="nextQuiz()" class="main-btn blue-btn hidden" style="flex:1;">次の問題へ</button>
                 </div>
 
-                <!-- ★追加: 間違い報告ボタン -->
+                <!-- 間違い報告ボタン -->
                 <div style="text-align:center; margin-top:15px;">
                     <button onclick="window.reportQuizError()" class="main-btn" style="background:transparent; border:2px solid #bdbdbd; color:#757575; font-size:0.8rem; width:auto; padding:5px 15px; box-shadow:none;">
                         ⚠️ 問題が間違ってる？
@@ -489,7 +492,7 @@
     <script src="js/card-generator.js"></script>
     <script src="js/audio/audio.js"></script>
     <script src="js/ui/ui.js"></script>
-    <script src="js/ui/ranking.js"></script> <!-- ★新規 -->
+    <script src="js/ui/ranking.js"></script> 
     <script src="js/state/user.js"></script>
     <script src="js/voice-service.js"></script>
     <script src="js/camera-service.js"></script>

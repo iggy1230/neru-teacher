@@ -1,4 +1,4 @@
-// --- js/analyze.js (v342.0: 競合回避・整理版) ---
+// --- js/analyze.js (v429.0: お宝図鑑の常時対話廃止版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -145,10 +145,12 @@ window.selectMode = function(m) {
         if(typeof window.updateMiniKarikari === 'function') window.updateMiniKarikari();
         
         if (m === 'chat') { 
+            // お宝図鑑モード
             document.getElementById('chat-view').classList.remove('hidden'); 
-            window.updateNellMessage("お宝を見せてにゃ！お話もできるにゃ！", "excited", false); 
-            document.getElementById('conversation-log').classList.remove('hidden');
-            if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
+            window.updateNellMessage("お宝を見せてにゃ！", "excited", false); 
+            // 常時対話は廃止するため startAlwaysOnListening() は呼ばない
+            // ログエリアも隠す（または不要なら削除）
+            // document.getElementById('conversation-log').classList.remove('hidden'); 
             window.startLocationWatch();
         } 
         else if (m === 'simple-chat') {

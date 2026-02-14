@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (v426.0: バックグラウンド処理停止強化版) ---
+// --- js/ui/ui.js (v433.0: 中断時保存対応版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -128,18 +128,23 @@ window.backToGate = function() {
 };
 
 window.backToLobby = function(suppressGreeting = false) {
-    // ★修正: バックグラウンド処理を徹底的に停止
+    // バックグラウンド処理停止
     if (typeof window.stopAudioPlayback === 'function') window.stopAudioPlayback();
-    if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech(); // 音声即時停止
+    if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
     if (typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
     if (typeof window.stopLiveChat === 'function') window.stopLiveChat();
     if (typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera();
-    if (typeof window.closeHomeworkCamera === 'function') window.closeHomeworkCamera(); // 宿題カメラも停止
+    if (typeof window.closeHomeworkCamera === 'function') window.closeHomeworkCamera();
     if (typeof window.stopDanmakuGame === 'function') window.stopDanmakuGame();
-    if (typeof window.cleanupAnalysis === 'function') window.cleanupAnalysis(); // 分析ループ停止
+    if (typeof window.cleanupAnalysis === 'function') window.cleanupAnalysis();
+    
+    // ★ここを変更: クイズモード中に戻る場合、現在の進捗を保存する
+    if (window.currentMode === 'quiz' && typeof window.persistQuizSession === 'function') {
+        window.persistQuizSession();
+    }
     
     window.gameRunning = false; 
-    window.isAnalyzing = false; // フラグ強制オフ
+    window.isAnalyzing = false;
     
     if (typeof window.stopLocationWatch === 'function') window.stopLocationWatch();
 
@@ -1079,8 +1084,8 @@ window.sendHttpText = async function(context) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 text: text, 
-                name: currentUser ? currentUser.name : "生徒",
-                history: window.chatSessionHistory,
+                name: currentUser ? currentUser.name : "生徒", 
+                history: window.chatSessionHistory, 
                 location: window.currentLocation,
                 address: window.currentAddress,
                 missingInfo: missingInfo,

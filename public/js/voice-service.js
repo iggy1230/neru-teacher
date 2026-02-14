@@ -1,4 +1,4 @@
-// --- js/voice-service.js (v391.0: マイク感度調整版) ---
+// --- js/voice-service.js (v428.0: ワンショット認識追加版) ---
 
 // ==========================================
 // 音声再生・停止
@@ -62,6 +62,49 @@ function isSelfEcho(text) {
 }
 
 // ==========================================
+// ★新規: ワンショット音声認識 (クイズ回答用)
+// ==========================================
+window.startOneShotRecognition = function(onResult, onEnd) {
+    if (!('webkitSpeechRecognition' in window)) {
+        alert("このブラウザは音声認識に対応していないにゃ...");
+        if (onEnd) onEnd();
+        return;
+    }
+
+    // 既存の常時認識があれば停止
+    window.stopAlwaysOnListening();
+
+    const recognition = new webkitSpeechRecognition();
+    recognition.lang = 'ja-JP';
+    recognition.interimResults = false; // 確定結果のみ
+    recognition.maxAlternatives = 1;
+    recognition.continuous = false; // 単発モード
+
+    recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        console.log("OneShot Result:", transcript);
+        if (onResult) onResult(transcript);
+    };
+
+    recognition.onerror = (event) => {
+        console.error("OneShot Error:", event.error);
+        // no-speechなどは無視して終了
+    };
+
+    recognition.onend = () => {
+        console.log("OneShot Ended");
+        if (onEnd) onEnd();
+    };
+
+    try {
+        recognition.start();
+    } catch(e) {
+        console.error("OneShot Start Failed:", e);
+        if (onEnd) onEnd();
+    }
+};
+
+// ==========================================
 // 常時聞き取り (Speech Recognition - HTTPチャット用)
 // ==========================================
 window.startAlwaysOnListening = function() {
@@ -118,9 +161,11 @@ window.startAlwaysOnListening = function() {
             const text = finalTranscript;
             if (isSelfEcho(text)) return;
 
-            if (window.currentMode === 'quiz' && typeof window.checkQuizAnswer === 'function') {
-                if (window.checkQuizAnswer(text)) return; 
+            // ★修正: クイズモードでの常時聞き取り応答は削除（ボタン式になったため）
+            if (window.currentMode === 'quiz') {
+                return; 
             }
+            
             if (window.currentMode === 'kanji' && typeof window.checkKanjiReading === 'function') {
                 if (window.checkKanjiReading(text)) return; 
             }
@@ -153,6 +198,7 @@ window.startAlwaysOnListening = function() {
             let currentRiddleData = null;
             let currentMinitestData = null;
 
+            // クイズデータは渡すが、基本的には反応しない設計にする（API側で制御）
             if (window.currentMode === 'quiz' && window.currentQuiz) currentQuizData = window.currentQuiz;
             else if (window.currentMode === 'riddle' && window.currentRiddle) currentRiddleData = window.currentRiddle;
             else if (window.currentMode === 'minitest' && window.currentMinitest) currentMinitestData = window.currentMinitest;
