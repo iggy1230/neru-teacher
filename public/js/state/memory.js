@@ -1,4 +1,4 @@
-// --- js/state/memory.js (v423.0: 非公開機能追加版) ---
+// --- js/state/memory.js (v438.0: 登録時データ消失対策版) ---
 
 (function(global) {
     const Memory = {};
@@ -127,6 +127,7 @@
 
     Memory.addToCollection = async function(userId, itemName, imageBase64, description = "", realDescription = "", location = null, rarity = 1) {
         try {
+            // ★最新のプロファイルを取得
             const profile = await Memory.getUserProfile(userId);
             if (!Array.isArray(profile.collection)) profile.collection = [];
             
@@ -155,9 +156,10 @@
                 isShared: false
             };
 
+            // コレクションに追加
             profile.collection.unshift(newItem); 
+            
             const maxLimit = (imageUrl.startsWith('http')) ? 500 : 30;
-
             if (profile.collection.length > maxLimit) {
                 const removedItems = profile.collection.splice(maxLimit, profile.collection.length - maxLimit);
                 for (const item of removedItems) {
@@ -166,7 +168,25 @@
                     }
                 }
             }
+
+            // 保存
             await Memory.saveUserProfile(userId, profile);
+
+            // ★重要: 現在のメモリ上のcurrentUserにも反映させる（消失対策）
+            if (window.currentUser && String(window.currentUser.id) === String(userId)) {
+                // user.js側で持っているデータ構造に合わせて更新する
+                // currentUser.profile.collection ではなく、トップレベルにプロファイル情報が混ざっている場合があるが、
+                // 基本的に user.js の login 関数などを見ると、Firestoreのデータをそのまま currentUser にしている。
+                // Firestore上では { profile: { ... } } となっているはず。
+                if (!window.currentUser.profile) window.currentUser.profile = {};
+                window.currentUser.profile.collection = profile.collection;
+                
+                // もしトップレベルに展開しているならそちらも更新（念のため）
+                // しかし、saveAndSync は currentUser 全体を保存するため、
+                // ここで currentUser.profile を更新しておけば、次回の saveAndSync で上書きされても大丈夫なはず。
+                console.log("Memory: Syncing current user collection in RAM.");
+            }
+
         } catch (e) {
             console.error("[Memory] Add Collection Error:", e);
         }
@@ -188,6 +208,13 @@
                 }
                 profile.collection.splice(index, 1);
                 await Memory.saveUserProfile(userId, profile);
+
+                // メモリ同期
+                if (window.currentUser && String(window.currentUser.id) === String(userId)) {
+                    if (window.currentUser.profile) {
+                        window.currentUser.profile.collection = profile.collection;
+                    }
+                }
             }
         } catch(e) { console.error("[Memory] Delete Error:", e); }
     };
@@ -215,6 +242,13 @@
 
         item.isShared = true;
         await Memory.saveUserProfile(userId, profile);
+        
+        // メモリ同期
+        if (window.currentUser && String(window.currentUser.id) === String(userId)) {
+            if (window.currentUser.profile) {
+                window.currentUser.profile.collection = profile.collection;
+            }
+        }
 
         return "SUCCESS";
     };
@@ -246,6 +280,13 @@
             // ローカルのフラグを戻す
             item.isShared = false;
             await Memory.saveUserProfile(userId, profile);
+
+            // メモリ同期
+            if (window.currentUser && String(window.currentUser.id) === String(userId)) {
+                if (window.currentUser.profile) {
+                    window.currentUser.profile.collection = profile.collection;
+                }
+            }
             
             return "SUCCESS";
         } catch (e) {
@@ -300,6 +341,14 @@
             profile[category] = profile[category].filter(i => i !== itemContent);
         }
         await Memory.saveUserProfile(userId, profile);
+        
+        // メモリ同期
+        if (window.currentUser && String(window.currentUser.id) === String(userId)) {
+            if (window.currentUser.profile) {
+                 // プロパティごとに同期
+                 window.currentUser.profile[category] = profile[category];
+            }
+        }
     };
 
     global.NellMemory = Memory;

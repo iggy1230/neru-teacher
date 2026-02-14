@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v433.0: 中断時保存対応版) ---
+// --- js/game-engine.js (v436.0: 神経衰弱解説・音声完了待ち対応版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -2186,14 +2186,8 @@ window.showMatchModal = function(card) {
             window.skipMemoryExplanation = null; // cleanup
         };
         
-        window.updateNellMessage(textToSpeak, "happy", false, true).then(() => {
-            // 読み上げ終わったら少し待って閉じる
-            if (!modal.classList.contains('hidden')) {
-                setTimeout(() => {
-                    if (window.skipMemoryExplanation) window.skipMemoryExplanation();
-                }, 1000);
-            }
-        });
+        window.updateNellMessage(textToSpeak, "happy", false, true);
+        // Timeout removed. User must click "Next" (skipMemoryExplanation).
     });
 };
 

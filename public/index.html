@@ -1,4 +1,4 @@
-<!-- index.html (完全版 v428.0: クイズ音声ボタン実装版) -->
+<!-- index.html (完全版 v438.0: 個別指導音声ボタン & バグ修正版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -40,7 +40,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v428.0-QuizVoiceBtn</div>
+            <div class="version-tag">Build: v438.0-Fixes</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -195,7 +195,16 @@
                     
                     <!-- 教えてネル先生エリア -->
                     <div id="embedded-chat-section" class="embedded-chat-box hidden"><h4 style="text-align:center; margin:0 0 10px 0; color:#558b2f;">👩‍🏫 ネル先生に質問する</h4><div style="text-align:center;"><p style="font-size:0.8rem; color:#666; margin-bottom:10px;">（ネル先生はいつでも聞いてるにゃ）</p><div class="text-question-area"><textarea id="embedded-text-input" class="text-question-input" placeholder="ここに書いて質問"></textarea><button onclick="sendEmbeddedText()" class="text-question-btn">送信</button></div>
-                    <div style="display:flex; gap:10px;">
+                    
+                    <!-- 音声質問ボタン -->
+                    <div id="embedded-mic-area" style="margin-top:10px; text-align:center;">
+                         <button id="embedded-mic-btn" class="main-btn" style="background:#4db6ac; width:auto; padding:10px 20px; display:inline-flex; align-items:center; gap:8px; border-radius:30px;" onclick="window.startEmbeddedVoiceInput()">
+                            <span style="font-size:1.5rem;">🎤</span> 声で質問
+                         </button>
+                         <div id="embedded-mic-status" style="margin-top:5px; font-weight:bold; color:#e91e63; min-height:1.5em;"></div>
+                    </div>
+
+                    <div style="display:flex; gap:10px; margin-top:10px;">
                         <button id="live-camera-btn-embedded" class="mini-cam-btn" style="background:#66bb6a; box-shadow:0 4px 0 #33691e; flex:1;" onclick="toggleEmbeddedCamera()"><span>📷</span> カメラ</button>
                         <button id="upload-embedded-btn" class="mini-cam-btn" style="background:#4a90e2; box-shadow:0 4px 0 #2c5f96; flex:1;" onclick="window.uploadChatImage('embedded')"><span>📁</span> アルバム</button>
                     </div>
@@ -205,6 +214,15 @@
                     
                     <!-- 個別指導エリア -->
                     <div id="simple-chat-view" class="hidden"><div class="glass-card" style="text-align:center; padding:15px;"><h4 style="text-align:center; margin:0 0 10px 0; color:#558b2f;">👩‍🏫 ネル先生の個別指導</h4><p style="font-size:0.8rem; color:#666; margin-bottom:10px;">（ネル先生はいつでも聞いてるにゃ）</p><div class="text-question-area"><textarea id="simple-text-input" class="text-question-input" placeholder="ここに入力"></textarea><button onclick="sendSimpleText()" class="text-question-btn">送信</button></div>
+                    
+                    <!-- ★新規: 音声質問ボタン (個別指導用) -->
+                    <div id="simple-mic-area" style="margin-top:10px; text-align:center;">
+                         <button id="simple-mic-btn" class="main-btn" style="background:#4db6ac; width:auto; padding:10px 20px; display:inline-flex; align-items:center; gap:8px; border-radius:30px;" onclick="window.startSimpleVoiceInput()">
+                            <span style="font-size:1.5rem;">🎤</span> 声で質問
+                         </button>
+                         <div id="simple-mic-status" style="margin-top:5px; font-weight:bold; color:#e91e63; min-height:1.5em;"></div>
+                    </div>
+
                     <div style="display:flex; gap:10px;">
                         <button id="live-camera-btn-simple" class="mini-cam-btn" style="background:#66bb6a; box-shadow:0 4px 0 #33691e; flex:1;" onclick="toggleSimpleCamera()"><span>📷</span> カメラ</button>
                         <button id="upload-simple-btn" class="mini-cam-btn" style="background:#4a90e2; box-shadow:0 4px 0 #2c5f96; flex:1;" onclick="window.uploadChatImage('simple')"><span>📁</span> アルバム</button>
@@ -344,7 +362,7 @@
                 <!-- 選択肢ボタンエリア -->
                 <div id="quiz-options-container" style="margin-top:10px;"></div>
 
-                <!-- ★新規: 音声回答ボタン -->
+                <!-- 音声回答ボタン -->
                 <div id="quiz-mic-area" style="margin-top:15px;">
                     <button id="quiz-mic-btn" class="main-btn" style="background:#4db6ac; width:auto; padding:10px 20px; display:inline-flex; align-items:center; gap:8px; border-radius:30px;" onclick="window.startQuizVoiceInput()">
                         <span style="font-size:1.5rem;">🎤</span> 声で答える

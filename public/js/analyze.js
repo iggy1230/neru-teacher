@@ -1,4 +1,4 @@
-// --- js/analyze.js (v429.0: お宝図鑑の常時対話廃止版) ---
+// --- js/analyze.js (v438.0: 個別指導音声ボタン追加版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -144,20 +144,20 @@ window.selectMode = function(m) {
         if(miniKarikari) miniKarikari.classList.remove('hidden');
         if(typeof window.updateMiniKarikari === 'function') window.updateMiniKarikari();
         
+        // マイクボタンの状態リセット
+        window.stopEmbeddedVoiceInput();
+        window.stopSimpleVoiceInput();
+        
         if (m === 'chat') { 
-            // お宝図鑑モード
             document.getElementById('chat-view').classList.remove('hidden'); 
             window.updateNellMessage("お宝を見せてにゃ！", "excited", false); 
-            // 常時対話は廃止するため startAlwaysOnListening() は呼ばない
-            // ログエリアも隠す（または不要なら削除）
-            // document.getElementById('conversation-log').classList.remove('hidden'); 
             window.startLocationWatch();
         } 
         else if (m === 'simple-chat') {
             document.getElementById('simple-chat-view').classList.remove('hidden');
             window.updateNellMessage("今日はお話だけするにゃ？", "gentle", false);
             document.getElementById('conversation-log').classList.remove('hidden');
-            if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
+            // ★常時聞き取り廃止
             window.startLocationWatch();
         }
         else if (m === 'chat-free') {
@@ -173,7 +173,7 @@ window.selectMode = function(m) {
             if(typeof window.renderMistakeSelection === 'function') window.renderMistakeSelection(); 
             document.getElementById('embedded-chat-section').classList.remove('hidden'); 
             document.getElementById('conversation-log').classList.remove('hidden');
-            if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
+            // ★常時聞き取り廃止
         } 
         else { 
             const subjectView = document.getElementById('subject-selection-view'); 
@@ -182,12 +182,116 @@ window.selectMode = function(m) {
             if (m === 'explain' || m === 'grade') {
                 document.getElementById('embedded-chat-section').classList.remove('hidden');
                 document.getElementById('conversation-log').classList.remove('hidden');
-                if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
+                // ★常時聞き取り廃止
             }
         }
     } catch (e) {
         console.error("selectMode Error:", e);
         alert("エラーが発生したにゃ。再読み込みしてにゃ。");
+    }
+};
+
+// 宿題チャット用音声入力 (embedded)
+window.startEmbeddedVoiceInput = function() {
+    const micBtn = document.getElementById('embedded-mic-btn');
+    const status = document.getElementById('embedded-mic-status');
+    
+    if (micBtn) {
+        micBtn.disabled = true;
+        micBtn.innerHTML = '<span style="font-size:1.5rem;">👂</span> 聞いてるにゃ...';
+        micBtn.style.background = "#ff5252";
+    }
+    
+    if (status) status.innerText = "お話してにゃ！";
+    
+    // 音声読み上げを停止
+    if(typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
+
+    // ワンショット認識を開始
+    if (typeof window.startOneShotRecognition === 'function') {
+        window.startOneShotRecognition(
+            (transcript) => {
+                // 結果が得られたら送信
+                if (transcript && transcript.trim() !== "") {
+                     const input = document.getElementById('embedded-text-input');
+                     if (input) input.value = transcript;
+                     window.sendEmbeddedText();
+                }
+                window.stopEmbeddedVoiceInput(true);
+            },
+            () => {
+                // 終了時
+                window.stopEmbeddedVoiceInput();
+            }
+        );
+    } else {
+        alert("音声認識が使えないにゃ...");
+        window.stopEmbeddedVoiceInput();
+    }
+};
+
+window.stopEmbeddedVoiceInput = function(keepStatus = false) {
+    const micBtn = document.getElementById('embedded-mic-btn');
+    const status = document.getElementById('embedded-mic-status');
+    
+    if (micBtn) {
+        micBtn.disabled = false;
+        micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で質問';
+        micBtn.style.background = "#4db6ac";
+    }
+    
+    if (status && !keepStatus) {
+        status.innerText = "";
+    }
+};
+
+// ★新規: 個別指導用音声入力 (simple)
+window.startSimpleVoiceInput = function() {
+    const micBtn = document.getElementById('simple-mic-btn');
+    const status = document.getElementById('simple-mic-status');
+    
+    if (micBtn) {
+        micBtn.disabled = true;
+        micBtn.innerHTML = '<span style="font-size:1.5rem;">👂</span> 聞いてるにゃ...';
+        micBtn.style.background = "#ff5252";
+    }
+    
+    if (status) status.innerText = "お話してにゃ！";
+    
+    if(typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
+
+    if (typeof window.startOneShotRecognition === 'function') {
+        window.startOneShotRecognition(
+            (transcript) => {
+                if (transcript && transcript.trim() !== "") {
+                     const input = document.getElementById('simple-text-input');
+                     if (input) input.value = transcript;
+                     window.sendSimpleText();
+                }
+                window.stopSimpleVoiceInput(true);
+            },
+            () => {
+                window.stopSimpleVoiceInput();
+            }
+        );
+    } else {
+        alert("音声認識が使えないにゃ...");
+        window.stopSimpleVoiceInput();
+    }
+};
+
+window.stopSimpleVoiceInput = function(keepStatus = false) {
+    const micBtn = document.getElementById('simple-mic-btn');
+    const status = document.getElementById('simple-mic-status');
+    
+    if (micBtn) {
+        micBtn.disabled = false;
+        micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で質問';
+        micBtn.style.background = "#4db6ac";
+    }
+    
+    if (status && !keepStatus) {
+        status.innerText = "";
     }
 };
 
@@ -565,3 +669,117 @@ window.backToProblemSelection = function() {
 window.pressThanks = function() { window.backToProblemSelection(); };
 window.finishGrading = async function(btnElement) { if(btnElement) { btnElement.disabled = true; btnElement.innerText = "採点完了！"; } if (currentUser) { currentUser.karikari += 100; saveAndSync(); window.updateMiniKarikari(); window.showKarikariEffect(100); } await window.updateNellMessage("よくがんばったにゃ！カリカリ100個あげる！", "excited", false); setTimeout(() => { if(typeof window.backToLobby === 'function') window.backToLobby(true); }, 3000); };
 window.pressAllSolved = function(btnElement) { if(btnElement) { btnElement.disabled = true; btnElement.innerText = "すごい！"; } if (currentUser) { currentUser.karikari += 100; saveAndSync(); window.showKarikariEffect(100); window.updateMiniKarikari(); window.updateNellMessage("よくがんばったにゃ！カリカリ100個あげるにゃ！", "excited", false).then(() => { setTimeout(() => { if(typeof window.backToLobby === 'function') window.backToLobby(true); }, 3000); }); } };
+window.cleanupAnalysis = function() { window.isAnalyzing = false; window.sfxBunseki.pause(); if(typeof window.analysisTimers !== 'undefined' && window.analysisTimers) { window.analysisTimers.forEach(t => clearTimeout(t)); window.analysisTimers = []; } };
+
+window.captureAndSendLiveImage = function(context = 'main') {
+    if (context === 'main') { if (window.currentMode === 'chat-free') context = 'free'; else if (window.activeChatContext === 'embedded') context = 'embedded'; else if (window.currentMode === 'simple-chat') context = 'simple'; }
+    if (context === 'embedded' || context === 'simple') { window.captureAndSendLiveImageHttp(context); return; }
+    if (!window.liveSocket || window.liveSocket.readyState !== WebSocket.OPEN) { return alert("まずは「おはなしする」でネル先生とつながってにゃ！"); }
+    if (window.isLiveImageSending) return; 
+    let videoId = 'live-chat-video-free'; let containerId = 'live-chat-video-container-free'; const video = document.getElementById(videoId); const btn = document.getElementById('live-camera-btn-free');
+    if (!video || !video.srcObject || !video.srcObject.active) { if (typeof window.startPreviewCamera === 'function') { window.startPreviewCamera(videoId, containerId).then(() => { if (btn) { btn.innerHTML = "<span>📸</span> 撮影して送信"; btn.style.backgroundColor = "#ff5252"; } }); } else { alert("カメラ機能が読み込まれていないにゃ..."); } return; }
+    window.stopAudioPlayback(); window.ignoreIncomingAudio = true; window.isLiveImageSending = true; if (btn) { btn.innerHTML = "<span>📡</span> 送信中にゃ..."; btn.style.backgroundColor = "#ccc"; } window.isMicMuted = true;
+    const canvas = document.createElement('canvas'); canvas.width = video.videoWidth || 640; canvas.height = video.videoHeight || 480; const ctx = canvas.getContext('2d'); ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const notif = document.createElement('div'); notif.innerText = `📝 問題を送ったにゃ！`; notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #8bc34a; color:#558b2f; padding:10px 20px; border-radius:30px; font-weight:bold; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 4px 10px rgba(0,0,0,0.2);"; document.body.appendChild(notif); setTimeout(() => notif.remove(), 2000);
+    const compressedDataUrl = window.processImageForAI(canvas); const base64Data = compressedDataUrl.split(',')[1];
+    const flash = document.createElement('div'); flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;"; document.body.appendChild(flash); setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
+    const videoContainer = document.getElementById('live-chat-video-container-free'); if (videoContainer) { const oldPreview = document.getElementById('snapshot-preview-overlay'); if(oldPreview) oldPreview.remove(); const previewImg = document.createElement('img'); previewImg.id = 'snapshot-preview-overlay'; previewImg.src = compressedDataUrl; previewImg.style.cssText = "position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; z-index:10; border:4px solid #ffeb3b; box-sizing:border-box; animation: fadeIn 0.2s;"; videoContainer.style.position = "relative"; videoContainer.appendChild(previewImg); setTimeout(() => { if(previewImg && previewImg.parentNode) previewImg.remove(); }, 3000); }
+    if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ん？どれどれ…", "thinking", false, false);
+    if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN) { let promptText = "（ユーザーが勉強の問題や画像を見せました）この画像の内容を詳しく、子供にもわかるように丁寧に教えてください。図鑑登録は不要です。"; window.liveSocket.send(JSON.stringify({ clientContent: { turns: [{ role: "user", parts: [ { text: promptText }, { inlineData: { mime_type: "image/jpeg", data: base64Data } } ] }], turnComplete: true } })); }
+    setTimeout(() => { window.isLiveImageSending = false; window.isMicMuted = false; if (typeof window.stopPreviewCamera === 'function') { window.stopPreviewCamera(); } if (btn) { btn.innerHTML = "<span>📷</span> 写真を見せてお話"; btn.style.backgroundColor = "#009688"; } }, 3000); setTimeout(() => { window.ignoreIncomingAudio = false; }, 300);
+};
+
+window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
+    if (window.isLiveImageSending) return;
+    if (window.isAlwaysListening && window.continuousRecognition) { try { window.continuousRecognition.stop(); } catch(e){} }
+    let videoId, btnId, activeColor; if (context === 'embedded') { videoId = 'live-chat-video-embedded'; btnId = 'live-camera-btn-embedded'; activeColor = '#66bb6a'; } else if (context === 'simple') { videoId = 'live-chat-video-simple'; btnId = 'live-camera-btn-simple'; activeColor = '#66bb6a'; }
+    const video = document.getElementById(videoId); if (!video || !video.srcObject || !video.srcObject.active) return alert("カメラが動いてないにゃ...");
+    window.isLiveImageSending = true; const btn = document.getElementById(btnId); if (btn) { btn.innerHTML = "<span>📡</span> 送信中にゃ..."; btn.style.backgroundColor = "#ccc"; }
+    const canvas = document.createElement('canvas'); canvas.width = video.videoWidth || 640; canvas.height = video.videoHeight || 480; const ctx = canvas.getContext('2d'); ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const compressedDataUrl = window.processImageForAI(canvas); const base64Data = compressedDataUrl.split(',')[1];
+    const flash = document.createElement('div'); flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;"; document.body.appendChild(flash); setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
+    if(typeof window.addLogItem === 'function') window.addLogItem('user', '（画像送信）');
+    let memoryContext = ""; if (window.NellMemory && currentUser) { try { memoryContext = await window.NellMemory.generateContextString(currentUser.id); } catch(e) {} }
+    
+    // ★ここを変更: window.sendImageToChatAPI を呼び出す (引数を合わせる)
+    await window.sendImageToChatAPI(base64Data, context);
+    
+    window.isLiveImageSending = false; if(typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera(); if (btn) { btn.innerHTML = "<span>📷</span> カメラで見せて質問"; btn.style.backgroundColor = activeColor; } if (window.isAlwaysListening) { try { window.continuousRecognition.start(); } catch(e){} }
+};
+
+window.uploadChatImage = function(context = 'embedded') {
+    let inputId; if(context === 'embedded') inputId = 'embedded-image-upload'; else if(context === 'simple') inputId = 'simple-image-upload';
+    const input = document.getElementById(inputId); if(input) input.click();
+};
+
+window.handleChatImageFile = async function(file, context = 'embedded') {
+    if (!file) return;
+    let btnId; if(context === 'embedded') btnId = 'upload-embedded-btn'; else if(context === 'simple') btnId = 'upload-simple-btn';
+    const btn = document.getElementById(btnId);
+    if(btn) { btn.innerHTML = "<span>📡</span> 解析中..."; btn.style.backgroundColor = "#ccc"; btn.disabled = true; }
+    
+    // ★追加: EXIFから位置情報を取得 (非同期)
+    let imageLocation = null;
+    try {
+        imageLocation = await getGpsFromExif(file);
+        if (imageLocation) {
+            console.log("Image Location Found:", imageLocation);
+        }
+    } catch(e) {
+        console.log("No EXIF GPS found or error", e);
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        const img = new Image();
+        img.onload = async () => {
+            const canvas = document.createElement('canvas'); const MAX_WIDTH = 800; const scale = Math.min(1, MAX_WIDTH / img.width); canvas.width = img.width * scale; canvas.height = img.height * scale;
+            const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6); const base64Data = compressedDataUrl.split(',')[1];
+            
+            // ★変更: 位置情報を渡す
+            await window.sendImageToChatAPI(base64Data, context, imageLocation);
+            
+            if(btn) { btn.innerHTML = "<span>📁</span> アルバム"; btn.style.backgroundColor = "#4a90e2"; btn.disabled = false; }
+            let inputId; if(context === 'embedded') inputId = 'embedded-image-upload'; else if(context === 'simple') inputId = 'simple-image-upload';
+            const input = document.getElementById(inputId); if(input) input.value = '';
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+};
+
+// ★変更: imageLocation 引数を追加
+window.sendImageToChatAPI = async function(base64Data, context, imageLocation = null) {
+    if(typeof window.addLogItem === 'function') window.addLogItem('user', '（画像送信）');
+    let memoryContext = ""; if (window.NellMemory && currentUser) { try { memoryContext = await window.NellMemory.generateContextString(currentUser.id); } catch(e) {} }
+    
+    // ★追加: 位置情報の優先順位ロジック
+    // 画像の位置情報があればそれを優先し、現在地住所は送らない（場所の混同を防ぐため）
+    const useImageLocation = !!imageLocation;
+    const finalLocation = imageLocation || window.currentLocation;
+    const finalAddress = useImageLocation ? null : window.currentAddress;
+
+    try {
+        if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
+        const res = await fetch('/chat-dialogue', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                image: base64Data, 
+                text: "この写真に写っているものについて解説してください", 
+                name: currentUser ? currentUser.name : "生徒", 
+                history: window.chatSessionHistory, 
+                location: finalLocation, // 画像位置情報または現在地
+                address: finalAddress,   // 画像位置を使う場合はnull
+                memoryContext: memoryContext 
+            })
+        });
+        if (!res.ok) throw new Error("Server response not ok"); const data = await res.json();
+        const speechText = data.speech || data.reply || "教えてあげるにゃ！";
+        if(typeof window.addLogItem === 'function') window.addLogItem('nell', speechText); if(typeof window.addToSessionHistory === 'function') window.addToSessionHistory('nell', speechText);
+        if(typeof window.updateNellMessage === 'function') await window.updateNellMessage(speechText, "happy", true, true);
+        let boardId = (context === 'embedded') ? 'embedded-chalkboard' : 'chalkboard-simple'; const embedBoard = document.getElementById(boardId); if (embedBoard && data.board && data.board.trim() !== "") { embedBoard.innerText = data.board; embedBoard.classList.remove('hidden'); }
+    } catch(e) {
+        console.error("HTTP Image Error:", e); if(typeof window.updateNellMessage === 'function') window.updateNellMessage("よく見えなかったにゃ…もう一回お願いにゃ！", "thinking", false, true);
+    }
+};

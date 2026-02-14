@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v425.0: iOS Safari神経衰弱バグ修正版) --- */
+/* --- style.css (完全版 v438.0: iPhone神経衰弱対策版) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -1162,11 +1162,14 @@ button { font-family: inherit; }
 .memory-card {
     width: 100%;
     height: 100%;
-    background-color: #fff; /* 透明化防止 */
+    background-color: transparent; /* ここは透明にする */
     cursor: pointer;
     position: relative;
     user-select: none;
     border-radius: 5px;
+    /* 親要素にperspectiveがある場合でも、子要素の3D変換を有効にする */
+    transform-style: preserve-3d; 
+    -webkit-transform-style: preserve-3d;
 }
 
 .memory-card-inner {
@@ -1176,15 +1179,17 @@ button { font-family: inherit; }
     text-align: center;
     transition: transform 0.6s;
     transform-style: preserve-3d;
+    -webkit-transform-style: preserve-3d; /* iOS Safari fix */
     box-shadow: 0 2px 5px rgba(0,0,0,0.1);
     border-radius: 5px;
-    /* 背景色を白にして透け防止 */
-    background-color: #fff;
-    -webkit-transform-style: preserve-3d; /* iOS Safari fix */
+    /* iOSでのレンダリングバグ対策: GPUレイヤー分離 */
+    transform: translateZ(0); 
+    -webkit-transform: translateZ(0);
 }
 
 .memory-card.flipped .memory-card-inner {
     transform: rotateY(180deg);
+    -webkit-transform: rotateY(180deg);
 }
 
 .memory-card-front, .memory-card-back {
@@ -1195,8 +1200,9 @@ button { font-family: inherit; }
     backface-visibility: hidden;
     border-radius: 5px;
     background-color: #fff;
-    transform: translate3d(0,0,0); /* iOS Safari fix */
-    -webkit-transform: translate3d(0,0,0); /* iOS Safari fix */
+    /* チラつき防止 */
+    transform: translate3d(0,0,0); 
+    -webkit-transform: translate3d(0,0,0);
 }
 
 .memory-card-back {
@@ -1208,11 +1214,15 @@ button { font-family: inherit; }
     font-size: 2rem;
     border: 2px solid #fff;
     z-index: 2; /* デフォルトで手前 */
+    /* 裏面であることを明示 */
+    transform: rotateY(0deg); 
+    -webkit-transform: rotateY(0deg);
 }
 
 .memory-card-front {
     background-color: white;
     transform: rotateY(180deg);
+    -webkit-transform: rotateY(180deg);
     display: flex;
     flex-direction: column;
     justify-content: flex-start;
