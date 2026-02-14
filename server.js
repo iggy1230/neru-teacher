@@ -22,8 +22,8 @@ app.use(express.static(publicDir));
 
 // --- AI Model Constants ---
 // コスト削減のため、Gemini 2.0 Flash をメインに使用
-const MODEL_HOMEWORK = "gemini-flash-latest";
-const MODEL_FAST = "gemini-2.5-flash-lite"; 
+const MODEL_HOMEWORK = "gemini-2.5-pro";
+const MODEL_FAST = "gemini-2.5-flash"; 
 const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025";
 
 // --- Server Log ---
@@ -293,11 +293,6 @@ app.post('/generate-quiz', async (req, res) => {
             if (attempt >= MAX_RETRIES) {
                 res.status(500).json({ error: "クイズが作れなかったにゃ…（生成エラー）" });
                 return;
-            } else {
-                // ★429エラー対策: 待機時間を入れてリトライ
-                const waitTime = 5000 * attempt;
-                console.log(`Waiting ${waitTime}ms before retry...`);
-                await new Promise(resolve => setTimeout(resolve, waitTime));
             }
         }
     }
@@ -633,8 +628,8 @@ app.post('/chat-dialogue', async (req, res) => {
     }
 });
 
-// --- TTS (廃止) ---
-// クライアント側のWeb Speech APIを使用するため、サーバー処理は削除。
+// --- TTS (サーバー側は削除) ---
+// クライアント側でWeb Speech APIを使用するため、/synthesize エンドポイントは削除しました。
 
 // --- Memory Update ---
 app.post('/update-memory', async (req, res) => {
@@ -1064,7 +1059,7 @@ wss.on('connection', async (clientWs, req) => {
 
                 geminiWs.send(JSON.stringify({
                     setup: {
-                        // MODEL_REALTIME (gemini-2.5-flash-native-audio-preview-09-2025) を使用
+                        // MODEL_REALTIME (gemini-2.0-flash-exp) を使用
                         model: `models/${MODEL_REALTIME}`,
                         generationConfig: { 
                             responseModalities: ["AUDIO"],

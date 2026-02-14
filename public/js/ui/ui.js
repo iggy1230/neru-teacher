@@ -1,10 +1,10 @@
-// --- js/ui/ui.js (v433.0: 完全クリーンアップ・非公開ボタン対応版) ---
+// --- js/ui/ui.js (v426.0: バックグラウンド処理停止強化版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
 // 図鑑のソートモード (初期値: 登録番号降順 = 新しい順)
 window.collectionSortMode = 'desc'; 
-// 図鑑のタブモード (mine / public)
+// ★図鑑のタブモード (mine / public)
 window.collectionTabMode = 'mine';
 
 // ==========================================
@@ -20,7 +20,7 @@ window.toggleMuteDirect = function() {
 window.changeVolumeDirect = function(slider) {
     window.appVolume = slider.value / 100;
     if (window.appVolume > 0 && window.isMuted) {
-        window.isMuted = false; 
+        window.isMuted = false; // スライダー操作でミュート解除
     }
     window.applyVolumeToAll();
     window.updateVolumeUI();
@@ -29,7 +29,10 @@ window.changeVolumeDirect = function(slider) {
 window.updateVolumeUI = function() {
     const btn = document.getElementById('mute-btn');
     const slider = document.getElementById('direct-volume-slider');
-    if (btn) btn.innerText = window.isMuted ? "🔇" : "🔊";
+    
+    if (btn) {
+        btn.innerText = window.isMuted ? "🔇" : "🔊";
+    }
     if (slider) {
         slider.value = window.appVolume * 100;
         slider.style.opacity = window.isMuted ? "0.5" : "1.0";
@@ -38,19 +41,24 @@ window.updateVolumeUI = function() {
 
 window.applyVolumeToAll = function() {
     const targetVol = window.isMuted ? 0 : window.appVolume;
+    
     if (window.audioList) {
         window.audioList.forEach(audio => {
-            if (audio === window.sfxBunseki) { audio.volume = targetVol * 0.1; } 
-            else { audio.volume = targetVol; }
+            if (audio === window.sfxBunseki) {
+                audio.volume = targetVol * 0.1; 
+            } else {
+                audio.volume = targetVol;
+            }
         });
     }
+    
     if (window.masterGainNode && window.audioCtx) {
         window.masterGainNode.gain.setValueAtTime(targetVol, window.audioCtx.currentTime);
     }
 };
 
 // ==========================================
-// Helper Functions
+// ★ Helper Functions
 // ==========================================
 
 window.cleanDisplayString = function(text) {
@@ -65,7 +73,9 @@ window.generateRarityString = function(rarity) {
     const r = rarity || 1;
     const imgPath = "assets/images/effects/nikukyurea.png";
     let images = "";
-    for(let i=0; i<r; i++) { images += `<img src="${imgPath}" class="rarity-img" alt="🐾">`; }
+    for(let i=0; i<r; i++) {
+        images += `<img src="${imgPath}" class="rarity-img" alt="🐾">`;
+    }
     return `<div class="rarity-mark rarity-${r}">${images}</div>`;
 };
 
@@ -78,24 +88,38 @@ window.formatCollectionNumber = function(num) {
 // ==========================================
 
 window.switchScreen = function(to) {
-    document.querySelectorAll('.screen').forEach(s => { s.classList.add('hidden'); });
+    document.querySelectorAll('.screen').forEach(s => {
+        s.classList.add('hidden');
+    });
+
     const target = document.getElementById(to);
     if (target) {
         target.classList.remove('hidden');
         window.scrollTo({ top: 0, behavior: 'instant' });
-        if (to === 'screen-playground') { window.updateNellMessage("運動の時間だにゃ！", "excited", false); }
-    } else { console.error(`Screen not found: ${to}`); }
+        
+        if (to === 'screen-playground') {
+            window.updateNellMessage("運動の時間だにゃ！", "excited", false);
+        }
+    } else {
+        console.error(`Screen not found: ${to}`);
+    }
     window.updateVolumeUI(); 
 };
 
 window.startApp = async function() {
-    if (window.initAudioContext) await window.initAudioContext();
-    if (window.sfxChime) window.safePlay(window.sfxChime);
+    if (window.initAudioContext) {
+        await window.initAudioContext();
+    }
+    if (window.sfxChime) {
+        window.safePlay(window.sfxChime);
+    }
     switchScreen('screen-gate');
 };
 
 window.backToTitle = async function() {
-    if (typeof window.logoutProcess === 'function') await window.logoutProcess();
+    if (typeof window.logoutProcess === 'function') {
+        await window.logoutProcess();
+    }
     switchScreen('screen-title');
 };
 
@@ -103,44 +127,30 @@ window.backToGate = function() {
     switchScreen('screen-gate');
 };
 
-// ★重要: ロビーに戻る際の完全クリーンアップ処理
 window.backToLobby = function(suppressGreeting = false) {
-    // 1. カメラと画像送信の停止
-    if (typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera();
-    window.isLiveImageSending = false;
-
-    // 2. 音声認識とチャット機能の停止
-    if (typeof window.stopLiveChat === 'function') window.stopLiveChat(); // WebSocket切断
-    if (typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
-    if (window.continuousRecognition) {
-        try { window.continuousRecognition.stop(); } catch(e){}
-        window.continuousRecognition = null;
-    }
-    window.isAlwaysListening = false;
-    window.isRecognitionRunning = false;
-
-    // 3. 音声再生の停止
-    if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
+    // ★修正: バックグラウンド処理を徹底的に停止
     if (typeof window.stopAudioPlayback === 'function') window.stopAudioPlayback();
-
-    // 4. ゲーム・タイマー・位置情報の停止
+    if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech(); // 音声即時停止
+    if (typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
+    if (typeof window.stopLiveChat === 'function') window.stopLiveChat();
+    if (typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera();
+    if (typeof window.closeHomeworkCamera === 'function') window.closeHomeworkCamera(); // 宿題カメラも停止
     if (typeof window.stopDanmakuGame === 'function') window.stopDanmakuGame();
-    window.gameRunning = false;
-    if (window.gameAnimId) cancelAnimationFrame(window.gameAnimId);
-    if (typeof window.stopLocationWatch === 'function') window.stopLocationWatch();
+    if (typeof window.cleanupAnalysis === 'function') window.cleanupAnalysis(); // 分析ループ停止
     
-    // 5. クイズ状態のリセット
+    window.gameRunning = false; 
+    window.isAnalyzing = false; // フラグ強制オフ
+    
+    if (typeof window.stopLocationWatch === 'function') window.stopLocationWatch();
+
     if (window.quizState) {
         window.quizState.sessionId = Date.now(); 
         window.quizState.questionQueue = []; 
         window.quizState.isFinished = true;
     }
 
-    // 6. 解析状態のリセット
-    if (window.isAnalyzing !== undefined) window.isAnalyzing = false;
     window.currentMode = null;
 
-    // 画面遷移
     switchScreen('screen-lobby');
 
     const shouldGreet = (typeof suppressGreeting === 'boolean') ? !suppressGreeting : true;
@@ -171,7 +181,9 @@ window.renderAttendance = function() {
     const firstDay = new Date(year, month, 1).getDay(); 
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     
-    grid.style.gap = "2px"; grid.style.padding = "5px"; grid.innerHTML = ""; 
+    grid.style.gap = "2px";
+    grid.style.padding = "5px";
+    grid.innerHTML = ""; 
     
     const header = document.createElement('div');
     header.style = "grid-column: span 7; display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; font-weight: bold; font-size: 1rem; padding: 0 5px;";
@@ -197,8 +209,12 @@ window.renderAttendance = function() {
         const div = document.createElement('div');
         div.className = "day-box";
         
-        let borderStyle = "1px solid #f0f0f0"; let bgStyle = "#fff";
-        if (dateKey === todayStr) { borderStyle = "2px solid #ff85a1"; bgStyle = "#fff0f3"; }
+        let borderStyle = "1px solid #f0f0f0"; 
+        let bgStyle = "#fff";
+        if (dateKey === todayStr) { 
+            borderStyle = "2px solid #ff85a1"; 
+            bgStyle = "#fff0f3"; 
+        }
         
         div.style = `height: 40px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; border: ${borderStyle}; background-color: ${bgStyle}; border-radius: 4px; position: relative; font-size: 0.7rem; overflow: hidden;`;
         div.innerHTML = `<div style="font-size: 0.6rem; color:#555; margin-top:2px;">${day}</div>`;
@@ -230,17 +246,27 @@ window.updateProgress = function(p) {
 };
 
 // ==========================================
-// 図鑑 (Collection)
+// 図鑑 (Collection) - ★共有機能・タブ切り替え対応
 // ==========================================
 
+// タブ切り替え
 window.switchCollectionTab = function(tab) {
     window.collectionTabMode = tab;
+    
+    // タブの見た目更新
     const btnMine = document.getElementById('col-tab-mine');
     const btnPublic = document.getElementById('col-tab-public');
     if (btnMine && btnPublic) {
-        if (tab === 'mine') { btnMine.classList.add('active-tab'); btnPublic.classList.remove('active-tab'); } 
-        else { btnMine.classList.remove('active-tab'); btnPublic.classList.add('active-tab'); }
+        if (tab === 'mine') {
+            btnMine.classList.add('active-tab');
+            btnPublic.classList.remove('active-tab');
+        } else {
+            btnMine.classList.remove('active-tab');
+            btnPublic.classList.add('active-tab');
+        }
     }
+    
+    // リスト再描画
     window.renderCollectionList();
 };
 
@@ -255,17 +281,18 @@ window.openCollectionDetailByIndex = function(index) {
                 
                 const item = profile.collection[index];
                 const totalCount = profile.collection.length;
-                window.showCollectionDetail(item, index, totalCount, true);
+                window.showCollectionDetail(item, index, totalCount, true); // true = 自分の
             }
         });
     } else {
+        // Publicモードの場合、window.publicCollectionCache から取得
         if (window.publicCollectionCache && window.publicCollectionCache[index]) {
             const item = window.publicCollectionCache[index];
             const modal = document.getElementById('collection-modal');
             if (modal && modal.classList.contains('hidden')) modal.classList.remove('hidden');
             
             const totalCount = window.publicCollectionCache.length;
-            window.showCollectionDetail(item, index, totalCount, false);
+            window.showCollectionDetail(item, index, totalCount, false); // false = 他人の
         }
     }
 };
@@ -283,15 +310,19 @@ window.showCollection = async function() {
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 85vh; display: flex; flex-direction: column;">
             <h3 style="text-align:center; margin:0 0 10px 0; color:#f57f17; flex-shrink: 0;">📖 お宝図鑑</h3>
+            
+            <!-- タブ -->
             <div style="display:flex; gap:10px; margin-bottom:10px; flex-shrink:0;">
                 <button id="col-tab-mine" onclick="switchCollectionTab('mine')" class="memory-tab active-tab" style="flex:1; border-radius:10px; border:2px solid #f57f17; background:#fff; color:#f57f17;">じぶんの</button>
                 <button id="col-tab-public" onclick="switchCollectionTab('public')" class="memory-tab" style="flex:1; border-radius:10px; border:2px solid #8d6e63; background:#fff; color:#8d6e63;">みんなの</button>
             </div>
+
             <div style="flex-shrink:0; display:flex; flex-direction:column; gap:8px; margin-bottom:10px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                      <button onclick="closeCollection(); showMap();" class="main-btn" style="width:auto; margin:0; padding:8px 15px; font-size:0.85rem; background:#29b6f6; box-shadow: 0 3px 0 #0288d1;">🗺️ 足あとマップ</button>
                      <div id="collection-count-badge" style="background:#fff; padding:5px 10px; border-radius:15px; font-weight:bold; color:#555; border:1px solid #ccc; font-size:0.9rem;">読み込み中...</div>
                 </div>
+                
                 <div id="collection-sort-area" style="display:flex; align-items:center; gap:5px; justify-content:flex-end;">
                     <span style="font-size:0.8rem; font-weight:bold; color:#666;">並び替え:</span>
                     <select onchange="changeCollectionSort(this)" style="padding:5px; border-radius:5px; border:1px solid #ccc; font-size:0.8rem;">
@@ -301,14 +332,17 @@ window.showCollection = async function() {
                     </select>
                 </div>
             </div>
+
             <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap:12px; flex: 1; overflow-y:auto; padding:5px;">
                 <p style="width:100%; text-align:center;">読み込み中にゃ...</p>
             </div>
+            
             <div style="text-align:center; margin-top:15px; flex-shrink: 0;"><button onclick="closeCollection()" class="main-btn gray-btn" style="width:auto; padding:10px 30px;">閉じる</button></div>
         </div>
     `;
     modal.classList.remove('hidden');
-    window.collectionTabMode = 'mine';
+
+    window.collectionTabMode = 'mine'; // 初期は自分
     window.renderCollectionList();
 };
 
@@ -318,69 +352,118 @@ window.renderCollectionList = async function() {
     const sortArea = document.getElementById('collection-sort-area');
     
     if (!grid) return;
+
     grid.innerHTML = '<p style="width:100%; text-align:center;">読み込み中にゃ...</p>';
     
     let items = [];
 
     if (window.collectionTabMode === 'mine') {
+        // 自分のコレクション
         if (sortArea) sortArea.style.display = 'flex';
         const profile = await window.NellMemory.getUserProfile(currentUser.id);
         const collection = profile.collection || [];
-        items = collection.map((item, index) => ({ ...item, originalIndex: index, number: collection.length - index }));
+        
+        items = collection.map((item, index) => ({
+            ...item,
+            originalIndex: index,
+            number: collection.length - index
+        }));
 
-        if (window.collectionSortMode === 'asc') items.sort((a, b) => a.number - b.number);
-        else if (window.collectionSortMode === 'desc') items.sort((a, b) => b.number - a.number);
-        else if (window.collectionSortMode === 'rarity') items.sort((a, b) => {
-            const rA = a.rarity || 1; const rB = b.rarity || 1;
-            if (rA !== rB) return rB - rA; return b.number - a.number;
-        });
+        if (window.collectionSortMode === 'asc') {
+            items.sort((a, b) => a.number - b.number);
+        } else if (window.collectionSortMode === 'desc') {
+            items.sort((a, b) => b.number - a.number);
+        } else if (window.collectionSortMode === 'rarity') {
+            items.sort((a, b) => {
+                const rA = a.rarity || 1;
+                const rB = b.rarity || 1;
+                if (rA !== rB) return rB - rA;
+                return b.number - a.number;
+            });
+        }
+
     } else {
-        if (sortArea) sortArea.style.display = 'none'; 
+        // みんなのコレクション
+        if (sortArea) sortArea.style.display = 'none'; // 公開用は時系列固定
         const publicItems = await window.NellMemory.getPublicCollection();
-        window.publicCollectionCache = publicItems;
-        items = publicItems.map((item, index) => ({ ...item, originalIndex: index }));
+        window.publicCollectionCache = publicItems; // 詳細表示用にキャッシュ
+        
+        items = publicItems.map((item, index) => ({
+            ...item,
+            originalIndex: index // キャッシュ配列のインデックス
+        }));
     }
 
     if (countBadge) countBadge.innerText = `全 ${items.length} 件`;
     grid.innerHTML = '';
 
-    if (items.length === 0) { grid.innerHTML = '<p style="width:100%; text-align:center; color:#888;">まだ何もないにゃ。</p>'; return; }
+    if (items.length === 0) {
+        grid.innerHTML = '<p style="width:100%; text-align:center; color:#888;">まだ何もないにゃ。</p>';
+        return;
+    }
 
     const CHUNK_SIZE = 12;
     let currentIndex = 0;
 
     function renderChunk() {
         if (!document.getElementById('collection-grid')) return;
+
         const fragment = document.createDocumentFragment();
         const chunk = items.slice(currentIndex, currentIndex + CHUNK_SIZE);
 
         chunk.forEach(item => {
             const div = document.createElement('div');
             div.className = "collection-grid-item"; 
-            div.style.cssText = `background: white; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.15); border: 1px solid #ddd; cursor: pointer; position: relative; overflow: hidden; aspect-ratio: 0.68; display: flex; flex-direction: column; margin: 0;`;
+            
+            div.style.cssText = `
+                background: white;
+                border-radius: 8px;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+                border: 1px solid #ddd;
+                cursor: pointer;
+                position: relative;
+                overflow: hidden;
+                aspect-ratio: 0.68;
+                display: flex;
+                flex-direction: column;
+                margin: 0;
+            `;
+            
             div.onclick = () => window.openCollectionDetailByIndex(item.originalIndex); 
 
             const img = document.createElement('img');
-            img.src = item.image; img.loading = "lazy"; img.decoding = "async";
+            img.src = item.image;
+            img.loading = "lazy";
+            img.decoding = "async";
             img.style.cssText = "width:100%; height:100%; object-fit:contain; display:block; background-color: #f9f9f9;";
             
+            // 公開タブの場合は発見者名を表示
             if (window.collectionTabMode === 'public') {
                 const badge = document.createElement('div');
-                badge.className = "info-badge"; badge.innerText = `${window.cleanDisplayString(item.discovererName || "誰か")}さん`;
+                badge.className = "info-badge";
+                badge.innerText = `${window.cleanDisplayString(item.discovererName || "誰か")}さん`;
                 div.appendChild(badge);
             }
-            div.appendChild(img); fragment.appendChild(div);
+
+            div.appendChild(img);
+            fragment.appendChild(div);
         });
+
         grid.appendChild(fragment);
         currentIndex += CHUNK_SIZE;
-        if (currentIndex < items.length) { requestAnimationFrame(renderChunk); }
+
+        if (currentIndex < items.length) {
+            requestAnimationFrame(renderChunk);
+        }
     }
+
     renderChunk();
 };
 
 window.showCollectionDetail = function(item, originalIndex, totalCount, isMine) {
     const modal = document.getElementById('collection-modal');
     if (!modal) return;
+    
     modal.classList.remove('hidden');
 
     let mapBtnHtml = "";
@@ -388,34 +471,77 @@ window.showCollectionDetail = function(item, originalIndex, totalCount, isMine) 
         mapBtnHtml = `<button onclick="window.closeCollection(); window.showMap(${item.location.lat}, ${item.location.lon});" class="mini-teach-btn" style="background:#29b6f6; width:auto; margin-left:10px;">🗺️ 地図で見る</button>`;
     }
 
+    // ★修正: 共有/非共有ボタンの切り替え
     let shareBtnHtml = "";
     if (isMine) {
         if (!item.isShared) {
+            // まだ共有していない -> 公開ボタン
             shareBtnHtml = `<button onclick="shareCollectionItem(${originalIndex})" class="mini-teach-btn" style="background:#ff9800; width:auto;">✨ みんなに公開する</button>`;
         } else {
-            shareBtnHtml = `<div style="display:flex; flex-direction:column; align-items:center; gap:5px;"><span style="font-size:0.8rem; color:#ff9800; font-weight:bold;">みんなに公開中だにゃ！</span><button onclick="unshareCollectionItem(${originalIndex})" class="mini-teach-btn" style="background:#78909c; width:auto;">🔒 非公開に戻す</button></div>`;
+            // 既に共有している -> 非公開に戻すボタン
+            shareBtnHtml = `
+                <div style="display:flex; flex-direction:column; align-items:center; gap:5px;">
+                    <span style="font-size:0.8rem; color:#ff9800; font-weight:bold;">みんなに公開中だにゃ！</span>
+                    <button onclick="unshareCollectionItem(${originalIndex})" class="mini-teach-btn" style="background:#78909c; width:auto;">🔒 非公開に戻す</button>
+                </div>`;
         }
     } else {
+        // 他人のアイテム
         shareBtnHtml = `<span style="font-size:0.8rem; color:#666;">発見者: <strong>${window.cleanDisplayString(item.discovererName || "誰か")}さん</strong></span>`;
     }
 
+    // 削除ボタン (自分のみ)
     let deleteBtnHtml = "";
-    if (isMine) { deleteBtnHtml = `<button onclick="deleteCollectionItem(${originalIndex})" class="mini-teach-btn" style="background:#ff5252;">削除</button>`; }
+    if (isMine) {
+        deleteBtnHtml = `<button onclick="deleteCollectionItem(${originalIndex})" class="mini-teach-btn" style="background:#ff5252;">削除</button>`;
+    }
 
-    let leftBtnHtml = ""; if (originalIndex > 0) { leftBtnHtml = `<button onclick="window.openCollectionDetailByIndex(${originalIndex - 1})" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); width:40px; height:40px; border-radius:50%; border:none; background:rgba(255,255,255,0.8); font-size:1.5rem; color:#555; box-shadow:0 2px 5px rgba(0,0,0,0.2); cursor:pointer; z-index:10;">◀</button>`; }
-    let rightBtnHtml = ""; if (originalIndex < totalCount - 1) { rightBtnHtml = `<button onclick="window.openCollectionDetailByIndex(${originalIndex + 1})" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); width:40px; height:40px; border-radius:50%; border:none; background:rgba(255,255,255,0.8); font-size:1.5rem; color:#555; box-shadow:0 2px 5px rgba(0,0,0,0.2); cursor:pointer; z-index:10;">▶</button>`; }
+    // 左右ナビ
+    let leftBtnHtml = "";
+    if (originalIndex > 0) {
+        leftBtnHtml = `
+            <button onclick="window.openCollectionDetailByIndex(${originalIndex - 1})" 
+                style="position:absolute; left:10px; top:50%; transform:translateY(-50%); 
+                width:40px; height:40px; border-radius:50%; border:none; background:rgba(255,255,255,0.8); 
+                font-size:1.5rem; color:#555; box-shadow:0 2px 5px rgba(0,0,0,0.2); cursor:pointer; z-index:10;">
+                ◀
+            </button>
+        `;
+    }
+
+    let rightBtnHtml = "";
+    if (originalIndex < totalCount - 1) {
+        rightBtnHtml = `
+            <button onclick="window.openCollectionDetailByIndex(${originalIndex + 1})" 
+                style="position:absolute; right:10px; top:50%; transform:translateY(-50%); 
+                width:40px; height:40px; border-radius:50%; border:none; background:rgba(255,255,255,0.8); 
+                font-size:1.5rem; color:#555; box-shadow:0 2px 5px rgba(0,0,0,0.2); cursor:pointer; z-index:10;">
+                ▶
+            </button>
+        `;
+    }
 
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 90vh; display: flex; flex-direction: column;">
             <div style="flex-shrink:0; display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                <div style="display:flex; gap:5px; align-items:center;"><button onclick="showCollection()" class="mini-teach-btn" style="background:#8d6e63;">← 一覧</button>${mapBtnHtml}</div>${deleteBtnHtml}
+                <div style="display:flex; gap:5px; align-items:center;">
+                    <button onclick="showCollection()" class="mini-teach-btn" style="background:#8d6e63;">← 一覧</button>
+                    ${mapBtnHtml}
+                </div>
+                ${deleteBtnHtml}
             </div>
+            
             <div style="flex:1; overflow-y:auto; background:transparent; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px; position:relative;">
                 ${leftBtnHtml}
                 <img src="${item.image}" decoding="async" style="width:auto; max-width:100%; height:auto; max-height:100%; object-fit:contain; border-radius:15px; box-shadow:0 10px 25px rgba(0,0,0,0.4);">
                 ${rightBtnHtml}
             </div>
-            <div style="text-align:center; margin-top:10px; flex-shrink:0;">${shareBtnHtml}<br><br><button onclick="closeCollection()" class="main-btn gray-btn" style="width:auto; padding:8px 30px; font-size:0.9rem;">閉じる</button></div>
+            
+            <div style="text-align:center; margin-top:10px; flex-shrink:0;">
+                ${shareBtnHtml}
+                <br><br>
+                <button onclick="closeCollection()" class="main-btn gray-btn" style="width:auto; padding:8px 30px; font-size:0.9rem;">閉じる</button>
+            </div>
         </div>
     `;
 };
@@ -423,21 +549,39 @@ window.showCollectionDetail = function(item, originalIndex, totalCount, isMine) 
 window.shareCollectionItem = async function(index) {
     if (!currentUser || !window.NellMemory) return;
     if (!confirm("このお宝をみんなの図鑑に公開するにゃ？\n（名前が表示されます）")) return;
+    
     try {
         const result = await window.NellMemory.shareToPublicCollection(currentUser.id, index, currentUser.name);
-        if (result === "SUCCESS") { alert("公開したにゃ！"); window.openCollectionDetailByIndex(index); } 
-        else if (result === "ALREADY_SHARED") { alert("もう公開済みだにゃ！"); }
-    } catch(e) { console.error(e); alert("公開できなかったにゃ..."); }
+        if (result === "SUCCESS") {
+            alert("公開したにゃ！みんなが見れるようになったにゃ！");
+            // 再描画してボタンを「公開済み」にする
+            window.openCollectionDetailByIndex(index);
+        } else if (result === "ALREADY_SHARED") {
+            alert("もう公開済みだにゃ！");
+        }
+    } catch(e) {
+        console.error(e);
+        alert("公開できなかったにゃ...通信エラーかも？");
+    }
 };
 
+// ★追加: 非公開に戻す処理
 window.unshareCollectionItem = async function(index) {
     if (!currentUser || !window.NellMemory) return;
     if (!confirm("「みんなの図鑑」から削除して、非公開に戻すにゃ？")) return;
+    
     try {
         const result = await window.NellMemory.unshareFromPublicCollection(currentUser.id, index);
-        if (result === "SUCCESS") { alert("非公開に戻したにゃ！"); window.openCollectionDetailByIndex(index); } 
-        else if (result === "NOT_SHARED") { alert("まだ公開されてないみたいだにゃ。"); }
-    } catch(e) { console.error(e); alert("エラーが発生したにゃ..."); }
+        if (result === "SUCCESS") {
+            alert("非公開に戻したにゃ！");
+            window.openCollectionDetailByIndex(index);
+        } else if (result === "NOT_SHARED") {
+            alert("まだ公開されてないみたいだにゃ。");
+        }
+    } catch(e) {
+        console.error(e);
+        alert("エラーが発生したにゃ...");
+    }
 };
 
 window.deleteCollectionItem = async function(index) {
@@ -452,7 +596,11 @@ window.closeCollection = function() {
     const modal = document.getElementById('collection-modal');
     if (modal) {
         modal.classList.add('hidden');
-        setTimeout(() => { if (modal.classList.contains('hidden')) { modal.innerHTML = ""; } }, 300);
+        setTimeout(() => {
+            if (modal.classList.contains('hidden')) {
+                modal.innerHTML = "";
+            }
+        }, 300);
     }
 };
 
@@ -464,19 +612,38 @@ window.mapInstance = null;
 
 window.showMap = async function(targetLat, targetLon) {
     if (!currentUser) return;
-    if (typeof window.startLocationWatch === 'function') window.startLocationWatch();
+    
+    if (typeof window.startLocationWatch === 'function') {
+        window.startLocationWatch();
+    }
+
     switchScreen('screen-map');
     
     if (!window.mapInstance) {
         window.mapInstance = L.map('map-container');
-        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(window.mapInstance);
+        
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        }).addTo(window.mapInstance);
     }
     
     setTimeout(() => {
         window.mapInstance.invalidateSize();
-        let centerLat = 35.6895; let centerLon = 139.6917; let zoomLevel = 15;
-        if (targetLat && targetLon) { centerLat = targetLat; centerLon = targetLon; zoomLevel = 18; } 
-        else if (window.currentLocation && window.currentLocation.lat) { centerLat = window.currentLocation.lat; centerLon = window.currentLocation.lon; }
+        
+        let centerLat = 35.6895; 
+        let centerLon = 139.6917;
+        let zoomLevel = 15;
+        
+        if (targetLat && targetLon) {
+            centerLat = targetLat;
+            centerLon = targetLon;
+            zoomLevel = 18;
+        } else if (window.currentLocation && window.currentLocation.lat) {
+            centerLat = window.currentLocation.lat;
+            centerLon = window.currentLocation.lon;
+        }
+        
         window.mapInstance.setView([centerLat, centerLon], zoomLevel);
         window.renderMapMarkers();
     }, 200);
@@ -484,26 +651,52 @@ window.showMap = async function(targetLat, targetLon) {
 
 window.renderMapMarkers = async function() {
     if (!window.mapInstance || !window.NellMemory || !currentUser) return;
-    window.mapInstance.eachLayer((layer) => { if (layer instanceof L.Marker) window.mapInstance.removeLayer(layer); });
+    
+    // 既存マーカーのクリア
+    window.mapInstance.eachLayer((layer) => {
+        if (layer instanceof L.Marker) {
+            window.mapInstance.removeLayer(layer);
+        }
+    });
 
     const profile = await window.NellMemory.getUserProfile(currentUser.id);
     const collection = profile.collection || [];
-    const displayCollection = collection.slice(0, 50);
+    
     let hasMarkers = false;
+    
+    const displayCollection = collection.slice(0, 50);
     
     displayCollection.forEach((item, index) => {
         if (item.location && item.location.lat && item.location.lon) {
             hasMarkers = true;
-            const icon = L.divIcon({ className: 'custom-div-icon', html: `<div class="map-pin-icon" style="background-image: url('${item.image}');"></div>`, iconSize: [50, 50], iconAnchor: [25, 25], popupAnchor: [0, -30] });
+            
+            const icon = L.divIcon({
+                className: 'custom-div-icon',
+                html: `<div class="map-pin-icon" style="background-image: url('${item.image}');"></div>`,
+                iconSize: [50, 50],
+                iconAnchor: [25, 25],
+                popupAnchor: [0, -30]
+            });
+            
             const displayName = window.cleanDisplayString(item.name);
             const dateStr = item.date ? new Date(item.date).toLocaleDateString() : "";
+            
             const marker = L.marker([item.location.lat, item.location.lon], { icon: icon }).addTo(window.mapInstance);
-            marker.bindPopup(`<div style="text-align:center; width: 150px;"><img src="${item.image}" loading="lazy" style="width:100%; height:auto; border-radius:5px; margin-bottom:5px; box-shadow:0 2px 5px rgba(0,0,0,0.2);"><strong>${displayName}</strong><br><span style="font-size:0.8rem; color:#666;">${dateStr}</span><br><button onclick="window.collectionTabMode='mine'; window.openCollectionDetailByIndex(${index})" class="mini-teach-btn" style="margin-top:5px; background:#ff85a1;">📖 詳しく見る</button></div>`);
+            
+            marker.bindPopup(`
+                <div style="text-align:center; width: 150px;">
+                    <img src="${item.image}" loading="lazy" style="width:100%; height:auto; border-radius:5px; margin-bottom:5px; box-shadow:0 2px 5px rgba(0,0,0,0.2);">
+                    <strong>${displayName}</strong><br>
+                    <span style="font-size:0.8rem; color:#666;">${dateStr}</span><br>
+                    <button onclick="window.collectionTabMode='mine'; window.openCollectionDetailByIndex(${index})" class="mini-teach-btn" style="margin-top:5px; background:#ff85a1;">📖 詳しく見る</button>
+                </div>
+            `);
         }
     });
     
     if (!hasMarkers && window.currentLocation) {
-        L.marker([window.currentLocation.lat, window.currentLocation.lon]).addTo(window.mapInstance).bindPopup("現在はここだにゃ！").openPopup();
+        L.marker([window.currentLocation.lat, window.currentLocation.lon]).addTo(window.mapInstance)
+            .bindPopup("現在はここだにゃ！").openPopup();
     }
 };
 
@@ -514,7 +707,10 @@ window.renderMapMarkers = async function() {
 window.openMemoryManager = function() {
     if (!currentUser) return;
     const modal = document.getElementById('memory-manager-modal');
-    if (modal) { modal.classList.remove('hidden'); switchMemoryTab('profile'); }
+    if (modal) {
+        modal.classList.remove('hidden');
+        switchMemoryTab('profile'); 
+    }
 };
 
 window.closeMemoryManager = function() {
@@ -534,27 +730,42 @@ window.switchMemoryTab = async function(tab) {
     const container = (tab === 'profile') ? document.getElementById('profile-container') : document.getElementById('memory-list-container');
     if (container) {
         container.innerHTML = '<p style="text-align:center; padding:20px; color:#888;">読み込み中にゃ...</p>';
-        if (tab === 'profile') { const profile = await window.NellMemory.getUserProfile(currentUser.id); renderProfileView(container, profile); } 
-        else { renderLogView(container); }
+        
+        if (tab === 'profile') {
+            const profile = await window.NellMemory.getUserProfile(currentUser.id);
+            renderProfileView(container, profile);
+        } else {
+            renderLogView(container);
+        }
     }
 };
 
 function renderProfileView(container, profile) {
     container.innerHTML = '';
-    if (!profile) { container.innerHTML = '<p style="text-align:center;">まだ記憶がないにゃ。</p>'; return; }
+    if (!profile) {
+        container.innerHTML = '<p style="text-align:center;">まだ記憶がないにゃ。</p>';
+        return;
+    }
 
     const createSection = (title, items, categoryName, isArray = false) => {
         const div = document.createElement('div');
         div.className = 'profile-section';
         div.style.cssText = "background: white; padding: 10px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); position:relative;";
-        const h4 = document.createElement('h4'); h4.className = 'profile-title'; h4.innerText = title; div.appendChild(h4);
+        
+        const h4 = document.createElement('h4');
+        h4.className = 'profile-title';
+        h4.innerText = title;
+        div.appendChild(h4);
 
         if (isArray) {
-            const tagsDiv = document.createElement('div'); tagsDiv.className = 'profile-tags';
-            if (!items || items.length === 0) { tagsDiv.innerHTML = '<span style="color:#aaa; font-size:0.8rem;">(まだ教えてもらってないにゃ)</span>'; } 
-            else {
+            const tagsDiv = document.createElement('div');
+            tagsDiv.className = 'profile-tags';
+            if (!items || items.length === 0) {
+                tagsDiv.innerHTML = '<span style="color:#aaa; font-size:0.8rem;">(まだ教えてもらってないにゃ)</span>';
+            } else {
                 items.forEach(item => {
-                    const tag = document.createElement('span'); tag.className = 'profile-tag';
+                    const tag = document.createElement('span');
+                    tag.className = 'profile-tag';
                     tag.innerHTML = `${window.cleanDisplayString(item)} <button onclick="deleteProfileItem('${categoryName}', '${item}')" class="profile-tag-delete">×</button>`;
                     tagsDiv.appendChild(tag);
                 });
@@ -562,10 +773,19 @@ function renderProfileView(container, profile) {
             div.appendChild(tagsDiv);
         } else {
             const p = document.createElement('p');
-            p.style.fontSize = '0.9rem'; p.style.margin = '0'; p.style.paddingLeft = '5px'; p.style.display = 'flex'; p.style.justifyContent = 'space-between';
+            p.style.fontSize = '0.9rem';
+            p.style.margin = '0';
+            p.style.paddingLeft = '5px';
+            p.style.display = 'flex';
+            p.style.justifyContent = 'space-between';
+            
             const textContent = items ? window.cleanDisplayString(items) : '(まだ教えてもらってないにゃ)';
-            let deleteBtn = ''; if (items) { deleteBtn = `<button onclick="deleteProfileItem('${categoryName}', '')" class="profile-tag-delete" style="margin-left:10px;">×</button>`; }
-            p.innerHTML = `<span>${textContent}</span>${deleteBtn}`; div.appendChild(p);
+            let deleteBtn = '';
+            if (items) {
+                deleteBtn = `<button onclick="deleteProfileItem('${categoryName}', '')" class="profile-tag-delete" style="margin-left:10px;">×</button>`;
+            }
+            p.innerHTML = `<span>${textContent}</span>${deleteBtn}`;
+            div.appendChild(p);
         }
         return div;
     };
@@ -573,15 +793,25 @@ function renderProfileView(container, profile) {
     container.appendChild(createSection('👤 あだ名', profile.nickname, 'nickname'));
     container.appendChild(createSection('🎂 お誕生日', profile.birthday, 'birthday'));
     
-    const likesContainer = document.createElement('div'); likesContainer.style.display = "flex"; likesContainer.style.gap = "5px";
-    const likesSec = createSection('❤️ 好きなもの', profile.likes, 'likes', true); likesSec.style.flex = "1";
-    const dislikesSec = createSection('💔 苦手なもの', profile.weaknesses, 'weaknesses', true); dislikesSec.style.flex = "1";
-    likesContainer.appendChild(likesSec); likesContainer.appendChild(dislikesSec); container.appendChild(likesContainer);
+    const likesContainer = document.createElement('div');
+    likesContainer.style.display = "flex";
+    likesContainer.style.gap = "5px";
+    
+    const likesSec = createSection('❤️ 好きなもの', profile.likes, 'likes', true);
+    likesSec.style.flex = "1";
+    
+    const dislikesSec = createSection('💔 苦手なもの', profile.weaknesses, 'weaknesses', true);
+    dislikesSec.style.flex = "1";
+    
+    likesContainer.appendChild(likesSec);
+    likesContainer.appendChild(dislikesSec);
+    container.appendChild(likesContainer);
 
     container.appendChild(createSection('🏆 頑張ったこと', profile.achievements, 'achievements', true));
     
     if (profile.last_topic) {
-         const div = document.createElement('div'); div.className = 'profile-section';
+         const div = document.createElement('div');
+         div.className = 'profile-section';
          div.style.cssText = "background: #e3f2fd; padding: 10px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #90caf9;";
          div.innerHTML = `<h4 class="profile-title" style="color:#1565c0;">💬 最後のお話</h4><p style="font-size:0.8rem; color:#333;">${window.cleanDisplayString(profile.last_topic)}</p>`;
          container.appendChild(div);
@@ -589,24 +819,37 @@ function renderProfileView(container, profile) {
 
     if (profile.collection && profile.collection.length > 0) {
         const recents = profile.collection.slice(0, 3);
-        const div = document.createElement('div'); div.className = 'profile-section';
+        const div = document.createElement('div');
+        div.className = 'profile-section';
         div.style.cssText = "background: #fff3e0; padding: 10px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #ffe0b2;";
         div.innerHTML = `<h4 class="profile-title" style="color:#e65100;">📍 最近見つけたもの</h4>`;
-        const listDiv = document.createElement('div'); listDiv.style.display = "flex"; listDiv.style.gap = "8px"; listDiv.style.overflowX = "auto"; listDiv.style.paddingBottom = "5px";
+        
+        const listDiv = document.createElement('div');
+        listDiv.style.display = "flex";
+        listDiv.style.gap = "8px";
+        listDiv.style.overflowX = "auto";
+        listDiv.style.paddingBottom = "5px";
         
         recents.forEach(item => {
-            const itemDiv = document.createElement('div'); itemDiv.style.cssText = "flex-shrink: 0; width: 60px; text-align: center; font-size: 0.7rem;";
+            const itemDiv = document.createElement('div');
+            itemDiv.style.cssText = "flex-shrink: 0; width: 60px; text-align: center; font-size: 0.7rem;";
             const cleanName = window.cleanDisplayString(item.name);
-            itemDiv.innerHTML = `<img src="${item.image}" loading="lazy" style="width:100%; height:auto; object-fit:cover; border-radius:4px; border:1px solid #ffb74d; aspect-ratio:0.68;"><div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%; margin-top:2px;">${cleanName}</div>`;
+            itemDiv.innerHTML = `
+                <img src="${item.image}" loading="lazy" style="width:100%; height:auto; object-fit:cover; border-radius:4px; border:1px solid #ffb74d; aspect-ratio:0.68;">
+                <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%; margin-top:2px;">${cleanName}</div>
+            `;
             listDiv.appendChild(itemDiv);
         });
-        div.appendChild(listDiv); container.appendChild(div);
+        
+        div.appendChild(listDiv);
+        container.appendChild(div);
     }
 }
 
 window.deleteProfileItem = async function(category, itemContent) {
     if (!currentUser) return;
     if (!confirm("この情報を忘れさせるにゃ？")) return;
+    
     if (window.NellMemory) {
         await window.NellMemory.deleteProfileItem(currentUser.id, category, itemContent);
         const container = document.getElementById('profile-container');
@@ -619,23 +862,56 @@ function renderLogView(container) {
     container.innerHTML = '';
     const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
     let history = [];
-    try { history = JSON.parse(localStorage.getItem(memoryKey) || '[]'); } catch(e) {}
+    try {
+        history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
+    } catch(e) {}
 
-    if (history.length === 0) { container.innerHTML = '<p style="text-align:center; color:#888;">まだ会話してないにゃ。</p>'; return; }
+    if (history.length === 0) {
+        container.innerHTML = '<p style="text-align:center; color:#888;">まだ会話してないにゃ。</p>';
+        return;
+    }
 
-    const ctrlDiv = document.createElement('div'); ctrlDiv.style.cssText = "margin-bottom:10px; text-align:right;";
-    ctrlDiv.innerHTML = `<span style="font-size:0.8rem; color:#666; float:left;">新しい順</span><button onclick="deleteSelectedLogs()" class="mini-teach-btn" style="background:#ff5252; color:white;">選択したログを削除</button>`;
+    const ctrlDiv = document.createElement('div');
+    ctrlDiv.style.cssText = "margin-bottom:10px; text-align:right;";
+    ctrlDiv.innerHTML = `
+        <span style="font-size:0.8rem; color:#666; float:left;">新しい順</span>
+        <button onclick="deleteSelectedLogs()" class="mini-teach-btn" style="background:#ff5252; color:white;">選択したログを削除</button>
+    `;
     container.appendChild(ctrlDiv);
 
+    // ログが多い場合は直近50件のみ表示（メモリ対策）
     const displayHistory = [...history].reverse().slice(0, 50);
 
     displayHistory.forEach((item, index) => {
         const originalIndex = history.length - 1 - index;
-        const div = document.createElement('div'); div.className = 'memory-item'; div.style.display = 'flex'; div.style.alignItems = 'flex-start';
-        const isUser = (item.role === 'user'); const roleColor = isUser ? '#2196f3' : '#ff85a1'; const roleName = isUser ? 'あなた' : 'ネル先生';
-        let timeStr = ''; try { const d = new Date(item.time); timeStr = `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`; } catch(e){}
+        
+        const div = document.createElement('div');
+        div.className = 'memory-item';
+        div.style.display = 'flex';
+        div.style.alignItems = 'flex-start';
+        
+        const isUser = (item.role === 'user');
+        const roleColor = isUser ? '#2196f3' : '#ff85a1';
+        const roleName = isUser ? 'あなた' : 'ネル先生';
+        
+        let timeStr = '';
+        try { 
+            const d = new Date(item.time);
+            timeStr = `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`;
+        } catch(e){}
 
-        div.innerHTML = `<div style="padding-right:10px;"><input type="checkbox" class="log-delete-checkbox" value="${originalIndex}" style="transform:scale(1.3);"></div><div style="width:100%;"><div class="memory-meta" style="color:${roleColor}; font-weight:bold; display:flex; justify-content:space-between;"><span>${roleName}</span><span style="color:#ccc; font-weight:normal; font-size:0.7rem;">${timeStr}</span></div><div class="memory-text" style="margin-top:2px;">${window.cleanDisplayString(item.text)}</div></div>`;
+        div.innerHTML = `
+            <div style="padding-right:10px;">
+                <input type="checkbox" class="log-delete-checkbox" value="${originalIndex}" style="transform:scale(1.3);">
+            </div>
+            <div style="width:100%;">
+                <div class="memory-meta" style="color:${roleColor}; font-weight:bold; display:flex; justify-content:space-between;">
+                    <span>${roleName}</span>
+                    <span style="color:#ccc; font-weight:normal; font-size:0.7rem;">${timeStr}</span>
+                </div>
+                <div class="memory-text" style="margin-top:2px;">${window.cleanDisplayString(item.text)}</div>
+            </div>
+        `;
         container.appendChild(div);
     });
 }
@@ -644,8 +920,11 @@ window.deleteSelectedLogs = function() {
     if (!currentUser) return;
     const checkboxes = document.querySelectorAll('.log-delete-checkbox:checked');
     if (checkboxes.length === 0) return alert("削除するものを選んでにゃ！");
+    
     if (!confirm(`${checkboxes.length}件の会話ログを削除するにゃ？`)) return;
+    
     const indicesToDelete = Array.from(checkboxes).map(cb => parseInt(cb.value)).sort((a, b) => b - a); 
+    
     if (window.NellMemory) {
         window.NellMemory.deleteRawChatLogs(currentUser.id, indicesToDelete);
         const container = document.getElementById('memory-list-container');
@@ -653,93 +932,187 @@ window.deleteSelectedLogs = function() {
     }
 };
 
-document.addEventListener('DOMContentLoaded', () => { window.updateVolumeUI(); });
-document.addEventListener('click', () => { if (window.initAudioContext) window.initAudioContext().catch(e => console.log("Audio Init:", e)); }, { once: true });
-document.addEventListener('click', (e) => { if (e.target.classList && e.target.classList.contains('main-btn') && !e.target.disabled) { if (!e.target.classList.contains('title-start-btn') && !e.target.onclick?.toString().includes('null')) { if(window.sfxBtn) window.safePlay(window.sfxBtn); } } });
+// ページ読み込み完了時にUI状態を初期化
+document.addEventListener('DOMContentLoaded', () => {
+    window.updateVolumeUI();
+});
+
+document.addEventListener('click', () => { 
+    if (window.initAudioContext) window.initAudioContext().catch(e => console.log("Audio Init:", e)); 
+}, { once: true });
+
+document.addEventListener('click', (e) => { 
+    if (e.target.classList && e.target.classList.contains('main-btn') && !e.target.disabled) { 
+        if (!e.target.classList.contains('title-start-btn') && !e.target.onclick?.toString().includes('null')) { 
+            if(window.sfxBtn) window.safePlay(window.sfxBtn);
+        } 
+    } 
+});
+
+// ==========================================
+// ★ ログ管理・セッション履歴・UI更新
+// ==========================================
 
 window.addLogItem = function(role, text) {
     const container = document.getElementById('log-content');
     if (!container) return;
-    if (container.children.length > 50) container.removeChild(container.firstChild);
-    const div = document.createElement('div'); div.className = `log-item log-${role}`;
+    
+    // ログが多すぎる場合は古いものを削除
+    if (container.children.length > 50) {
+        container.removeChild(container.firstChild);
+    }
+
+    const div = document.createElement('div');
+    div.className = `log-item log-${role}`;
     const name = role === 'user' ? (currentUser ? currentUser.name : 'あなた') : 'ネル先生';
     const displayText = window.cleanDisplayString(text);
     div.innerHTML = `<span class="log-role">${name}:</span><span>${displayText}</span>`;
-    container.appendChild(div); container.scrollTop = container.scrollHeight;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
 };
 
 window.addToSessionHistory = function(role, text) {
     if (!window.chatSessionHistory) window.chatSessionHistory = [];
     window.chatSessionHistory.push({ role: role, text: text });
-    if (window.chatSessionHistory.length > 10) window.chatSessionHistory.shift();
+    if (window.chatSessionHistory.length > 10) {
+        window.chatSessionHistory.shift();
+    }
 };
 
 window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false, speak = true) {
-    if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN && window.currentMode !== 'chat') { speak = false; }
-    const gameScreen = document.getElementById('screen-game'); const isGameHidden = gameScreen ? gameScreen.classList.contains('hidden') : true;
-    const riddleScreen = document.getElementById('screen-riddle'); const isRiddleHidden = riddleScreen ? riddleScreen.classList.contains('hidden') : true;
-    const minitestScreen = document.getElementById('screen-minitest'); const isMinitestHidden = minitestScreen ? minitestScreen.classList.contains('hidden') : true;
+    if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN && window.currentMode !== 'chat') {
+        speak = false;
+    }
+
+    // ネル先生の顔アイコンの切り替え
+    const gameScreen = document.getElementById('screen-game');
+    const isGameHidden = gameScreen ? gameScreen.classList.contains('hidden') : true;
+    
+    // なぞなぞモード用
+    const riddleScreen = document.getElementById('screen-riddle');
+    const isRiddleHidden = riddleScreen ? riddleScreen.classList.contains('hidden') : true;
+
+    // ミニテストモード用
+    const minitestScreen = document.getElementById('screen-minitest');
+    const isMinitestHidden = minitestScreen ? minitestScreen.classList.contains('hidden') : true;
 
     let targetId = 'nell-text';
-    if (!isGameHidden) targetId = 'nell-text-game'; else if (!isRiddleHidden) targetId = 'nell-text-riddle'; else if (!isMinitestHidden) targetId = 'nell-text-minitest';
+    if (!isGameHidden) targetId = 'nell-text-game';
+    else if (!isRiddleHidden) targetId = 'nell-text-riddle';
+    else if (!isMinitestHidden) targetId = 'nell-text-minitest';
+    
     const el = document.getElementById(targetId);
     
     let cleanText = t || "";
     cleanText = cleanText.split('\n').filter(line => {
-        const trimmed = line.trim(); if (!trimmed) return true;
+        const trimmed = line.trim();
+        if (!trimmed) return true;
         if (/^(?:System|User|Model|Assistant|Thinking|Display)[:：]/i.test(trimmed)) return false;
-        if (/^\*\*.*\*\*$/.test(trimmed)) return false; if (/^\[.*\]$/.test(trimmed)) return false;
-        const hasJapanese = /[ぁ-んァ-ン一-龠]/.test(line); if (!hasJapanese && /[a-zA-Z]/.test(line)) return false;
+        if (/^\*\*.*\*\*$/.test(trimmed)) return false;
+        if (/^\[.*\]$/.test(trimmed)) return false;
+        const hasJapanese = /[ぁ-んァ-ン一-龠]/.test(line);
+        if (!hasJapanese && /[a-zA-Z]/.test(line)) return false;
         return true;
     }).join('\n');
 
-    cleanText = cleanText.replace(/(?:\[|【)DISPLAY[:：].*?(?:\]|】)/gi, "").replace(/^\s*[\(（【\[].*?[\)）】\]]/gm, "").replace(/[\(（【\[].*?[\)）】\]]\s*$/gm, "").trim();
+    cleanText = cleanText.replace(/(?:\[|【)DISPLAY[:：].*?(?:\]|】)/gi, "");
+    cleanText = cleanText.replace(/^\s*[\(（【\[].*?[\)）】\]]/gm, ""); 
+    cleanText = cleanText.replace(/[\(（【\[].*?[\)）】\]]\s*$/gm, "");
+    cleanText = cleanText.trim();
+    
     const displayText = window.cleanDisplayString(cleanText);
+    
     if (el) el.innerText = displayText;
+    
     if (t && t.includes("もぐもぐ")) { if(window.safePlay) window.safePlay(window.sfxBori); }
+    
     if (saveToMemory) { window.saveToNellMemory('nell', cleanText); }
     
     if (speak && typeof speakNell === 'function') {
-        let textForSpeech = cleanText.replace(/【.*?】/g, "").replace(/\[.*?\]/g, "").trim().replace(/🐾/g, "");
-        if (textForSpeech.length > 0) { await speakNell(textForSpeech, mood); }
+        let textForSpeech = cleanText.replace(/【.*?】/g, "").replace(/\[.*?\]/g, "").trim();
+        textForSpeech = textForSpeech.replace(/🐾/g, "");
+        if (textForSpeech.length > 0) {
+            await speakNell(textForSpeech, mood);
+        }
     }
 };
 
 window.sendHttpText = async function(context) {
-    let inputId; if (context === 'embedded') { inputId = 'embedded-text-input'; } else if (context === 'simple') { inputId = 'simple-text-input'; } else return;
-    const input = document.getElementById(inputId); if (!input) return;
-    const text = input.value.trim(); if (!text) return;
+    let inputId;
+    if (context === 'embedded') { inputId = 'embedded-text-input'; }
+    else if (context === 'simple') { inputId = 'simple-text-input'; }
+    else return;
 
-    if (window.isAlwaysListening && window.continuousRecognition) { try { window.continuousRecognition.stop(); } catch(e){} }
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const text = input.value.trim();
+    if (!text) return;
+
+    if (window.isAlwaysListening && window.continuousRecognition) {
+        try { window.continuousRecognition.stop(); } catch(e){}
+    }
     
-    window.addLogItem('user', text); window.addToSessionHistory('user', text);
-    let missingInfo = []; let memoryContext = "";
+    window.addLogItem('user', text);
+    window.addToSessionHistory('user', text);
+
+    let missingInfo = [];
+    let memoryContext = "";
+    
     if (window.NellMemory && currentUser) {
         try {
             const profile = await window.NellMemory.getUserProfile(currentUser.id);
-            if (!profile.birthday) missingInfo.push("誕生日"); if (!profile.likes || profile.likes.length === 0) missingInfo.push("好きなもの"); if (!profile.weaknesses || profile.weaknesses.length === 0) missingInfo.push("苦手なもの");
+            if (!profile.birthday) missingInfo.push("誕生日");
+            if (!profile.likes || profile.likes.length === 0) missingInfo.push("好きなもの");
+            if (!profile.weaknesses || profile.weaknesses.length === 0) missingInfo.push("苦手なもの");
+            
             memoryContext = await window.NellMemory.generateContextString(currentUser.id);
-        } catch(e) { console.warn("Memory access error:", e); }
+        } catch(e) {
+            console.warn("Memory access error:", e);
+        }
     }
 
     try {
         window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
+        
         const res = await fetch('/chat-dialogue', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: text, name: currentUser ? currentUser.name : "生徒", history: window.chatSessionHistory, location: window.currentLocation, address: window.currentAddress, missingInfo: missingInfo, memoryContext: memoryContext })
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                text: text, 
+                name: currentUser ? currentUser.name : "生徒",
+                history: window.chatSessionHistory,
+                location: window.currentLocation,
+                address: window.currentAddress,
+                missingInfo: missingInfo,
+                memoryContext: memoryContext 
+            })
         });
+
         if(res.ok) {
             const data = await res.json();
             const speechText = data.speech || data.reply || "教えてあげるにゃ！";
-            window.addLogItem('nell', speechText); window.addToSessionHistory('nell', speechText);
+            
+            window.addLogItem('nell', speechText);
+            window.addToSessionHistory('nell', speechText);
+            
             await window.updateNellMessage(speechText, "happy", true, true);
+            
             let boardId = (context === 'embedded') ? 'embedded-chalkboard' : 'chalkboard-simple';
             const embedBoard = document.getElementById(boardId);
-            if (embedBoard && data.board && data.board.trim() !== "") { embedBoard.innerText = data.board; embedBoard.classList.remove('hidden'); }
+            if (embedBoard && data.board && data.board.trim() !== "") {
+                embedBoard.innerText = data.board;
+                embedBoard.classList.remove('hidden');
+            }
             input.value = ""; 
         }
-    } catch(e) { console.error("Text Chat Error:", e); window.updateNellMessage("ごめん、ちょっとわからなかったにゃ。", "thinking", false, true); } 
-    finally { if (window.isAlwaysListening) { try { window.continuousRecognition.start(); } catch(e){} } }
+    } catch(e) {
+        console.error("Text Chat Error:", e);
+        window.updateNellMessage("ごめん、ちょっとわからなかったにゃ。", "thinking", false, true);
+    } finally {
+        if (window.isAlwaysListening) {
+             try { window.continuousRecognition.start(); } catch(e){}
+        }
+    }
 };
 
 window.sendEmbeddedText = function() { window.sendHttpText('embedded'); };

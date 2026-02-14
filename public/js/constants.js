@@ -1,4 +1,4 @@
-// --- js/constants.js (v331.0: カウントダウン音声追加版) ---
+// --- js/constants.js (v426.0: 分析クールダウン追加版) ---
 
 // ==========================================
 // グローバル変数・状態フラグ
@@ -6,6 +6,7 @@
 window.currentMode = '';
 window.currentSubject = '';
 window.isAnalyzing = false;
+window.lastAnalysisTime = 0; // ★新規: 最後の分析開始時間を記録
 window.transcribedProblems = [];
 window.selectedProblem = null;
 window.hintIndex = 0;
