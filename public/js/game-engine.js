@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v436.0: 神経衰弱解説・音声完了待ち対応版) ---
+// --- js/game-engine.js (v439.0: クイズ報酬レベル別対応版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -1226,12 +1226,32 @@ window.finishQuizSet = function() {
     // ★クイズ保存処理 (分離した関数を呼ぶ)
     window.persistQuizSession();
 
+    // 正解数を計算 (1問20点)
+    const correctCount = Math.floor(quizState.score / 20);
+    const currentLevel = quizState.level || 1;
+
+    // レベルごとの報酬単価を設定
+    let rewardPerCorrect = 50;
+    if (currentLevel === 2) rewardPerCorrect = 100;
+    else if (currentLevel === 3) rewardPerCorrect = 150;
+    else if (currentLevel === 4) rewardPerCorrect = 200;
+    else if (currentLevel >= 5) rewardPerCorrect = 300;
+
+    // 報酬総額計算
+    let totalReward = correctCount * rewardPerCorrect;
+
+    // 0問正解の場合は参加賞として10個（元の仕様への配慮）
+    if (correctCount === 0) {
+        totalReward = 10;
+    }
+
     let msg = "";
     let mood = "normal";
     let isLevelUp = false;
     let newLevel = 1;
 
-    if (quizState.score === 100) {
+    // 全問正解時のレベルアップ判定
+    if (correctCount === 5) {
         if (currentUser) {
             if (!currentUser.quizLevels) currentUser.quizLevels = {};
             const currentMaxLevel = currentUser.quizLevels[quizState.genre] || 1;
@@ -1245,21 +1265,25 @@ window.finishQuizSet = function() {
         }
 
         if (isLevelUp) {
-            msg = `全問正解！すごいにゃ！${quizState.genre}のレベルが${newLevel}に上がったにゃ！！カリカリ100個あげるにゃ！`;
+            msg = `全問正解！すごいにゃ！${quizState.genre}のレベルが${newLevel}に上がったにゃ！！カリカリ${totalReward}個あげるにゃ！`;
         } else {
-            msg = "全問正解！天才だにゃ！！カリカリ100個あげるにゃ！";
+            msg = `全問正解！天才だにゃ！！カリカリ${totalReward}個あげるにゃ！`;
         }
         mood = "excited";
-        window.giveGameReward(100);
-    } else if (quizState.score >= 60) {
-        msg = `${quizState.score}点！よくがんばったにゃ！カリカリ${quizState.score}個あげるにゃ！`;
+    } else if (correctCount >= 3) {
+        msg = `${correctCount}問正解！(${quizState.score}点) よくがんばったにゃ！カリカリ${totalReward}個あげるにゃ！`;
         mood = "happy";
-        window.giveGameReward(quizState.score);
     } else {
-        msg = `${quizState.score}点だったにゃ。次はもっとがんばるにゃ！カリカリ10個あげるにゃ。`;
+        if (correctCount > 0) {
+            msg = `${correctCount}問正解だったにゃ。次はもっとがんばるにゃ！カリカリ${totalReward}個あげるにゃ。`;
+        } else {
+            msg = `難しかったかにゃ？参加賞でカリカリ${totalReward}個あげるにゃ。`;
+        }
         mood = "gentle";
-        window.giveGameReward(10);
     }
+
+    // 報酬付与
+    window.giveGameReward(totalReward);
 
     window.updateNellMessage(msg, mood, false, true);
     alert(msg);

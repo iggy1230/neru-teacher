@@ -737,6 +737,9 @@ app.post('/analyze', async (req, res) => {
         あなたは小学${grade}年生の${name}さんの${subject}担当の教育AI「ネル先生」です。
         提供された画像（生徒のノートやドリル）を解析し、以下の厳格なJSONフォーマットでデータを出力してください。
 
+        【重要：宿題判定】
+        - **is_homework**: 解析した画像が、学習に関連する「宿題」「問題」「ノート」「ドリル」「教科書」などである場合は true を、それ以外（花の写真、ペットの写真、おもちゃ、関係ない風景など）の場合は false にしてください。
+
         【重要: 教科別の解析ルール (${subject})】
         ${subjectSpecificInstructions}
         - **表記ルール**: 解説文の中に読み間違いやすい人名、地名、難読漢字が出てくる場合は、『漢字(ふりがな)』の形式で記述してください（例: 筑後市(ちくごし)）。**一般的な簡単な漢字にはふりがなを振らないでください。**
@@ -761,6 +764,7 @@ app.post('/analyze', async (req, res) => {
         [
           {
             "id": 1,
+            "is_homework": true または false,
             "label": "①",
             "question": "問題文",
             "correct_answer": ["正解"], 
@@ -883,7 +887,8 @@ app.post('/identify-item', async (req, res) => {
         ]);
 
         const responseText = result.response.text();
-        
+        console.log("Raw AI Response:", responseText); // ログ出力
+
         let json;
         try {
             const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -895,14 +900,14 @@ app.post('/identify-item', async (req, res) => {
                 throw new Error("JSON parse failed");
             }
         } catch (e) {
-            console.warn("JSON Parse Fallback (Item):", responseText);
-            let fallbackText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+            console.error("JSON Parse Error in identify-item:", e);
+            // フォールバック: エラーでクライアントを落とさない
             json = {
                 itemName: "なぞの物体",
-                rarity: 1, // Fallback
-                description: fallbackText,
-                realDescription: "AIの解析結果を直接表示しています。",
-                speechText: fallbackText
+                rarity: 1, 
+                description: "よくわからなかったにゃ…",
+                realDescription: "AIの解析に失敗しました。",
+                speechText: "よくわからなかったにゃ…"
             };
         }
         

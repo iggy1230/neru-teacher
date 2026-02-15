@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v431.0: 詳細住所取得強化版) ---
+// --- js/camera-service.js (v432.0: 宿題分析モード高画質化 1024px/Q0.8 対応版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -45,6 +45,7 @@ window.stopPreviewCamera = function() {
     document.body.classList.remove('camera-active');
 
     if (window.previewStream) {
+        // ★最適化: トラックを完全に停止し、参照を切る
         window.previewStream.getTracks().forEach(t => {
             t.stop();
             t.enabled = false;
@@ -56,7 +57,7 @@ window.stopPreviewCamera = function() {
         if(v) {
             v.pause();
             v.srcObject = null;
-            v.load();
+            v.load(); // ★重要: メモリ解放のためにload()を呼ぶ
         }
     });
     ['live-chat-video-container', 'live-chat-video-container-embedded', 'live-chat-video-container-simple', 'live-chat-video-container-free'].forEach(cid => {
@@ -148,10 +149,9 @@ function getGpsFromExif(file) {
     });
 }
 
-// ★修正: 座標から詳細な住所文字列を取得する関数 (強化版)
+// 座標から住所文字列を取得する関数 (Nominatim API)
 async function getAddressFromCoords(lat, lon) {
     try {
-        // addressdetails=1 で詳細情報を取得
         const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&accept_language=ja&zoom=18&addressdetails=1`;
         const res = await fetch(url);
         if (res.ok) {
@@ -169,7 +169,7 @@ async function getAddressFromCoords(lat, lon) {
             if (addr.town) fullAddress += addr.town;
             if (addr.village) fullAddress += addr.village;
             
-            // 3. 区・町名・字 (より詳細な地域名)
+            // 3. 区・町名・字 (詳細地域名)
             if (addr.ward) fullAddress += addr.ward;
             if (addr.quarter) fullAddress += addr.quarter;
             if (addr.neighbourhood) fullAddress += addr.neighbourhood;
@@ -180,15 +180,13 @@ async function getAddressFromCoords(lat, lon) {
             if (addr.road) fullAddress += ` ${addr.road}`;
             if (addr.house_number) fullAddress += ` ${addr.house_number}`;
 
-            // 5. ★最重要: 建物名・施設名 (ピンポイント情報)
-            // Nominatimは施設名を amenity, shop, tourism, historic, building など様々なキーで返す
+            // 5. 建物名・施設名
             const specificLocation = addr.amenity || addr.shop || addr.tourism || addr.historic || addr.leisure || addr.building || addr.office;
-            
             if (specificLocation) {
                 fullAddress += ` (${specificLocation})`;
             }
             
-            console.log("Resolved Detailed Address:", fullAddress);
+            console.log("Resolved Address:", fullAddress);
             return fullAddress;
         }
     } catch (e) {
@@ -251,8 +249,16 @@ window.createTreasureImage = function(sourceCanvas) {
 };
 
 window.processImageForAI = function(sourceCanvas) { 
-    const MAX_WIDTH = 800;
-    const QUALITY = 0.6;
+    // ★宿題分析モード（explain, grade, review）の場合は精度向上のため設定を上げる
+    let MAX_WIDTH = 800;
+    let QUALITY = 0.6;
+
+    if (window.currentMode === 'explain' || window.currentMode === 'grade' || window.currentMode === 'review') {
+        MAX_WIDTH = 1024;
+        QUALITY = 0.8;
+        console.log("Homework Mode: Processing High Resolution (1024px, Q0.8)");
+    }
+
     let w = sourceCanvas.width; 
     let h = sourceCanvas.height; 
     if (w > MAX_WIDTH || h > MAX_WIDTH) { 
@@ -279,7 +285,7 @@ const getLocation = () => {
 };
 
 window.analyzeTreasureImage = async function(base64Data, providedLocation = null) {
-    // ★制限追加: 前回の分析から30秒以内なら実行しない
+    // 制限追加: 前回の分析から30秒以内なら実行しない
     const now = Date.now();
     if (window.lastAnalysisTime && (now - window.lastAnalysisTime < 30000)) {
          if(typeof window.updateNellMessage === 'function') {
@@ -304,22 +310,16 @@ window.analyzeTreasureImage = async function(base64Data, providedLocation = null
     let addressToSend = null;
     let locationData = providedLocation;
     
-    // ★重要: 画像に位置情報があれば、クライアント側で詳細な住所文字列（施設名含む）に変換して確定させる
     if (providedLocation && providedLocation.lat && providedLocation.lon) {
-         // EXIFあり -> 逆ジオコーディングして住所を確定
          addressToSend = await getAddressFromCoords(providedLocation.lat, providedLocation.lon);
-         
-         // 取得できなかった場合は座標を文字列化して送る（サーバー側で処理させる）
          if (!addressToSend) {
              addressToSend = `緯度${providedLocation.lat}, 経度${providedLocation.lon}`;
          }
     } else {
-         // EXIFなし -> 現在地を使用
          if (!window.currentLocation) {
              try { window.currentLocation = await getLocation(); } catch(e) {}
          }
          locationData = window.currentLocation;
-         // 現在地の住所（すでにwindow.currentAddressに入っている可能性があるが念のため）
          addressToSend = window.currentAddress;
     }
 
@@ -332,7 +332,7 @@ window.analyzeTreasureImage = async function(base64Data, providedLocation = null
                 image: base64Data, 
                 name: currentUser ? currentUser.name : "生徒", 
                 location: locationData, 
-                address: addressToSend  // ★確定した住所文字列（最優先）
+                address: addressToSend 
             })
         });
         if (!res.ok) throw new Error("サーバー通信エラーだにゃ");
@@ -526,7 +526,7 @@ window.performPerspectiveCrop = function(sourceCanvas, points) {
 };
 
 window.startAnalysis = async function(b64) {
-    // ★制限追加: 前回の分析から30秒以内なら実行しない
+    // 制限追加: 前回の分析から30秒以内なら実行しない
     const now = Date.now();
     if (window.lastAnalysisTime && (now - window.lastAnalysisTime < 30000)) {
          if(typeof window.updateNellMessage === 'function') {
@@ -584,8 +584,7 @@ window.startAnalysis = async function(b64) {
             }
             if (!window.isAnalyzing) return; 
             
-            // ★変更: 文字数に基づいて待機時間を計算 (最低3秒)
-            // 読み上げスピードに合わせて重ならないようにする
+            // 文字数に基づいて待機時間を計算 (最低3秒)
             const waitTime = Math.max(3000, item.text.length * 250); 
             await new Promise(r => setTimeout(r, waitTime)); 
         } 
@@ -650,7 +649,7 @@ window.startAnalysis = async function(b64) {
 window.cleanupAnalysis = function() { 
     window.isAnalyzing = false; 
     window.sfxBunseki.pause(); 
-    // ★追加: 読み上げを強制停止
+    // 読み上げを強制停止
     if(typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
     
     if(typeof window.analysisTimers !== 'undefined' && window.analysisTimers) { 
@@ -689,7 +688,7 @@ window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
     if(typeof window.addLogItem === 'function') window.addLogItem('user', '（画像送信）');
     let memoryContext = ""; if (window.NellMemory && currentUser) { try { memoryContext = await window.NellMemory.generateContextString(currentUser.id); } catch(e) {} }
     
-    // ★ここを変更: window.sendImageToChatAPI を呼び出す (引数を合わせる)
+    // window.sendImageToChatAPI を呼び出す
     await window.sendImageToChatAPI(base64Data, context);
     
     window.isLiveImageSending = false; if(typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera(); if (btn) { btn.innerHTML = "<span>📷</span> カメラで見せて質問"; btn.style.backgroundColor = activeColor; } if (window.isAlwaysListening) { try { window.continuousRecognition.start(); } catch(e){} }
@@ -706,16 +705,11 @@ window.handleChatImageFile = async function(file, context = 'embedded') {
     const btn = document.getElementById(btnId);
     if(btn) { btn.innerHTML = "<span>📡</span> 解析中..."; btn.style.backgroundColor = "#ccc"; btn.disabled = true; }
     
-    // ★追加: EXIFから位置情報を取得 (非同期)
+    // EXIFから位置情報を取得 (非同期)
     let imageLocation = null;
     try {
         imageLocation = await getGpsFromExif(file);
-        if (imageLocation) {
-            console.log("Image Location Found:", imageLocation);
-        }
-    } catch(e) {
-        console.log("No EXIF GPS found or error", e);
-    }
+    } catch(e) {}
 
     const reader = new FileReader();
     reader.onload = async (e) => {
@@ -725,7 +719,7 @@ window.handleChatImageFile = async function(file, context = 'embedded') {
             const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
             const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6); const base64Data = compressedDataUrl.split(',')[1];
             
-            // ★変更: 位置情報を渡す
+            // 位置情報を渡す
             await window.sendImageToChatAPI(base64Data, context, imageLocation);
             
             if(btn) { btn.innerHTML = "<span>📁</span> アルバム"; btn.style.backgroundColor = "#4a90e2"; btn.disabled = false; }
@@ -737,13 +731,12 @@ window.handleChatImageFile = async function(file, context = 'embedded') {
     reader.readAsDataURL(file);
 };
 
-// ★変更: imageLocation 引数を追加
+// imageLocation 引数を追加
 window.sendImageToChatAPI = async function(base64Data, context, imageLocation = null) {
     if(typeof window.addLogItem === 'function') window.addLogItem('user', '（画像送信）');
     let memoryContext = ""; if (window.NellMemory && currentUser) { try { memoryContext = await window.NellMemory.generateContextString(currentUser.id); } catch(e) {} }
     
-    // ★追加: 位置情報の優先順位ロジック
-    // 画像の位置情報があればそれを優先し、現在地住所は送らない（場所の混同を防ぐため）
+    // 位置情報の優先順位ロジック
     const useImageLocation = !!imageLocation;
     const finalLocation = imageLocation || window.currentLocation;
     const finalAddress = useImageLocation ? null : window.currentAddress;

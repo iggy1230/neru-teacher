@@ -40,7 +40,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v438.0-Fixes</div>
+            <div class="version-tag">Build: v438.1-Fixes</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -190,7 +190,7 @@
                 <div class="work-area">
                     <div id="upload-controls" class="hidden"><p style="text-align:center; margin-bottom:10px;">宿題をみせてね！</p><div class="upload-buttons-container"><button id="start-webcam-btn" class="camera-btn-large" style="background:#ff9800;">📹 アプリで撮影</button><div style="display:flex; gap:10px;"><label class="camera-btn-large" style="flex:1;">📷 標準カメラ<input type="file" id="hw-input-camera" accept="image/*" style="display:none;"></label><label class="camera-btn-large" style="flex:1; background:#4a90e2;">📁 アルバム<input type="file" id="hw-input-album" accept="image/*" style="display:none;"></label></div></div></div>
                     <div id="thinking-view" class="hidden"><img src="assets/images/characters/nell-inspect.png" class="loader-inspect-img" onerror="this.src='assets/images/characters/nell-normal.png'"><div class="progress-container"><div id="progress-bar" class="progress-bar"></div></div><p id="thinking-status">考え中... <span id="progress-percent">0</span>%</p></div>
-                    <div id="problem-selection-view" class="hidden"><div class="problem-selection-card"><div class="problem-scroll-area" id="transcribed-problem-list"></div><div style="text-align:center; margin-top:20px;"><button onclick="pressAllSolved()" class="main-btn orange-btn">✨ ぜんぶわかったにゃ！</button></div></div></div>
+                    <div id="problem-selection-view" class="hidden"><div class="problem-selection-card"><div class="problem-scroll-area" id="transcribed-problem-list"></div><div style="text-align:center; margin-top:20px;"><button onclick="pressAllSolved(this)" class="main-btn orange-btn">✨ ぜんぶわかったにゃ！</button></div></div></div>
                     <div id="final-view" class="hidden"><div id="grade-sheet-container" class="hidden"><div class="glass-card" id="problem-list-grade" style="background:white; border-radius:15px; padding:10px;"></div></div><div id="hint-detail-container" class="hidden"><div class="hint-btns"><div class="hint-step-badge" id="hint-step-label">考え方</div><button onclick="showNextHint()" id="next-hint-btn" class="main-btn blue-btn">次のヒント！</button><button onclick="revealAnswer()" id="reveal-answer-btn" class="main-btn orange-btn hidden">答えを見る🐾</button><div id="answer-display-area" class="answer-box hidden">ネル先生の答え：<br><span id="final-answer-text"></span></div></div><button onclick="pressThanks()" class="main-btn pink-btn">✨ ありがとう！</button><button onclick="backToProblemSelection()" class="main-btn gray-btn" style="margin-top: 10px;">他の問題を見る</button></div></div>
                     
                     <!-- 教えてネル先生エリア -->
