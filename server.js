@@ -23,7 +23,7 @@ app.use(express.static(publicDir));
 // --- AI Model Constants ---
 // コスト削減のため、Gemini 2.0 Flash をメインに使用
 const MODEL_HOMEWORK = "gemini-2.5-pro";
-const MODEL_FAST = "gemini-2.5-flash"; 
+const MODEL_FAST = "gemini-2.5-flash-lite"; 
 const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025"; // Realtime API用
 
 // --- Server Log ---
@@ -205,7 +205,7 @@ app.post('/generate-quiz', async (req, res) => {
             const currentLevel = level || 1;
             let difficultyDesc = "";
             switch(parseInt(currentLevel)) {
-                case 1: difficultyDesc = `小学${grade}年生でも簡単にわかる、基礎的な事実`; break;
+                case 1: difficultyDesc = `小学${grade}年生ウェルカムな、基礎的な事実`; break;
                 case 2: difficultyDesc = `ファンなら確実に知っている標準的な事実`; break;
                 case 3: difficultyDesc = `少し詳しい人が知っている事実`; break;
                 case 4: difficultyDesc = `かなり詳しい人向けの事実`; break;
@@ -429,7 +429,7 @@ app.post('/generate-riddle', async (req, res) => {
         2. 問題文は、リズムよく、子供が聞いてワクワクするような言い回しにしてください。
         3. 答えは「名詞（モノの名前）」で終わるものに限定してください。
         4. 難しすぎる知識や、マニアックな単語は禁止です。
-        5. 挨拶不要。すぐに問題文のみを出力してください。
+        5. 挨拶不要. すぐに問題文のみを出力してください。
 
         【出力JSONフォーマット】
         {
@@ -504,7 +504,7 @@ app.post('/generate-kanji', async (req, res) => {
 
         【最重要：読み上げテキスト(question_speech)のルール】
         - **「読み問題」の場合、出題対象の漢字そのものを絶対に発音してはいけません。**
-        - **必ず「『画面の赤くなっている漢字』の読み方は？」や「『この漢字』の読み方はなにかな？」のように、指示語を使って漢字を指し示し、音読み・訓読みを含め一切の読み方を言わないでください。**
+        - **必ず「『画面의赤くなっている漢字』の読み方は？」や「『この漢字』の読み方はなにかな？」のように、指示語を使って漢字を指し示し、音読み・訓読みを含め一切の読み方を言わないでください。**
 
         【出力JSONフォーマット】
         {
@@ -858,8 +858,8 @@ app.post('/identify-item', async (req, res) => {
         - **5 (★★★★★)**: 奇跡レベル・超レア（世界遺産、四つ葉のクローバー、虹）。
 
         【解説のルール】
-        1. **ネル先生の解説**: 猫視点でのユーモラスな解説。語尾は「にゃ」。
-        2. **本当の解説**: 子供向けの学習図鑑のような、正確でためになる豆知識や説明。です・ます調。
+        1. **ネル先生の解説**: 猫視点でのクスッと笑えるユーモラスな解説。語尾は「にゃ」。**文字数は150文字程度（140文字から160文字の間）で詳しく書いてください。**
+        2. **本当の解説**: 子供向けの学習図鑑のような、正確でためになる豆知識や説明。です・ます調。**文字数は150文字程度（140文字から160文字の間）で詳しく書いてください。**
         3. **ふりがな**: 読み間違いやすい語句のみ『漢字(ふりがな)』の形式で。
         4. **場所の言及ルール**: 
            - **住所が特定されている場合**: 特定された場所（市町村名＋スポット名）を正確に伝えてください（例: 「ここは〇〇市の××公園だにゃ！」）。
@@ -961,7 +961,7 @@ app.post('/game-reaction', async (req, res) => {
         let mood = "excited";
 
         if (type === 'start') {
-            prompt = `あなたはネル先生。「${name}さん」がゲーム開始。短く応援して。必ず「${name}さん」と呼ぶこと。呼び捨て禁止。語尾は「にゃ」。`;
+            prompt = `あなたはネル先生。「${name}さん」がゲーム開始。短く応援して. 必ず「${name}さん」と呼ぶこと。呼び捨て禁止。語尾は「にゃ」。`;
         } else if (type === 'end') {
             prompt = `あなたはネル先生。ゲーム終了。「${name}さん」のスコアは${score}点。20文字以内でコメントして。必ず「${name}さん」と呼ぶこと。呼び捨て禁止。語尾は「にゃ」。`;
         } else {
@@ -1066,7 +1066,7 @@ wss.on('connection', async (clientWs, req) => {
 
                 geminiWs.send(JSON.stringify({
                     setup: {
-                        // MODEL_REALTIME (gemini-2.0-flash-exp) を使用
+                        // MODEL_REALTIME を使用
                         model: `models/${MODEL_REALTIME}`,
                         generationConfig: { 
                             responseModalities: ["AUDIO"],
