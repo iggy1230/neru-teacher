@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (v433.0: 中断時保存対応版) ---
+// --- js/ui/ui.js (v440.0: 図鑑グリッド表示完全修正版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -312,6 +312,10 @@ window.showCollection = async function() {
     const modal = document.getElementById('collection-modal');
     if (!modal) return;
     
+    // ★修正: 
+    // 1. grid-template-columns: repeat(3, 1fr) で横3列固定
+    // 2. grid-auto-rows: max-content で行の高さを中身に合わせて自動拡張（重なり防止の肝）
+    // 3. gap: 12px で間隔確保
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 85vh; display: flex; flex-direction: column;">
             <h3 style="text-align:center; margin:0 0 10px 0; color:#f57f17; flex-shrink: 0;">📖 お宝図鑑</h3>
@@ -338,8 +342,8 @@ window.showCollection = async function() {
                 </div>
             </div>
 
-            <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap:12px; flex: 1; overflow-y:auto; padding:5px;">
-                <p style="width:100%; text-align:center;">読み込み中にゃ...</p>
+            <div id="collection-grid" style="display:grid; grid-template-columns: repeat(3, 1fr); grid-auto-rows: max-content; gap:12px; flex: 1; overflow-y:auto; padding:5px; align-content: start;">
+                <p style="width:100%; text-align:center; grid-column: span 3;">読み込み中にゃ...</p>
             </div>
             
             <div style="text-align:center; margin-top:15px; flex-shrink: 0;"><button onclick="closeCollection()" class="main-btn gray-btn" style="width:auto; padding:10px 30px;">閉じる</button></div>
@@ -358,7 +362,7 @@ window.renderCollectionList = async function() {
     
     if (!grid) return;
 
-    grid.innerHTML = '<p style="width:100%; text-align:center;">読み込み中にゃ...</p>';
+    grid.innerHTML = '<p style="width:100%; text-align:center; grid-column: span 3;">読み込み中にゃ...</p>';
     
     let items = [];
 
@@ -403,7 +407,7 @@ window.renderCollectionList = async function() {
     grid.innerHTML = '';
 
     if (items.length === 0) {
-        grid.innerHTML = '<p style="width:100%; text-align:center; color:#888;">まだ何もないにゃ。</p>';
+        grid.innerHTML = '<p style="width:100%; text-align:center; color:#888; grid-column: span 3;">まだ何もないにゃ。</p>';
         return;
     }
 
@@ -420,18 +424,25 @@ window.renderCollectionList = async function() {
             const div = document.createElement('div');
             div.className = "collection-grid-item"; 
             
+            // ★修正: 重なり防止のため、position: relativeとmargin: 0を強制し、
+            // 高さはaspect-ratioで確保。
             div.style.cssText = `
                 background: white;
                 border-radius: 8px;
                 box-shadow: 0 2px 5px rgba(0,0,0,0.15);
                 border: 1px solid #ddd;
                 cursor: pointer;
-                position: relative;
+                position: relative !important;
                 overflow: hidden;
                 aspect-ratio: 0.68;
+                width: 100%;
                 display: flex;
                 flex-direction: column;
-                margin: 0;
+                margin: 0 !important;
+                transform: none !important;
+                top: auto !important;
+                left: auto !important;
+                float: none !important;
             `;
             
             div.onclick = () => window.openCollectionDetailByIndex(item.originalIndex); 
@@ -440,6 +451,7 @@ window.renderCollectionList = async function() {
             img.src = item.image;
             img.loading = "lazy";
             img.decoding = "async";
+            // ★修正: height: 100% を指定してアスペクト比領域いっぱいに表示
             img.style.cssText = "width:100%; height:100%; object-fit:contain; display:block; background-color: #f9f9f9;";
             
             // 公開タブの場合は発見者名を表示
