@@ -1,4 +1,4 @@
-// --- js/card-generator.js (v360.0: レアリティ別フレーム・肉球描画削除版) ---
+// --- js/card-generator.js (v460.0: 写真抽出機能追加版) ---
 
 window.CardGenerator = {};
 
@@ -78,12 +78,10 @@ window.generateTradingCard = async function(photoBase64, itemData, userData, col
     }
 
     // 3. 枠画像の描画 (レアリティ別)
-    // レアリティを取得 (1～5の範囲に収める)
     let rarity = itemData.rarity || 1;
     if (rarity < 1) rarity = 1;
     if (rarity > 5) rarity = 5;
 
-    // ★修正: レアリティに応じたファイルパスを生成
     const framePath = `assets/images/ui/card_frame${rarity}.png`;
 
     try {
@@ -91,7 +89,6 @@ window.generateTradingCard = async function(photoBase64, itemData, userData, col
         ctx.drawImage(frameImg, 0, 0, CANVAS_W, CANVAS_H);
     } catch (e) {
         console.error(`枠画像(${framePath})の読み込み失敗`, e);
-        // フォールバック: card_frame.png があれば使う、なければ枠線
         try {
             const fallbackImg = await loadImage('assets/images/ui/card_frame.png');
             ctx.drawImage(fallbackImg, 0, 0, CANVAS_W, CANVAS_H);
@@ -123,13 +120,11 @@ window.generateTradingCard = async function(photoBase64, itemData, userData, col
     let titleLines = getWrappedLines(ctx, itemData.itemName, titleMaxWidth);
     
     if (titleLines.length > 1) {
-        // ★修正: 2行になる場合はフォントを小さく (28 -> 24)
         titleFontSize = 24;
         ctx.font = `bold ${titleFontSize}px 'M PLUS Rounded 1c', sans-serif`;
         titleLines = getWrappedLines(ctx, itemData.itemName, titleMaxWidth);
         
         const lineHeight = titleFontSize * 1.2;
-        // 2行の場合の中心Y座標
         const startY = 65 - (lineHeight / 2); 
         
         titleLines.forEach((line, i) => {
@@ -138,24 +133,10 @@ window.generateTradingCard = async function(photoBase64, itemData, userData, col
             }
         });
     } else {
-        // 1行の場合
         ctx.fillText(itemData.itemName, 300, 65);
     }
 
-    // 6. レアリティ (左下)
-    // ★修正: ベース画像に肉球が含まれているため、ここでの描画は不要になりました
-    /*
-    const pawX = 260; 
-    const pawY = 825;
-    ctx.font = "24px sans-serif";
-    ctx.textAlign = "left";
-    let paws = "";
-    for(let i=0; i<rarity; i++) paws += "🐾";
-    ctx.fillStyle = "#ff8a80"; 
-    ctx.fillText(paws, pawX, pawY);
-    */
-
-    // 7. 発見日 (右下)
+    // 6. 発見日 (右下)
     const today = new Date();
     const dateStr = `発見日: ${today.getFullYear()}/${today.getMonth()+1}/${today.getDate()}`;
     ctx.fillStyle = "#333";
@@ -163,10 +144,8 @@ window.generateTradingCard = async function(photoBase64, itemData, userData, col
     ctx.textAlign = "right";
     ctx.fillText(dateStr, 530, 815); 
 
-    // 本文描画のためベースラインをtopに戻す
+    // 7. ネル先生の解説
     ctx.textBaseline = "top";
-
-    // 8. ネル先生の解説
     const descX = 60;
     const descY = 410;
     const descW = 480;
@@ -183,7 +162,7 @@ window.generateTradingCard = async function(photoBase64, itemData, userData, col
         ctx.fillText(line, descX, descY + (i * 24));
     });
 
-    // 9. ほんとうのこと (自動縮小処理)
+    // 8. ほんとうのこと (自動縮小処理)
     const realX = 60;
     const realY = 620;
     const realMaxHeight = 170; 
@@ -213,4 +192,40 @@ window.generateTradingCard = async function(photoBase64, itemData, userData, col
     });
 
     return canvas.toDataURL("image/jpeg", 0.9);
+};
+
+// ★新規: 既存のカード画像から写真部分だけを切り抜く関数
+window.extractPhotoFromCard = async function(cardImageSrc) {
+    // 1. カード画像を読み込む
+    const cardImg = await loadImage(cardImageSrc);
+    
+    // 2. Canvasを作成
+    const canvas = document.createElement('canvas');
+    // カード生成時と同じサイズ
+    canvas.width = 600; 
+    canvas.height = 880;
+    const ctx = canvas.getContext('2d');
+    
+    // 3. カードを描画
+    ctx.drawImage(cardImg, 0, 0, 600, 880);
+    
+    // 4. 写真エリアの座標（generateTradingCardと同じ値）
+    const photoX = 85;
+    const photoY = 100;
+    const photoW = 430;
+    const photoH = 260;
+    
+    // 5. 写真部分のピクセルデータを取得
+    const imageData = ctx.getImageData(photoX, photoY, photoW, photoH);
+    
+    // 6. 新しいCanvasにそのピクセルを描画（これが抽出された写真になる）
+    const photoCanvas = document.createElement('canvas');
+    photoCanvas.width = photoW;
+    photoCanvas.height = photoH;
+    const photoCtx = photoCanvas.getContext('2d');
+    photoCtx.putImageData(imageData, 0, 0);
+    
+    // 7. Base64 (JPEG) で返す (ヘッダ部分は除く)
+    const dataUrl = photoCanvas.toDataURL('image/jpeg', 0.9);
+    return dataUrl.split(',')[1];
 };

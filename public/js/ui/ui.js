@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (v440.0: 図鑑グリッド表示完全修正版) ---
+// --- js/ui/ui.js (v442.0: リネームUI追加版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -100,6 +100,21 @@ window.switchScreen = function(to) {
         if (to === 'screen-playground') {
             window.updateNellMessage("運動の時間だにゃ！", "excited", false);
         }
+
+        // カリカリ常時表示ロジック
+        const miniKarikari = document.getElementById('mini-karikari-display');
+        if (miniKarikari) {
+            const hideList = ['screen-title', 'screen-gate', 'screen-enrollment'];
+            if (hideList.includes(to)) {
+                miniKarikari.classList.add('hidden');
+            } else {
+                miniKarikari.classList.remove('hidden');
+                if (typeof window.updateMiniKarikari === 'function') {
+                    window.updateMiniKarikari();
+                }
+            }
+        }
+
     } else {
         console.error(`Screen not found: ${to}`);
     }
@@ -128,7 +143,6 @@ window.backToGate = function() {
 };
 
 window.backToLobby = function(suppressGreeting = false) {
-    // バックグラウンド処理停止
     if (typeof window.stopAudioPlayback === 'function') window.stopAudioPlayback();
     if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
     if (typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
@@ -138,7 +152,6 @@ window.backToLobby = function(suppressGreeting = false) {
     if (typeof window.stopDanmakuGame === 'function') window.stopDanmakuGame();
     if (typeof window.cleanupAnalysis === 'function') window.cleanupAnalysis();
     
-    // ★ここを変更: クイズモード中に戻る場合、現在の進捗を保存する
     if (window.currentMode === 'quiz' && typeof window.persistQuizSession === 'function') {
         window.persistQuizSession();
     }
@@ -251,7 +264,7 @@ window.updateProgress = function(p) {
 };
 
 // ==========================================
-// 図鑑 (Collection) - ★共有機能・タブ切り替え対応
+// 図鑑 (Collection) - ★共有機能・タブ切り替え・リネーム
 // ==========================================
 
 // タブ切り替え
@@ -312,10 +325,6 @@ window.showCollection = async function() {
     const modal = document.getElementById('collection-modal');
     if (!modal) return;
     
-    // ★修正: 
-    // 1. grid-template-columns: repeat(3, 1fr) で横3列固定
-    // 2. grid-auto-rows: max-content で行の高さを中身に合わせて自動拡張（重なり防止の肝）
-    // 3. gap: 12px で間隔確保
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 85vh; display: flex; flex-direction: column;">
             <h3 style="text-align:center; margin:0 0 10px 0; color:#f57f17; flex-shrink: 0;">📖 お宝図鑑</h3>
@@ -424,8 +433,6 @@ window.renderCollectionList = async function() {
             const div = document.createElement('div');
             div.className = "collection-grid-item"; 
             
-            // ★修正: 重なり防止のため、position: relativeとmargin: 0を強制し、
-            // 高さはaspect-ratioで確保。
             div.style.cssText = `
                 background: white;
                 border-radius: 8px;
@@ -451,16 +458,17 @@ window.renderCollectionList = async function() {
             img.src = item.image;
             img.loading = "lazy";
             img.decoding = "async";
-            // ★修正: height: 100% を指定してアスペクト比領域いっぱいに表示
             img.style.cssText = "width:100%; height:100%; object-fit:contain; display:block; background-color: #f9f9f9;";
             
-            // 公開タブの場合は発見者名を表示
+            // ★修正: 名前バッジを表示（自分のカードでも表示するように変更）
+            const badge = document.createElement('div');
+            badge.className = "info-badge";
             if (window.collectionTabMode === 'public') {
-                const badge = document.createElement('div');
-                badge.className = "info-badge";
                 badge.innerText = `${window.cleanDisplayString(item.discovererName || "誰か")}さん`;
-                div.appendChild(badge);
+            } else {
+                badge.innerText = window.cleanDisplayString(item.name || "名称未設定");
             }
+            div.appendChild(badge);
 
             div.appendChild(img);
             fragment.appendChild(div);
@@ -513,6 +521,21 @@ window.showCollectionDetail = function(item, originalIndex, totalCount, isMine) 
         deleteBtnHtml = `<button onclick="deleteCollectionItem(${originalIndex})" class="mini-teach-btn" style="background:#ff5252;">削除</button>`;
     }
 
+    // ★追加: 名前表示とリネームボタン
+    let nameDisplayHtml = "";
+    if (isMine) {
+        const currentName = window.cleanDisplayString(item.name || "名称未設定");
+        nameDisplayHtml = `
+            <div style="display:flex; align-items:center; justify-content:center; margin-bottom:5px;">
+                <h3 style="margin:0; color:#555; max-width:80%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${currentName}</h3>
+                <button onclick="window.renameCollectionItem(${originalIndex}, '${currentName.replace(/'/g, "\\'")}')" 
+                    style="background:none; border:none; cursor:pointer; font-size:1.2rem; margin-left:5px;">✏️</button>
+            </div>
+        `;
+    } else {
+        nameDisplayHtml = `<h3 style="text-align:center; margin:0 0 5px 0; color:#555;">${window.cleanDisplayString(item.name || "名称未設定")}</h3>`;
+    }
+
     // 左右ナビ
     let leftBtnHtml = "";
     if (originalIndex > 0) {
@@ -540,7 +563,7 @@ window.showCollectionDetail = function(item, originalIndex, totalCount, isMine) 
 
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 90vh; display: flex; flex-direction: column;">
-            <div style="flex-shrink:0; display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <div style="flex-shrink:0; display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
                 <div style="display:flex; gap:5px; align-items:center;">
                     <button onclick="showCollection()" class="mini-teach-btn" style="background:#8d6e63;">← 一覧</button>
                     ${mapBtnHtml}
@@ -548,19 +571,37 @@ window.showCollectionDetail = function(item, originalIndex, totalCount, isMine) 
                 ${deleteBtnHtml}
             </div>
             
-            <div style="flex:1; overflow-y:auto; background:transparent; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px; position:relative;">
+            ${nameDisplayHtml}
+            
+            <div style="flex:1; overflow-y:auto; background:transparent; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:5px; position:relative;">
                 ${leftBtnHtml}
                 <img src="${item.image}" decoding="async" style="width:auto; max-width:100%; height:auto; max-height:100%; object-fit:contain; border-radius:15px; box-shadow:0 10px 25px rgba(0,0,0,0.4);">
                 ${rightBtnHtml}
             </div>
             
-            <div style="text-align:center; margin-top:10px; flex-shrink:0;">
+            <div style="text-align:center; margin-top:5px; flex-shrink:0;">
                 ${shareBtnHtml}
                 <br><br>
                 <button onclick="closeCollection()" class="main-btn gray-btn" style="width:auto; padding:8px 30px; font-size:0.9rem;">閉じる</button>
             </div>
         </div>
     `;
+};
+
+// ★追加: リネーム処理
+window.renameCollectionItem = async function(index, currentName) {
+    const newName = prompt("新しい名前を入れるにゃ！", currentName);
+    if (newName && newName.trim() !== "" && newName !== currentName) {
+        if (!currentUser || !window.NellMemory) return;
+        
+        try {
+            await window.NellMemory.renameCollectionItem(currentUser.id, index, newName);
+            // 成功したら画面更新
+            window.openCollectionDetailByIndex(index);
+        } catch(e) {
+            alert("名前を変更できなかったにゃ...");
+        }
+    }
 };
 
 window.shareCollectionItem = async function(index) {
@@ -582,7 +623,6 @@ window.shareCollectionItem = async function(index) {
     }
 };
 
-// ★追加: 非公開に戻す処理
 window.unshareCollectionItem = async function(index) {
     if (!currentUser || !window.NellMemory) return;
     if (!confirm("「みんなの図鑑」から削除して、非公開に戻すにゃ？")) return;

@@ -1,4 +1,4 @@
-// --- js/state/memory.js (v438.0: 登録時データ消失対策版) ---
+// --- js/state/memory.js (v460.0: リネーム時カード再生成機能追加版) ---
 
 (function(global) {
     const Memory = {};
@@ -59,7 +59,7 @@
         const defaultProfile = Memory.createEmptyProfile();
         if (!profile) return defaultProfile;
         if (!Array.isArray(profile.collection)) profile.collection = []; 
-        return profile;
+        return { ...defaultProfile, ...profile };
     };
 
     Memory.saveUserProfile = async function(userId, profile) {
@@ -74,12 +74,27 @@
                 await db.collection("users").doc(safeId).set({ profile: profile }, { merge: true });
             } catch(e) { console.error("Firestore Profile Save Error:", e); }
         }
+
+        if (window.currentUser && String(window.currentUser.id) === safeId && window.users && Array.isArray(window.users)) {
+            const userIndex = window.users.findIndex(u => String(u.id) === safeId);
+            const updatedUserForList = {
+                ...window.currentUser, 
+                profile: profile       
+            };
+            updatedUserForList.name = profile.nickname || updatedUserForList.name;
+
+            if (userIndex !== -1) {
+                window.users[userIndex] = updatedUserForList;
+            } else {
+                window.users.push(updatedUserForList);
+            }
+            localStorage.setItem('nekoneko_users', JSON.stringify(window.users));
+        }
     };
 
     Memory.updateProfileFromChat = async function(userId, chatLog) {
         if (!chatLog || chatLog.length < 10) return;
         const currentProfile = await Memory.getUserProfile(userId);
-        
         const { collection, ...profileForAnalysis } = currentProfile;
         
         try {
@@ -88,26 +103,17 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ currentProfile: profileForAnalysis, chatLog })
             });
-            
             if (res.ok) {
                 const data = await res.json();
                 let newProfile = data.profile || data; 
                 if (Array.isArray(newProfile)) newProfile = newProfile[0];
-                
-                const updatedProfile = {
-                    ...newProfile,
-                    collection: collection || [] 
-                };
-                
+                const updatedProfile = { ...newProfile, collection: collection || [] };
                 await Memory.saveUserProfile(userId, updatedProfile);
-
                 if (data.summary_text && data.summary_text.length > 0 && data.summary_text !== "（更新なし）") {
                     window.saveToNellMemory('nell', `【会話のまとめ】 ${data.summary_text}`);
                 }
             }
-        } catch(e) {
-            console.warn("Profile update failed, keeping existing data.", e);
-        }
+        } catch(e) { console.warn("Profile update failed", e); }
     };
 
     Memory.generateContextString = async function(userId) {
@@ -117,7 +123,6 @@
         if (p.birthday) context += `・誕生日: ${p.birthday}\n`; 
         if (p.likes && p.likes.length > 0) context += `・好きなもの: ${p.likes.join(", ")}\n`;
         if (p.weaknesses && p.weaknesses.length > 0) context += `・苦手なもの: ${p.weaknesses.join(", ")}\n`;
-        
         if (p.collection && p.collection.length > 0) {
             const recentItems = p.collection.slice(0, 3).map(i => i.name).join(", ");
             context += `・最近見せてくれたもの図鑑: ${recentItems}\n`;
@@ -127,7 +132,6 @@
 
     Memory.addToCollection = async function(userId, itemName, imageBase64, description = "", realDescription = "", location = null, rarity = 1) {
         try {
-            // ★最新のプロファイルを取得
             const profile = await Memory.getUserProfile(userId);
             if (!Array.isArray(profile.collection)) profile.collection = [];
             
@@ -140,9 +144,7 @@
                     const storageRef = window.fireStorage.ref().child(storagePath);
                     const snapshot = await storageRef.put(blob);
                     imageUrl = await snapshot.ref.getDownloadURL(); 
-                } catch (uploadError) {
-                    console.warn("Storage upload failed", uploadError);
-                }
+                } catch (uploadError) { console.warn("Storage upload failed", uploadError); }
             }
 
             const newItem = {
@@ -156,7 +158,6 @@
                 isShared: false
             };
 
-            // コレクションに追加
             profile.collection.unshift(newItem); 
             
             const maxLimit = (imageUrl.startsWith('http')) ? 500 : 30;
@@ -169,26 +170,123 @@
                 }
             }
 
-            // 保存
-            await Memory.saveUserProfile(userId, profile);
-
-            // ★重要: 現在のメモリ上のcurrentUserにも反映させる（消失対策）
             if (window.currentUser && String(window.currentUser.id) === String(userId)) {
-                // user.js側で持っているデータ構造に合わせて更新する
-                // currentUser.profile.collection ではなく、トップレベルにプロファイル情報が混ざっている場合があるが、
-                // 基本的に user.js の login 関数などを見ると、Firestoreのデータをそのまま currentUser にしている。
-                // Firestore上では { profile: { ... } } となっているはず。
-                if (!window.currentUser.profile) window.currentUser.profile = {};
+                if (!window.currentUser.profile) window.currentUser.profile = Memory.createEmptyProfile();
                 window.currentUser.profile.collection = profile.collection;
-                
-                // もしトップレベルに展開しているならそちらも更新（念のため）
-                // しかし、saveAndSync は currentUser 全体を保存するため、
-                // ここで currentUser.profile を更新しておけば、次回の saveAndSync で上書きされても大丈夫なはず。
-                console.log("Memory: Syncing current user collection in RAM.");
+                window.currentUser.collection = profile.collection;
             }
 
-        } catch (e) {
-            console.error("[Memory] Add Collection Error:", e);
+            await Memory.saveUserProfile(userId, profile);
+
+        } catch (e) { console.error("[Memory] Add Collection Error:", e); }
+    };
+
+    // ★修正: リネーム時にカード画像を再生成して保存する
+    Memory.renameCollectionItem = async function(userId, index, newName) {
+        if (!newName || newName.trim() === "") return;
+        
+        try {
+            const profile = await Memory.getUserProfile(userId);
+            if (!profile.collection || !profile.collection[index]) throw new Error("Item not found");
+            
+            const item = profile.collection[index];
+            const oldImage = item.image;
+            
+            // 1. 名前を更新
+            item.name = newName;
+            
+            // 2. ★既存のカード画像から写真部分を抽出
+            if (window.extractPhotoFromCard && window.generateTradingCard) {
+                console.log("Regenerating card with new name...");
+                try {
+                    // 写真部分のBase64を取得
+                    const extractedPhotoBase64 = await window.extractPhotoFromCard(item.image);
+                    
+                    // 新しい名前でカード全体を再生成
+                    // (itemNameにnewNameを渡す)
+                    const itemDataForGen = {
+                        itemName: newName,
+                        rarity: item.rarity,
+                        description: item.description,
+                        realDescription: item.realDescription
+                    };
+                    // No.は (総数 - index) で計算 (新しい順の場合) 
+                    // ここでは簡易的に現在の配列長などから逆算するか、
+                    // もともと保存されていないので、表示上のNoと一致させるのは難しいが、
+                    // generateTradingCardの第4引数は collectionNo。
+                    // ひとまず profile.collection.length - index を渡してみる
+                    const collectionNo = profile.collection.length - index;
+                    
+                    const newCardDataUrl = await window.generateTradingCard(extractedPhotoBase64, itemDataForGen, null, collectionNo);
+                    
+                    // 3. ストレージにアップロード（オンライン時）
+                    let newImageUrl = newCardDataUrl;
+                    if (window.fireStorage && typeof db !== 'undefined' && db !== null) {
+                        const blob = base64ToBlob(newCardDataUrl.split(',')[1]);
+                        const timestamp = Date.now();
+                        const storagePath = `user_images/${userId}/${timestamp}_renamed.jpg`;
+                        const storageRef = window.fireStorage.ref().child(storagePath);
+                        const snapshot = await storageRef.put(blob);
+                        newImageUrl = await snapshot.ref.getDownloadURL();
+                        
+                        // 古い画像を削除 (httpで始まる場合のみ)
+                        if (oldImage && oldImage.startsWith('http') && oldImage !== newImageUrl) {
+                            await deleteImageFromStorage(oldImage);
+                        }
+                    }
+                    
+                    // 画像URLを更新
+                    item.image = newImageUrl;
+                    
+                } catch(genErr) {
+                    console.error("Failed to regenerate card image:", genErr);
+                    // 失敗しても名前だけは変わっているので続行
+                }
+            }
+            
+            // 4. 公開データの更新
+            if (item.isShared && db) {
+                try {
+                    const snapshot = await db.collection("public_collection")
+                        .where("discovererId", "==", String(userId))
+                        // 画像URLが変わってしまったので、古い名前などで検索するか、
+                        // もしくは、画像URLが変わる前に検索すべきだったが、
+                        // ここでは「公開データも一旦削除して再登録」あるいは「名前だけ更新」したいが、
+                        // 画像が変わったので再登録が必要。
+                        // 簡易的に: 名前だけ更新し、画像は古いまま(リンク切れリスク)になるので、
+                        // 画像URLも更新する
+                        // しかし検索キーが画像URLだと見つからない。
+                        // => 以前のURL (oldImage) を使って検索する
+                        .where("image", "==", oldImage) 
+                        .get();
+                    
+                    if (!snapshot.empty) {
+                        const batch = db.batch();
+                        snapshot.docs.forEach(doc => {
+                            batch.update(doc.ref, { 
+                                name: newName,
+                                image: item.image // 新しい画像URL
+                            });
+                        });
+                        await batch.commit();
+                    }
+                } catch(e) {
+                    console.warn("Failed to update public item:", e);
+                }
+            }
+
+            // メモリ同期
+            if (window.currentUser && String(window.currentUser.id) === String(userId)) {
+                if (window.currentUser.profile) {
+                    window.currentUser.profile.collection = profile.collection;
+                }
+            }
+
+            await Memory.saveUserProfile(userId, profile);
+            return true;
+        } catch(e) {
+            console.error("[Memory] Rename Error:", e);
+            throw e;
         }
     };
     
@@ -198,7 +296,6 @@
             if (profile.collection && profile.collection[index]) {
                 const item = profile.collection[index];
                 
-                // 公開されている場合は公開コレクションからも削除
                 if (item.isShared) {
                     await Memory.unshareFromPublicCollection(userId, index);
                 }
@@ -207,14 +304,14 @@
                     await deleteImageFromStorage(item.image);
                 }
                 profile.collection.splice(index, 1);
-                await Memory.saveUserProfile(userId, profile);
-
-                // メモリ同期
+                
                 if (window.currentUser && String(window.currentUser.id) === String(userId)) {
                     if (window.currentUser.profile) {
                         window.currentUser.profile.collection = profile.collection;
                     }
                 }
+
+                await Memory.saveUserProfile(userId, profile);
             }
         } catch(e) { console.error("[Memory] Delete Error:", e); }
     };
@@ -241,19 +338,18 @@
         });
 
         item.isShared = true;
-        await Memory.saveUserProfile(userId, profile);
         
-        // メモリ同期
         if (window.currentUser && String(window.currentUser.id) === String(userId)) {
             if (window.currentUser.profile) {
                 window.currentUser.profile.collection = profile.collection;
             }
         }
 
+        await Memory.saveUserProfile(userId, profile);
+
         return "SUCCESS";
     };
 
-    // ★追加: 公開を取り消す（非公開に戻す）
     Memory.unshareFromPublicCollection = async function(userId, itemIndex) {
         if (!db) throw new Error("Database not connected");
         
@@ -264,8 +360,6 @@
         if (!item.isShared) return "NOT_SHARED";
 
         try {
-            // 画像URLと投稿者IDで検索して削除
-            // (ユニークIDを持っていないため、この方法で特定する)
             const snapshot = await db.collection("public_collection")
                 .where("discovererId", "==", String(userId))
                 .where("image", "==", item.image)
@@ -277,16 +371,15 @@
             });
             await batch.commit();
 
-            // ローカルのフラグを戻す
             item.isShared = false;
-            await Memory.saveUserProfile(userId, profile);
-
-            // メモリ同期
+            
             if (window.currentUser && String(window.currentUser.id) === String(userId)) {
                 if (window.currentUser.profile) {
                     window.currentUser.profile.collection = profile.collection;
                 }
             }
+
+            await Memory.saveUserProfile(userId, profile);
             
             return "SUCCESS";
         } catch (e) {
@@ -342,10 +435,8 @@
         }
         await Memory.saveUserProfile(userId, profile);
         
-        // メモリ同期
         if (window.currentUser && String(window.currentUser.id) === String(userId)) {
             if (window.currentUser.profile) {
-                 // プロパティごとに同期
                  window.currentUser.profile[category] = profile[category];
             }
         }
