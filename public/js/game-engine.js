@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v439.0: クイズ報酬レベル別対応版) ---
+// --- js/game-engine.js (v462.0: 漢字・なぞなぞ機能復旧版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -600,7 +600,6 @@ async function fetchQuizFromGlobalStock(genre, level) {
 }
 
 // バックグラウンド生成ロジック
-// ★修正: 5問すべて新規作成を目指す。ストックは利用しない。
 async function backgroundQuizFetcher(genre, level, sessionId) {
     const TOTAL_REQ = 5;
     console.log(`[Quiz] Start fetcher: Generating all ${TOTAL_REQ} questions via API`);
@@ -779,17 +778,11 @@ window.startQuizSet = async function(genre, level) {
     quizState.history = []; 
     quizState.sessionId = Date.now(); 
 
-    // ★ストック利用は原則しない（ユーザーの savedQuizzes も今回は使わず、完全新規にする）
-    // 要望により「5問新規」が基本。
-
     document.getElementById('quiz-genre-select').classList.add('hidden');
     document.getElementById('quiz-level-select').classList.add('hidden');
     document.getElementById('quiz-game-area').classList.remove('hidden');
     
     document.getElementById('quiz-genre-label').innerText = `${genre} Lv.${level}`;
-
-    // ★常時聞き取りは廃止
-    // if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
 
     // 先行生成を開始（非同期で放置）
     backgroundQuizFetcher(genre, level, quizState.sessionId);
@@ -866,9 +859,7 @@ window.nextQuiz = async function() {
     
     // 4. それでもダメならエラー or フォールバック（ここでストックを使用）
     if (!quizData) {
-        // エラー時のフォールバックとしてのみストックを使用
         console.log("API failed. Trying to fetch from global stock as fallback...");
-        // サーバー連携関数がなければ空
         if (typeof fetchQuizFromGlobalStock === 'function') {
              quizData = await fetchQuizFromGlobalStock(quizState.genre, quizState.level);
         }
@@ -907,7 +898,6 @@ window.nextQuiz = async function() {
         quizState.history.push(quizData.answer);
         if (quizState.history.length > 10) quizState.history.shift(); 
         
-        // フォールバック以外は保存候補に追加
         if (!quizData.isFallback) {
             quizState.sessionQuizzes.push({ ...quizData, shouldSave: true });
         }
@@ -951,7 +941,7 @@ window.nextQuiz = async function() {
     }
 };
 
-// ★新規: 音声回答ボタンの処理
+// 音声回答ボタンの処理
 window.startQuizVoiceInput = function() {
     const micBtn = document.getElementById('quiz-mic-btn');
     const status = document.getElementById('quiz-mic-status');
@@ -964,22 +954,17 @@ window.startQuizVoiceInput = function() {
     
     if (status) status.innerText = "お話してにゃ！";
     
-    // 音声読み上げを停止
     if(typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
 
-    // ワンショット認識を開始
     if (typeof window.startOneShotRecognition === 'function') {
         window.startOneShotRecognition(
             (transcript) => {
-                // 結果が得られたら判定へ
                 const answered = window.checkQuizAnswer(transcript, false);
                 if (!answered) {
-                    // 不正解でも認識は終了しているのでボタンを戻す
                     window.stopQuizVoiceInput(true);
                 }
             },
             () => {
-                // 終了時（タイムアウトやエラー）
                 window.stopQuizVoiceInput();
             }
         );
@@ -1010,7 +995,6 @@ window.checkQuizAnswer = function(userAnswer, isButton = false) {
 
     const correct = window.currentQuiz.answer;
     
-    // ボタンの無効化（ボタン回答時のみ）
     if (isButton) {
         const buttons = document.querySelectorAll('.quiz-option-btn');
         buttons.forEach(b => b.disabled = true);
@@ -1026,7 +1010,6 @@ window.checkQuizAnswer = function(userAnswer, isButton = false) {
             isCorrect = true;
         }
     } else {
-        // 音声入力時はあいまい検索を許容
         if (cleanUserAnswer.includes(cleanCorrect)) {
             isCorrect = true;
         } else if (fuzzyContains(cleanUserAnswer, cleanCorrect)) {
@@ -1048,10 +1031,8 @@ window.checkQuizAnswer = function(userAnswer, isButton = false) {
         });
 
         window.showQuizResult(true);
-        // 正解したらマイクボタンなどは隠すか無効化しても良いが、showQuizResultで制御
         return true; 
     } else {
-        // ボタン回答で不正解なら即終了
         if (isButton) {
             if(window.safePlay) window.safePlay(window.sfxBatu);
             window.updateNellMessage(`残念！正解は「${correct}」だったにゃ。`, "gentle", false, true);
@@ -1064,8 +1045,6 @@ window.checkQuizAnswer = function(userAnswer, isButton = false) {
             window.showQuizResult(false);
             return true;
         } else {
-            // 音声回答で不正解の場合は、「違うにゃ」と言って継続させる？
-            // ここでは一発勝負とせず、何も起きなかったことにする（再挑戦可）
             return false;
         }
     }
@@ -1091,7 +1070,6 @@ window.showQuizResult = function(isWin) {
     const ansText = document.getElementById('quiz-answer-text');
     const micBtn = document.getElementById('quiz-mic-btn');
 
-    // マイクボタンを隠す
     if(micBtn) micBtn.parentElement.style.display = 'none';
 
     const btns = controls.querySelectorAll('button:not(#next-quiz-btn)');
@@ -1104,11 +1082,9 @@ window.showQuizResult = function(isWin) {
         ansText.innerText = window.currentQuiz.answer;
         ansDisplay.classList.remove('hidden');
 
-        // 1. 保存トグルボタン (ローカル保存用)
         const oldSaveBtn = document.getElementById('quiz-save-toggle-btn');
         if(oldSaveBtn) oldSaveBtn.remove();
         
-        // 2. 報告/いいねボタン (グローバルストック用)
         const oldReportBtn = document.getElementById('quiz-report-btn');
         if(oldReportBtn) oldReportBtn.remove();
         const oldLikeBtn = document.getElementById('quiz-like-btn'); 
@@ -1139,12 +1115,10 @@ window.showQuizResult = function(isWin) {
             gameArea.appendChild(saveBtn);
         }
 
-        // ストック由来なら報告/いいねボタンを追加
         if (window.currentQuiz.isFallback && window.currentQuiz.docId) {
             const actionContainer = document.createElement('div');
             actionContainer.style.cssText = "display:flex; gap:10px; margin-top:10px;";
 
-            // いいねボタン
             const likeBtn = document.createElement('button');
             likeBtn.id = 'quiz-like-btn';
             likeBtn.className = "main-btn like-btn";
@@ -1155,7 +1129,6 @@ window.showQuizResult = function(isWin) {
                 likeBtn.style.opacity = 0.6; 
             };
             
-            // 報告ボタン
             const reportBtn = document.createElement('button');
             reportBtn.id = 'quiz-report-btn';
             reportBtn.className = "main-btn";
@@ -1174,12 +1147,10 @@ window.showQuizResult = function(isWin) {
     }
 };
 
-// ★新規: クイズデータを保存する関数（中断時も呼び出せるように分離）
 window.persistQuizSession = function() {
     if (currentUser && quizState.sessionQuizzes.length > 0) {
         if (!currentUser.savedQuizzes) currentUser.savedQuizzes = [];
         
-        // 保存フラグが立っているものだけ抽出
         const quizzesToSave = quizState.sessionQuizzes.filter(q => q.shouldSave).map(q => {
             return {
                 question: q.question,
@@ -1194,27 +1165,22 @@ window.persistQuizSession = function() {
         
         if (quizzesToSave.length > 0) {
             quizzesToSave.forEach(newQ => {
-                // 重複チェック
                 const isDup = currentUser.savedQuizzes.some(oldQ => oldQ.question === newQ.question);
                 if (!isDup) {
                     currentUser.savedQuizzes.push(newQ);
                 }
                 
-                // グローバルストックへの保存（非同期）
                 if (typeof saveQuizToGlobalStock === 'function') {
                     saveQuizToGlobalStock(newQ);
                 }
             });
             
-            // 保存件数上限チェック
             if (currentUser.savedQuizzes.length > 100) {
                 currentUser.savedQuizzes = currentUser.savedQuizzes.slice(currentUser.savedQuizzes.length - 100);
             }
-            // 同期保存
             if(typeof window.saveAndSync === 'function') window.saveAndSync();
         }
         
-        // 保存済みリストをクリア（重複保存防止）
         quizState.sessionQuizzes = [];
     }
 };
@@ -1223,24 +1189,30 @@ window.finishQuizSet = function() {
     quizState.isFinished = true;
     window.currentQuiz = null;
     
-    // ★クイズ保存処理 (分離した関数を呼ぶ)
     window.persistQuizSession();
 
-    // 正解数を計算 (1問20点)
     const correctCount = Math.floor(quizState.score / 20);
     const currentLevel = quizState.level || 1;
 
-    // レベルごとの報酬単価を設定
-    let rewardPerCorrect = 50;
-    if (currentLevel === 2) rewardPerCorrect = 100;
-    else if (currentLevel === 3) rewardPerCorrect = 150;
-    else if (currentLevel === 4) rewardPerCorrect = 200;
-    else if (currentLevel >= 5) rewardPerCorrect = 300;
+    let rewardPerCorrect = 50; 
 
-    // 報酬総額計算
+    // STPR特別報酬ロジック
+    if (quizState.genre === 'STPR') {
+        if (currentLevel === 1) rewardPerCorrect = 200;
+        else if (currentLevel === 2) rewardPerCorrect = 500;
+        else if (currentLevel === 3) rewardPerCorrect = 1000;
+        else if (currentLevel === 4) rewardPerCorrect = 2000;
+        else if (currentLevel >= 5) rewardPerCorrect = 3000;
+    } else {
+        if (currentLevel === 1) rewardPerCorrect = 50;
+        else if (currentLevel === 2) rewardPerCorrect = 100;
+        else if (currentLevel === 3) rewardPerCorrect = 150;
+        else if (currentLevel === 4) rewardPerCorrect = 200;
+        else if (currentLevel >= 5) rewardPerCorrect = 300;
+    }
+
     let totalReward = correctCount * rewardPerCorrect;
 
-    // 0問正解の場合は参加賞として10個（元の仕様への配慮）
     if (correctCount === 0) {
         totalReward = 10;
     }
@@ -1250,7 +1222,6 @@ window.finishQuizSet = function() {
     let isLevelUp = false;
     let newLevel = 1;
 
-    // 全問正解時のレベルアップ判定
     if (correctCount === 5) {
         if (currentUser) {
             if (!currentUser.quizLevels) currentUser.quizLevels = {};
@@ -1282,13 +1253,11 @@ window.finishQuizSet = function() {
         mood = "gentle";
     }
 
-    // 報酬付与
     window.giveGameReward(totalReward);
 
     window.updateNellMessage(msg, mood, false, true);
     alert(msg);
     
-    // UIクリーンアップ
     const oldSaveBtn = document.getElementById('quiz-save-toggle-btn');
     if(oldSaveBtn) oldSaveBtn.remove();
     const oldReportBtn = document.getElementById('quiz-report-btn');
@@ -1296,14 +1265,12 @@ window.finishQuizSet = function() {
     const oldLikeBtn = document.getElementById('quiz-like-btn');
     if(oldLikeBtn) oldLikeBtn.remove();
 
-    // マイクエリアを表示に戻す（非表示にしていた場合）
     const micArea = document.getElementById('quiz-mic-area');
     if (micArea) micArea.style.display = 'block';
 
     window.showQuizGame();
 };
 
-// --- クイズ間違い報告機能 ---
 window.reportQuizError = async function() {
     if (!window.currentQuiz || window.currentMode !== 'quiz') return;
 
@@ -1733,16 +1700,31 @@ window.startMinitest = function(subject) {
     
     window.updateNellMessage(`${subject}のテストだにゃ！がんばるにゃ！`, "excited");
     
-    if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
+    // ★常時聞き取りは廃止
+    // if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
 
     window.nextMinitestQuestion();
 };
 
 window.nextMinitestQuestion = async function() {
     if (minitestState.currentQuestionIndex >= minitestState.maxQuestions) {
-        const resultMsg = `${minitestState.score}点だったにゃ！おつかれさま！`;
+        // ★修正: 正解数に応じて報酬を計算
+        const correctCount = minitestState.score / 20; // 1問20点
+        const reward = correctCount * 200;
+        
+        let resultMsg = "";
+        if (correctCount === 5) {
+            resultMsg = `全問正解！すごいにゃ！カリカリ${reward}個あげるにゃ！`;
+        } else if (correctCount > 0) {
+            resultMsg = `${minitestState.score}点だったにゃ！カリカリ${reward}個あげるにゃ！`;
+        } else {
+            resultMsg = `0点だったにゃ…。次はがんばるにゃ！`;
+        }
+
+        window.giveGameReward(reward);
         window.updateNellMessage(resultMsg, "happy", false, true);
         alert(resultMsg);
+        
         window.currentMinitest = null; 
         window.showMinitestMenu();
         return;
@@ -1755,6 +1737,16 @@ window.nextMinitestQuestion = async function() {
     const optionsDiv = document.getElementById('minitest-options');
     const explanationArea = document.getElementById('minitest-explanation-area');
     
+    // ★マイクボタンのリセット
+    const micBtn = document.getElementById('minitest-mic-btn');
+    const micStatus = document.getElementById('minitest-mic-status');
+    if (micBtn) {
+        micBtn.disabled = false;
+        micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で答える';
+        micBtn.style.background = "#4db6ac";
+    }
+    if (micStatus) micStatus.innerText = "";
+
     qText.innerText = "問題を作成中にゃ...";
     optionsDiv.innerHTML = "";
     explanationArea.classList.add('hidden');
@@ -1796,6 +1788,75 @@ window.nextMinitestQuestion = async function() {
     }
 };
 
+// ★新規: 音声回答ロジック
+window.startMinitestVoiceInput = function() {
+    const micBtn = document.getElementById('minitest-mic-btn');
+    const status = document.getElementById('minitest-mic-status');
+    
+    if (micBtn) {
+        micBtn.disabled = true;
+        micBtn.innerHTML = '<span style="font-size:1.5rem;">👂</span> 聞いてるにゃ...';
+        micBtn.style.background = "#ff5252";
+    }
+    
+    if (status) status.innerText = "お話してにゃ！";
+    
+    if(typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
+
+    if (typeof window.startOneShotRecognition === 'function') {
+        window.startOneShotRecognition(
+            (transcript) => {
+                window.checkMinitestVoiceAnswer(transcript);
+                window.stopMinitestVoiceInput(true);
+            },
+            () => { window.stopMinitestVoiceInput(); }
+        );
+    } else {
+        alert("音声認識が使えないにゃ...");
+        window.stopMinitestVoiceInput();
+    }
+};
+
+window.stopMinitestVoiceInput = function(keepStatus = false) {
+    const micBtn = document.getElementById('minitest-mic-btn');
+    const status = document.getElementById('minitest-mic-status');
+    
+    if (micBtn) {
+        micBtn.disabled = false;
+        micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で答える';
+        micBtn.style.background = "#4db6ac";
+    }
+    
+    if (status && !keepStatus) status.innerText = "";
+};
+
+window.checkMinitestVoiceAnswer = function(transcript) {
+    const status = document.getElementById('minitest-mic-status');
+    if(status) status.innerText = `「${transcript}」？`;
+
+    // 選択肢の中から一致するものを探す
+    const buttons = document.querySelectorAll('.minitest-option-btn');
+    let matchedBtn = null;
+    let matchedText = null;
+
+    buttons.forEach(btn => {
+        const optText = btn.innerText;
+        // 完全一致 or あいまい一致
+        if (fuzzyContains(transcript, optText)) {
+            matchedBtn = btn;
+            matchedText = optText;
+        }
+    });
+
+    if (matchedBtn) {
+        // ボタンクリックと同じ処理を呼ぶ
+        window.checkMinitestAnswer(matchedText, matchedBtn);
+    } else {
+        // 一致なし
+        window.updateNellMessage("ん？どれのことかにゃ？もう一回言ってにゃ。", "thinking");
+    }
+};
+
 window.checkMinitestAnswer = function(selectedAnswer, btnElement) {
     const buttons = document.querySelectorAll('.minitest-option-btn');
     buttons.forEach(b => b.disabled = true);
@@ -1808,7 +1869,8 @@ window.checkMinitestAnswer = function(selectedAnswer, btnElement) {
         if(window.safePlay) window.safePlay(window.sfxMaru);
         window.updateNellMessage("正解だにゃ！すごいにゃ！", "excited", false, true);
         minitestState.score += 20; 
-        window.giveGameReward(10);
+        // ★ここでの個別報酬は削除し、最後にまとめて付与する方式に変更
+        // window.giveGameReward(10); 
     } else {
         btnElement.classList.add('minitest-wrong');
         buttons.forEach(b => {

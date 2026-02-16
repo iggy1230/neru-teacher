@@ -1,4 +1,4 @@
-<!-- index.html (完全版 v438.0: 個別指導音声ボタン & バグ修正版) -->
+<!-- index.html (完全版 v445.0: ミニテスト音声ボタン＆報酬調整版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -40,7 +40,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v438.1-Fixes</div>
+            <div class="version-tag">Build: v445.0-Fixes</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -120,7 +120,7 @@
              <button onclick="closeRanking()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
 
-        <!-- 11. ミニテスト画面 -->
+        <!-- 11. ミニテスト画面 (★修正: マイクボタンエリア追加) -->
         <section id="screen-minitest" class="screen hidden">
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-minitest"></div><div class="chat-bubble"><p id="nell-text-minitest">ミニテストを始めるにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px; color:#ff9800;">📝 ミニテスト</h2>
@@ -137,6 +137,15 @@
                 <p id="minitest-progress" style="text-align:right; font-size:0.9rem; color:#888;">1/5問目</p>
                 <p id="minitest-question" style="font-size:1.2rem; font-weight:bold; margin:10px 0; min-height:60px;">読み込み中...</p>
                 <div id="minitest-options"></div>
+                
+                <!-- 音声回答ボタン -->
+                <div id="minitest-mic-area" style="margin-top:15px; text-align:center;">
+                    <button id="minitest-mic-btn" class="main-btn" style="background:#4db6ac; width:auto; padding:10px 20px; display:inline-flex; align-items:center; gap:8px; border-radius:30px;" onclick="window.startMinitestVoiceInput()">
+                        <span style="font-size:1.5rem;">🎤</span> 声で答える
+                    </button>
+                    <div id="minitest-mic-status" style="margin-top:5px; font-weight:bold; color:#e91e63; min-height:1.5em;"></div>
+                </div>
+
                 <div id="minitest-explanation-area" class="hidden" style="margin-top:15px; background:#fff3e0; padding:10px; border-radius:10px; border:2px solid #ffb74d;">
                     <p style="font-weight:bold; color:#e65100;">💡 解説</p>
                     <p id="minitest-explanation-text" style="font-size:0.95rem;">ここに解説が入ります</p>
