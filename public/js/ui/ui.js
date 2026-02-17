@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (v442.0: リネームUI追加版) ---
+// --- js/ui/ui.js (v468.3: みんなの図鑑お掃除機能追加版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -6,6 +6,8 @@ let currentCalendarDate = new Date();
 window.collectionSortMode = 'desc'; 
 // ★図鑑のタブモード (mine / public)
 window.collectionTabMode = 'mine';
+// ★図鑑描画ループのID管理
+window.collectionRenderId = null;
 
 // ==========================================
 // 音量管理 (直接操作)
@@ -320,7 +322,7 @@ window.changeCollectionSort = function(select) {
     window.renderCollectionList(); 
 };
 
-window.showCollection = async function() {
+window.showCollection = async function(keepTab = false) {
     if (!currentUser) return;
     const modal = document.getElementById('collection-modal');
     if (!modal) return;
@@ -360,11 +362,25 @@ window.showCollection = async function() {
     `;
     modal.classList.remove('hidden');
 
-    window.collectionTabMode = 'mine'; // 初期は自分
+    // 引数 keepTab が true なら現在のタブモードを維持、それ以外は 'mine' にリセット
+    if (!keepTab) {
+        window.collectionTabMode = 'mine';
+    } else {
+        // UI上のタブのアクティブ状態を復元
+        window.switchCollectionTab(window.collectionTabMode);
+        return; // switchCollectionTab内でrenderCollectionListが呼ばれるのでここで終了
+    }
+
     window.renderCollectionList();
 };
 
 window.renderCollectionList = async function() {
+    // ★重要: 前回の描画ループがあればキャンセル
+    if (window.collectionRenderId) {
+        cancelAnimationFrame(window.collectionRenderId);
+        window.collectionRenderId = null;
+    }
+
     const grid = document.getElementById('collection-grid');
     const countBadge = document.getElementById('collection-count-badge');
     const sortArea = document.getElementById('collection-sort-area');
@@ -478,7 +494,9 @@ window.renderCollectionList = async function() {
         currentIndex += CHUNK_SIZE;
 
         if (currentIndex < items.length) {
-            requestAnimationFrame(renderChunk);
+            window.collectionRenderId = requestAnimationFrame(renderChunk);
+        } else {
+            window.collectionRenderId = null;
         }
     }
 
@@ -511,8 +529,14 @@ window.showCollectionDetail = function(item, originalIndex, totalCount, isMine) 
                 </div>`;
         }
     } else {
-        // 他人のアイテム
-        shareBtnHtml = `<span style="font-size:0.8rem; color:#666;">発見者: <strong>${window.cleanDisplayString(item.discovererName || "誰か")}さん</strong></span>`;
+        // 他人のアイテム: 「みんなの」タブで見ている場合、不備データのお掃除機能を追加
+        shareBtnHtml = `
+            <div style="display:flex; flex-direction:column; align-items:center; gap:5px;">
+                <span style="font-size:0.8rem; color:#666;">発見者: <strong>${window.cleanDisplayString(item.discovererName || "誰か")}さん</strong></span>
+                <button onclick="window.cleanPublicItem('${item.id || ""}')" class="mini-teach-btn" style="background:transparent; border:1px solid #ccc; color:#888; font-size:0.7rem; width:auto; padding:2px 8px; box-shadow:none; margin-top:5px;">
+                    ⚠️ データがない場合は削除
+                </button>
+            </div>`;
     }
 
     // 削除ボタン (自分のみ)
@@ -565,7 +589,7 @@ window.showCollectionDetail = function(item, originalIndex, totalCount, isMine) 
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 90vh; display: flex; flex-direction: column;">
             <div style="flex-shrink:0; display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
                 <div style="display:flex; gap:5px; align-items:center;">
-                    <button onclick="showCollection()" class="mini-teach-btn" style="background:#8d6e63;">← 一覧</button>
+                    <button onclick="showCollection(true)" class="mini-teach-btn" style="background:#8d6e63;">← 一覧</button>
                     ${mapBtnHtml}
                 </div>
                 ${deleteBtnHtml}
@@ -586,6 +610,22 @@ window.showCollectionDetail = function(item, originalIndex, totalCount, isMine) 
             </div>
         </div>
     `;
+};
+
+// ★追加: 不備のある公開アイテムを削除する機能
+window.cleanPublicItem = async function(docId) {
+    if (!docId) return;
+    if (!db) return;
+    if (!confirm("画像が表示されないなどの問題がある場合、この公開データを削除できるにゃ。\n実行するにゃ？")) return;
+
+    try {
+        await db.collection("public_collection").doc(docId).delete();
+        alert("公開データを削除したにゃ！スッキリしたにゃ！");
+        window.showCollection(true); // リストを更新
+    } catch(e) {
+        console.error("Public Clean Error:", e);
+        alert("削除に失敗したにゃ。");
+    }
 };
 
 // ★追加: リネーム処理
@@ -645,7 +685,8 @@ window.deleteCollectionItem = async function(index) {
     if (!confirm("本当にこのお宝を削除するにゃ？")) return;
     if (window.NellMemory && currentUser) {
         await window.NellMemory.deleteFromCollection(currentUser.id, index);
-        window.showCollection(); 
+        // ★修正: 削除後にタブ状態を維持して一覧に戻る
+        window.showCollection(true); 
     }
 };
 

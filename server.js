@@ -1,3 +1,5 @@
+// --- server.js ---
+
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import express from 'express';
 import cors from 'cors';
@@ -21,10 +23,9 @@ const publicDir = path.join(__dirname, 'public');
 app.use(express.static(publicDir));
 
 // --- AI Model Constants ---
-// コスト削減のため、Gemini 2.0 Flash をメインに使用
-const MODEL_HOMEWORK = "gemini-2.5-pro";
-const MODEL_FAST = "gemini-2.5-flash-lite"; 
-const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025"; // Realtime API用
+const MODEL_HOMEWORK = "gemini-2.0-pro-exp-02-05"; // 視覚認識強化
+const MODEL_FAST = "gemini-2.0-flash"; 
+const MODEL_REALTIME = "gemini-2.0-flash-exp"; // Realtime API用
 
 // --- Server Log ---
 const MEMORY_FILE = path.join(__dirname, 'server_log.json');
@@ -53,7 +54,6 @@ try {
     if (!process.env.GEMINI_API_KEY) {
         console.error("⚠️ GEMINI_API_KEY が設定されていません。");
     } else {
-        // APIキーのみで初期化
         genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
         console.log("✅ Google Generative AI Initialized with API Key.");
     }
@@ -62,6 +62,51 @@ try {
 // ==========================================
 // Helper Functions
 // ==========================================
+
+// ★JSON抽出強化関数: 最初の {...} または [...] ブロックを正しく切り出す
+function extractFirstJson(text) {
+    // 最初の '{' または '[' を探す
+    const firstBrace = text.indexOf('{');
+    const firstBracket = text.indexOf('[');
+    
+    let start = -1;
+
+    if (firstBrace === -1 && firstBracket === -1) return text;
+
+    if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+        start = firstBrace;
+    } else {
+        start = firstBracket;
+    }
+
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    
+    for (let i = start; i < text.length; i++) {
+        const char = text[i];
+        
+        if (char === '"' && !escape) {
+            inString = !inString;
+        }
+        
+        if (!inString) {
+            if (char === '{' || char === '[') {
+                depth++;
+            } else if (char === '}' || char === ']') {
+                depth--;
+                if (depth === 0) {
+                    return text.substring(start, i + 1);
+                }
+            }
+        }
+        
+        if (char === '\\' && !escape) escape = true;
+        else escape = false;
+    }
+    // 見つからなければ元のテキストを返す
+    return text;
+}
 
 function getSubjectInstructions(subject) {
     switch (subject) {
@@ -117,7 +162,84 @@ const GENRE_REFERENCES = {
     ]
 };
 
-// クイズのバラエティを増やすための「視点」リスト
+// ストック問題リスト (生成失敗時のフォールバック用)
+const FALLBACK_QUIZZES = {
+    "一般知識": [
+        {
+            "question": "日本で一番高い山はどこですか？",
+            "options": ["富士山", "北岳", "奥穂高岳", "間ノ岳"],
+            "answer": "富士山",
+            "explanation": "富士山の高さは3776メートルで日本一高い山です。",
+            "fact_basis": "富士山は標高3776mで日本最高峰。"
+        },
+        {
+            "question": "1年は何日ありますか？（うるう年ではない場合）",
+            "options": ["365日", "366日", "364日", "360日"],
+            "answer": "365日",
+            "explanation": "地球が太陽の周りを一周するのにかかる時間が約365日だからです。",
+            "fact_basis": "平年は365日、閏年は366日。"
+        }
+    ],
+    "雑学": [
+        {
+            "question": "パンダの好物と言えば何ですか？",
+            "options": ["笹（ササ）", "バナナ", "お肉", "魚"],
+            "answer": "笹（ササ）",
+            "explanation": "パンダは竹や笹を主食としています。",
+            "fact_basis": "ジャイアントパンダの主食は竹や笹。"
+        },
+        {
+            "question": "信号機の「進め」の色は何色ですか？",
+            "options": ["青", "赤", "黄色", "紫"],
+            "answer": "青",
+            "explanation": "正式には「青信号」と呼ばれていますが、実際の色は緑色に近いこともあります。",
+            "fact_basis": "道路交通法では青色灯火。"
+        }
+    ],
+    "ポケモン": [
+        {
+            "question": "ピカチュウの進化前のポケモンはどれですか？",
+            "options": ["ピチュー", "ライチュウ", "ミミッキュ", "プラスル"],
+            "answer": "ピチュー",
+            "explanation": "ピチューがなつくとピカチュウに進化します。",
+            "fact_basis": "ピチュー -> ピカチュウ -> ライチュウ"
+        },
+        {
+            "question": "最初の3匹のうち、炎タイプのポケモンはどれ？（カントー地方）",
+            "options": ["ヒトカゲ", "ゼニガメ", "フシギダネ", "ピカチュウ"],
+            "answer": "ヒトカゲ",
+            "explanation": "ヒトカゲは炎タイプ、ゼニガメは水タイプ、フシギダネは草タイプです。",
+            "fact_basis": "初代御三家はフシギダネ、ヒトカゲ、ゼニガメ。"
+        }
+    ],
+    "マインクラフト": [
+        {
+            "question": "クリーパーを倒すと手に入るアイテムはどれですか？",
+            "options": ["火薬", "骨", "腐った肉", "糸"],
+            "answer": "火薬",
+            "explanation": "クリーパーは爆発するモンスターなので、倒すと火薬を落とします。",
+            "fact_basis": "クリーパーのドロップアイテムは火薬。"
+        },
+        {
+            "question": "ネザーに行くために必要なゲートを作る材料は？",
+            "options": ["黒曜石", "ダイヤモンド", "鉄ブロック", "土"],
+            "answer": "黒曜石",
+            "explanation": "黒曜石を四角く並べて火をつけるとネザーゲートが開きます。",
+            "fact_basis": "ネザーポータルは黒曜石で枠を作る。"
+        }
+    ],
+    // デフォルト用
+    "default": [
+        {
+            "question": "空が青いのはなぜですか？",
+            "options": ["太陽の光が散らばるから", "海が青いから", "宇宙が青いから", "ペンキで塗っているから"],
+            "answer": "太陽の光が散らばるから",
+            "explanation": "太陽の光が大気中の粒にぶつかって、青い光がたくさん散らばる「散乱」という現象が起きるからです。",
+            "fact_basis": "レイリー散乱による。"
+        }
+    ]
+};
+
 const QUIZ_PERSPECTIVES = [
     "【視点: 名言・セリフ】キャラクターの決め台詞、口癖、または印象的な会話シーンから出題してください。",
     "【視点: 数字・データ】身長、体重、年号、個数、威力など、具体的な『数字』に関する事実から出題してください。",
@@ -131,7 +253,6 @@ const QUIZ_PERSPECTIVES = [
     "【視点: 場所・地名】物語の舞台となる場所、地名、建物の名前について出題してください。"
 ];
 
-// クイズ検証関数 (Grounding)
 async function verifyQuiz(quizData, genre) {
     try {
         const model = genAI.getGenerativeModel({ 
@@ -169,7 +290,6 @@ async function verifyQuiz(quizData, genre) {
         
     } catch (e) {
         console.warn("Verification API Error:", e.message);
-        // エラー時は安全のためリトライ扱いにする
         return false;
     }
 }
@@ -178,16 +298,15 @@ async function verifyQuiz(quizData, genre) {
 // API Endpoints
 // ==========================================
 
-// --- クイズ生成 API (自動リトライ・出典確認強化版) ---
+// --- クイズ生成 API ---
 app.post('/generate-quiz', async (req, res) => {
     const MAX_RETRIES = 3; 
     let attempt = 0;
+    const { grade, genre, level } = req.body;
 
     while (attempt < MAX_RETRIES) {
         attempt++;
         try {
-            const { grade, genre, level } = req.body; 
-            
             const model = genAI.getGenerativeModel({ 
                 model: MODEL_FAST, 
                 tools: [{ google_search: {} }] 
@@ -199,7 +318,6 @@ app.post('/generate-quiz', async (req, res) => {
                 targetGenre = baseGenres[Math.floor(Math.random() * baseGenres.length)];
             }
 
-            // ★視点をランダムに選択
             const selectedPerspective = QUIZ_PERSPECTIVES[Math.floor(Math.random() * QUIZ_PERSPECTIVES.length)];
 
             const currentLevel = level || 1;
@@ -267,23 +385,17 @@ app.post('/generate-quiz', async (req, res) => {
             const result = await model.generateContent(prompt);
             let text = result.response.text();
             
-            // JSON抽出ロジック
             text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-            const firstBrace = text.indexOf('{');
-            const lastBrace = text.lastIndexOf('}');
-            if (firstBrace !== -1 && lastBrace !== -1) {
-                text = text.substring(firstBrace, lastBrace + 1);
-            }
+            const cleanText = extractFirstJson(text); // ★JSON抽出強化
 
             let jsonResponse;
             try {
-                jsonResponse = JSON.parse(text);
+                jsonResponse = JSON.parse(cleanText);
             } catch (e) {
                 console.error(`JSON Parse Error (Attempt ${attempt}):`, text);
                 throw new Error("JSON Parse Failed");
             }
 
-            // --- 1. 形式バリデーション ---
             const { options, answer, question, fact_basis } = jsonResponse;
             if (!question || !options || !answer) throw new Error("Invalid format: missing fields");
             if (!options.includes(answer)) {
@@ -295,23 +407,39 @@ app.post('/generate-quiz', async (req, res) => {
                 throw new Error("Invalid format: duplicate options");
             }
 
-            // --- 2. 事実確認バリデーション (verifyQuiz) ---
             console.log(`[Attempt ${attempt}] Verifying quiz... Fact Basis: ${fact_basis}`);
             const isVerified = await verifyQuiz(jsonResponse, targetGenre);
             
             if (isVerified) {
                 res.json(jsonResponse);
-                return; // 成功！
+                return; 
             } else {
                 console.warn(`[Attempt ${attempt}] Verification Failed. Retrying...`);
-                // ループ継続してリトライ
+                // 3回目失敗時にループを抜けてフォールバックへ
+                if (attempt >= MAX_RETRIES) throw new Error("Verification Failed Max Retries");
             }
 
         } catch (e) {
             console.error(`Quiz Gen Error (Attempt ${attempt}):`, e.message);
             
             if (attempt >= MAX_RETRIES) {
-                res.status(500).json({ error: "クイズが作れなかったにゃ…（生成エラー）" });
+                console.log(`[Quiz Fallback] Switching to Stock Quiz for genre: ${genre}`);
+                
+                // ストック問題から選択
+                let stockList = FALLBACK_QUIZZES[genre];
+                
+                // 指定ジャンルがない、またはストックが空の場合はデフォルトを使用
+                if (!stockList || stockList.length === 0) {
+                    stockList = FALLBACK_QUIZZES["default"];
+                }
+                
+                const fallbackQuiz = stockList[Math.floor(Math.random() * stockList.length)];
+                
+                res.json({
+                    ...fallbackQuiz,
+                    actual_genre: genre || "雑学",
+                    fallback: true // デバッグ用
+                });
                 return;
             }
         }
@@ -322,13 +450,11 @@ app.post('/generate-quiz', async (req, res) => {
 app.post('/correct-quiz', async (req, res) => {
     try {
         const { oldQuiz, reason, genre } = req.body;
-        // 修正時は念入りに調べるため Google Search を必須にする
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST, 
             tools: [{ google_search: {} }] 
         });
 
-        // 信頼できるソースがあればプロンプトに含める
         let referenceInstructions = "";
         if (GENRE_REFERENCES[genre]) {
             referenceInstructions = `
@@ -363,17 +489,10 @@ app.post('/correct-quiz', async (req, res) => {
         `;
 
         const result = await model.generateContent(prompt);
-        let text = result.response.text();
-        text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-        const firstBrace = text.indexOf('{');
-        const lastBrace = text.lastIndexOf('}');
-        if (firstBrace !== -1 && lastBrace !== -1) {
-            text = text.substring(firstBrace, lastBrace + 1);
-        }
-
-        const jsonResponse = JSON.parse(text);
+        let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        const cleanText = extractFirstJson(text); // ★JSON抽出強化
+        const jsonResponse = JSON.parse(cleanText);
         
-        // 簡易バリデーション
         if (!jsonResponse.options.includes(jsonResponse.answer)) {
             throw new Error("修正版の生成に失敗しました（正解が選択肢にない）");
         }
@@ -386,33 +505,17 @@ app.post('/correct-quiz', async (req, res) => {
     }
 });
 
-// --- なぞなぞ生成 API (品質向上版) ---
+// --- なぞなぞ生成 API ---
 app.post('/generate-riddle', async (req, res) => {
     try {
         const { grade } = req.body;
         const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
 
         const patterns = [
-            {
-                type: "言葉遊び・ダジャレ",
-                desc: "「パンはパンでも…」や「イスはイスでも…」のような、言葉の響きを使った古典的で面白いなぞなぞ。",
-                example: "「パンはパンでも、食べられないパンはなーんだ？（答え：フライパン）」"
-            },
-            {
-                type: "特徴当て（生き物・モノ）",
-                desc: "「耳が長くて、ぴょんぴょん跳ねる動物は？」のような、特徴をヒントにするクイズ。",
-                example: "「お昼になると、小さくなるものなーんだ？（答え：影）」"
-            },
-            {
-                type: "あるなしクイズ・連想",
-                desc: "「使うと減るけど、使わないと減らないものは？」のような、少し頭を使うトンチ問題。",
-                example: "「使うときは投げるもの、なーんだ？（答え：アンカー・投網・ボールなど）」"
-            },
-            {
-                type: "学校・日常あるある",
-                desc: "学校にあるものや、文房具、家にあるものを題材にしたなぞなぞ。",
-                example: "「黒くて四角くて、先生が字を書くものは？（答え：黒板）」"
-            }
+            { type: "言葉遊び・ダジャレ", desc: "「パンはパンでも…」や「イスはイスでも…」のような、言葉の響きを使った古典的で面白いなぞなぞ。", example: "「パンはパンでも、食べられないパンはなーんだ？（答え：フライパン）」" },
+            { type: "特徴当て（生き物・モノ）", desc: "「耳が長くて、ぴょんぴょん跳ねる動物は？」のような、特徴をヒントにするクイズ。", example: "「お昼になると、小さくなるものなーんだ？（答え：影）」" },
+            { type: "あるなしクイズ・連想", desc: "「使うと減るけど、使わないと減らないものは？」のような、少し頭を使うトンチ問題。", example: "「使うときは投げるもの、なーんだ？（答え：アンカー・投網・ボールなど）」" },
+            { type: "学校・日常あるある", desc: "学校にあるものや、文房具、家にあるものを題材にしたなぞなぞ。", example: "「黒くて四角くて、先生が字を書くものは？（答え：黒板）」" }
         ];
         
         const selectedPattern = patterns[Math.floor(Math.random() * patterns.length)];
@@ -440,7 +543,8 @@ app.post('/generate-riddle', async (req, res) => {
         `;
 
         const result = await model.generateContent(prompt);
-        const text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        text = extractFirstJson(text); // ★JSON抽出強化
         res.json(JSON.parse(text));
     } catch (e) {
         console.error("Riddle Gen Error:", e);
@@ -472,7 +576,8 @@ app.post('/generate-minitest', async (req, res) => {
         `;
 
         const result = await model.generateContent(prompt);
-        const text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        text = extractFirstJson(text); // ★JSON抽出強化
         res.json(JSON.parse(text));
     } catch (e) {
         console.error("MiniTest Gen Error:", e);
@@ -480,49 +585,73 @@ app.post('/generate-minitest', async (req, res) => {
     }
 });
 
-// --- 漢字ドリル生成 API ---
+// --- 漢字ドリル生成 API (修正版: リトライ＆JSON抽出強化) ---
 app.post('/generate-kanji', async (req, res) => {
-    try {
-        const { grade, mode } = req.body; 
-        const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
-        
-        let typeInstruction = "";
-        if (mode === 'reading') {
-            typeInstruction = `
-            「読み（漢字の読み仮名を答える）」問題を作成してください。
-            **重要: 単体の漢字ではなく、短い文章やフレーズの中で使われている漢字の読みを問う形式にしてください。**
-            例: 「山へ行く」の「山」の読み方は？
-            **★重要: 画面表示用テキスト(question_display)では、出題対象の漢字を <span style='color:red;'>漢字</span> タグで囲んでください。**
+    const MAX_RETRIES = 3;
+    let attempt = 0;
+
+    while (attempt < MAX_RETRIES) {
+        attempt++;
+        try {
+            const { grade, mode } = req.body; 
+            const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
+            
+            const prompt = `
+            あなたは日本の小学校教師です。小学${grade}年生向けの漢字ドリルを1問作成してください。
+            モードは「${mode === 'reading' ? '読み問題' : '書き取り問題'}」です。
+
+            【絶対厳守: 言語制限】
+            - **全てのテキスト（問題文、答え、解説、読み上げ）は、完全に「日本語」で記述してください。**
+            - 英語、ロシア語、中国語、その他の外国語は一切禁止です。
+            - **"reading" フィールドは必ず「ひらがな」にしてください。**
+
+            【必須要件】
+            1. 小学${grade}年生で習う漢字を使用すること。
+            2. 出力は以下のJSON形式のみとすること。余計な解説は不要。
+            
+            ${mode === 'reading' ? `
+            【読み問題】
+            - 漢字の「読み方」を答えさせます。
+            - 対象の漢字を含む短い例文を作成してください。
+            - **"question_display"**: 対象の漢字を <span style='color:red;'>漢字</span> タグで囲んでください。
+            - **"question_speech"**: 例文を読み上げますが、**対象の漢字の部分だけは絶対に読み方を言わず**、「この赤い漢字」や「この字」と言い換えてください。
+              - 良い例: 「『この赤い漢字』はなんて読むかな？ 山へ行きます。」
+            ` : `
+            【書き取り問題】
+            - ひらがなを「漢字」に直させます。
+            - 対象の漢字を含む短い例文を作成してください。
+            - **"question_display"**: 対象となる部分を**ひらがな**にし、<span style='color:red;'>ひらがな</span> タグで囲んでください。
+              - 例: 「<span style='color:red;'>やま</span>へ行く」
+            - **"question_speech"**: 「（例文）。赤いところの『（ひらがな）』を漢字で書いてみてね」という形式にしてください。
+            `}
+
+            【出力JSONフォーマット】
+            {
+                "type": "${mode}",
+                "kanji": "正解の漢字",
+                "reading": "正解の読み仮名（ひらがな）",
+                "question_display": "画面表示用HTML",
+                "question_speech": "読み上げ用テキスト"
+            }
             `;
-        } else {
-            typeInstruction = "「書き取り（文章の穴埋めで漢字を書く）」問題を作成してください。";
+
+            const result = await model.generateContent(prompt);
+            let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+            const cleanText = extractFirstJson(text); // ★JSON抽出強化
+
+            const json = JSON.parse(cleanText);
+            
+            // 検証
+            if (json.kanji && json.reading && json.question_display) {
+                 res.json(json);
+                 return;
+            }
+        } catch (e) {
+            console.error(`Kanji Gen Error (Attempt ${attempt}):`, e.message);
         }
-
-        const prompt = `
-        小学${grade}年生で習う漢字の問題をランダムに1問作成してください。
-        ${typeInstruction}
-
-        【最重要：読み上げテキスト(question_speech)のルール】
-        - **「読み問題」の場合、出題対象の漢字そのものを絶対に発音してはいけません。**
-        - **必ず「『画面의赤くなっている漢字』の読み方は？」や「『この漢字』の読み方はなにかな？」のように、指示語を使って漢字を指し示し、音読み・訓読みを含め一切の読み方を言わないでください。**
-
-        【出力JSONフォーマット】
-        {
-            "type": "${mode}",
-            "kanji": "正解となる漢字",
-            "reading": "正解となる読み仮名（ひらがな）",
-            "question_display": "画面に表示する問題文（例: 『<span style='color:red;'>山</span>へ行く』 または 『□□(しょうぶ)をする』）",
-            "question_speech": "ネル先生が読み上げる問題文（答えを含まないこと！）"
-        }
-        `;
-
-        const result = await model.generateContent(prompt);
-        const text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        res.json(JSON.parse(text));
-    } catch (e) {
-        console.error("Kanji Gen Error:", e);
-        res.status(500).json({ error: "漢字が見つからないにゃ…" });
     }
+    // リトライ失敗
+    res.status(500).json({ error: "漢字が見つからないにゃ…" });
 });
 
 // --- 漢字採点 API ---
@@ -550,7 +679,8 @@ app.post('/check-kanji', async (req, res) => {
             { inlineData: { mime_type: "image/png", data: image } }
         ]);
         
-        const text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        text = extractFirstJson(text); // ★JSON抽出強化
         res.json(JSON.parse(text));
     } catch (e) {
         console.error("Kanji Check Error:", e);
@@ -694,17 +824,12 @@ app.post('/update-memory', async (req, res) => {
         `;
 
         const result = await model.generateContent(prompt);
-        const responseText = result.response.text();
+        let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        text = extractFirstJson(text); // ★JSON抽出強化
         
         let output;
         try {
-            let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            const firstBrace = cleanText.indexOf('{');
-            const lastBrace = cleanText.lastIndexOf('}');
-            if (firstBrace !== -1 && lastBrace !== -1) {
-                cleanText = cleanText.substring(firstBrace, lastBrace + 1);
-            }
-            output = JSON.parse(cleanText);
+            output = JSON.parse(text);
         } catch (e) {
             console.warn("Memory JSON Parse Error. Using fallback.");
             return res.json({ profile: currentProfile, summary_text: "（更新なし）" });
@@ -783,14 +908,11 @@ app.post('/analyze', async (req, res) => {
         const responseText = result.response.text();
         let problems = [];
         try {
-            const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            const jsonStart = cleanText.indexOf('[');
-            const jsonEnd = cleanText.lastIndexOf(']');
-            if (jsonStart !== -1 && jsonEnd !== -1) {
-                problems = JSON.parse(cleanText.substring(jsonStart, jsonEnd + 1));
-            } else {
-                throw new Error("Valid JSON array not found");
-            }
+            let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+            cleanText = extractFirstJson(cleanText); // ★JSON抽出強化
+            
+            // 配列の場合は別途対応が必要だが、extractFirstJsonは配列も対応済み
+            problems = JSON.parse(cleanText);
         } catch (e) {
             console.error("JSON Parse Error:", responseText);
             throw new Error("AIからの応答を読み取れませんでした。");
@@ -891,14 +1013,9 @@ app.post('/identify-item', async (req, res) => {
 
         let json;
         try {
-            const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            const firstBrace = cleanText.indexOf('{');
-            const lastBrace = cleanText.lastIndexOf('}');
-            if (firstBrace !== -1 && lastBrace !== -1) {
-                json = JSON.parse(cleanText.substring(firstBrace, lastBrace + 1));
-            } else {
-                throw new Error("JSON parse failed");
-            }
+            let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+            cleanText = extractFirstJson(cleanText); // ★JSON抽出強化
+            json = JSON.parse(cleanText);
         } catch (e) {
             console.error("JSON Parse Error in identify-item:", e);
             // フォールバック: エラーでクライアントを落とさない

@@ -1,9 +1,15 @@
-// --- js/ui/ranking.js (v1.0: ランキング機能) ---
+// --- js/ui/ranking.js (v468.3: ランキング単位統一版) ---
 
-window.showRanking = async function() {
+window.showRanking = async function(rankingType = 'karikari', title = '🏆 カリカリランキング') {
     window.switchScreen('screen-ranking');
     const container = document.getElementById('ranking-list-container');
+    const titleEl = document.getElementById('ranking-subtitle');
+    const myScoreEl = document.getElementById('ranking-myscore');
+    
     if (!container) return;
+
+    if (titleEl) titleEl.innerText = title;
+    if (myScoreEl) myScoreEl.innerText = '';
 
     container.innerHTML = '<p style="text-align:center; padding:20px; color:#666;">集計中にゃ...</p>';
 
@@ -13,13 +19,34 @@ window.showRanking = async function() {
     }
 
     try {
-        // カリカリの多い順に上位30名を取得
-        // ※Firestoreで自動的に単一フィールドインデックスが効くはずですが、
-        // エラーが出る場合はコンソールのリンクからインデックスを作成してください。
-        const snapshot = await db.collection("users")
-            .orderBy("karikari", "desc")
-            .limit(30)
-            .get();
+        let snapshot;
+        let query;
+
+        // クエリ分岐
+        if (rankingType === 'karikari') {
+            // 既存のカリカリランキング
+            query = db.collection("users").orderBy("karikari", "desc").limit(30);
+        } else {
+            // ゲーム別ランキング (highscoresコレクションを使用)
+            query = db.collection("highscores")
+                      .where("gameKey", "==", rankingType)
+                      .orderBy("score", "desc")
+                      .limit(3); // 3位まで
+        }
+
+        try {
+            snapshot = await query.get();
+        } catch (e) {
+            console.error("Firestore Query Error:", e);
+            if (e.code === 'permission-denied') {
+                throw new Error("PERMISSION_DENIED");
+            }
+            if (e.code === 'failed-precondition') {
+                container.innerHTML = '<p style="text-align:center; padding:20px;">ランキングの準備中だにゃ...<br><span style="font-size:0.8rem;">(管理者がインデックスを作成中かも)</span></p>';
+                return;
+            }
+            throw e;
+        }
 
         container.innerHTML = ""; // クリア
 
@@ -29,24 +56,63 @@ window.showRanking = async function() {
         }
 
         let rank = 1;
+        let myRankData = null;
+
         snapshot.forEach(doc => {
-            const userData = doc.data();
-            const el = createRankingItem(rank, userData);
+            const data = doc.data();
+            // ゲームランキングの場合、userデータ構造に変換して渡す
+            let userData = data;
+            
+            if (rankingType !== 'karikari') {
+                userData = {
+                    id: data.userId,
+                    name: data.userName,
+                    photo: data.userPhoto,
+                    grade: data.userGrade,
+                    // 表示用スコアとして渡す
+                    displayScore: data.score 
+                };
+                
+                // 自分のデータかチェック
+                if (currentUser && data.userId === currentUser.id) {
+                    myRankData = { rank: rank, score: data.score };
+                }
+            } else {
+                if (currentUser && data.id === currentUser.id) {
+                    myRankData = { rank: rank, score: data.karikari };
+                }
+            }
+
+            const el = createRankingItem(rank, userData, rankingType);
             container.appendChild(el);
             rank++;
         });
 
-        // 自分の順位を表示（簡易的: 上位30位にいればハイライト済み）
-        // ※正確な全ユーザー中の順位を出すには別途Cloud Functions等が必要なため、
-        // ここではリスト表示のみとします。
+        // 自分のランク表示
+        if (rankingType !== 'karikari' && currentUser && !myRankData) {
+            const localScore = localStorage.getItem(`nell_highscore_${rankingType}_${currentUser.id}`);
+            if (localScore) {
+                // ★修正: 単位をカリカリ(🍖)に変更
+                myScoreEl.innerText = `あなたのハイスコア: 🍖 ${localScore}`;
+            } else {
+                myScoreEl.innerText = "まだ記録がないにゃ。";
+            }
+        } else if (myRankData) {
+            // ★修正: 単位をカリカリ(🍖)に統一
+            myScoreEl.innerText = `あなたは ${myRankData.rank}位 (🍖 ${myRankData.score}) だにゃ！`;
+        }
 
     } catch (e) {
         console.error("Ranking fetch error:", e);
-        container.innerHTML = '<p style="text-align:center; color:red;">ランキングが見れないにゃ...<br>(インターネットの調子が悪いかも？)</p>';
+        if (e.message === "PERMISSION_DENIED" || e.code === 'permission-denied') {
+            container.innerHTML = '<p style="text-align:center; color:#d32f2f; padding:20px;">ランキングが見れないにゃ。<br><span style="font-size:0.8rem;">(Firebaseのルール設定が必要です)</span></p>';
+        } else {
+            container.innerHTML = '<p style="text-align:center; color:red;">ランキングが見れないにゃ...<br>(インターネットの調子が悪いかも？)</p>';
+        }
     }
 };
 
-function createRankingItem(rank, user) {
+window.createRankingItem = function(rank, user, rankingType) {
     const div = document.createElement('div');
     div.className = `ranking-item rank-${rank}`;
     if (rank <= 3) div.classList.add('top-rank');
@@ -56,17 +122,29 @@ function createRankingItem(rank, user) {
         div.classList.add('current-user-rank');
     }
 
-    // アイコン（なければデフォルト）
     const iconSrc = user.photo || 'assets/images/characters/nell-normal.png';
     const name = user.name || "ななしの猫";
-    const grade = user.grade ? `${user.grade}年生` : "";
-    const score = user.karikari || 0;
+    const grade = user.grade ? (user.grade.includes('年') ? user.grade : `${user.grade}年生`) : "";
+    
+    // スコアの取得元を分岐
+    let score = 0;
+    if (user.displayScore !== undefined) {
+        score = user.displayScore;
+    } else {
+        score = user.karikari !== undefined ? user.karikari : 0;
+    }
 
     // 順位バッジ
     let rankBadge = `<span class="rank-num">${rank}</span>`;
     if (rank === 1) rankBadge = `<span class="rank-medal">🥇</span>`;
     else if (rank === 2) rankBadge = `<span class="rank-medal">🥈</span>`;
     else if (rank === 3) rankBadge = `<span class="rank-medal">🥉</span>`;
+
+    // 数値フォーマットと単位
+    const formattedScore = score.toLocaleString();
+    
+    // ★修正: 常に「🍖」を表示するように変更（点数表記を廃止）
+    const scoreDisplay = `🍖 ${formattedScore}`;
 
     div.innerHTML = `
         <div class="rank-left">
@@ -78,7 +156,7 @@ function createRankingItem(rank, user) {
             </div>
         </div>
         <div class="rank-right">
-            <span class="rank-score">🍖 ${score}</span>
+            <span class="rank-score">${scoreDisplay}</span>
         </div>
     `;
 
