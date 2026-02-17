@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v468.5: VSロボット掃除機スコア調整版) ---
+// --- js/game-engine.js (v470.7: 漢字音声AI判定 & 完全版) ---
 
 console.log("Game Engine Loading...");
 
@@ -204,7 +204,6 @@ window.drawGame = function() {
             window.gameRunning = false; if(window.safePlay) window.safePlay(window.sfxOver);
             if (window.score > 0) { 
                 window.giveGameReward(window.score); 
-                // カリカリキャッチは「スコア＝カリカリ」なのでそのまま
                 window.saveHighScore('karikari_catch', window.score);
                 if(typeof window.updateNellMessage === 'function') window.updateNellMessage(`あ〜あ、落ちちゃったにゃ…。でも${window.score}個ゲットだにゃ！`, "sad"); 
             } else { 
@@ -231,7 +230,6 @@ window.drawGame = function() {
     if (allCleared) {
         window.gameRunning = false; 
         window.giveGameReward(window.score);
-        // カリカリキャッチは「スコア＝カリカリ」
         window.saveHighScore('karikari_catch', window.score);
         
         if(typeof window.updateNellMessage === 'function') window.updateNellMessage(`全部取ったにゃ！すごいにゃ！！${window.score}個ゲットだにゃ！`, "excited");
@@ -432,26 +430,22 @@ function spawnBullet() {
     danmakuState.bullets.push({ x: danmakuState.boss.x, y: danmakuState.boss.y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, ...bulletObj });
 }
 
-function gameOverDanmaku() {
-    danmakuState.running = false;
-    if (window.safePlay) window.safePlay(window.sfxOver);
-
-    // ★修正: 報酬はゲームスコアそのものにする
+function gameOverDanmaku() { 
+    danmakuState.running = false; 
+    if(window.safePlay) window.safePlay(window.sfxOver);
+    
     const reward = danmakuState.score;
-
-    // ★修正: ランキングには「獲得カリカリ数(reward)」を保存
     window.saveHighScore('vs_robot', reward);
 
-    if (reward > 0) {
-        window.giveGameReward(reward);
-        window.updateNellMessage(`あぶにゃい！ぶつかったにゃ！でも${reward}個ゲットだにゃ！`, "sad");
-    } else {
-        window.updateNellMessage("すぐにぶつかっちゃったにゃ…", "sad");
+    if (reward > 0) { 
+        window.giveGameReward(reward); 
+        window.updateNellMessage(`あぶにゃい！ぶつかったにゃ！でも${reward}個ゲットだにゃ！`, "sad"); 
+    } else { 
+        window.updateNellMessage("すぐにぶつかっちゃったにゃ…", "sad"); 
     }
-
-    const startBtn = document.getElementById('start-danmaku-btn');
-    startBtn.disabled = false;
-    startBtn.innerText = "もう一回！";
+    
+    const startBtn = document.getElementById('start-danmaku-btn'); 
+    startBtn.disabled = false; startBtn.innerText = "もう一回！";
 }
 
 function drawDanmakuFrame() {
@@ -1017,15 +1011,21 @@ window.showRiddleResult = function(isWin) {
 };
 
 // ==========================================
-// 5. ネル先生の漢字ドリル (showKanjiMenu)
+// 5. ネル先生の漢字ドリル
 // ==========================================
-let kanjiState = { data: null, canvas: null, ctx: null, isDrawing: false, mode: 'writing', questionCount: 0, maxQuestions: 5, correctCount: 0 };
+let kanjiState = { 
+    data: null, canvas: null, ctx: null, 
+    isDrawing: false, mode: 'writing', 
+    questionCount: 0, maxQuestions: 5, correctCount: 0,
+    guideVisible: false 
+};
 
 window.showKanjiMenu = function() {
     window.switchScreen('screen-kanji');
-    document.getElementById('kanji-menu-container').classList.remove('hidden');
-    document.getElementById('kanji-game-container').classList.add('hidden');
-    document.getElementById('kanji-menu-container').style.display = 'block';
+    const menu = document.getElementById('kanji-menu-container');
+    if(menu) { menu.classList.remove('hidden'); menu.style.display = 'block'; }
+    const content = document.getElementById('kanji-game-content');
+    if(content) content.classList.add('hidden');
 };
 
 window.startKanjiSet = function(mode) {
@@ -1034,7 +1034,8 @@ window.startKanjiSet = function(mode) {
     kanjiState.questionCount = 0;
     kanjiState.correctCount = 0;
     document.getElementById('kanji-menu-container').style.display = 'none';
-    document.getElementById('kanji-game-container').classList.remove('hidden');
+    const content = document.getElementById('kanji-game-content');
+    if(content) content.classList.remove('hidden');
     const canvas = document.getElementById('kanji-canvas');
     kanjiState.canvas = canvas; kanjiState.ctx = canvas.getContext('2d');
     kanjiState.ctx.lineCap = 'round'; kanjiState.ctx.lineJoin = 'round'; kanjiState.ctx.lineWidth = 12; kanjiState.ctx.strokeStyle = '#000000';
@@ -1061,40 +1062,74 @@ window.nextKanjiQuestion = async function() {
         return;
     }
     kanjiState.questionCount++;
-    document.getElementById('kanji-progress').innerText = `${kanjiState.questionCount}/${kanjiState.maxQuestions} 問目`;
-    document.getElementById('kanji-controls').style.display = 'none';
-    document.getElementById('next-kanji-btn').style.display = 'none';
-    document.getElementById('kanji-answer-display').classList.add('hidden');
     
-    const micBtn = document.getElementById('kanji-mic-btn');
+    kanjiState.guideVisible = false;
+    const hanamaru = document.getElementById('kanji-hanamaru');
+    if(hanamaru) { hanamaru.innerText = ""; hanamaru.style.display = 'none'; }
+
+    document.getElementById('kanji-hint-readings').style.display = 'none';
+    document.getElementById('guide-kanji-btn').innerText = "うすく表示";
+    document.getElementById('kanji-progress').innerText = `${kanjiState.questionCount}/${kanjiState.maxQuestions} 問目`;
+    document.getElementById('kanji-answer-display').classList.add('hidden');
+    document.getElementById('next-kanji-btn').style.display = 'none';
+    
     const micStatus = document.getElementById('kanji-mic-status');
-    if (micBtn) { micBtn.disabled = false; micBtn.innerHTML = '<span style="font-size:2rem;">🎤</span> 声で答える'; micBtn.style.background = "#4db6ac"; }
     if(micStatus) micStatus.innerText = "";
 
     const qText = document.getElementById('kanji-question-text');
     qText.innerText = "問題を探してるにゃ…";
     window.updateNellMessage("問題を探してるにゃ…", "thinking");
+
+    let targetKanji = null;
+    const grade = currentUser ? currentUser.grade : "1";
+    if (window.KANJI_DATA && window.KANJI_DATA[grade]) {
+        const list = window.KANJI_DATA[grade];
+        if (list && list.length > 0) targetKanji = list[Math.floor(Math.random() * list.length)];
+    }
+
     try {
         const res = await fetch('/generate-kanji', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ grade: currentUser ? currentUser.grade : "1", mode: kanjiState.mode })
+            body: JSON.stringify({ grade: grade, mode: kanjiState.mode, targetKanji: targetKanji })
         });
         const data = await res.json();
         if (data && data.kanji) {
             kanjiState.data = data;
-            window.currentMinitest = data; 
             qText.innerHTML = data.question_display;
+            const strokesEl = document.getElementById('kanji-hint-strokes');
+            if(strokesEl) strokesEl.innerText = data.kakusu ? `画数: ${data.kakusu}` : "";
+            const hintDiv = document.getElementById('kanji-hint-readings');
+            if (hintDiv) {
+                let hints = [];
+                if(data.onyomi) hints.push(`音: ${data.onyomi}`);
+                if(data.kunyomi) hints.push(`訓: ${data.kunyomi}`);
+                hintDiv.innerText = hints.join(' / ');
+                hintDiv.style.display = 'none';
+            }
             window.updateNellMessage(data.question_speech, "normal", false, true);
+            
             const cvs = document.getElementById('kanji-canvas');
             const mic = document.getElementById('kanji-mic-container');
-            const checkBtn = document.getElementById('check-kanji-btn');
-            const clearBtn = document.getElementById('clear-kanji-btn');
+            const controls = document.getElementById('kanji-controls');
+            const giveupBtn = document.getElementById('giveup-kanji-btn');
+            
+            // ★UI切り替えロジック
             if (data.type === 'writing') {
-                cvs.classList.remove('hidden'); mic.classList.add('hidden'); checkBtn.style.display = 'inline-block'; clearBtn.style.display = 'inline-block'; window.clearKanjiCanvas();
+                cvs.classList.remove('hidden'); 
+                mic.classList.add('hidden'); 
+                controls.style.display = 'flex'; // 書き取り用ボタン表示
+                giveupBtn.style.display = 'inline-block';
+                window.clearKanjiCanvas();
             } else {
-                cvs.classList.add('hidden'); mic.classList.remove('hidden'); checkBtn.style.display = 'none'; clearBtn.style.display = 'none';
+                cvs.classList.add('hidden'); 
+                mic.classList.remove('hidden'); // マイクボタン表示
+                controls.style.display = 'none'; // 書き取り用ボタン非表示
+                giveupBtn.style.display = 'inline-block';
+                
+                // マイクボタン初期化
+                const micBtn = document.getElementById('kanji-mic-btn');
+                if (micBtn) { micBtn.disabled = false; micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で答える'; micBtn.style.background = "#4db6ac"; }
             }
-            document.getElementById('kanji-controls').style.display = 'flex';
         } else { throw new Error("Invalid Kanji Data"); }
     } catch (e) { console.error(e); qText.innerText = "問題が出せないにゃ…"; window.updateNellMessage("ごめん、問題が出せないにゃ…", "sad"); }
 };
@@ -1102,7 +1137,7 @@ window.nextKanjiQuestion = async function() {
 window.startKanjiVoiceInput = function() {
     const micBtn = document.getElementById('kanji-mic-btn');
     const status = document.getElementById('kanji-mic-status');
-    if (micBtn) { micBtn.disabled = true; micBtn.innerHTML = '<span style="font-size:2rem;">👂</span> 聞いてるにゃ...'; micBtn.style.background = "#ff5252"; }
+    if (micBtn) { micBtn.disabled = true; micBtn.innerHTML = '<span style="font-size:1.5rem;">👂</span> 聞いてるにゃ...'; micBtn.style.background = "#ff5252"; }
     if (status) status.innerText = "お話してにゃ！";
     if(typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
     if (typeof window.startOneShotRecognition === 'function') {
@@ -1113,23 +1148,109 @@ window.startKanjiVoiceInput = function() {
 window.stopKanjiVoiceInput = function(keepStatus = false) {
     const micBtn = document.getElementById('kanji-mic-btn');
     const status = document.getElementById('kanji-mic-status');
-    if (micBtn) { micBtn.disabled = false; micBtn.innerHTML = '<span style="font-size:2rem;">🎤</span> 声で答える'; micBtn.style.background = "#4db6ac"; }
+    if (micBtn) { micBtn.disabled = false; micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で答える'; micBtn.style.background = "#4db6ac"; }
     if (status && !keepStatus) status.innerText = "";
 };
 
-window.checkKanjiVoiceAnswer = function(transcript) {
+window.checkKanjiVoiceAnswer = async function(transcript) {
     const status = document.getElementById('kanji-mic-status');
     if(status) status.innerText = `「${transcript}」？`;
-    window.checkKanjiReading(transcript);
+    
+    // 1. クライアントサイドでの簡易判定
+    if (window.checkKanjiReadingLocal(transcript)) return;
+
+    // 2. 失敗したらサーバーのAIに判定を依頼
+    if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ん？合ってるかにゃ…？", "thinking");
+    
+    try {
+        const res = await fetch('/check-kanji', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                userText: transcript, 
+                targetKanji: kanjiState.data.kanji,
+                targetReading: kanjiState.data.reading 
+            })
+        });
+        const data = await res.json();
+        
+        if (data.is_correct) {
+            window.processKanjiSuccess(data.comment || "正解だにゃ！");
+        } else {
+            window.updateNellMessage(data.comment || "違うにゃ〜。もう一回！", "gentle");
+        }
+    } catch(e) {
+        console.error("AI Check Error:", e);
+        window.updateNellMessage("ごめん、よく聞こえなかったにゃ。", "sad");
+    }
 };
 
-window.clearKanjiCanvas = function() {
+window.checkKanjiReadingLocal = function(text) {
+    if (!kanjiState.data || kanjiState.data.type !== 'reading') return false;
+    const correctHiragana = kanjiState.data.reading;
+    const correctKanji = kanjiState.data.kanji;
+    const correctKatakana = correctHiragana.replace(/[\u3041-\u3096]/g, ch => String.fromCharCode(ch.charCodeAt(0) + 0x60));
+    const user = text.trim();
+    
+    if (fuzzyContains(user, correctHiragana) || fuzzyContains(user, correctKanji) || fuzzyContains(user, correctKatakana)) {
+        window.processKanjiSuccess(`正解だにゃ！「${correctHiragana}」だにゃ！`);
+        return true;
+    }
+    return false;
+};
+
+window.processKanjiSuccess = function(comment) {
+    if(window.safePlay) window.safePlay(window.sfxMaru);
+    window.updateNellMessage(comment, "excited", false, true);
+    kanjiState.correctCount++;
+    
+    // UI更新: 完了状態へ
+    document.getElementById('kanji-controls').style.display = 'none';
+    document.getElementById('kanji-mic-container').classList.add('hidden');
+    document.getElementById('giveup-kanji-btn').style.display = 'none';
+    document.getElementById('next-kanji-btn').style.display = 'inline-block';
+    
+    const ansDisplay = document.getElementById('kanji-answer-display');
+    ansDisplay.classList.remove('hidden');
+    document.getElementById('kanji-answer-text').innerText = kanjiState.data.kanji;
+    const detailText = document.getElementById('kanji-answer-detail');
+    if(detailText) detailText.innerHTML = `音読み: ${kanjiState.data.onyomi || "-"} / 訓読み: ${kanjiState.data.kunyomi || "-"} / 画数: ${kanjiState.data.kakusu || "-"}画`;
+    
+    // 花丸表示
+    const hanamaru = document.getElementById('kanji-hanamaru');
+    if (hanamaru) { hanamaru.innerText = "○"; hanamaru.style.display = 'flex'; }
+};
+
+window.clearKanjiCanvas = function(forceClear = false) {
     if (!kanjiState.ctx) return;
-    kanjiState.ctx.clearRect(0, 0, kanjiState.canvas.width, kanjiState.canvas.height);
-    kanjiState.ctx.save();
-    kanjiState.ctx.strokeStyle = '#eee'; kanjiState.ctx.lineWidth = 2; kanjiState.ctx.setLineDash([5, 5]);
-    kanjiState.ctx.beginPath(); kanjiState.ctx.moveTo(150, 0); kanjiState.ctx.lineTo(150, 300); kanjiState.ctx.moveTo(0, 150); kanjiState.ctx.lineTo(300, 150); kanjiState.ctx.stroke();
-    kanjiState.ctx.restore();
+    kanjiState.ctx.clearRect(0, 0, 300, 300);
+    if (!forceClear && kanjiState.guideVisible && kanjiState.data) {
+        kanjiState.ctx.save();
+        kanjiState.ctx.font = "240px 'Klee One', 'Zen Kurenaido', sans-serif";
+        kanjiState.ctx.textAlign = "center"; kanjiState.ctx.textBaseline = "middle"; kanjiState.ctx.fillStyle = "rgba(200, 200, 200, 0.5)";
+        kanjiState.ctx.fillText(kanjiState.data.kanji, 150, 160);
+        kanjiState.ctx.restore();
+    }
+};
+
+window.toggleKanjiGuide = function() {
+    if (!kanjiState.ctx || !kanjiState.data) return;
+    kanjiState.guideVisible = !kanjiState.guideVisible;
+    const btn = document.getElementById('guide-kanji-btn');
+    if(btn) btn.innerText = kanjiState.guideVisible ? "お手本を消す" : "お手本を表示";
+    const currentImage = kanjiState.ctx.getImageData(0, 0, kanjiState.canvas.width, kanjiState.canvas.height);
+    window.clearKanjiCanvas(true); 
+    if (kanjiState.guideVisible) {
+        kanjiState.ctx.save();
+        kanjiState.ctx.font = "240px 'Klee One', 'Zen Kurenaido', sans-serif";
+        kanjiState.ctx.textAlign = "center"; kanjiState.ctx.textBaseline = "middle"; kanjiState.ctx.fillStyle = "rgba(200, 200, 200, 0.5)";
+        kanjiState.ctx.fillText(kanjiState.data.kanji, 150, 160);
+        kanjiState.ctx.restore();
+    }
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = 300; tempCanvas.height = 300;
+    tempCanvas.getContext('2d').putImageData(currentImage, 0, 0);
+    kanjiState.ctx.drawImage(tempCanvas, 0, 0);
 };
 
 window.checkKanji = async function() {
@@ -1148,47 +1269,13 @@ window.checkKanji = async function() {
             body: JSON.stringify({ image: base64, targetKanji: kanjiState.data.kanji })
         });
         const data = await res.json();
-        window.updateNellMessage(data.comment, data.is_correct ? "happy" : "gentle", false, true);
         if (data.is_correct) {
-            if(window.safePlay) window.safePlay(window.sfxMaru);
-            kanjiState.correctCount++;
-            document.getElementById('kanji-controls').style.display = 'none';
-            document.getElementById('next-kanji-btn').style.display = 'inline-block';
-            document.getElementById('kanji-answer-display').classList.remove('hidden');
-            document.getElementById('kanji-answer-text').innerText = kanjiState.data.kanji;
-            window.currentMinitest = null; 
+            window.processKanjiSuccess(data.comment || "正解だにゃ！");
         } else {
+            window.updateNellMessage(data.comment, "gentle", false, true);
             if(window.safePlay) window.safePlay(window.sfxBatu);
         }
     } catch(e) { window.updateNellMessage("よくわからなかったにゃ…", "thinking"); }
-};
-
-window.checkKanjiReading = function(text) {
-    if (!kanjiState.data || kanjiState.data.type !== 'reading') return false;
-    if (!document.getElementById('kanji-answer-display').classList.contains('hidden')) return false;
-
-    const correctHiragana = kanjiState.data.reading;
-    const correctKanji = kanjiState.data.kanji;
-    const correctKatakana = correctHiragana.replace(/[\u3041-\u3096]/g, ch => String.fromCharCode(ch.charCodeAt(0) + 0x60));
-    const user = text.trim();
-    
-    let isCorrect = false;
-    if (fuzzyContains(user, correctHiragana) || fuzzyContains(user, correctKanji) || fuzzyContains(user, correctKatakana)) isCorrect = true;
-
-    if (isCorrect) {
-        if(window.safePlay) window.safePlay(window.sfxMaru);
-        window.updateNellMessage(`正解だにゃ！「${correctHiragana}」だにゃ！`, "excited", false, true);
-        kanjiState.correctCount++;
-        document.getElementById('kanji-controls').style.display = 'none';
-        document.getElementById('next-kanji-btn').style.display = 'inline-block';
-        document.getElementById('kanji-answer-display').classList.remove('hidden');
-        document.getElementById('kanji-answer-text').innerText = correctHiragana;
-        window.currentMinitest = null; 
-        return true;
-    } else {
-        window.updateNellMessage("違うにゃ〜。もう一回言ってにゃ！", "gentle");
-        return false;
-    }
 };
 
 window.giveUpKanji = function() {
@@ -1196,11 +1283,18 @@ window.giveUpKanji = function() {
     let ans = kanjiState.data.type === 'writing' ? kanjiState.data.kanji : kanjiState.data.reading;
     window.updateNellMessage(`正解は「${ans}」だにゃ。次は頑張るにゃ！`, "gentle", false, true);
     if(window.safePlay) window.safePlay(window.sfxBatu);
+    
     document.getElementById('kanji-controls').style.display = 'none';
+    document.getElementById('kanji-mic-container').classList.add('hidden');
+    document.getElementById('giveup-kanji-btn').style.display = 'none';
     document.getElementById('next-kanji-btn').style.display = 'inline-block';
+    
     document.getElementById('kanji-answer-display').classList.remove('hidden');
     document.getElementById('kanji-answer-text').innerText = ans;
-    window.currentMinitest = null; 
+    const detailText = document.getElementById('kanji-answer-detail');
+    if(detailText && kanjiState.data) {
+        detailText.innerHTML = `音読み: ${kanjiState.data.onyomi || "-"}<br>訓読み: ${kanjiState.data.kunyomi || "-"}<br>画数: ${kanjiState.data.kakusu || "-"}画`;
+    }
 };
 
 window.sendHttpTextInternal = function(text) {

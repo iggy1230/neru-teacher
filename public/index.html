@@ -1,32 +1,25 @@
-<!-- index.html (完全版 v468.1: キャッシュ対策強化版) -->
+<!-- index.html (完全版 v470.7: 漢字ドリルUI改善版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>🐾猫後市立ねこづか小学校</title>
-    <!-- CSSにもバージョン付与 -->
-    <link rel="stylesheet" href="style.css?v=468.1">
-    <link href="https://fonts.googleapis.com/css2?family=Sawarabi+Gothic&family=M+PLUS+Rounded+1c:wght@700;900&family=Kiwi+Maru:wght@900&display=swap" rel="stylesheet">
-    
-    <!-- Leaflet (Map Library) -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-
-    <!-- Face API & Cropper & EXIF-JS -->
+    <link rel="stylesheet" href="style.css?v=470.5">
+    <link href="https://fonts.googleapis.com/css2?family=Sawarabi+Gothic&family=M+PLUS+Rounded+1c:wght@700;900&family=Kiwi+Maru:wght@900&family=Klee+One:wght@400;600&family=Zen+Kurenaido&display=swap" rel="stylesheet">
+    <!-- ライブラリ群 -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/exif-js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css" rel="stylesheet">
-
-    <!-- Firebase SDK (Compat版) -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
 </head>
 <body>
-    <canvas id="hanamaru-canvas"></canvas>
     <canvas id="deco-canvas" style="display:none;"></canvas>
     <div id="mini-karikari-display" class="mini-karikari-display hidden"><span>🍖</span><span id="mini-karikari-count">0</span></div>
     <div id="mini-timer-display" class="mini-timer-display hidden" onclick="openTimerModal()"><span>⏱️</span> <span id="mini-timer-text">00:00</span></div>
@@ -37,11 +30,11 @@
     </div>
 
     <div id="app-container">
-        <!-- 0. タイトル画面 -->
+        <!-- 0. タイトル -->
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v468.1-RankingFix</div>
+            <div class="version-tag">Build: v470.7</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -85,17 +78,14 @@
                 <button onclick="switchScreen('screen-playground')" class="main-btn yellow-btn" style="background-color:#fbc02d !important; box-shadow: 0 4px 0 #f57f17 !important;">🏀 体育館</button>
                 <button onclick="switchScreen('screen-lunchroom')" class="main-btn orange-btn">🍽️ 給食室</button>
                 <button onclick="switchScreen('screen-staffroom')" class="main-btn purple-btn">👩‍🏫 職員室</button>
-                
-                <!-- 掲示板ボタン -->
                 <button onclick="showRanking('karikari', '🏆 カリカリランキング')" class="main-btn" style="background-color:#8d6e63 !important; box-shadow: 0 4px 0 #5d4037 !important;">📋 廊下の掲示板</button>
-
                 <button onclick="selectMode('chat')" class="main-btn" style="background-color:#5c6bc0 !important; box-shadow: 0 4px 0 #3949ab !important;">💎 ネル先生のお宝図鑑</button>
                 <button onclick="showMap()" class="main-btn" style="background-color:#29b6f6 !important; box-shadow: 0 4px 0 #0288d1 !important;">🗺️ 足あとマップ</button>
                 <button onclick="backToTitle()" class="main-btn gray-btn">👋 帰宅する</button>
             </div>
         </section>
 
-        <!-- 3-1. 教室サブメニュー -->
+        <!-- 3-1. 教室 -->
         <section id="screen-classroom" class="screen hidden">
             <h2 class="section-title">🏫 教室</h2>
             <div class="lobby-menu" style="margin-top: 20px;">
@@ -109,89 +99,32 @@
             </div>
         </section>
         
-        <!-- 掲示板画面 -->
+        <!-- 掲示板 -->
         <section id="screen-ranking" class="screen hidden" style="padding-top:60px;">
              <h2 id="ranking-title" class="section-title" style="color:#d84315; text-shadow: 2px 2px 0 #fff;">📋 廊下の掲示板</h2>
              <div class="glass-card" style="min-height: 60vh; padding: 10px; background: #fff8e1; border: 4px solid #8d6e63; display: flex; flex-direction: column;">
                  <h3 id="ranking-subtitle" style="text-align:center; margin:10px 0; color:#5d4037;">🏆 ランキング</h3>
-                 <div id="ranking-list-container" style="flex: 1; overflow-y: auto;">
-                     <!-- JSでリスト挿入 -->
-                 </div>
+                 <div id="ranking-list-container" style="flex: 1; overflow-y: auto;"></div>
                  <div id="ranking-myscore" style="text-align:center; padding-top:10px; border-top:1px solid #ddd; font-weight:bold; color:#5d4037;"></div>
              </div>
              <button onclick="closeRanking()" class="main-btn gray-btn" style="margin-top:20px;">もどる</button>
         </section>
 
-        <!-- 11. ミニテスト画面 -->
-        <section id="screen-minitest" class="screen hidden">
-            <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-minitest"></div><div class="chat-bubble"><p id="nell-text-minitest">ミニテストを始めるにゃ！</p></div></div>
-            <h2 class="section-title" style="margin-top:10px; color:#ff9800;">📝 ミニテスト</h2>
-            
-            <div id="minitest-subject-select" class="glass-card" style="text-align:center; padding:20px;">
-                <p style="font-weight:bold; margin-bottom:15px;">教科を選んでにゃ！</p>
-                <button onclick="startMinitest('こくご')" class="main-btn pink-btn">こくご</button>
-                <button onclick="startMinitest('さんすう')" class="main-btn blue-btn">さんすう</button>
-                <button onclick="startMinitest('りか')" class="main-btn green-btn">りか・せいかつ</button>
-                <button onclick="startMinitest('しゃかい')" class="main-btn orange-btn">しゃかい</button>
-            </div>
-
-            <div id="minitest-game-area" class="glass-card hidden" style="padding:15px;">
-                <p id="minitest-progress" style="text-align:right; font-size:0.9rem; color:#888;">1/5問目</p>
-                <p id="minitest-question" style="font-size:1.2rem; font-weight:bold; margin:10px 0; min-height:60px;">読み込み中...</p>
-                <div id="minitest-options"></div>
-                
-                <!-- 音声回答ボタン -->
-                <div id="minitest-mic-area" style="margin-top:15px; text-align:center;">
-                    <button id="minitest-mic-btn" class="main-btn" style="background:#4db6ac !important; width:auto; padding:10px 20px; display:inline-flex; align-items:center; gap:8px; border-radius:30px;" onclick="window.startMinitestVoiceInput()">
-                        <span style="font-size:1.5rem;">🎤</span> 声で答える
-                    </button>
-                    <div id="minitest-mic-status" style="margin-top:5px; font-weight:bold; color:#e91e63; min-height:1.5em;"></div>
-                </div>
-
-                <div id="minitest-explanation-area" class="hidden" style="margin-top:15px; background:#fff3e0; padding:10px; border-radius:10px; border:2px solid #ffb74d;">
-                    <p style="font-weight:bold; color:#e65100;">💡 解説</p>
-                    <p id="minitest-explanation-text" style="font-size:0.95rem;">ここに解説が入ります</p>
-                    <button onclick="nextMinitestQuestion()" class="main-btn" style="margin-top:10px; background:#ff9800 !important;">次の問題へ</button>
-                </div>
-            </div>
-
-            <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
-        </section>
-
-        <!-- 3-2. 給食室サブメニュー -->
-        <section id="screen-lunchroom" class="screen hidden">
-            <h2 class="section-title">🍽️ 給食室</h2>
-            <div class="lobby-menu" style="margin-top: 20px;">
-                <button onclick="selectMode('lunch')" class="main-btn pink-btn">🍽️ おいしい給食</button>
-                <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
-            </div>
-        </section>
-
-        <!-- 3-3. 職員室サブメニュー -->
-        <section id="screen-staffroom" class="screen hidden">
-            <h2 class="section-title">👩‍🏫 職員室</h2>
-            <div class="lobby-menu" style="margin-top: 20px;">
-                <button onclick="openMemoryManager()" class="main-btn gray-btn" style="background:#607d8b !important; border:none; box-shadow:0 4px 0 #455a64 !important;">📝 プロフィール</button>
-                <button onclick="showAttendance()" class="main-btn purple-btn">📅 出席簿をみる</button>
-                <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
-            </div>
-        </section>
-
-        <!-- 3-4. 体育館サブメニュー -->
+        <!-- 体育館 -->
         <section id="screen-playground" class="screen hidden">
             <h2 class="section-title" style="color:#fbc02d; text-shadow: 2px 2px 0 #fff;">🏀 体育館</h2>
             <div class="lobby-menu" style="margin-top: 20px;">
-                <button onclick="showDanmakuGame()" class="main-btn red-btn" style="background:#d32f2f !important; box-shadow:0 4px 0 #b71c1c !important;">🤖 VS ロボット掃除機</button>
-                <button onclick="showGame()" class="main-btn yellow-btn">🍖 カリカリ・キャッチ</button>
-                <button onclick="showMemoryGame()" class="main-btn green-btn" style="background:#4caf50 !important; box-shadow:0 4px 0 #2e7d32 !important;">🃏 お宝神経衰弱</button>
-                <button onclick="showQuizGame()" class="main-btn blue-btn" style="background:#42a5f5 !important; box-shadow:0 4px 0 #1e88e5 !important;">🎤 ネル先生ウルトラクイズ</button>
-                <button onclick="showRiddleGame()" class="main-btn pink-btn" style="background:#e91e63 !important; box-shadow:0 4px 0 #ad1457 !important;">❓ ネル先生のなぞなぞ</button>
-                <button onclick="showKanjiMenu()" class="main-btn purple-btn" style="background:#ab47bc !important; box-shadow:0 4px 0 #7b1fa2 !important;">✍️ ネル先生の漢字ドリル</button>
+                <button onclick="window.showDanmakuGame()" class="main-btn red-btn" style="background:#d32f2f !important; box-shadow:0 4px 0 #b71c1c !important;">🤖 VS ロボット掃除機</button>
+                <button onclick="window.showGame()" class="main-btn yellow-btn">🍖 カリカリ・キャッチ</button>
+                <button onclick="window.showMemoryGame()" class="main-btn green-btn" style="background:#4caf50 !important; box-shadow:0 4px 0 #2e7d32 !important;">🃏 お宝神経衰弱</button>
+                <button onclick="window.showQuizGame()" class="main-btn blue-btn" style="background:#42a5f5 !important; box-shadow:0 4px 0 #1e88e5 !important;">🎤 ネル先生ウルトラクイズ</button>
+                <button onclick="window.showRiddleGame()" class="main-btn pink-btn" style="background:#e91e63 !important; box-shadow:0 4px 0 #ad1457 !important;">❓ ネル先生のなぞなぞ</button>
+                <button onclick="window.showKanjiMenu()" class="main-btn purple-btn" style="background:#ab47bc !important; box-shadow:0 4px 0 #7b1fa2 !important;">✍️ ネル先生の漢字ドリル</button>
                 <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
             </div>
         </section>
 
-        <!-- 4. メイン画面 -->
+        <!-- メイン画面 -->
         <section id="screen-main" class="screen hidden">
             <header><button id="main-back-btn" onclick="backToLobby()" class="main-btn gray-btn" style="width:auto; padding:10px 20px;">←</button></header>
             <div class="operation-layout">
@@ -204,10 +137,8 @@
                     <div id="problem-selection-view" class="hidden"><div class="problem-selection-card"><div class="problem-scroll-area" id="transcribed-problem-list"></div><div style="text-align:center; margin-top:20px;"><button onclick="pressAllSolved(this)" class="main-btn orange-btn">✨ ぜんぶわかったにゃ！</button></div></div></div>
                     <div id="final-view" class="hidden"><div id="grade-sheet-container" class="hidden"><div class="glass-card" id="problem-list-grade" style="background:white; border-radius:15px; padding:10px;"></div></div><div id="hint-detail-container" class="hidden"><div class="hint-btns"><div class="hint-step-badge" id="hint-step-label">考え方</div><button onclick="showNextHint()" id="next-hint-btn" class="main-btn blue-btn">次のヒント！</button><button onclick="revealAnswer()" id="reveal-answer-btn" class="main-btn orange-btn hidden">答えを見る🐾</button><div id="answer-display-area" class="answer-box hidden">ネル先生の答え：<br><span id="final-answer-text"></span></div></div><button onclick="pressThanks()" class="main-btn pink-btn">✨ ありがとう！</button><button onclick="backToProblemSelection()" class="main-btn gray-btn" style="margin-top: 10px;">他の問題を見る</button></div></div>
                     
-                    <!-- 教えてネル先生エリア -->
                     <div id="embedded-chat-section" class="embedded-chat-box hidden"><h4 style="text-align:center; margin:0 0 10px 0; color:#558b2f;">👩‍🏫 ネル先生に質問する</h4><div style="text-align:center;"><p style="font-size:0.8rem; color:#666; margin-bottom:10px;">（ネル先生はいつでも聞いてるにゃ）</p><div class="text-question-area"><textarea id="embedded-text-input" class="text-question-input" placeholder="ここに書いて質問"></textarea><button onclick="sendEmbeddedText()" class="text-question-btn">送信</button></div>
                     
-                    <!-- 音声質問ボタン -->
                     <div id="embedded-mic-area" style="margin-top:10px; text-align:center;">
                          <button id="embedded-mic-btn" class="main-btn" style="background:#4db6ac !important; width:auto; padding:10px 20px; display:inline-flex; align-items:center; gap:8px; border-radius:30px;" onclick="window.startEmbeddedVoiceInput()">
                             <span style="font-size:1.5rem;">🎤</span> 声で質問
@@ -223,10 +154,8 @@
 
                     <div id="live-chat-video-container-embedded" class="live-chat-video-wrapper" style="margin-top:10px;"><video id="live-chat-video-embedded" class="live-chat-video-elem" autoplay playsinline muted></video></div><p id="user-speech-text-embedded" style="margin-top:10px; font-weight:bold; min-height:1.2em; font-size:0.9rem; color:#333;">...</p><div id="embedded-chalkboard" class="embedded-chalkboard hidden"></div></div></div>
                     
-                    <!-- 個別指導エリア -->
                     <div id="simple-chat-view" class="hidden"><div class="glass-card" style="text-align:center; padding:15px;"><h4 style="text-align:center; margin:0 0 10px 0; color:#558b2f;">👩‍🏫 ネル先生の個別指導</h4><p style="font-size:0.8rem; color:#666; margin-bottom:10px;">（ネル先生はいつでも聞いてるにゃ）</p><div class="text-question-area"><textarea id="simple-text-input" class="text-question-input" placeholder="ここに入力"></textarea><button onclick="sendSimpleText()" class="text-question-btn">送信</button></div>
                     
-                    <!-- ★新規: 音声質問ボタン (個別指導用) -->
                     <div id="simple-mic-area" style="margin-top:10px; text-align:center;">
                          <button id="simple-mic-btn" class="main-btn" style="background:#4db6ac !important; width:auto; padding:10px 20px; display:inline-flex; align-items:center; gap:8px; border-radius:30px;" onclick="window.startSimpleVoiceInput()">
                             <span style="font-size:1.5rem;">🎤</span> 声で質問
@@ -251,7 +180,6 @@
 
                     <div id="live-chat-video-container" class="live-chat-video-wrapper" style="margin-top:15px;"><video id="live-chat-video" class="live-chat-video-elem" autoplay playsinline muted></video></div></div></div>
                     
-                    <!-- 放課後おしゃべりタイム -->
                     <div id="chat-free-view" class="hidden">
                         <div class="glass-card" style="text-align:center; padding:20px;">
                             <h4 style="text-align:center; margin:0 0 10px 0; color:#00897b;">💬 放課後おしゃべりタイム</h4>
@@ -280,7 +208,6 @@
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-game"></div><div class="chat-bubble"><p id="nell-text-game">カリカリキャッチで遊ぶにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px;">🍖 カリカリ・キャッチ</h2>
             <div class="game-container"><canvas id="game-canvas" width="320" height="400"></canvas><div class="game-ui"><p>スコア: <span id="game-score">0</span></p><button id="start-game-btn" class="main-btn pink-btn" style="width: auto;">スタート！</button></div>
-            <!-- ★修正: showRanking を直接呼び出す -->
             <button onclick="window.showRanking('karikari_catch', '🏆 カリカリキャッチ ランキング')" class="main-btn orange-btn" style="width:auto; margin-top:10px;">🏆 ランキングを見る</button>
             </div>
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
@@ -296,14 +223,13 @@
                     <p>スコア: <span id="danmaku-score">0</span></p>
                     <button id="start-danmaku-btn" onclick="startDanmakuGame()" class="main-btn red-btn" style="width: auto;">スタート！</button>
                 </div>
-                <!-- ★修正: showRanking を直接呼び出す -->
                 <button onclick="window.showRanking('vs_robot', '🏆 VS掃除機 ランキング')" class="main-btn orange-btn" style="width:auto; margin-top:10px;">🏆 ランキングを見る</button>
             </div>
             <p style="font-size:0.8rem; color:white; text-align:center; margin-top:5px;">※茶色のカリカリだけ取ってね！他はダメ！<br>画面をドラッグして移動</p>
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
 
-        <!-- ★新規: お宝神経衰弱 (ボタン修正版) -->
+        <!-- ★新規: お宝神経衰弱 -->
         <section id="screen-memory-game" class="screen hidden">
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <div class="nell-chat" style="flex:1;"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-memory"></div><div class="chat-bubble"><p id="nell-text-memory">神経衰弱で勝負にゃ！</p></div></div>
@@ -317,7 +243,6 @@
                 <button onclick="startMemoryGame('normal')" class="main-btn orange-btn">中 (x20倍)</button>
                 <button onclick="startMemoryGame('strong')" class="main-btn red-btn">強 (x50倍)</button>
                 
-                <!-- ★修正: showRanking を直接呼び出す -->
                 <button onclick="window.showRanking('memory_match', '🏆 神経衰弱 ランキング')" class="main-btn blue-btn" style="margin-top:20px;">🏆 ランキングを見る</button>
             </div>
 
@@ -335,7 +260,7 @@
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
 
-        <!-- 9. クイズ画面 (音声ボタン対応版) -->
+        <!-- 9. クイズ画面 -->
         <section id="screen-quiz" class="screen hidden">
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-quiz"></div><div class="chat-bubble"><p id="nell-text-quiz">ウルトラクイズに挑戦だにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px; color:#42a5f5;">🎤 ウルトラクイズ</h2>
@@ -412,7 +337,7 @@
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
 
-        <!-- ★新規: なぞなぞ画面 (★修正: 音声ボタン追加) -->
+        <!-- ★新規: なぞなぞ画面 -->
         <section id="screen-riddle" class="screen hidden">
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-riddle"></div><div class="chat-bubble"><p id="nell-text-riddle">なぞなぞを出すにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px; color:#e91e63;">❓ なぞなぞ</h2>
@@ -445,11 +370,12 @@
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
 
-        <!-- 10. 漢字ドリル画面 (★修正: 音声ボタンエリア変更) -->
+        <!-- 10. 漢字ドリル画面 (UI大幅修正) -->
         <section id="screen-kanji" class="screen hidden">
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-kanji"></div><div class="chat-bubble"><p id="nell-text-kanji">漢字の練習だにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px; color:#ab47bc;">✍️ 漢字ドリル</h2>
-            <div class="glass-card" style="text-align:center; padding:15px;">
+            
+            <div class="glass-card" id="kanji-game-container" style="text-align:center; padding:15px; position: relative;">
                 <!-- モード選択メニュー -->
                 <div id="kanji-menu-container">
                     <p style="font-weight:bold; margin-bottom:15px;">どの練習をする？</p>
@@ -458,30 +384,48 @@
                 </div>
 
                 <!-- ゲームエリア -->
-                <div id="kanji-game-container" class="hidden">
-                    <p id="kanji-progress" style="font-size:0.9rem; color:#888; text-align:right;">1/5問目</p>
-                    <p id="kanji-question-text" style="font-size:1.5rem; font-weight:900; color:#4a148c; margin-bottom:10px;">読み込み中...</p>
+                <div id="kanji-game-content" class="hidden">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:5px; color:#666; font-size:0.9rem;">
+                        <span id="kanji-hint-strokes"></span>
+                        <span id="kanji-progress">1/5問目</span>
+                    </div>
+
+                    <p id="kanji-question-text" style="font-size:1.6rem; font-weight:600; color:#333; margin:10px 0; font-family: 'Klee One', cursive; line-height: 1.5;">読み込み中...</p>
                     
-                    <canvas id="kanji-canvas" width="300" height="300" class="hidden"></canvas>
-                    
-                    <!-- 音声回答ボタン (読み問題用) -->
-                    <div id="kanji-mic-container" class="hidden" style="height:150px; display:flex; flex-direction:column; align-items:center; justify-content:center;">
-                         <button id="kanji-mic-btn" class="main-btn" style="background:#4db6ac; width:auto; padding:15px 30px; display:inline-flex; align-items:center; gap:8px; border-radius:40px; font-size:1.2rem;" onclick="window.startKanjiVoiceInput()">
-                            <span style="font-size:2rem;">🎤</span> 声で答える
+                    <div id="kanji-hint-readings" style="background:#f0f4c3; padding:5px 10px; border-radius:5px; font-size:0.85rem; color:#558b2f; margin-bottom:10px; display:none;"></div>
+
+                    <!-- 読み問題用の音声ボタン (上に移動) -->
+                    <div id="kanji-mic-container" class="hidden" style="height:auto; min-height:80px; display:flex; flex-direction:column; align-items:center; justify-content:center; margin-bottom:10px;">
+                         <button id="kanji-mic-btn" class="main-btn" style="background:#4db6ac; width:auto; padding:10px 30px; display:inline-flex; align-items:center; gap:8px; border-radius:40px; font-size:1.2rem;" onclick="window.startKanjiVoiceInput()">
+                            <span style="font-size:1.5rem;">🎤</span> 声で答える
                          </button>
-                         <div id="kanji-mic-status" style="margin-top:10px; font-weight:bold; color:#e91e63; min-height:1.5em;"></div>
+                         <div id="kanji-mic-status" style="margin-top:5px; font-weight:bold; color:#e91e63; min-height:1.2em;"></div>
                     </div>
 
-                    <div id="kanji-controls" style="display:none; gap:10px; margin-top:10px; flex-wrap:wrap;">
-                        <button id="clear-kanji-btn" onclick="clearKanjiCanvas()" class="main-btn gray-btn" style="flex:1;">消す</button>
-                        <button id="check-kanji-btn" onclick="checkKanji()" class="main-btn purple-btn" style="flex:1;">採点！</button>
-                        <button id="giveup-kanji-btn" onclick="giveUpKanji()" class="main-btn gray-btn" style="flex:1;">🏳️ ギブアップ</button>
+                    <!-- キャンバスエリア -->
+                    <div id="kanji-canvas-area" style="position: relative; width: 300px; height: 300px; margin: 0 auto;">
+                        <canvas id="kanji-canvas" width="300" height="300" class="hidden"></canvas>
+                        <div id="kanji-hanamaru" style="position: absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; display:none; z-index: 10; display:flex; align-items:center; justify-content:center;"></div>
                     </div>
                     
-                    <button id="next-kanji-btn" onclick="nextKanjiQuestion()" class="main-btn" style="background:#ec407a; margin-top:10px; display:none;">次の問題</button>
+                    <!-- 書き取り用コントロールボタン (読み問題では非表示) -->
+                    <div id="kanji-controls" style="display:none; gap:10px; margin-top:15px; flex-wrap:wrap; justify-content:center;">
+                        <button id="guide-kanji-btn" onclick="toggleKanjiGuide()" class="main-btn" style="background:#81c784; flex:1; min-width: 80px; font-size: 0.9rem;">うすく表示</button>
+                        <button id="clear-kanji-btn" onclick="clearKanjiCanvas()" class="main-btn gray-btn" style="background:#b0bec5; flex:1; min-width: 80px; font-size: 0.9rem;">消す</button>
+                        <button id="check-kanji-btn" onclick="checkKanji()" class="main-btn purple-btn" style="background:#e91e63; width:100%; box-shadow: 0 4px 0 #c2185b;">採点する！</button>
+                    </div>
 
-                    <div id="kanji-answer-display" class="hidden" style="margin-top:15px; padding:10px; background:#f3e5f5; border-radius:10px; border:2px solid #9c27b0; color:#4a148c; font-weight:bold;">
-                        正解は... <span id="kanji-answer-text" style="font-size:2rem; display:block;"></span>
+                    <!-- ギブアップボタン (共通・独立) -->
+                    <div style="text-align:center; margin-top:10px;">
+                        <button id="giveup-kanji-btn" onclick="giveUpKanji()" class="main-btn gray-btn" style="background:transparent; color:#999; border:none; box-shadow:none; font-size:0.8rem; display:none;">🏳️ 答えを見る</button>
+                    </div>
+                    
+                    <button id="next-kanji-btn" onclick="nextKanjiQuestion()" class="main-btn" style="background:#ec407a; margin-top:15px; display:none;">次の問題へ ▶</button>
+
+                    <div id="kanji-answer-display" class="hidden" style="margin-top:15px; padding:15px; background:#fff3e0; border-radius:10px; border:2px solid #ffb74d; color:#e65100;">
+                        <p style="font-size:0.9rem; margin-bottom:5px;">正解は...</p>
+                        <span id="kanji-answer-text" style="font-size:3rem; font-weight:bold; font-family: 'Klee One', cursive; display:block; line-height:1;"></span>
+                        <p id="kanji-answer-detail" style="font-size:0.9rem; margin-top:10px; color:#5d4037;"></p>
                     </div>
                 </div>
             </div>
@@ -538,13 +482,13 @@
     <script src="js/state/memory.js"></script> 
     <script src="js/card-generator.js"></script>
     <script src="js/audio/audio.js"></script>
-    <!-- ★★★ 修正点: ranking.js を ui.js の前に移動 ★★★ -->
-    <script src="js/ui/ranking.js?v=468.1"></script> 
-    <script src="js/ui/ui.js?v=468.1"></script>
-    <script src="js/state/user.js?v=468.1"></script>
-    <script src="js/voice-service.js?v=468.1"></script>
-    <script src="js/camera-service.js?v=468.1"></script>
-    <script src="js/game-engine.js?v=468.1"></script>
-    <script src="js/analyze.js?v=468.1"></script>
+    <script src="js/config/kanji-data.js?v=1.0"></script>
+    <script src="js/ui/ranking.js?v=468.3"></script> 
+    <script src="js/ui/ui.js?v=468.3"></script>
+    <script src="js/state/user.js?v=452.0"></script>
+    <script src="js/voice-service.js?v=428.0"></script>
+    <script src="js/camera-service.js?v=432.0"></script>
+    <script src="js/game-engine.js?v=470.7"></script>
+    <script src="js/analyze.js?v=450.3"></script>
 </body>
 </html>
