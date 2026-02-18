@@ -1,4 +1,4 @@
-<!-- index.html (完全版 v470.11: 給食室メニュー復元版) -->
+<!-- index.html (完全版 v470.12: ミニテスト画面復元版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -31,11 +31,11 @@
     </div>
 
     <div id="app-container">
-        <!-- 0. タイトル画面 -->
+        <!-- 0. タイトル -->
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v470.11</div>
+            <div class="version-tag">Build: v470.12</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -103,17 +103,19 @@
         <!-- 掲示板画面 -->
         <section id="screen-ranking" class="screen hidden" style="padding-top:60px;">
              <h2 id="ranking-title" class="section-title" style="color:#d84315; text-shadow: 2px 2px 0 #fff;">📋 廊下の掲示板</h2>
+             
+             <!-- ランキングメニュー -->
+             <div id="ranking-menu" class="ranking-menu-scroll"></div>
+
              <div class="glass-card" style="min-height: 60vh; padding: 10px; background: #fff8e1; border: 4px solid #8d6e63; display: flex; flex-direction: column;">
                  <h3 id="ranking-subtitle" style="text-align:center; margin:10px 0; color:#5d4037;">🏆 ランキング</h3>
-                 <div id="ranking-list-container" style="flex: 1; overflow-y: auto;">
-                     <!-- JSでリスト挿入 -->
-                 </div>
+                 <div id="ranking-list-container" style="flex: 1; overflow-y: auto;"></div>
                  <div id="ranking-myscore" style="text-align:center; padding-top:10px; border-top:1px solid #ddd; font-weight:bold; color:#5d4037;"></div>
              </div>
              <button onclick="closeRanking()" class="main-btn gray-btn" style="margin-top:20px;">もどる</button>
         </section>
 
-        <!-- 3-2. 給食室サブメニュー (★ここを復元！) -->
+        <!-- 3-2. 給食室サブメニュー -->
         <section id="screen-lunchroom" class="screen hidden">
             <h2 class="section-title">🍽️ 給食室</h2>
             <div class="lobby-menu" style="margin-top: 20px;">
@@ -146,6 +148,41 @@
             </div>
         </section>
 
+        <!-- ★欠落していたミニテスト画面を復元 -->
+        <section id="screen-minitest" class="screen hidden">
+            <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-minitest"></div><div class="chat-bubble"><p id="nell-text-minitest">ミニテストを始めるにゃ！</p></div></div>
+            <h2 class="section-title" style="margin-top:10px; color:#ff9800;">📝 ミニテスト</h2>
+            
+            <div id="minitest-subject-select" class="glass-card" style="text-align:center; padding:20px;">
+                <p style="font-weight:bold; margin-bottom:15px;">教科を選んでにゃ！</p>
+                <button onclick="startMinitest('こくご')" class="main-btn pink-btn">こくご</button>
+                <button onclick="startMinitest('さんすう')" class="main-btn blue-btn">さんすう</button>
+                <button onclick="startMinitest('りか')" class="main-btn green-btn">りか・せいかつ</button>
+                <button onclick="startMinitest('しゃかい')" class="main-btn orange-btn">しゃかい</button>
+            </div>
+
+            <div id="minitest-game-area" class="glass-card hidden" style="padding:15px;">
+                <p id="minitest-progress" style="text-align:right; font-size:0.9rem; color:#888;">1/5問目</p>
+                <p id="minitest-question" style="font-size:1.2rem; font-weight:bold; margin:10px 0; min-height:60px;">読み込み中...</p>
+                <div id="minitest-options"></div>
+                
+                <div id="minitest-mic-area" style="margin-top:15px; text-align:center;">
+                    <button id="minitest-mic-btn" class="main-btn" style="background:#4db6ac !important; width:auto; padding:10px 20px; display:inline-flex; align-items:center; gap:8px; border-radius:30px;" onclick="window.startMinitestVoiceInput()">
+                        <span style="font-size:1.5rem;">🎤</span> 声で答える
+                    </button>
+                    <div id="minitest-mic-status" style="margin-top:5px; font-weight:bold; color:#e91e63; min-height:1.5em;"></div>
+                </div>
+
+                <div id="minitest-explanation-area" class="hidden" style="margin-top:15px; background:#fff3e0; padding:10px; border-radius:10px; border:2px solid #ffb74d;">
+                    <p style="font-weight:bold; color:#e65100;">💡 解説</p>
+                    <p id="minitest-explanation-text" style="font-size:0.95rem;">ここに解説が入ります</p>
+                    <button onclick="nextMinitestQuestion()" class="main-btn" style="margin-top:10px; background:#ff9800 !important;">次の問題へ</button>
+                </div>
+            </div>
+
+            <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
+        </section>
+
         <!-- 4. メイン画面 -->
         <section id="screen-main" class="screen hidden">
             <header><button id="main-back-btn" onclick="backToLobby()" class="main-btn gray-btn" style="width:auto; padding:10px 20px;">←</button></header>
@@ -153,6 +190,7 @@
                 <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face"><div id="heart-container" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;"></div></div><div class="chat-bubble"><p id="nell-text"></p></div></div>
                 <div id="subject-selection-view" class="hidden"><div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;"><button onclick="setSubject('こくご')" class="main-btn pink-btn">こくご</button><button onclick="setSubject('さんすう')" class="main-btn blue-btn">さんすう</button><button onclick="setSubject('りか')" class="main-btn orange-btn">りか</button><button onclick="setSubject('しゃかい')" class="main-btn gray-btn">しゃかい</button></div></div>
                 <div id="chalkboard" class="chalkboard hidden"></div>
+                
                 <div class="work-area">
                     <div id="upload-controls" class="hidden"><p style="text-align:center; margin-bottom:10px;">宿題をみせてね！</p><div class="upload-buttons-container"><button id="start-webcam-btn" class="camera-btn-large" style="background:#ff9800 !important;">📹 アプリで撮影</button><div style="display:flex; gap:10px;"><label class="camera-btn-large" style="flex:1;">📷 標準カメラ<input type="file" id="hw-input-camera" accept="image/*" style="display:none;"></label><label class="camera-btn-large" style="flex:1; background:#4a90e2 !important;">📁 アルバム<input type="file" id="hw-input-album" accept="image/*" style="display:none;"></label></div></div></div>
                     <div id="thinking-view" class="hidden"><img src="assets/images/characters/nell-inspect.png" class="loader-inspect-img" onerror="this.src='assets/images/characters/nell-normal.png'"><div class="progress-container"><div id="progress-bar" class="progress-bar"></div></div><p id="thinking-status">考え中... <span id="progress-percent">0</span>%</p></div>

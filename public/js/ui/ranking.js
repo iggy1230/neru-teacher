@@ -1,7 +1,23 @@
-// --- js/ui/ranking.js (v468.4: 給食ランキング対応版) ---
+// --- js/ui/ranking.js (v470.13: ランキングメニュー拡張版) ---
+
+const RANKING_TYPES = [
+    { id: 'karikari', label: '🍖 カリカリ所持数' },
+    { id: 'lunch_total', label: '🍽️ 給食番長' },
+    { id: 'karikari_catch', label: '🎾 キャッチ' },
+    { id: 'vs_robot', label: '🤖 VS掃除機' },
+    { id: 'memory_match', label: '🃏 神経衰弱' },
+    { id: 'minitest_total', label: '📝 ミニテスト' }
+];
 
 window.showRanking = async function(rankingType = 'karikari', title = '🏆 カリカリランキング') {
     window.switchScreen('screen-ranking');
+    
+    // 現在のランキングタイプに対応するタイトルを取得（引数titleがデフォルトの場合）
+    if (title === '🏆 カリカリランキング') {
+        const typeObj = RANKING_TYPES.find(t => t.id === rankingType);
+        if (typeObj) title = `🏆 ${typeObj.label} ランキング`;
+    }
+
     const container = document.getElementById('ranking-list-container');
     const titleEl = document.getElementById('ranking-subtitle');
     const myScoreEl = document.getElementById('ranking-myscore');
@@ -10,6 +26,9 @@ window.showRanking = async function(rankingType = 'karikari', title = '🏆 カ�
 
     if (titleEl) titleEl.innerText = title;
     if (myScoreEl) myScoreEl.innerText = '';
+
+    // ★メニューの描画
+    window.renderRankingMenu(rankingType);
 
     container.innerHTML = '<p style="text-align:center; padding:20px; color:#666;">集計中にゃ...</p>';
 
@@ -27,14 +46,15 @@ window.showRanking = async function(rankingType = 'karikari', title = '🏆 カ�
             // カリカリ所持数ランキング
             query = db.collection("users").orderBy("karikari", "desc").limit(30);
         } else if (rankingType === 'lunch_total') {
-            // ★新規: 給食累計ランキング
+            // 給食累計ランキング
             query = db.collection("users").orderBy("totalLunchGiven", "desc").limit(30);
         } else {
             // ゲーム別ランキング (highscoresコレクションを使用)
+            // ★limitを30に拡張
             query = db.collection("highscores")
                       .where("gameKey", "==", rankingType)
                       .orderBy("score", "desc")
-                      .limit(3);
+                      .limit(30);
         }
 
         try {
@@ -95,15 +115,15 @@ window.showRanking = async function(rankingType = 'karikari', title = '🏆 カ�
 
         // 自分のランク表示
         if (myRankData) {
-            let unit = "個";
+            let unit = "🍖"; // デフォルト
             // if (rankingType === 'karikari') unit = "個";
             // if (rankingType === 'lunch_total') unit = "回"; 
             
-            myScoreEl.innerText = `あなたは ${myRankData.rank}位 (🍖 ${myRankData.score.toLocaleString()}) だにゃ！`;
+            myScoreEl.innerText = `あなたは ${myRankData.rank}位 (${unit} ${myRankData.score.toLocaleString()}) だにゃ！`;
         } else if (rankingType !== 'karikari' && rankingType !== 'lunch_total' && currentUser) {
             const localScore = localStorage.getItem(`nell_highscore_${rankingType}_${currentUser.id}`);
             if (localScore) {
-                myScoreEl.innerText = `あなたのハイスコア: 🍖 ${localScore}`;
+                myScoreEl.innerText = `あなたのハイスコア: 🍖 ${parseInt(localScore).toLocaleString()}`;
             } else {
                 myScoreEl.innerText = "まだ記録がないにゃ。";
             }
@@ -122,6 +142,21 @@ window.showRanking = async function(rankingType = 'karikari', title = '🏆 カ�
             container.innerHTML = '<p style="text-align:center; color:red;">ランキングが見れないにゃ...<br>(インターネットの調子が悪いかも？)</p>';
         }
     }
+};
+
+window.renderRankingMenu = function(currentType) {
+    const menu = document.getElementById('ranking-menu');
+    if (!menu) return;
+    
+    menu.innerHTML = "";
+    
+    RANKING_TYPES.forEach(type => {
+        const btn = document.createElement('button');
+        btn.className = `ranking-tab-btn ${type.id === currentType ? 'active' : ''}`;
+        btn.innerText = type.label;
+        btn.onclick = () => window.showRanking(type.id);
+        menu.appendChild(btn);
+    });
 };
 
 window.createRankingItem = function(rank, user, rankingType) {
