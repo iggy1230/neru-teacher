@@ -1,4 +1,4 @@
-// --- js/analyze.js (v450.0: クロップ表示完全修正版) ---
+// --- js/analyze.js (v450.4: 画面遷移安定化版) ---
 
 // グローバル変数
 window.currentLocation = null;
@@ -6,6 +6,7 @@ window.currentAddress = null; // 住所文字列
 window.locationWatchId = null;
 window.isHomeworkDetected = false; // 解析画像が宿題かどうかのフラグ
 window.lastAnalysisTime = 0;
+window.lastSelectedProblemId = null; // ヒント画面遷移前のスクロール位置復元用ID
 
 // 画像処理用変数
 window.cropImg = null;
@@ -92,21 +93,27 @@ window.selectMode = function(m) {
         window.currentMode = m; 
         window.chatSessionHistory = [];
 
+        // 画面切り替え（安全策）
         if (typeof window.switchScreen === 'function') {
             window.switchScreen('screen-main'); 
         } else {
             document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
-            document.getElementById('screen-main').classList.remove('hidden');
+            const mainScreen = document.getElementById('screen-main');
+            if (mainScreen) mainScreen.classList.remove('hidden');
         }
 
+        // メイン画面内の全ビューを非表示
         const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'simple-chat-view', 'chat-free-view', 'lunch-view', 'grade-sheet-container', 'hint-detail-container', 'embedded-chat-section'];
         ids.forEach(id => { 
             const el = document.getElementById(id); 
             if (el) el.classList.add('hidden'); 
         });
         
-        document.getElementById('conversation-log').classList.add('hidden');
-        document.getElementById('log-content').innerHTML = "";
+        // ログエリアなどをリセット
+        const convLog = document.getElementById('conversation-log');
+        if (convLog) convLog.classList.add('hidden');
+        const logContent = document.getElementById('log-content');
+        if (logContent) logContent.innerHTML = "";
         
         ['embedded-chalkboard', 'chalkboard-simple'].forEach(bid => {
             const embedBoard = document.getElementById(bid);
@@ -124,11 +131,15 @@ window.selectMode = function(m) {
         const backBtn = document.getElementById('main-back-btn');
         if (backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = window.backToLobby; }
         
-        if(typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
-        if (typeof window.stopLiveChat === 'function') window.stopLiveChat();
-        if(typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera(); 
+        // 各種機能を安全に停止
+        try { if(typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening(); } catch(e){}
+        try { if(typeof window.stopLiveChat === 'function') window.stopLiveChat(); } catch(e){}
+        try { if(typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera(); } catch(e){}
+        try { if(typeof window.stopEmbeddedVoiceInput === 'function') window.stopEmbeddedVoiceInput(); } catch(e){}
+        try { if(typeof window.stopSimpleVoiceInput === 'function') window.stopSimpleVoiceInput(); } catch(e){}
         
         window.gameRunning = false;
+        
         const icon = document.querySelector('.nell-avatar-wrap img'); 
         if(icon) icon.src = "assets/images/characters/nell-normal.png";
         
@@ -136,46 +147,52 @@ window.selectMode = function(m) {
         if(miniKarikari) miniKarikari.classList.remove('hidden');
         if(typeof window.updateMiniKarikari === 'function') window.updateMiniKarikari();
         
-        // マイクボタンの状態リセット
-        window.stopEmbeddedVoiceInput();
-        window.stopSimpleVoiceInput();
-        
+        // ★モード別表示処理
         if (m === 'chat') { 
-            document.getElementById('chat-view').classList.remove('hidden'); 
+            const cv = document.getElementById('chat-view');
+            if(cv) cv.classList.remove('hidden'); 
             window.updateNellMessage("お宝を見せてにゃ！", "excited", false); 
             window.startLocationWatch();
         } 
         else if (m === 'simple-chat') {
-            document.getElementById('simple-chat-view').classList.remove('hidden');
+            const scv = document.getElementById('simple-chat-view');
+            if(scv) scv.classList.remove('hidden');
             window.updateNellMessage("今日はお話だけするにゃ？", "gentle", false);
-            document.getElementById('conversation-log').classList.remove('hidden');
+            if(convLog) convLog.classList.remove('hidden');
             window.startLocationWatch();
         }
         else if (m === 'chat-free') {
-            document.getElementById('chat-free-view').classList.remove('hidden');
+            const cfv = document.getElementById('chat-free-view');
+            if(cfv) cfv.classList.remove('hidden');
             window.updateNellMessage("何でも話していいにゃ！", "happy", false);
             window.startLocationWatch();
         }
         else if (m === 'lunch') { 
-            document.getElementById('lunch-view').classList.remove('hidden'); 
+            const lv = document.getElementById('lunch-view');
+            if(lv) lv.classList.remove('hidden'); 
             window.updateNellMessage("お腹ペコペコだにゃ……", "thinking", false); 
         } 
         else if (m === 'review') { 
             if(typeof window.renderMistakeSelection === 'function') window.renderMistakeSelection(); 
-            document.getElementById('embedded-chat-section').classList.remove('hidden'); 
-            document.getElementById('conversation-log').classList.remove('hidden');
+            const ecs = document.getElementById('embedded-chat-section');
+            if(ecs) ecs.classList.remove('hidden'); 
+            if(convLog) convLog.classList.remove('hidden');
         } 
         else { 
             const subjectView = document.getElementById('subject-selection-view'); 
             if (subjectView) subjectView.classList.remove('hidden'); 
             window.updateNellMessage("どの教科にするのかにゃ？", "normal", false); 
             if (m === 'explain' || m === 'grade') {
-                document.getElementById('embedded-chat-section').classList.remove('hidden');
-                document.getElementById('conversation-log').classList.remove('hidden');
+                const ecs = document.getElementById('embedded-chat-section');
+                if(ecs) ecs.classList.remove('hidden');
+                if(convLog) convLog.classList.remove('hidden');
             }
         }
     } catch (e) {
         console.error("selectMode Error:", e);
+        // エラー時は強制的にロビーへ
+        window.backToLobby();
+        alert("画面の切り替えに失敗したにゃ。もう一度試してにゃ。");
     }
 };
 
@@ -495,8 +512,13 @@ window.renderMistakeSelection = function() {
 
 window.startHint = function(id) {
     if (window.initAudioContext) window.initAudioContext().catch(e=>{});
+    
     window.selectedProblem = window.transcribedProblems.find(p => p.id == id); 
     if (!window.selectedProblem) return window.updateNellMessage("データエラーだにゃ", "thinking", false);
+    
+    // 現在見ている問題のIDを保存して、戻ってきたときにスクロールできるようにする
+    window.lastSelectedProblemId = id;
+
     if (!window.selectedProblem.currentHintLevel) window.selectedProblem.currentHintLevel = 1;
     if (window.selectedProblem.maxUnlockedHintLevel === undefined) window.selectedProblem.maxUnlockedHintLevel = 0;
     ['problem-selection-view', 'grade-sheet-container', 'answer-display-area', 'chalkboard'].forEach(i => { const el = document.getElementById(i); if(el) el.classList.add('hidden'); });
@@ -639,9 +661,37 @@ window.updateGradingMessage = function() {
     }
 };
 
+// ★修正: リスト画面に戻った際にスクロール位置を復元し、ハイライトする（待機時間を調整）
 window.backToProblemSelection = function() { 
     document.getElementById('final-view').classList.add('hidden'); document.getElementById('hint-detail-container').classList.add('hidden'); document.getElementById('chalkboard').classList.add('hidden'); document.getElementById('answer-display-area').classList.add('hidden'); 
-    if (window.currentMode === 'grade') window.showGradingView(); else { window.renderProblemSelection(); window.updateNellMessage("他も見るにゃ？", "normal", false); } 
+    
+    if (window.currentMode === 'grade') {
+        window.showGradingView(); 
+    } else { 
+        window.renderProblemSelection(); 
+        window.updateNellMessage("他も見るにゃ？", "normal", false); 
+    } 
+    
+    // スクロール位置復元 & ハイライト処理
+    if (window.lastSelectedProblemId) {
+        setTimeout(() => {
+            const target = document.getElementById(`grade-item-${window.lastSelectedProblemId}`);
+            if (target) {
+                target.scrollIntoView({ behavior: 'auto', block: 'center' });
+                // 一旦クラスを削除してリフローさせてから再付与
+                target.classList.remove('highlight-flash');
+                void target.offsetWidth; 
+                target.classList.add('highlight-flash');
+                
+                // アニメーション終了後にクラス削除
+                setTimeout(() => {
+                    target.classList.remove('highlight-flash');
+                }, 2000); 
+            }
+            window.lastSelectedProblemId = null; // リセット
+        }, 300);
+    }
+
     const backBtn = document.getElementById('main-back-btn'); if(backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = window.backToLobby; } 
 };
 

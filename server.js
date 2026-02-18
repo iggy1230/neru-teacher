@@ -25,7 +25,7 @@ app.use(express.static(publicDir));
 // --- AI Model Constants ---
 const MODEL_HOMEWORK = "gemini-2.5-pro"; // 視覚認識強化
 const MODEL_FAST = "gemini-2.0-flash"; 
-const MODEL_REALTIME = "gemini-2.0-flash-exp"; // Realtime API用
+const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025"; // Realtime API用
 
 // --- Server Log ---
 const MEMORY_FILE = path.join(__dirname, 'server_log.json');
