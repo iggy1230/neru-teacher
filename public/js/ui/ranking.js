@@ -1,4 +1,4 @@
-// --- js/ui/ranking.js (v468.3: ランキング単位統一版) ---
+// --- js/ui/ranking.js (v468.4: 給食ランキング対応版) ---
 
 window.showRanking = async function(rankingType = 'karikari', title = '🏆 カリカリランキング') {
     window.switchScreen('screen-ranking');
@@ -24,23 +24,24 @@ window.showRanking = async function(rankingType = 'karikari', title = '🏆 カ�
 
         // クエリ分岐
         if (rankingType === 'karikari') {
-            // 既存のカリカリランキング
+            // カリカリ所持数ランキング
             query = db.collection("users").orderBy("karikari", "desc").limit(30);
+        } else if (rankingType === 'lunch_total') {
+            // ★新規: 給食累計ランキング
+            query = db.collection("users").orderBy("totalLunchGiven", "desc").limit(30);
         } else {
             // ゲーム別ランキング (highscoresコレクションを使用)
             query = db.collection("highscores")
                       .where("gameKey", "==", rankingType)
                       .orderBy("score", "desc")
-                      .limit(3); // 3位まで
+                      .limit(3);
         }
 
         try {
             snapshot = await query.get();
         } catch (e) {
             console.error("Firestore Query Error:", e);
-            if (e.code === 'permission-denied') {
-                throw new Error("PERMISSION_DENIED");
-            }
+            if (e.code === 'permission-denied') { throw new Error("PERMISSION_DENIED"); }
             if (e.code === 'failed-precondition') {
                 container.innerHTML = '<p style="text-align:center; padding:20px;">ランキングの準備中だにゃ...<br><span style="font-size:0.8rem;">(管理者がインデックスを作成中かも)</span></p>';
                 return;
@@ -48,7 +49,7 @@ window.showRanking = async function(rankingType = 'karikari', title = '🏆 カ�
             throw e;
         }
 
-        container.innerHTML = ""; // クリア
+        container.innerHTML = ""; 
 
         if (snapshot.empty) {
             container.innerHTML = '<p style="text-align:center; padding:20px;">まだ誰もいないにゃ...</p>';
@@ -60,26 +61,30 @@ window.showRanking = async function(rankingType = 'karikari', title = '🏆 カ�
 
         snapshot.forEach(doc => {
             const data = doc.data();
-            // ゲームランキングの場合、userデータ構造に変換して渡す
             let userData = data;
             
-            if (rankingType !== 'karikari') {
+            // ゲームランキングの場合
+            if (rankingType !== 'karikari' && rankingType !== 'lunch_total') {
                 userData = {
                     id: data.userId,
                     name: data.userName,
                     photo: data.userPhoto,
                     grade: data.userGrade,
-                    // 表示用スコアとして渡す
                     displayScore: data.score 
                 };
-                
-                // 自分のデータかチェック
                 if (currentUser && data.userId === currentUser.id) {
                     myRankData = { rank: rank, score: data.score };
                 }
             } else {
+                // ユーザーコレクションの場合
+                let targetScore = 0;
+                if (rankingType === 'karikari') targetScore = data.karikari;
+                if (rankingType === 'lunch_total') targetScore = data.totalLunchGiven || 0;
+
+                userData.displayScore = targetScore;
+
                 if (currentUser && data.id === currentUser.id) {
-                    myRankData = { rank: rank, score: data.karikari };
+                    myRankData = { rank: rank, score: targetScore };
                 }
             }
 
@@ -89,17 +94,24 @@ window.showRanking = async function(rankingType = 'karikari', title = '🏆 カ�
         });
 
         // 自分のランク表示
-        if (rankingType !== 'karikari' && currentUser && !myRankData) {
+        if (myRankData) {
+            let unit = "個";
+            // if (rankingType === 'karikari') unit = "個";
+            // if (rankingType === 'lunch_total') unit = "回"; 
+            
+            myScoreEl.innerText = `あなたは ${myRankData.rank}位 (🍖 ${myRankData.score.toLocaleString()}) だにゃ！`;
+        } else if (rankingType !== 'karikari' && rankingType !== 'lunch_total' && currentUser) {
             const localScore = localStorage.getItem(`nell_highscore_${rankingType}_${currentUser.id}`);
             if (localScore) {
-                // ★修正: 単位をカリカリ(🍖)に変更
                 myScoreEl.innerText = `あなたのハイスコア: 🍖 ${localScore}`;
             } else {
                 myScoreEl.innerText = "まだ記録がないにゃ。";
             }
-        } else if (myRankData) {
-            // ★修正: 単位をカリカリ(🍖)に統一
-            myScoreEl.innerText = `あなたは ${myRankData.rank}位 (🍖 ${myRankData.score}) だにゃ！`;
+        } else if (currentUser) {
+            let currentScore = 0;
+            if (rankingType === 'karikari') currentScore = currentUser.karikari;
+            if (rankingType === 'lunch_total') currentScore = currentUser.totalLunchGiven || 0;
+            myScoreEl.innerText = `あなたは 圏外 (🍖 ${currentScore.toLocaleString()}) だにゃ...`;
         }
 
     } catch (e) {
@@ -142,8 +154,6 @@ window.createRankingItem = function(rank, user, rankingType) {
 
     // 数値フォーマットと単位
     const formattedScore = score.toLocaleString();
-    
-    // ★修正: 常に「🍖」を表示するように変更（点数表記を廃止）
     const scoreDisplay = `🍖 ${formattedScore}`;
 
     div.innerHTML = `

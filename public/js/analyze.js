@@ -1,6 +1,8 @@
-// --- js/analyze.js (v450.4: 画面遷移安定化版) ---
+// --- js/analyze.js (v450.5: 完全版) ---
 
-// グローバル変数
+// ==========================================
+// グローバル変数・初期設定
+// ==========================================
 window.currentLocation = null;
 window.currentAddress = null; // 住所文字列
 window.locationWatchId = null;
@@ -93,27 +95,21 @@ window.selectMode = function(m) {
         window.currentMode = m; 
         window.chatSessionHistory = [];
 
-        // 画面切り替え（安全策）
         if (typeof window.switchScreen === 'function') {
             window.switchScreen('screen-main'); 
         } else {
             document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
-            const mainScreen = document.getElementById('screen-main');
-            if (mainScreen) mainScreen.classList.remove('hidden');
+            document.getElementById('screen-main').classList.remove('hidden');
         }
 
-        // メイン画面内の全ビューを非表示
         const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'simple-chat-view', 'chat-free-view', 'lunch-view', 'grade-sheet-container', 'hint-detail-container', 'embedded-chat-section'];
         ids.forEach(id => { 
             const el = document.getElementById(id); 
             if (el) el.classList.add('hidden'); 
         });
         
-        // ログエリアなどをリセット
-        const convLog = document.getElementById('conversation-log');
-        if (convLog) convLog.classList.add('hidden');
-        const logContent = document.getElementById('log-content');
-        if (logContent) logContent.innerHTML = "";
+        document.getElementById('conversation-log').classList.add('hidden');
+        document.getElementById('log-content').innerHTML = "";
         
         ['embedded-chalkboard', 'chalkboard-simple'].forEach(bid => {
             const embedBoard = document.getElementById(bid);
@@ -131,15 +127,11 @@ window.selectMode = function(m) {
         const backBtn = document.getElementById('main-back-btn');
         if (backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = window.backToLobby; }
         
-        // 各種機能を安全に停止
-        try { if(typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening(); } catch(e){}
-        try { if(typeof window.stopLiveChat === 'function') window.stopLiveChat(); } catch(e){}
-        try { if(typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera(); } catch(e){}
-        try { if(typeof window.stopEmbeddedVoiceInput === 'function') window.stopEmbeddedVoiceInput(); } catch(e){}
-        try { if(typeof window.stopSimpleVoiceInput === 'function') window.stopSimpleVoiceInput(); } catch(e){}
+        if(typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
+        if (typeof window.stopLiveChat === 'function') window.stopLiveChat();
+        if(typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera(); 
         
         window.gameRunning = false;
-        
         const icon = document.querySelector('.nell-avatar-wrap img'); 
         if(icon) icon.src = "assets/images/characters/nell-normal.png";
         
@@ -147,52 +139,46 @@ window.selectMode = function(m) {
         if(miniKarikari) miniKarikari.classList.remove('hidden');
         if(typeof window.updateMiniKarikari === 'function') window.updateMiniKarikari();
         
-        // ★モード別表示処理
+        // マイクボタンの状態リセット
+        window.stopEmbeddedVoiceInput();
+        window.stopSimpleVoiceInput();
+        
         if (m === 'chat') { 
-            const cv = document.getElementById('chat-view');
-            if(cv) cv.classList.remove('hidden'); 
+            document.getElementById('chat-view').classList.remove('hidden'); 
             window.updateNellMessage("お宝を見せてにゃ！", "excited", false); 
             window.startLocationWatch();
         } 
         else if (m === 'simple-chat') {
-            const scv = document.getElementById('simple-chat-view');
-            if(scv) scv.classList.remove('hidden');
+            document.getElementById('simple-chat-view').classList.remove('hidden');
             window.updateNellMessage("今日はお話だけするにゃ？", "gentle", false);
-            if(convLog) convLog.classList.remove('hidden');
+            document.getElementById('conversation-log').classList.remove('hidden');
             window.startLocationWatch();
         }
         else if (m === 'chat-free') {
-            const cfv = document.getElementById('chat-free-view');
-            if(cfv) cfv.classList.remove('hidden');
+            document.getElementById('chat-free-view').classList.remove('hidden');
             window.updateNellMessage("何でも話していいにゃ！", "happy", false);
             window.startLocationWatch();
         }
         else if (m === 'lunch') { 
-            const lv = document.getElementById('lunch-view');
-            if(lv) lv.classList.remove('hidden'); 
+            document.getElementById('lunch-view').classList.remove('hidden'); 
             window.updateNellMessage("お腹ペコペコだにゃ……", "thinking", false); 
         } 
         else if (m === 'review') { 
             if(typeof window.renderMistakeSelection === 'function') window.renderMistakeSelection(); 
-            const ecs = document.getElementById('embedded-chat-section');
-            if(ecs) ecs.classList.remove('hidden'); 
-            if(convLog) convLog.classList.remove('hidden');
+            document.getElementById('embedded-chat-section').classList.remove('hidden'); 
+            document.getElementById('conversation-log').classList.remove('hidden');
         } 
         else { 
             const subjectView = document.getElementById('subject-selection-view'); 
             if (subjectView) subjectView.classList.remove('hidden'); 
             window.updateNellMessage("どの教科にするのかにゃ？", "normal", false); 
             if (m === 'explain' || m === 'grade') {
-                const ecs = document.getElementById('embedded-chat-section');
-                if(ecs) ecs.classList.remove('hidden');
-                if(convLog) convLog.classList.remove('hidden');
+                document.getElementById('embedded-chat-section').classList.remove('hidden');
+                document.getElementById('conversation-log').classList.remove('hidden');
             }
         }
     } catch (e) {
         console.error("selectMode Error:", e);
-        // エラー時は強制的にロビーへ
-        window.backToLobby();
-        alert("画面の切り替えに失敗したにゃ。もう一度試してにゃ。");
     }
 };
 
@@ -471,28 +457,66 @@ window.updateTimerDisplay = function() {
     if(miniDisplay) miniDisplay.innerText = timeStr;
 };
 
+// ==========================================
+// ★ 給食機能 (個数指定 & 累計対応版)
+// ==========================================
+
 window.updateMiniKarikari = function() { if(currentUser) { const el = document.getElementById('mini-karikari-count'); if(el) el.innerText = currentUser.karikari; const el2 = document.getElementById('karikari-count'); if(el2) el2.innerText = currentUser.karikari; } };
 window.showKarikariEffect = function(amount) { const container = document.querySelector('.nell-avatar-wrap'); if(container) { const floatText = document.createElement('div'); floatText.className = 'floating-text'; floatText.innerText = amount > 0 ? `+${amount}` : `${amount}`; floatText.style.color = amount > 0 ? '#ff9100' : '#ff5252'; floatText.style.right = '0px'; floatText.style.top = '0px'; container.appendChild(floatText); setTimeout(() => floatText.remove(), 1500); } };
 
 window.giveLunch = function() { 
-    if (currentUser.karikari < 1) return window.updateNellMessage("カリカリがないにゃ……", "thinking", false); 
+    if (!currentUser) return;
+    
+    // 入力値の取得
+    const amountInput = document.getElementById('lunch-amount');
+    let amount = 1;
+    if (amountInput) {
+        amount = parseInt(amountInput.value);
+    }
+    if (isNaN(amount) || amount <= 0) amount = 1;
+
+    // 所持数チェック
+    if (currentUser.karikari < amount) {
+        return window.updateNellMessage(`カリカリが足りないにゃ……あと${amount - currentUser.karikari}個欲しいにゃ…`, "sad", false, true);
+    }
     
     window.updateNellMessage("もぐもぐ……", "normal", false); 
     
-    currentUser.karikari--; 
+    // 消費 & 累計加算
+    currentUser.karikari -= amount;
+    if (!currentUser.totalLunchGiven) currentUser.totalLunchGiven = 0;
+    currentUser.totalLunchGiven += amount;
+    
     if(typeof saveAndSync === 'function') saveAndSync(); 
     window.updateMiniKarikari(); 
-    window.showKarikariEffect(-1); 
-    window.lunchCount++; 
+    window.showKarikariEffect(-amount); 
     
-    fetch('/lunch-reaction', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ count: window.lunchCount, name: currentUser.name }) })
-        .then(r => r.json())
-        .then(d => { 
-            window.updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy", true); 
-        })
-        .catch(e => { 
-            window.updateNellMessage("おいしいにゃ！", "happy", false); 
-        }); 
+    // エフェクト（大量の場合は派手に）
+    if (amount >= 100) {
+        if(window.safePlay) window.safePlay(window.sfxHirameku); 
+    } else {
+        if(window.safePlay) window.safePlay(window.sfxBori);
+    }
+
+    window.lunchCount++; // セッション内カウント
+    
+    // サーバーへ送信
+    fetch('/lunch-reaction', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ 
+            count: window.lunchCount, // 互換性のため維持
+            name: currentUser.name, 
+            amount: amount 
+        }) 
+    })
+    .then(r => r.json())
+    .then(d => { 
+        window.updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy", true, true); 
+    })
+    .catch(e => { 
+        window.updateNellMessage("おいしいにゃ！", "happy", false); 
+    }); 
 }; 
 
 window.renderMistakeSelection = function() { 
@@ -516,7 +540,7 @@ window.startHint = function(id) {
     window.selectedProblem = window.transcribedProblems.find(p => p.id == id); 
     if (!window.selectedProblem) return window.updateNellMessage("データエラーだにゃ", "thinking", false);
     
-    // 現在見ている問題のIDを保存して、戻ってきたときにスクロールできるようにする
+    // ★新規: 現在見ている問題のIDを保存して、戻ってきたときにスクロールできるようにする
     window.lastSelectedProblemId = id;
 
     if (!window.selectedProblem.currentHintLevel) window.selectedProblem.currentHintLevel = 1;
@@ -674,6 +698,7 @@ window.backToProblemSelection = function() {
     
     // スクロール位置復元 & ハイライト処理
     if (window.lastSelectedProblemId) {
+        // ★描画完了を待つために時間を延ばす (100ms -> 300ms)
         setTimeout(() => {
             const target = document.getElementById(`grade-item-${window.lastSelectedProblemId}`);
             if (target) {

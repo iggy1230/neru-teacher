@@ -1017,7 +1017,7 @@ let kanjiState = {
     data: null, canvas: null, ctx: null, 
     isDrawing: false, mode: 'writing', 
     questionCount: 0, maxQuestions: 5, correctCount: 0,
-    guideVisible: false 
+    guideVisible: false, strokes: [], currentStroke: null 
 };
 
 window.showKanjiMenu = function() {
@@ -1033,19 +1033,67 @@ window.startKanjiSet = function(mode) {
     kanjiState.mode = mode;
     kanjiState.questionCount = 0;
     kanjiState.correctCount = 0;
+    kanjiState.strokes = [];
     document.getElementById('kanji-menu-container').style.display = 'none';
     const content = document.getElementById('kanji-game-content');
     if(content) content.classList.remove('hidden');
     const canvas = document.getElementById('kanji-canvas');
     kanjiState.canvas = canvas; kanjiState.ctx = canvas.getContext('2d');
     kanjiState.ctx.lineCap = 'round'; kanjiState.ctx.lineJoin = 'round'; kanjiState.ctx.lineWidth = 12; kanjiState.ctx.strokeStyle = '#000000';
-    const startDraw = (e) => { kanjiState.isDrawing = true; const pos = getPos(e); kanjiState.ctx.beginPath(); kanjiState.ctx.moveTo(pos.x, pos.y); e.preventDefault(); };
-    const draw = (e) => { if (!kanjiState.isDrawing) return; const pos = getPos(e); kanjiState.ctx.lineTo(pos.x, pos.y); kanjiState.ctx.stroke(); e.preventDefault(); };
-    const endDraw = () => { kanjiState.isDrawing = false; };
+    
+    // ★ストローク記録対応の描画イベント
     const getPos = (e) => { const rect = canvas.getBoundingClientRect(); const clientX = e.touches ? e.touches[0].clientX : e.clientX; const clientY = e.touches ? e.touches[0].clientY : e.clientY; return { x: clientX - rect.left, y: clientY - rect.top }; };
+    
+    const startDraw = (e) => { 
+        kanjiState.isDrawing = true; 
+        const pos = getPos(e);
+        kanjiState.currentStroke = { points: [pos] };
+        kanjiState.strokes.push(kanjiState.currentStroke);
+        kanjiState.ctx.beginPath(); 
+        kanjiState.ctx.moveTo(pos.x, pos.y); 
+        e.preventDefault(); 
+    };
+    
+    const draw = (e) => { 
+        if (!kanjiState.isDrawing) return; 
+        const pos = getPos(e); 
+        kanjiState.currentStroke.points.push(pos);
+        kanjiState.ctx.lineTo(pos.x, pos.y); 
+        kanjiState.ctx.stroke(); 
+        e.preventDefault(); 
+    };
+    
+    const endDraw = () => { kanjiState.isDrawing = false; };
+    
     canvas.onmousedown = startDraw; canvas.onmousemove = draw; canvas.onmouseup = endDraw;
     canvas.ontouchstart = startDraw; canvas.ontouchmove = draw; canvas.ontouchend = endDraw;
     window.nextKanjiQuestion();
+};
+
+window.redrawCanvas = function() {
+    if (!kanjiState.ctx) return;
+    kanjiState.ctx.clearRect(0, 0, 300, 300);
+    
+    // ガイド描画
+    if (kanjiState.guideVisible && kanjiState.data) {
+        kanjiState.ctx.save();
+        kanjiState.ctx.font = "240px 'Klee One', 'Zen Kurenaido', sans-serif";
+        kanjiState.ctx.textAlign = "center"; kanjiState.ctx.textBaseline = "middle"; kanjiState.ctx.fillStyle = "rgba(200, 200, 200, 0.5)";
+        kanjiState.ctx.fillText(kanjiState.data.kanji, 150, 160);
+        kanjiState.ctx.restore();
+    }
+    
+    // ストローク再描画
+    kanjiState.ctx.beginPath();
+    kanjiState.strokes.forEach(stroke => {
+        if (stroke.points.length > 0) {
+            kanjiState.ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+            for (let i = 1; i < stroke.points.length; i++) {
+                kanjiState.ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+            }
+        }
+    });
+    kanjiState.ctx.stroke();
 };
 
 window.nextKanjiQuestion = async function() {
@@ -1062,6 +1110,7 @@ window.nextKanjiQuestion = async function() {
         return;
     }
     kanjiState.questionCount++;
+    kanjiState.strokes = []; // ストロークリセット
     
     kanjiState.guideVisible = false;
     const hanamaru = document.getElementById('kanji-hanamaru');
@@ -1113,7 +1162,6 @@ window.nextKanjiQuestion = async function() {
             const controls = document.getElementById('kanji-controls');
             const giveupBtn = document.getElementById('giveup-kanji-btn');
             
-            // ★UI切り替えロジック
             if (data.type === 'writing') {
                 cvs.classList.remove('hidden'); 
                 mic.classList.add('hidden'); 
@@ -1126,7 +1174,6 @@ window.nextKanjiQuestion = async function() {
                 controls.style.display = 'none'; // 書き取り用ボタン非表示
                 giveupBtn.style.display = 'inline-block';
                 
-                // マイクボタン初期化
                 const micBtn = document.getElementById('kanji-mic-btn');
                 if (micBtn) { micBtn.disabled = false; micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で答える'; micBtn.style.background = "#4db6ac"; }
             }
@@ -1204,7 +1251,11 @@ window.processKanjiSuccess = function(comment) {
     window.updateNellMessage(comment, "excited", false, true);
     kanjiState.correctCount++;
     
-    // UI更新: 完了状態へ
+    // 書き取りならキャンバスをクリアして見やすく
+    if (kanjiState.data.type === 'writing') {
+        window.clearKanjiCanvas(true);
+    }
+    
     document.getElementById('kanji-controls').style.display = 'none';
     document.getElementById('kanji-mic-container').classList.add('hidden');
     document.getElementById('giveup-kanji-btn').style.display = 'none';
@@ -1216,21 +1267,14 @@ window.processKanjiSuccess = function(comment) {
     const detailText = document.getElementById('kanji-answer-detail');
     if(detailText) detailText.innerHTML = `音読み: ${kanjiState.data.onyomi || "-"} / 訓読み: ${kanjiState.data.kunyomi || "-"} / 画数: ${kanjiState.data.kakusu || "-"}画`;
     
-    // 花丸表示
     const hanamaru = document.getElementById('kanji-hanamaru');
     if (hanamaru) { hanamaru.innerText = "○"; hanamaru.style.display = 'flex'; }
 };
 
 window.clearKanjiCanvas = function(forceClear = false) {
     if (!kanjiState.ctx) return;
-    kanjiState.ctx.clearRect(0, 0, 300, 300);
-    if (!forceClear && kanjiState.guideVisible && kanjiState.data) {
-        kanjiState.ctx.save();
-        kanjiState.ctx.font = "240px 'Klee One', 'Zen Kurenaido', sans-serif";
-        kanjiState.ctx.textAlign = "center"; kanjiState.ctx.textBaseline = "middle"; kanjiState.ctx.fillStyle = "rgba(200, 200, 200, 0.5)";
-        kanjiState.ctx.fillText(kanjiState.data.kanji, 150, 160);
-        kanjiState.ctx.restore();
-    }
+    kanjiState.strokes = []; // ストロークも消去
+    window.redrawCanvas();
 };
 
 window.toggleKanjiGuide = function() {
@@ -1238,19 +1282,7 @@ window.toggleKanjiGuide = function() {
     kanjiState.guideVisible = !kanjiState.guideVisible;
     const btn = document.getElementById('guide-kanji-btn');
     if(btn) btn.innerText = kanjiState.guideVisible ? "お手本を消す" : "お手本を表示";
-    const currentImage = kanjiState.ctx.getImageData(0, 0, kanjiState.canvas.width, kanjiState.canvas.height);
-    window.clearKanjiCanvas(true); 
-    if (kanjiState.guideVisible) {
-        kanjiState.ctx.save();
-        kanjiState.ctx.font = "240px 'Klee One', 'Zen Kurenaido', sans-serif";
-        kanjiState.ctx.textAlign = "center"; kanjiState.ctx.textBaseline = "middle"; kanjiState.ctx.fillStyle = "rgba(200, 200, 200, 0.5)";
-        kanjiState.ctx.fillText(kanjiState.data.kanji, 150, 160);
-        kanjiState.ctx.restore();
-    }
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = 300; tempCanvas.height = 300;
-    tempCanvas.getContext('2d').putImageData(currentImage, 0, 0);
-    kanjiState.ctx.drawImage(tempCanvas, 0, 0);
+    window.redrawCanvas();
 };
 
 window.checkKanji = async function() {
@@ -1283,6 +1315,11 @@ window.giveUpKanji = function() {
     let ans = kanjiState.data.type === 'writing' ? kanjiState.data.kanji : kanjiState.data.reading;
     window.updateNellMessage(`正解は「${ans}」だにゃ。次は頑張るにゃ！`, "gentle", false, true);
     if(window.safePlay) window.safePlay(window.sfxBatu);
+    
+    // 書き取りならキャンバスをクリアして見やすく
+    if (kanjiState.data.type === 'writing') {
+        window.clearKanjiCanvas(true);
+    }
     
     document.getElementById('kanji-controls').style.display = 'none';
     document.getElementById('kanji-mic-container').classList.add('hidden');

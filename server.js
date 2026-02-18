@@ -1,4 +1,4 @@
-// --- server.js (v470.7: 漢字読み音声判定AI導入版) ---
+// --- server.js (v470.12: 完全版 - 省略なし) ---
 
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import express from 'express';
@@ -63,10 +63,9 @@ try {
 } catch (e) { console.error("Init Error:", e.message); }
 
 // ==========================================
-// Helper Functions
+// Helper Functions & Constants
 // ==========================================
 
-// ★JSON抽出強化関数
 function extractFirstJson(text) {
     const firstBrace = text.indexOf('{');
     const firstBracket = text.indexOf('[');
@@ -119,7 +118,6 @@ function getSubjectInstructions(subject) {
     }
 }
 
-// ジャンルごとの信頼できる参照URLリスト
 const GENRE_REFERENCES = {
     "魔法陣グルグル": [
         "https://dic.pixiv.net/a/%E9%AD%94%E6%B3%95%E9%99%A3%E3%82%B0%E3%83%AB%E3%82%B0%E3%83%AB",
@@ -163,7 +161,6 @@ const GENRE_REFERENCES = {
     ]
 };
 
-// ストック問題リスト
 const FALLBACK_QUIZZES = {
     "一般知識": [
         {
@@ -179,6 +176,54 @@ const FALLBACK_QUIZZES = {
             "answer": "365日",
             "explanation": "地球が太陽の周りを一周するのにかかる時間が約365日だからです。",
             "fact_basis": "平年は365日、閏年は366日。"
+        }
+    ],
+    "雑学": [
+        {
+            "question": "パンダの好物と言えば何ですか？",
+            "options": ["笹（ササ）", "バナナ", "お肉", "魚"],
+            "answer": "笹（ササ）",
+            "explanation": "パンダは竹や笹を主食としています。",
+            "fact_basis": "ジャイアントパンダの主食は竹や笹。"
+        },
+        {
+            "question": "信号機の「進め」の色は何色ですか？",
+            "options": ["青", "赤", "黄色", "紫"],
+            "answer": "青",
+            "explanation": "正式には「青信号」と呼ばれていますが、実際の色は緑色に近いこともあります。",
+            "fact_basis": "道路交通法では青色灯火。"
+        }
+    ],
+    "ポケモン": [
+        {
+            "question": "ピカチュウの進化前のポケモンはどれですか？",
+            "options": ["ピチュー", "ライチュウ", "ミミッキュ", "プラスル"],
+            "answer": "ピチュー",
+            "explanation": "ピチューがなつくとピカチュウに進化します。",
+            "fact_basis": "ピチュー -> ピカチュウ -> ライチュウ"
+        },
+        {
+            "question": "最初の3匹のうち、炎タイプのポケモンはどれ？（カントー地方）",
+            "options": ["ヒトカゲ", "ゼニガメ", "フシギダネ", "ピカチュウ"],
+            "answer": "ヒトカゲ",
+            "explanation": "ヒトカゲは炎タイプ、ゼニガメは水タイプ、フシギダネは草タイプです。",
+            "fact_basis": "初代御三家はフシギダネ、ヒトカゲ、ゼニガメ。"
+        }
+    ],
+    "マインクラフト": [
+        {
+            "question": "クリーパーを倒すと手に入るアイテムはどれですか？",
+            "options": ["火薬", "骨", "腐った肉", "糸"],
+            "answer": "火薬",
+            "explanation": "クリーパーは爆発するモンスターなので、倒すと火薬を落とします。",
+            "fact_basis": "クリーパーのドロップアイテムは火薬。"
+        },
+        {
+            "question": "ネザーに行くために必要なゲートを作る材料は？",
+            "options": ["黒曜石", "ダイヤモンド", "鉄ブロック", "土"],
+            "answer": "黒曜石",
+            "explanation": "黒曜石を四角く並べて火をつけるとネザーゲートが開きます。",
+            "fact_basis": "ネザーポータルは黒曜石で枠を作る。"
         }
     ],
     "default": [
@@ -275,7 +320,7 @@ app.post('/generate-quiz', async (req, res) => {
             const currentLevel = level || 1;
             let difficultyDesc = "";
             switch(parseInt(currentLevel)) {
-                case 1: difficultyDesc = `小学${grade}年生ウェルカムな、基礎的な事実`; break;
+                case 1: difficultyDesc = `小学${grade}年生向けの基礎的な事実`; break;
                 case 2: difficultyDesc = `ファンなら確実に知っている標準的な事実`; break;
                 case 3: difficultyDesc = `少し詳しい人が知っている事実`; break;
                 case 4: difficultyDesc = `かなり詳しい人向けの事実`; break;
@@ -377,16 +422,20 @@ app.post('/generate-quiz', async (req, res) => {
             if (attempt >= MAX_RETRIES) {
                 console.log(`[Quiz Fallback] Switching to Stock Quiz for genre: ${genre}`);
                 
+                // ストック問題から選択
                 let stockList = FALLBACK_QUIZZES[genre];
+                
+                // 指定ジャンルがない、またはストックが空の場合はデフォルトを使用
                 if (!stockList || stockList.length === 0) {
                     stockList = FALLBACK_QUIZZES["default"];
                 }
+                
                 const fallbackQuiz = stockList[Math.floor(Math.random() * stockList.length)];
                 
                 res.json({
                     ...fallbackQuiz,
                     actual_genre: genre || "雑学",
-                    fallback: true 
+                    fallback: true // デバッグ用
                 });
                 return;
             }
@@ -438,7 +487,7 @@ app.post('/correct-quiz', async (req, res) => {
 
         const result = await model.generateContent(prompt);
         let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        const cleanText = extractFirstJson(text); 
+        const cleanText = extractFirstJson(text); // ★JSON抽出強化
         const jsonResponse = JSON.parse(cleanText);
         
         if (!jsonResponse.options.includes(jsonResponse.answer)) {
@@ -492,7 +541,7 @@ app.post('/generate-riddle', async (req, res) => {
 
         const result = await model.generateContent(prompt);
         let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        text = extractFirstJson(text); 
+        text = extractFirstJson(text); // ★JSON抽出強化
         res.json(JSON.parse(text));
     } catch (e) {
         console.error("Riddle Gen Error:", e);
@@ -525,7 +574,7 @@ app.post('/generate-minitest', async (req, res) => {
 
         const result = await model.generateContent(prompt);
         let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        text = extractFirstJson(text); 
+        text = extractFirstJson(text); // ★JSON抽出強化
         res.json(JSON.parse(text));
     } catch (e) {
         console.error("MiniTest Gen Error:", e);
@@ -543,6 +592,7 @@ app.post('/generate-kanji', async (req, res) => {
         try {
             const { grade, mode, targetKanji } = req.body; 
             
+            // ★精度向上のため temperature を下げる
             const model = genAI.getGenerativeModel({ 
                 model: MODEL_FAST, 
                 generationConfig: { 
@@ -613,27 +663,30 @@ app.post('/generate-kanji', async (req, res) => {
             
             // 検証
             if (json.kanji && json.reading && json.question_display) {
+                 // ターゲット指定があった場合、答えが一致しているかチェック
                  if (targetKanji && json.kanji !== targetKanji) {
                      console.warn(`[Kanji Gen] Mismatch! Requested: ${targetKanji}, Got: ${json.kanji}. Retrying...`);
-                     continue; 
+                     continue; // リトライ
                  }
                  res.json(json);
                  return;
             }
         } catch (e) {
             console.error(`Kanji Gen Error (Attempt ${attempt}):`, e.message);
+            // ★リトライ待機: 429エラー等に備えて待機時間を設ける
             if (attempt < MAX_RETRIES) {
-                const waitTime = attempt * 2000; 
+                const waitTime = attempt * 2000; // 2秒, 4秒待機
                 console.log(`Waiting ${waitTime}ms before retry...`);
                 await sleep(waitTime);
             }
         }
     }
+    // リトライ失敗
     res.status(500).json({ error: "漢字が見つからないにゃ…" });
 });
 
 
-// --- 漢字・読み採点 API (★機能拡張: テキスト判定追加) ---
+// --- 漢字採点 API (★機能拡張: テキスト判定追加) ---
 app.post('/check-kanji', async (req, res) => {
     try {
         // userTextがあれば「読み判定モード」、imageがあれば「書き取り判定モード」
@@ -905,8 +958,9 @@ app.post('/analyze', async (req, res) => {
         let problems = [];
         try {
             let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            cleanText = extractFirstJson(cleanText); 
+            cleanText = extractFirstJson(cleanText); // ★JSON抽出強化
             
+            // 配列の場合は別途対応が必要だが、extractFirstJsonは配列も対応済み
             problems = JSON.parse(cleanText);
         } catch (e) {
             console.error("JSON Parse Error:", responseText);
@@ -934,6 +988,7 @@ app.post('/identify-item', async (req, res) => {
 
         let locationInfo = "";
         
+        // ★修正: 住所情報がある場合、それを絶対視する指示を追加
         if (address) {
             locationInfo = `
             【★最優先：場所の特定情報】
@@ -946,6 +1001,7 @@ app.post('/identify-item', async (req, res) => {
             4. Google検索を行う際も、「${address} 観光」「${address} 公園」「${address} 店」などのキーワードを使って、その住所内での候補を探してください。
             `;
         } else if (location && location.lat && location.lon) {
+             // 住所文字列がなく、座標のみの場合 (基本的にはありえないが念のため)
             locationInfo = `
             【位置情報】
             GPS座標: 緯度 ${location.lat}, 経度 ${location.lon}
@@ -1011,6 +1067,7 @@ app.post('/identify-item', async (req, res) => {
             json = JSON.parse(cleanText);
         } catch (e) {
             console.error("JSON Parse Error in identify-item:", e);
+            // フォールバック: エラーでクライアントを落とさない
             json = {
                 itemName: "なぞの物体",
                 rarity: 1, 
@@ -1028,12 +1085,11 @@ app.post('/identify-item', async (req, res) => {
     }
 });
 
-// --- 反応系 ---
+// --- 給食反応 API (★コメントスタイル統一版) ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
-        const { count, name } = req.body;
-        await appendToServerLog(name, `給食をくれた(${count}個目)。`);
-        const isSpecial = (count % 10 === 0);
+        const { name, amount } = req.body; 
+        await appendToServerLog(name, `給食をくれた(今回:${amount}個)。`);
         
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
@@ -1045,25 +1101,56 @@ app.post('/lunch-reaction', async (req, res) => {
             ]
         });
         
-        let prompt = isSpecial 
-            ? `あなたは猫の「ネル先生」。生徒の「${name}さん」から記念すべき${count}個目の給食（カリカリ）をもらいました！
+        const numAmount = parseInt(amount);
+        let prompt = "";
+        let isSpecial = false;
+
+        // ★個数による分岐ロジック (コメントスタイルを統一)
+        if (numAmount >= 10000) {
+            isSpecial = true;
+            prompt = `あなたは猫の「ネル先生」。生徒「${name}」から一度に${numAmount}個もの給食（カリカリ）をもらいました！
                【ルール】
-               1. 相手を呼ぶときは必ず「${name}さん」と呼ぶこと。呼び捨て厳禁。
-               2. テンションMAXで、思わず笑ってしまうような大げさな感謝と喜びを50文字以内で叫んでください。
-               3. 語尾は「にゃ」。`
-            : `あなたは猫の「ネル先生」。生徒の「${name}さん」から給食（カリカリ）をもらって食べました。
+               1. 相手を呼ぶときは必ず「${name}さん」と呼ぶこと。
+               2. **猫としてのアイデンティティを保ちつつ**、思わずクスッと笑えるような独特な食レポや感謝の言葉を、**限界突破の熱量**で表現してください。
+               3. 文字数は100文字程度で、壮大な比喩や詩的な表現をふんだんに使ってください。
+               4. 語尾は「にゃ！！！！」や「だにゃぁぁぁ！！」など、興奮を最大限に表現してください。`;
+        } else if (numAmount >= 5000) {
+            isSpecial = true;
+            prompt = `あなたは猫の「ネル先生」。生徒「${name}」から一度に${numAmount}個もの大量の給食（カリカリ）をもらいました！
                【ルール】
-               1. 相手を呼ぶときは必ず「${name}さん」と呼ぶこと。呼び捨て厳禁。
+               1. 相手を呼ぶときは必ず「${name}さん」と呼ぶこと。
+               2. クスッと笑える独特な食レポや感謝の言葉を、**狂喜乱舞するほどの熱量**で表現してください。
+               3. 文字数は80文字程度で。
+               4. 語尾は「にゃ！！」など強く。`;
+        } else if (numAmount >= 1000) {
+            isSpecial = true;
+            prompt = `あなたは猫の「ネル先生」。生徒「${name}」から一度に${numAmount}個の給食（カリカリ）をもらいました！
+               【ルール】
+               1. 相手を呼ぶときは必ず「${name}さん」と呼ぶこと。
+               2. クスッと笑える独特な食レポや感謝の言葉を、**驚きと感謝が入り混じった熱量**で表現してください。
+               3. 文字数は60文字程度。`;
+        } else if (numAmount >= 100) {
+            prompt = `あなたは猫の「ネル先生」。生徒「${name}」から一度に${numAmount}個の給食（カリカリ）をもらいました。
+               【ルール】
+               1. 相手を呼ぶときは必ず「${name}さん」と呼ぶこと。
+               2. クスッと笑える独特な食レポや感想を、**かなり喜んでいる様子**で表現してください。
+               3. 文字数は50文字程度。`;
+        } else {
+            // 1〜99個
+            prompt = `あなたは猫の「ネル先生」。生徒「${name}」から給食（カリカリ）を${numAmount}個もらって食べました。
+               【ルール】
+               1. 相手を呼ぶときは必ず「${name}さん」と呼ぶこと。
                2. 思わずクスッと笑ってしまうような、独特な食レポや、猫ならではの感想を30文字以内で言ってください。
                3. 語尾は「にゃ」。`;
+        }
 
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text().trim(), isSpecial });
+
     } catch (error) { 
         console.error("Lunch Reaction Error:", error); 
         const fallbacks = ["おいしいにゃ！", "うまうまにゃ！", "カリカリ最高にゃ！", "ありがとにゃ！", "元気が出たにゃ！"];
-        const randomFallback = fallbacks[Math.floor(Math.random() * fallbacks.length)];
-        res.json({ reply: randomFallback, isSpecial: false }); 
+        res.json({ reply: fallbacks[0], isSpecial: false }); 
     }
 });
 
