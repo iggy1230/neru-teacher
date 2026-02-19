@@ -1,4 +1,10 @@
-// --- js/ui/ranking.js (v470.13: ランキングメニュー拡張版) ---
+// --- js/ui/ranking.js (v470.14: 漢字ドリル&クイズランキング追加版) ---
+
+const QUIZ_GENRES = [
+    "一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム", 
+    "マインクラフト", "ロブロックス", "ポケモン", "魔法陣グルグル", 
+    "ジョジョの奇妙な冒険", "STPR", "夏目友人帳"
+];
 
 const RANKING_TYPES = [
     { id: 'karikari', label: '🍖 カリカリ所持数' },
@@ -6,8 +12,14 @@ const RANKING_TYPES = [
     { id: 'karikari_catch', label: '🎾 キャッチ' },
     { id: 'vs_robot', label: '🤖 VS掃除機' },
     { id: 'memory_match', label: '🃏 神経衰弱' },
-    { id: 'minitest_total', label: '📝 ミニテスト' }
+    { id: 'minitest_total', label: '📝 ミニテスト' },
+    { id: 'kanji_drill', label: '✍️ 漢字ドリル' }
 ];
+
+// クイズジャンルを追加
+QUIZ_GENRES.forEach(g => {
+    RANKING_TYPES.push({ id: `quiz_${g}`, label: `🎤 Q:${g}` });
+});
 
 window.showRanking = async function(rankingType = 'karikari', title = '🏆 カリカリランキング') {
     window.switchScreen('screen-ranking');

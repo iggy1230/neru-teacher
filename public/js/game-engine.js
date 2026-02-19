@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v470.11: ミニテスト機能実装 & 完全版) ---
+// --- js/game-engine.js (v470.12: 漢字ドリルランキング対応版) ---
 
 console.log("Game Engine Loading...");
 
@@ -1311,7 +1311,11 @@ window.nextKanjiQuestion = async function() {
         if (kanjiState.correctCount === 5) msg = `全問正解！すごいにゃ！カリカリ${reward}個あげるにゃ！`;
         else if (kanjiState.correctCount > 0) msg = `${kanjiState.correctCount}問正解！カリカリ${reward}個あげるにゃ！`;
         else msg = `残念、全問不正解だにゃ…。次はがんばるにゃ！`;
+        
         window.giveGameReward(reward);
+        // ★追加: 漢字ドリルランキングの保存
+        window.saveHighScore('kanji_drill', reward);
+
         window.updateNellMessage(msg, "happy", false, true);
         alert(msg);
         window.showKanjiMenu(); 
