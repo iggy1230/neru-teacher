@@ -1,4 +1,4 @@
-// --- js/constants.js (v426.0: 分析クールダウン追加版) ---
+// --- js/constants.js (v470.2: シール設定修正版) ---
 
 // ==========================================
 // グローバル変数・状態フラグ
@@ -6,7 +6,7 @@
 window.currentMode = '';
 window.currentSubject = '';
 window.isAnalyzing = false;
-window.lastAnalysisTime = 0; // ★新規: 最後の分析開始時間を記録
+window.lastAnalysisTime = 0; 
 window.transcribedProblems = [];
 window.selectedProblem = null;
 window.hintIndex = 0;
@@ -72,6 +72,16 @@ window.subjectImages = {
 };
 window.defaultIcon = 'assets/images/characters/nell-normal.png';
 window.talkIcon = 'assets/images/characters/nell-talk.png';
+
+// ★修正: シール設定
+// ユーザーが画像を2枚(001, 002)置くとのことなので、MAX_COUNTを2にします。
+window.STICKER_FILE_MAX_COUNT = 2; 
+
+window.STICKER_TYPES = [
+    // 固定シールが必要ならここに記述
+    { id: 'paw_red', src: 'assets/images/items/nikukyuhanko.png', name: '赤肉球' },
+    { id: 'paw_gold', text: '🐾', color: '#ffd700', name: '金肉球' }
+];
 
 // ==========================================
 // 音声・通信・認識関連

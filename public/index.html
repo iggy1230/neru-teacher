@@ -1,11 +1,11 @@
-<!-- index.html (完全版 v470.12: ミニテスト画面復元版) -->
+<!-- index.html (完全版 v470.16: シール帳ゴミ箱機能追加版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>🐾猫後市立ねこづか小学校</title>
-    <link rel="stylesheet" href="style.css?v=470.5">
+    <link rel="stylesheet" href="style.css?v=470.16">
     <link href="https://fonts.googleapis.com/css2?family=Sawarabi+Gothic&family=M+PLUS+Rounded+1c:wght@700;900&family=Kiwi+Maru:wght@900&family=Klee+One:wght@400;600&family=Zen+Kurenaido&display=swap" rel="stylesheet">
     <!-- ライブラリ群 -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -35,7 +35,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v470.12</div>
+            <div class="version-tag">Build: v470.16</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -80,6 +80,7 @@
                 <button onclick="switchScreen('screen-lunchroom')" class="main-btn orange-btn">🍽️ 給食室</button>
                 <button onclick="switchScreen('screen-staffroom')" class="main-btn purple-btn">👩‍🏫 職員室</button>
                 <button onclick="showRanking('karikari', '🏆 カリカリランキング')" class="main-btn" style="background-color:#8d6e63 !important; box-shadow: 0 4px 0 #5d4037 !important;">📋 廊下の掲示板</button>
+                <button onclick="window.showStickerBook()" class="main-btn" style="background-color:#e91e63 !important; box-shadow: 0 4px 0 #c2185b !important;">📒 シール帳をみる</button>
                 <button onclick="selectMode('chat')" class="main-btn" style="background-color:#5c6bc0 !important; box-shadow: 0 4px 0 #3949ab !important;">💎 ネル先生のお宝図鑑</button>
                 <button onclick="showMap()" class="main-btn" style="background-color:#29b6f6 !important; box-shadow: 0 4px 0 #0288d1 !important;">🗺️ 足あとマップ</button>
                 <button onclick="backToTitle()" class="main-btn gray-btn">👋 帰宅する</button>
@@ -103,10 +104,7 @@
         <!-- 掲示板画面 -->
         <section id="screen-ranking" class="screen hidden" style="padding-top:60px;">
              <h2 id="ranking-title" class="section-title" style="color:#d84315; text-shadow: 2px 2px 0 #fff;">📋 廊下の掲示板</h2>
-             
-             <!-- ランキングメニュー -->
              <div id="ranking-menu" class="ranking-menu-scroll"></div>
-
              <div class="glass-card" style="min-height: 60vh; padding: 10px; background: #fff8e1; border: 4px solid #8d6e63; display: flex; flex-direction: column;">
                  <h3 id="ranking-subtitle" style="text-align:center; margin:10px 0; color:#5d4037;">🏆 ランキング</h3>
                  <div id="ranking-list-container" style="flex: 1; overflow-y: auto;"></div>
@@ -120,6 +118,7 @@
             <h2 class="section-title">🍽️ 給食室</h2>
             <div class="lobby-menu" style="margin-top: 20px;">
                 <button onclick="selectMode('lunch')" class="main-btn pink-btn">🍽️ おいしい給食</button>
+                <button onclick="window.showStickerBook()" class="main-btn" style="background-color:#e91e63 !important; box-shadow: 0 4px 0 #c2185b !important;">📒 シール帳をみる</button>
                 <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
             </div>
         </section>
@@ -148,11 +147,37 @@
             </div>
         </section>
 
-        <!-- ★欠落していたミニテスト画面を復元 -->
+        <!-- ★ シール帳画面 -->
+        <section id="screen-sticker-book" class="screen hidden" style="padding-top:60px;">
+            <h2 class="section-title" style="color:#e91e63; text-shadow: 2px 2px 0 #fff;">📒 シール帳</h2>
+            <div style="display:flex; justify-content:center; gap:10px; margin-bottom:5px;">
+                <button onclick="window.showStickerBook()" class="main-btn pink-btn" style="width:auto; padding:5px 15px; font-size:0.9rem; margin:0;">じぶんの</button>
+                <button onclick="window.openStickerUserList()" class="main-btn green-btn" style="width:auto; padding:5px 15px; font-size:0.9rem; margin:0; background-color:#8d6e63 !important; box-shadow:0 3px 0 #5d4037 !important;">みんなの</button>
+            </div>
+            <div id="sticker-board-container">
+                <div id="sticker-board">
+                    <!-- シール要素がここに追加されます -->
+                    <div id="sticker-guide-text" style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); color:rgba(0,0,0,0.3); font-weight:bold; pointer-events:none;">ここにシールを貼ってね</div>
+                </div>
+            </div>
+            <!-- ゴミ箱 -->
+            <div id="sticker-trash" class="hidden">🗑️</div>
+            
+            <p style="text-align:center; font-size:0.8rem; color:white; margin-top:5px; text-shadow:1px 1px 2px rgba(0,0,0,0.5);">
+                ドラッグで移動、タップで回転だにゃ！<br>
+                いらないシールはゴミ箱へポイだにゃ！
+            </p>
+            <div style="text-align:center; margin-top:10px;">
+                <button onclick="window.saveStickers()" class="main-btn blue-btn" style="width:auto; display:inline-block; padding:10px 20px;">💾 保存する</button>
+                <button onclick="backToLobby()" class="main-btn gray-btn" style="width:auto; display:inline-block; padding:10px 20px;">もどる</button>
+            </div>
+        </section>
+
+        <!-- ... (その他の画面: minitest, quiz, etc.) ... -->
         <section id="screen-minitest" class="screen hidden">
+            <!-- (省略) -->
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-minitest"></div><div class="chat-bubble"><p id="nell-text-minitest">ミニテストを始めるにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px; color:#ff9800;">📝 ミニテスト</h2>
-            
             <div id="minitest-subject-select" class="glass-card" style="text-align:center; padding:20px;">
                 <p style="font-weight:bold; margin-bottom:15px;">教科を選んでにゃ！</p>
                 <button onclick="startMinitest('こくご')" class="main-btn pink-btn">こくご</button>
@@ -160,68 +185,60 @@
                 <button onclick="startMinitest('りか')" class="main-btn green-btn">りか・せいかつ</button>
                 <button onclick="startMinitest('しゃかい')" class="main-btn orange-btn">しゃかい</button>
             </div>
-
             <div id="minitest-game-area" class="glass-card hidden" style="padding:15px;">
                 <p id="minitest-progress" style="text-align:right; font-size:0.9rem; color:#888;">1/5問目</p>
                 <p id="minitest-question" style="font-size:1.2rem; font-weight:bold; margin:10px 0; min-height:60px;">読み込み中...</p>
                 <div id="minitest-options"></div>
-                
                 <div id="minitest-mic-area" style="margin-top:15px; text-align:center;">
                     <button id="minitest-mic-btn" class="main-btn" style="background:#4db6ac !important; width:auto; padding:10px 20px; display:inline-flex; align-items:center; gap:8px; border-radius:30px;" onclick="window.startMinitestVoiceInput()">
                         <span style="font-size:1.5rem;">🎤</span> 声で答える
                     </button>
                     <div id="minitest-mic-status" style="margin-top:5px; font-weight:bold; color:#e91e63; min-height:1.5em;"></div>
                 </div>
-
                 <div id="minitest-explanation-area" class="hidden" style="margin-top:15px; background:#fff3e0; padding:10px; border-radius:10px; border:2px solid #ffb74d;">
                     <p style="font-weight:bold; color:#e65100;">💡 解説</p>
                     <p id="minitest-explanation-text" style="font-size:0.95rem;">ここに解説が入ります</p>
                     <button onclick="nextMinitestQuestion()" class="main-btn" style="margin-top:10px; background:#ff9800 !important;">次の問題へ</button>
                 </div>
             </div>
-
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
 
-        <!-- 4. メイン画面 -->
+        <!-- メイン画面 -->
         <section id="screen-main" class="screen hidden">
+            <!-- (内容は変更なし) -->
             <header><button id="main-back-btn" onclick="backToLobby()" class="main-btn gray-btn" style="width:auto; padding:10px 20px;">←</button></header>
             <div class="operation-layout">
                 <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face"><div id="heart-container" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;"></div></div><div class="chat-bubble"><p id="nell-text"></p></div></div>
                 <div id="subject-selection-view" class="hidden"><div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;"><button onclick="setSubject('こくご')" class="main-btn pink-btn">こくご</button><button onclick="setSubject('さんすう')" class="main-btn blue-btn">さんすう</button><button onclick="setSubject('りか')" class="main-btn orange-btn">りか</button><button onclick="setSubject('しゃかい')" class="main-btn gray-btn">しゃかい</button></div></div>
                 <div id="chalkboard" class="chalkboard hidden"></div>
-                
                 <div class="work-area">
                     <div id="upload-controls" class="hidden"><p style="text-align:center; margin-bottom:10px;">宿題をみせてね！</p><div class="upload-buttons-container"><button id="start-webcam-btn" class="camera-btn-large" style="background:#ff9800 !important;">📹 アプリで撮影</button><div style="display:flex; gap:10px;"><label class="camera-btn-large" style="flex:1;">📷 標準カメラ<input type="file" id="hw-input-camera" accept="image/*" style="display:none;"></label><label class="camera-btn-large" style="flex:1; background:#4a90e2 !important;">📁 アルバム<input type="file" id="hw-input-album" accept="image/*" style="display:none;"></label></div></div></div>
                     <div id="thinking-view" class="hidden"><img src="assets/images/characters/nell-inspect.png" class="loader-inspect-img" onerror="this.src='assets/images/characters/nell-normal.png'"><div class="progress-container"><div id="progress-bar" class="progress-bar"></div></div><p id="thinking-status">考え中... <span id="progress-percent">0</span>%</p></div>
                     <div id="problem-selection-view" class="hidden"><div class="problem-selection-card"><div class="problem-scroll-area" id="transcribed-problem-list"></div><div style="text-align:center; margin-top:20px;"><button onclick="pressAllSolved(this)" class="main-btn orange-btn">✨ ぜんぶわかったにゃ！</button></div></div></div>
                     <div id="final-view" class="hidden"><div id="grade-sheet-container" class="hidden"><div class="glass-card" id="problem-list-grade" style="background:white; border-radius:15px; padding:10px;"></div></div><div id="hint-detail-container" class="hidden"><div class="hint-btns"><div class="hint-step-badge" id="hint-step-label">考え方</div><button onclick="showNextHint()" id="next-hint-btn" class="main-btn blue-btn">次のヒント！</button><button onclick="revealAnswer()" id="reveal-answer-btn" class="main-btn orange-btn hidden">答えを見る🐾</button><div id="answer-display-area" class="answer-box hidden">ネル先生の答え：<br><span id="final-answer-text"></span></div></div><button onclick="pressThanks()" class="main-btn pink-btn">✨ ありがとう！</button><button onclick="backToProblemSelection()" class="main-btn gray-btn" style="margin-top: 10px;">他の問題を見る</button></div></div>
-                    
-                    <div id="embedded-chat-section" class="embedded-chat-box hidden"><h4 style="text-align:center; margin:0 0 10px 0; color:#558b2f;">👩‍🏫 ネル先生に質問する</h4><div style="text-align:center;"><p style="font-size:0.8rem; color:#666; margin-bottom:10px;">（ネル先生はいつでも聞いてるにゃ）</p><div class="text-question-area"><textarea id="embedded-text-input" class="text-question-input" placeholder="ここに書いて質問"></textarea><button onclick="sendEmbeddedText()" class="text-question-btn">送信</button></div>
-                    <div id="embedded-mic-area" style="margin-top:10px; text-align:center;"><button id="embedded-mic-btn" class="main-btn" style="background:#4db6ac !important; width:auto; padding:10px 20px; display:inline-flex; align-items:center; gap:8px; border-radius:30px;" onclick="window.startEmbeddedVoiceInput()"><span style="font-size:1.5rem;">🎤</span> 声で質問</button><div id="embedded-mic-status" style="margin-top:5px; font-weight:bold; color:#e91e63; min-height:1.5em;"></div></div>
-                    <div style="display:flex; gap:10px; margin-top:10px;"><button id="live-camera-btn-embedded" class="mini-cam-btn" style="background:#66bb6a !important; box-shadow:0 4px 0 #33691e !important; flex:1;" onclick="toggleEmbeddedCamera()"><span>📷</span> カメラ</button><button id="upload-embedded-btn" class="mini-cam-btn" style="background:#4a90e2 !important; box-shadow:0 4px 0 #2c5f96 !important; flex:1;" onclick="window.uploadChatImage('embedded')"><span>📁</span> アルバム</button></div><input type="file" id="embedded-image-upload" accept="image/*" style="display:none;" onchange="window.handleChatImageFile(this.files[0], 'embedded')"><div id="live-chat-video-container-embedded" class="live-chat-video-wrapper" style="margin-top:10px;"><video id="live-chat-video-embedded" class="live-chat-video-elem" autoplay playsinline muted></video></div><p id="user-speech-text-embedded" style="margin-top:10px; font-weight:bold; min-height:1.2em; font-size:0.9rem; color:#333;">...</p><div id="embedded-chalkboard" class="embedded-chalkboard hidden"></div></div></div>
-                    
+                    <div id="embedded-chat-section" class="embedded-chat-box hidden"><h4 style="text-align:center; margin:0 0 10px 0; color:#558b2f;">👩‍🏫 ネル先生に質問する</h4><div style="text-align:center;"><p style="font-size:0.8rem; color:#666; margin-bottom:10px;">（ネル先生はいつでも聞いてるにゃ）</p><div class="text-question-area"><textarea id="embedded-text-input" class="text-question-input" placeholder="ここに書いて質問"></textarea><button onclick="sendEmbeddedText()" class="text-question-btn">送信</button></div><div id="embedded-mic-area" style="margin-top:10px; text-align:center;"><button id="embedded-mic-btn" class="main-btn" style="background:#4db6ac !important; width:auto; padding:10px 20px; display:inline-flex; align-items:center; gap:8px; border-radius:30px;" onclick="window.startEmbeddedVoiceInput()"><span style="font-size:1.5rem;">🎤</span> 声で質問</button><div id="embedded-mic-status" style="margin-top:5px; font-weight:bold; color:#e91e63; min-height:1.5em;"></div></div><div style="display:flex; gap:10px; margin-top:10px;"><button id="live-camera-btn-embedded" class="mini-cam-btn" style="background:#66bb6a !important; box-shadow:0 4px 0 #33691e !important; flex:1;" onclick="toggleEmbeddedCamera()"><span>📷</span> カメラ</button><button id="upload-embedded-btn" class="mini-cam-btn" style="background:#4a90e2 !important; box-shadow:0 4px 0 #2c5f96 !important; flex:1;" onclick="window.uploadChatImage('embedded')"><span>📁</span> アルバム</button></div><input type="file" id="embedded-image-upload" accept="image/*" style="display:none;" onchange="window.handleChatImageFile(this.files[0], 'embedded')"><div id="live-chat-video-container-embedded" class="live-chat-video-wrapper" style="margin-top:10px;"><video id="live-chat-video-embedded" class="live-chat-video-elem" autoplay playsinline muted></video></div><p id="user-speech-text-embedded" style="margin-top:10px; font-weight:bold; min-height:1.2em; font-size:0.9rem; color:#333;">...</p><div id="embedded-chalkboard" class="embedded-chalkboard hidden"></div></div></div>
                     <div id="simple-chat-view" class="hidden"><div class="glass-card" style="text-align:center; padding:15px;"><h4 style="text-align:center; margin:0 0 10px 0; color:#558b2f;">👩‍🏫 ネル先生の個別指導</h4><p style="font-size:0.8rem; color:#666; margin-bottom:10px;">（ネル先生はいつでも聞いてるにゃ）</p><div class="text-question-area"><textarea id="simple-text-input" class="text-question-input" placeholder="ここに入力"></textarea><button onclick="sendSimpleText()" class="text-question-btn">送信</button></div><div id="simple-mic-area" style="margin-top:10px; text-align:center;"><button id="simple-mic-btn" class="main-btn" style="background:#4db6ac !important; width:auto; padding:10px 20px; display:inline-flex; align-items:center; gap:8px; border-radius:30px;" onclick="window.startSimpleVoiceInput()"><span style="font-size:1.5rem;">🎤</span> 声で質問</button><div id="simple-mic-status" style="margin-top:5px; font-weight:bold; color:#e91e63; min-height:1.5em;"></div></div><div style="display:flex; gap:10px;"><button id="live-camera-btn-simple" class="mini-cam-btn" style="background:#66bb6a !important; box-shadow:0 4px 0 #33691e !important; flex:1;" onclick="toggleSimpleCamera()"><span>📷</span> カメラ</button><button id="upload-simple-btn" class="mini-cam-btn" style="background:#4a90e2 !important; box-shadow:0 4px 0 #2c5f96 !important; flex:1;" onclick="window.uploadChatImage('simple')"><span>📁</span> アルバム</button></div><input type="file" id="simple-image-upload" accept="image/*" style="display:none;" onchange="window.handleChatImageFile(this.files[0], 'simple')"><div id="live-chat-video-container-simple" class="live-chat-video-wrapper" style="margin-top:10px;"><video id="live-chat-video-simple" class="live-chat-video-elem" autoplay playsinline muted></video></div><p id="user-speech-text-simple" style="margin-top:10px; font-weight:bold; min-height:1.2em; font-size:0.9rem; color:#333;">...</p><div id="chalkboard-simple" class="embedded-chalkboard hidden"></div></div></div>
-                    
                     <div id="chat-view" class="hidden"><div class="glass-card" style="text-align:center; padding:15px;"><p style="font-size:0.9rem; color:#666;">お宝を見せて、図鑑に登録するにゃ！</p><button onclick="showCollection()" class="main-btn" style="background:#00bcd4 !important; box-shadow: 0 4px 0 #0097a7 !important; margin-bottom: 20px;">📖 お宝図鑑をみる</button><div style="display:flex; gap:10px;"><button id="live-camera-btn" class="mini-cam-btn" onclick="toggleTreasureCamera()" style="padding: 25px; font-size: 1.1rem; background: #ff85a1 !important; box-shadow: 0 6px 0 #c25e76 !important; flex:1;"><span style="font-size: 1.5rem;">📷</span> 撮影</button><button id="upload-treasure-btn" class="mini-cam-btn" onclick="window.uploadTreasureImage()" style="padding: 25px; font-size: 1.1rem; background: #4a90e2 !important; box-shadow: 0 6px 0 #2c5f96 !important; flex:1;"><span style="font-size: 1.5rem;">📁</span> アルバム</button></div><input type="file" id="treasure-upload-input" accept="image/*" style="display:none;" onchange="window.handleTreasureFile(this.files[0])"><div id="live-chat-video-container" class="live-chat-video-wrapper" style="margin-top:15px;"><video id="live-chat-video" class="live-chat-video-elem" autoplay playsinline muted></video></div></div></div>
-                    
                     <div id="chat-free-view" class="hidden"><div class="glass-card" style="text-align:center; padding:20px;"><h4 style="text-align:center; margin:0 0 10px 0; color:#00897b;">💬 放課後おしゃべりタイム</h4><p style="font-size:0.9rem; color:#666;">マイクを押して話しかけてね</p><button id="mic-btn-free" class="camera-btn-large" style="background:#4db6ac !important; box-shadow:none;" onclick="startLiveChat()">🎤 おはなしする</button><div style="display:flex; gap:10px; margin-top:10px;"><button id="live-camera-btn-free" class="mini-cam-btn" onclick="captureAndSendLiveImage()" style="background:#009688 !important; box-shadow:0 4px 0 #00796b !important; flex:1; margin-top:0;"><span>📷</span> 写真を見せてお話</button><button id="upload-free-btn" class="mini-cam-btn" onclick="window.uploadFreeChatImage()" style="background:#4a90e2 !important; box-shadow:0 4px 0 #2c5f96 !important; flex:1; margin-top:0;"><span>📁</span> アルバム</button></div><input type="file" id="free-chat-image-upload" accept="image/*" style="display:none;" onchange="window.handleFreeChatImageFile(this.files[0])"><div id="live-chat-video-container-free" class="live-chat-video-wrapper"><video id="live-chat-video-free" class="live-chat-video-elem" autoplay playsinline muted></video></div><p id="user-speech-text-free" style="margin-top:15px; font-weight:bold; min-height:1.5em;">...</p></div></div>
-
-                    <!-- ★給食室ビュー (復旧 & 全投入ボタン削除) -->
+                    
+                    <!-- ★修正: 給食ビューに1000個ボタン追加 -->
                     <div id="lunch-view" class="hidden">
                         <div class="glass-card" style="text-align:center; padding:20px;">
                             <p style="font-size:1.2rem; font-weight:900; margin-bottom:10px;">ネル先生にお給食をあげる？</p>
                             <div style="font-size:4rem; margin:10px;">🍽️</div>
-                            
                             <div style="display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:15px;">
                                 <input type="number" id="lunch-amount" value="1" min="1" style="width:80px; padding:10px; font-size:1.2rem; border-radius:10px; border:2px solid #ffb74d; text-align:center;">
                                 <span style="font-weight:bold;">個</span>
                             </div>
-
                             <button onclick="giveLunch()" class="camera-btn-large" style="background:#ffb74d !important; margin-bottom:15px;">🐟 あげる！</button>
-                            
                             <button onclick="window.showRanking('lunch_total', '🏆 給食番長ランキング')" class="main-btn pink-btn" style="background-color:#ec407a !important; box-shadow: 0 4px 0 #c2185b !important;">🏆 給食ランキングを見る</button>
                             
+                            <!-- 1000個ボタン (テスト用) -->
+                            <button onclick="document.getElementById('lunch-amount').value = 1000; giveLunch();" class="main-btn" style="margin-top:15px; background-color:#8d6e63 !important; box-shadow: 0 4px 0 #5d4037 !important; font-size:0.9rem;">
+                                🎁 一気に1000個あげる！(シールGET)
+                            </button>
+
                             <p style="margin-top:10px; font-size:0.8rem; color:#666;">（たくさんあげると反応が変わるかも？）</p>
                         </div>
                     </div>
@@ -231,8 +248,9 @@
             </div>
         </section>
         
-        <!-- 5. ゲーム画面 -->
+        <!-- ... (screen-game, screen-danmaku, screen-quiz, screen-riddle, screen-kanji, screen-attendance, screen-map, screen-memory-game) ... -->
         <section id="screen-game" class="screen hidden">
+            <!-- (省略) -->
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-game"></div><div class="chat-bubble"><p id="nell-text-game">カリカリキャッチで遊ぶにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px;">🍖 カリカリ・キャッチ</h2>
             <div class="game-container"><canvas id="game-canvas" width="320" height="400"></canvas><div class="game-ui"><p>スコア: <span id="game-score">0</span></p><button id="start-game-btn" class="main-btn pink-btn" style="width: auto;">スタート！</button></div>
@@ -240,18 +258,16 @@
             </div>
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
-
-        <!-- 8. 弾幕ゲーム画面 -->
         <section id="screen-danmaku" class="screen hidden">
+            <!-- (省略) -->
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-danmaku"></div><div class="chat-bubble"><p id="nell-text-danmaku">ロボット掃除機からカリカリを守るにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px; color:#d32f2f;">🤖 VS ロボット掃除機</h2>
             <div class="game-container"><canvas id="danmaku-canvas" width="340" height="400" style="background:#fff9c4; border:4px solid #555; border-radius:10px; box-shadow:0 4px 10px rgba(0,0,0,0.3); touch-action:none;"></canvas><div class="game-ui"><p>スコア: <span id="danmaku-score">0</span></p><button id="start-danmaku-btn" onclick="startDanmakuGame()" class="main-btn red-btn" style="width: auto;">スタート！</button></div><button onclick="window.showRanking('vs_robot', '🏆 VS掃除機 ランキング')" class="main-btn orange-btn" style="width:auto; margin-top:10px;">🏆 ランキングを見る</button></div>
             <p style="font-size:0.8rem; color:white; text-align:center; margin-top:5px;">※茶色のカリカリだけ取ってね！他はダメ！<br>画面をドラッグして移動</p>
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
-
-        <!-- 9. クイズ画面 -->
         <section id="screen-quiz" class="screen hidden">
+            <!-- (省略) -->
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-quiz"></div><div class="chat-bubble"><p id="nell-text-quiz">ウルトラクイズに挑戦だにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px; color:#42a5f5;">🎤 ウルトラクイズ</h2>
             <div id="quiz-genre-select" class="glass-card" style="text-align:center; padding:20px;">
@@ -292,9 +308,8 @@
             </div>
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
-
-        <!-- ★新規: なぞなぞ画面 -->
         <section id="screen-riddle" class="screen hidden">
+            <!-- (省略) -->
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-riddle"></div><div class="chat-bubble"><p id="nell-text-riddle">なぞなぞを出すにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px; color:#e91e63;">❓ なぞなぞ</h2>
             <div class="glass-card" style="text-align:center; padding:20px;">
@@ -317,9 +332,8 @@
             </div>
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
-
-        <!-- 10. 漢字ドリル画面 -->
         <section id="screen-kanji" class="screen hidden">
+            <!-- (省略) -->
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-kanji"></div><div class="chat-bubble"><p id="nell-text-kanji">漢字の練習だにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px; color:#ab47bc;">✍️ 漢字ドリル</h2>
             <div class="glass-card" id="kanji-game-container" style="text-align:center; padding:15px; position: relative;">
@@ -363,24 +377,21 @@
             </div>
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
-
-        <!-- 6. 出席簿画面 -->
         <section id="screen-attendance" class="screen hidden">
+            <!-- (省略) -->
             <h2 class="section-title">📅 出席簿</h2>
             <div class="glass-card"><div id="attendance-grid" class="attendance-grid"></div></div>
             <button onclick="backToLobby()" class="main-btn pink-btn" style="margin-top:20px;">教室にもどる</button>
         </section>
-
-        <!-- 7. 足あとマップ画面 -->
         <section id="screen-map" class="screen hidden" style="padding-top: 60px;">
+            <!-- (省略) -->
             <h2 class="section-title" style="text-shadow: 2px 2px 0 #000; color:white; margin-bottom:10px;">🗺️ 足あとマップ</h2>
             <div id="map-container" style="width:100%; height:70vh; border-radius:15px; border:4px solid #fff; box-shadow:0 4px 10px rgba(0,0,0,0.3);"></div>
             <button onclick="showCollection()" class="main-btn" style="margin-top:10px; background:#00bcd4; box-shadow: 0 4px 0 #0288d1;">📖 お宝図鑑を見る</button>
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:10px;">廊下（ロビー）に戻る</button>
         </section>
-
-        <!-- お宝神経衰弱 -->
         <section id="screen-memory-game" class="screen hidden">
+            <!-- (省略) -->
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <div class="nell-chat" style="flex:1;"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-memory"></div><div class="chat-bubble"><p id="nell-text-memory">神経衰弱で勝負にゃ！</p></div></div>
                 <button onclick="backToLobby()" class="main-btn gray-btn" style="width:auto; margin:0 0 15px 10px; padding:10px; font-size:0.85rem;">やめる</button>
@@ -431,19 +442,28 @@
             <button onclick="skipMemoryExplanation()" class="main-btn orange-btn" style="margin-top:15px; width:auto; padding:10px 30px; box-shadow:0 4px 0 #e65100;">次へ ▶</button>
         </div>
     </div>
-
+    <!-- ★シール帳ユーザー選択モーダル -->
+    <div id="sticker-user-modal" class="memory-modal-overlay hidden">
+        <div class="memory-modal-content">
+            <h3 style="text-align:center; margin:0 0 10px 0; color:#5c6bc0;">🎒 みんなのシール帳</h3>
+            <div id="sticker-user-list" class="memory-list" style="flex:1; overflow-y:auto;"></div>
+            <button onclick="closeStickerUserList()" class="main-btn gray-btn" style="margin-top:10px;">閉じる</button>
+        </div>
+    </div>
+    
     <script src="js/config/firebase-config.js"></script>
     <script src="js/constants.js"></script>
     <script src="js/state/memory.js"></script> 
     <script src="js/card-generator.js"></script>
     <script src="js/audio/audio.js"></script>
     <script src="js/config/kanji-data.js?v=1.0"></script>
-    <script src="js/ui/ranking.js?v=468.4"></script> 
+    <script src="js/ui/ranking.js?v=470.13"></script> 
     <script src="js/ui/ui.js?v=468.3"></script>
     <script src="js/state/user.js?v=452.1"></script>
     <script src="js/voice-service.js?v=428.0"></script>
     <script src="js/camera-service.js?v=432.0"></script>
     <script src="js/game-engine.js?v=470.7"></script>
-    <script src="js/analyze.js?v=450.5"></script>
+    <script src="js/analyze.js?v=470.1"></script>
+    <script src="js/ui/sticker.js?v=1.1"></script>
 </body>
 </html>

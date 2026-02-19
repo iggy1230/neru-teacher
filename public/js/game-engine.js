@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v470.12: 漢字ドリルランキング対応版) ---
+// --- js/game-engine.js (v470.16: 漢字ドリルはなまるシンプル化版) ---
 
 console.log("Game Engine Loading...");
 
@@ -1011,222 +1011,15 @@ window.showRiddleResult = function(isWin) {
 };
 
 // ==========================================
-// 5. ネル先生の漢字ドリル
+// 5. ネル先生の漢字ドリル (改良版)
 // ==========================================
 let kanjiState = { 
     data: null, canvas: null, ctx: null, 
     isDrawing: false, mode: 'writing', 
     questionCount: 0, maxQuestions: 5, correctCount: 0,
-    guideVisible: false, strokes: [], currentStroke: null 
+    guideVisible: false, strokes: [], currentStroke: null,
+    history: [] // 重複防止用
 };
-
-// ★新規: ミニテストメニューの定義
-window.showMinitestMenu = function() {
-    window.switchScreen('screen-minitest');
-    window.currentMode = 'minitest';
-    
-    document.getElementById('minitest-subject-select').classList.remove('hidden');
-    document.getElementById('minitest-game-area').classList.add('hidden');
-    
-    window.updateNellMessage("教科を選んでにゃ！", "normal");
-};
-
-// ★新規: ミニテスト開始処理
-let minitestState = {
-    subject: "", score: 0, questionCount: 0, maxQuestions: 5, currentData: null, isFinished: false
-};
-
-window.startMinitest = function(subject) {
-    minitestState.subject = subject;
-    minitestState.score = 0;
-    minitestState.questionCount = 0;
-    minitestState.isFinished = false;
-    
-    document.getElementById('minitest-subject-select').classList.add('hidden');
-    document.getElementById('minitest-game-area').classList.remove('hidden');
-    
-    window.nextMinitestQuestion();
-};
-
-// ★新規: 次のミニテスト問題
-window.nextMinitestQuestion = async function() {
-    if (minitestState.questionCount >= minitestState.maxQuestions) {
-        window.finishMinitest();
-        return;
-    }
-    
-    minitestState.questionCount++;
-    // UIリセット
-    document.getElementById('minitest-progress').innerText = `${minitestState.questionCount}/${minitestState.maxQuestions} 問目`;
-    document.getElementById('minitest-question').innerText = "問題を作ってるにゃ...";
-    document.getElementById('minitest-options').innerHTML = "";
-    document.getElementById('minitest-explanation-area').classList.add('hidden');
-    document.getElementById('minitest-mic-status').innerText = "";
-    
-    // マイクボタンリセット
-    const micBtn = document.getElementById('minitest-mic-btn');
-    if(micBtn) {
-        micBtn.disabled = false;
-        micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で答える';
-        micBtn.style.background = "#4db6ac";
-    }
-
-    window.updateNellMessage(`${minitestState.subject}の問題だにゃ！`, "thinking");
-
-    try {
-        const res = await fetch('/generate-minitest', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                grade: currentUser ? currentUser.grade : "1", 
-                subject: minitestState.subject 
-            })
-        });
-        
-        if (!res.ok) throw new Error("Network response was not ok");
-        
-        const data = await res.json();
-        minitestState.currentData = data;
-        window.currentMinitest = data; // 音声入力用グローバル参照
-        
-        document.getElementById('minitest-question').innerText = data.question;
-        window.updateNellMessage(data.question, "normal", false, true); // 読み上げ
-        
-        const optionsDiv = document.getElementById('minitest-options');
-        optionsDiv.innerHTML = "";
-        
-        if (data.options && Array.isArray(data.options)) {
-            data.options.forEach(opt => {
-                const btn = document.createElement('button');
-                btn.className = "minitest-option-btn";
-                btn.innerText = opt;
-                btn.onclick = () => window.checkMinitestAnswer(opt, true);
-                optionsDiv.appendChild(btn);
-            });
-        }
-        
-    } catch (e) {
-        console.error(e);
-        document.getElementById('minitest-question').innerText = "問題の作成に失敗したにゃ...";
-        window.updateNellMessage("ごめん、問題が作れなかったにゃ...", "sad");
-    }
-};
-
-// ★新規: ミニテスト答え合わせ
-window.checkMinitestAnswer = function(userAnswer, isButton = false) {
-    if (!minitestState.currentData || window.currentMode !== 'minitest') return false;
-    
-    // すでに回答済み（解説表示中）なら無視
-    if (!document.getElementById('minitest-explanation-area').classList.contains('hidden')) return false;
-
-    const correct = minitestState.currentData.answer;
-    const explanation = minitestState.currentData.explanation;
-    
-    let isCorrect = false;
-    // 曖昧一致判定を使用
-    if (fuzzyContains(userAnswer, correct)) isCorrect = true;
-    
-    const status = document.getElementById('minitest-mic-status');
-    if (status && !isButton) status.innerText = `「${userAnswer}」？`;
-
-    if (isCorrect) {
-        if (window.safePlay) window.safePlay(window.sfxMaru);
-        minitestState.score += 20; // 100点満点
-        window.updateNellMessage(`正解だにゃ！`, "excited", false, true);
-    } else {
-        if (window.safePlay) window.safePlay(window.sfxBatu);
-        window.updateNellMessage(`残念！正解は「${correct}」だにゃ。`, "gentle", false, true);
-    }
-
-    // 解説表示
-    const expArea = document.getElementById('minitest-explanation-area');
-    const expText = document.getElementById('minitest-explanation-text');
-    expArea.classList.remove('hidden');
-    expText.innerText = explanation;
-    
-    // ボタン無効化と色付け
-    const buttons = document.querySelectorAll('.minitest-option-btn');
-    buttons.forEach(btn => {
-        btn.disabled = true;
-        if (btn.innerText === correct) btn.classList.add('minitest-correct');
-        else if (isButton && btn.innerText === userAnswer && !isCorrect) btn.classList.add('minitest-wrong');
-    });
-
-    return true;
-};
-
-// ★新規: ミニテスト終了処理
-window.finishMinitest = function() {
-    minitestState.isFinished = true;
-    const score = minitestState.score;
-    let msg = "";
-    let mood = "normal";
-
-    // 報酬計算
-    let reward = score; // 点数そのままカリカリに
-    if (score === 100) reward += 50; // 満点ボーナス
-    
-    window.giveGameReward(reward);
-    window.saveHighScore('minitest_total', reward); // 簡易的なランキング保存
-
-    if (score === 100) {
-        msg = `満点だにゃ！天才だにゃ！カリカリ${reward}個あげるにゃ！`;
-        mood = "excited";
-    } else if (score >= 60) {
-        msg = `${score}点！よくがんばったにゃ！カリカリ${reward}個あげるにゃ！`;
-        mood = "happy";
-    } else {
-        msg = `${score}点だったにゃ。次はもっと取れるにゃ！カリカリ${reward}個あげるにゃ。`;
-        mood = "gentle";
-    }
-
-    window.updateNellMessage(msg, mood, false, true);
-    alert(msg);
-    window.showMinitestMenu();
-};
-
-// ★新規: ミニテスト用音声入力
-window.startMinitestVoiceInput = function() {
-    const micBtn = document.getElementById('minitest-mic-btn');
-    const status = document.getElementById('minitest-mic-status');
-    
-    if (micBtn) {
-        micBtn.disabled = true;
-        micBtn.innerHTML = '<span style="font-size:1.5rem;">👂</span> 聞いてるにゃ...';
-        micBtn.style.background = "#ff5252";
-    }
-    if (status) status.innerText = "お話してにゃ！";
-    
-    if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
-    
-    if (typeof window.startOneShotRecognition === 'function') {
-        window.startOneShotRecognition(
-            (transcript) => {
-                const answered = window.checkMinitestAnswer(transcript, false);
-                if (!answered) window.stopMinitestVoiceInput(true);
-            },
-            () => {
-                window.stopMinitestVoiceInput();
-            }
-        );
-    } else {
-        alert("音声認識が使えないにゃ...");
-        window.stopMinitestVoiceInput();
-    }
-};
-
-window.stopMinitestVoiceInput = function(keepStatus = false) {
-    const micBtn = document.getElementById('minitest-mic-btn');
-    const status = document.getElementById('minitest-mic-status');
-    
-    if (micBtn) {
-        micBtn.disabled = false;
-        micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で答える';
-        micBtn.style.background = "#4db6ac";
-    }
-    if (status && !keepStatus) status.innerText = "";
-};
-
 
 window.showKanjiMenu = function() {
     window.switchScreen('screen-kanji');
@@ -1242,6 +1035,8 @@ window.startKanjiSet = function(mode) {
     kanjiState.questionCount = 0;
     kanjiState.correctCount = 0;
     kanjiState.strokes = [];
+    kanjiState.history = []; // 履歴リセット
+    
     document.getElementById('kanji-menu-container').style.display = 'none';
     const content = document.getElementById('kanji-game-content');
     if(content) content.classList.remove('hidden');
@@ -1249,7 +1044,6 @@ window.startKanjiSet = function(mode) {
     kanjiState.canvas = canvas; kanjiState.ctx = canvas.getContext('2d');
     kanjiState.ctx.lineCap = 'round'; kanjiState.ctx.lineJoin = 'round'; kanjiState.ctx.lineWidth = 12; kanjiState.ctx.strokeStyle = '#000000';
     
-    // ★ストローク記録対応の描画イベント
     const getPos = (e) => { const rect = canvas.getBoundingClientRect(); const clientX = e.touches ? e.touches[0].clientX : e.clientX; const clientY = e.touches ? e.touches[0].clientY : e.clientY; return { x: clientX - rect.left, y: clientY - rect.top }; };
     
     const startDraw = (e) => { 
@@ -1313,7 +1107,6 @@ window.nextKanjiQuestion = async function() {
         else msg = `残念、全問不正解だにゃ…。次はがんばるにゃ！`;
         
         window.giveGameReward(reward);
-        // ★追加: 漢字ドリルランキングの保存
         window.saveHighScore('kanji_drill', reward);
 
         window.updateNellMessage(msg, "happy", false, true);
@@ -1322,11 +1115,16 @@ window.nextKanjiQuestion = async function() {
         return;
     }
     kanjiState.questionCount++;
-    kanjiState.strokes = []; // ストロークリセット
+    kanjiState.strokes = []; 
     
     kanjiState.guideVisible = false;
+    // ★修正: はなまる要素のリセット
     const hanamaru = document.getElementById('kanji-hanamaru');
-    if(hanamaru) { hanamaru.innerText = ""; hanamaru.style.display = 'none'; }
+    if(hanamaru) { 
+        hanamaru.innerText = ""; 
+        hanamaru.className = ""; // クラス削除
+        hanamaru.style.display = 'none'; 
+    }
 
     document.getElementById('kanji-hint-readings').style.display = 'none';
     document.getElementById('guide-kanji-btn').innerText = "うすく表示";
@@ -1343,9 +1141,15 @@ window.nextKanjiQuestion = async function() {
 
     let targetKanji = null;
     const grade = currentUser ? currentUser.grade : "1";
+    // 重複防止ロジック
     if (window.KANJI_DATA && window.KANJI_DATA[grade]) {
         const list = window.KANJI_DATA[grade];
-        if (list && list.length > 0) targetKanji = list[Math.floor(Math.random() * list.length)];
+        // 履歴にない漢字をフィルタリング
+        const available = list.filter(k => !kanjiState.history.includes(k));
+        const sourceList = available.length > 0 ? available : list; // 全て出題済ならリセット
+        if (sourceList.length > 0) {
+            targetKanji = sourceList[Math.floor(Math.random() * sourceList.length)];
+        }
     }
 
     try {
@@ -1354,8 +1158,12 @@ window.nextKanjiQuestion = async function() {
             body: JSON.stringify({ grade: grade, mode: kanjiState.mode, targetKanji: targetKanji })
         });
         const data = await res.json();
+        
         if (data && data.kanji) {
+            // 履歴に追加
+            kanjiState.history.push(data.kanji);
             kanjiState.data = data;
+            
             qText.innerHTML = data.question_display;
             const strokesEl = document.getElementById('kanji-hint-strokes');
             if(strokesEl) strokesEl.innerText = data.kakusu ? `画数: ${data.kakusu}` : "";
@@ -1377,31 +1185,50 @@ window.nextKanjiQuestion = async function() {
             if (data.type === 'writing') {
                 cvs.classList.remove('hidden'); 
                 mic.classList.add('hidden'); 
-                controls.style.display = 'flex'; // 書き取り用ボタン表示
+                controls.style.display = 'flex';
                 giveupBtn.style.display = 'inline-block';
                 window.clearKanjiCanvas();
             } else {
                 cvs.classList.add('hidden'); 
-                mic.classList.remove('hidden'); // マイクボタン表示
-                controls.style.display = 'none'; // 書き取り用ボタン非表示
+                mic.classList.remove('hidden');
+                controls.style.display = 'none';
                 giveupBtn.style.display = 'inline-block';
                 
                 const micBtn = document.getElementById('kanji-mic-btn');
                 if (micBtn) { micBtn.disabled = false; micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で答える'; micBtn.style.background = "#4db6ac"; }
             }
         } else { throw new Error("Invalid Kanji Data"); }
-    } catch (e) { console.error(e); qText.innerText = "問題が出せないにゃ…"; window.updateNellMessage("ごめん、問題が出せないにゃ…", "sad"); }
+    } catch (e) { 
+        console.error(e); 
+        qText.innerText = "問題が出せないにゃ…"; 
+        window.updateNellMessage("ごめん、問題が出せないにゃ…", "sad"); 
+    }
 };
 
 window.startKanjiVoiceInput = function() {
     const micBtn = document.getElementById('kanji-mic-btn');
     const status = document.getElementById('kanji-mic-status');
+    
+    // UI更新
     if (micBtn) { micBtn.disabled = true; micBtn.innerHTML = '<span style="font-size:1.5rem;">👂</span> 聞いてるにゃ...'; micBtn.style.background = "#ff5252"; }
     if (status) status.innerText = "お話してにゃ！";
+    
     if(typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
+    
     if (typeof window.startOneShotRecognition === 'function') {
-        window.startOneShotRecognition((transcript) => { window.checkKanjiVoiceAnswer(transcript); window.stopKanjiVoiceInput(true); }, () => { window.stopKanjiVoiceInput(); });
-    } else { alert("音声認識が使えないにゃ..."); window.stopKanjiVoiceInput(); }
+        window.startOneShotRecognition(
+            (transcript) => { 
+                window.checkKanjiVoiceAnswer(transcript); 
+                window.stopKanjiVoiceInput(true); 
+            }, 
+            () => { 
+                window.stopKanjiVoiceInput(); 
+            }
+        );
+    } else { 
+        alert("音声認識が使えないにゃ..."); 
+        window.stopKanjiVoiceInput(); 
+    }
 };
 
 window.stopKanjiVoiceInput = function(keepStatus = false) {
@@ -1463,7 +1290,6 @@ window.processKanjiSuccess = function(comment) {
     window.updateNellMessage(comment, "excited", false, true);
     kanjiState.correctCount++;
     
-    // 書き取りならキャンバスをクリアして見やすく
     if (kanjiState.data.type === 'writing') {
         window.clearKanjiCanvas(true);
     }
@@ -1479,14 +1305,23 @@ window.processKanjiSuccess = function(comment) {
     const detailText = document.getElementById('kanji-answer-detail');
     if(detailText) detailText.innerHTML = `音読み: ${kanjiState.data.onyomi || "-"} / 訓読み: ${kanjiState.data.kunyomi || "-"} / 画数: ${kanjiState.data.kakusu || "-"}画`;
     
+    // ★修正: はなまる表示 (シンプルな「○」)
     const hanamaru = document.getElementById('kanji-hanamaru');
-    if (hanamaru) { hanamaru.innerText = "○"; hanamaru.style.display = 'flex'; }
+    if (hanamaru) { 
+        hanamaru.innerText = "○"; 
+        hanamaru.className = "hanamaru-stamp"; // CSSアニメーション適用
+        hanamaru.style.display = 'flex'; 
+        hanamaru.style.fontSize = "200px";
+        hanamaru.style.color = "rgba(255, 50, 50, 0.7)";
+        hanamaru.style.textShadow = "none";
+        hanamaru.style.fontFamily = "sans-serif";
+    }
 };
 
 window.clearKanjiCanvas = function(forceClear = false) {
     if (!kanjiState.ctx) return;
     kanjiState.ctx.clearRect(0, 0, 300, 300);
-    kanjiState.strokes = []; // ストロークも消去
+    kanjiState.strokes = [];
     window.redrawCanvas();
 };
 
@@ -1529,7 +1364,6 @@ window.giveUpKanji = function() {
     window.updateNellMessage(`正解は「${ans}」だにゃ。次は頑張るにゃ！`, "gentle", false, true);
     if(window.safePlay) window.safePlay(window.sfxBatu);
     
-    // 書き取りならキャンバスをクリアして見やすく
     if (kanjiState.data.type === 'writing') {
         window.clearKanjiCanvas(true);
     }

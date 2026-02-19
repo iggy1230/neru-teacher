@@ -1,4 +1,4 @@
-// --- server.js (v470.12: 完全版 - 省略なし) ---
+// --- server.js (v470.14: 完全版 - 漢字ドリル強化・ストック機能搭載) ---
 
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import express from 'express';
@@ -237,6 +237,40 @@ const FALLBACK_QUIZZES = {
     ]
 };
 
+// 漢字ドリル用ストック問題
+const FALLBACK_KANJI_DRILLS = {
+    "1": [
+        { type: "reading", kanji: "空", reading: "そら", question_display: "青い<span style='color:red;'>空</span>を見上げる。", question_speech: "青い「そら」を見上げる。" },
+        { type: "reading", kanji: "犬", reading: "いぬ", question_display: "かわいい<span style='color:red;'>犬</span>が走る。", question_speech: "かわいい「いぬ」が走る。" },
+        { type: "writing", kanji: "花", reading: "はな", question_display: "きれいな<span style='color:red;'>はな</span>がさいた。", question_speech: "きれいな「はな」がさいた。" },
+        { type: "writing", kanji: "白", reading: "しろ", question_display: "<span style='color:red;'>しろ</span>い雲がうかぶ。", question_speech: "「しろ」い雲がうかぶ。" }
+    ],
+    "2": [
+        { type: "reading", kanji: "海", reading: "うみ", question_display: "広い<span style='color:red;'>海</span>に行く。", question_speech: "広い「うみ」に行く。" },
+        { type: "reading", kanji: "光", reading: "ひかり", question_display: "太陽の<span style='color:red;'>光</span>があたる。", question_speech: "太陽の「ひかり」があたる。" },
+        { type: "writing", kanji: "楽", reading: "たの", question_display: "学校はとても<span style='color:red;'>たの</span>しい。", question_speech: "学校はとても「たの」しい。" },
+        { type: "writing", kanji: "岩", reading: "いわ", question_display: "大きな<span style='color:red;'>いわ</span>がある。", question_speech: "大きな「いわ」がある。" }
+    ],
+    "3": [
+        { type: "reading", kanji: "坂", reading: "さか", question_display: "急な<span style='color:red;'>坂</span>をのぼる。", question_speech: "急な「さか」をのぼる。" },
+        { type: "reading", kanji: "旅", reading: "たび", question_display: "遠くへ<span style='color:red;'>旅</span>に出る。", question_speech: "遠くへ「たび」に出る。" },
+        { type: "writing", kanji: "波", reading: "なみ", question_display: "<span style='color:red;'>なみ</span>の音が聞こえる。", question_speech: "「なみ」の音が聞こえる。" },
+        { type: "writing", kanji: "鉄", reading: "てつ", question_display: "このぼうは<span style='color:red;'>てつ</span>でできている。", question_speech: "このぼうは「てつ」でできている。" }
+    ],
+    "4": [
+        { type: "reading", kanji: "愛", reading: "あい", question_display: "<span style='color:red;'>愛</span>をこめて手紙を書く。", question_speech: "「あい」をこめて手紙を書く。" },
+        { type: "writing", kanji: "熱", reading: "ねつ", question_display: "お湯が<span style='color:red;'>ねつ</span>を持つ。", question_speech: "お湯が「ねつ」を持つ。" }
+    ],
+    "5": [
+        { type: "reading", kanji: "夢", reading: "ゆめ", question_display: "将来の<span style='color:red;'>夢</span>を語る。", question_speech: "将来の「ゆめ」を語る。" },
+        { type: "writing", kanji: "豊", reading: "ゆた", question_display: "緑が<span style='color:red;'>ゆた</span>かな山。", question_speech: "緑が「ゆた」かな山。" }
+    ],
+    "6": [
+        { type: "reading", kanji: "誠", reading: "まこと", question_display: "<span style='color:red;'>誠</span>実な人柄。", question_speech: "「せい」じつな人柄。" },
+        { type: "writing", kanji: "暮", reading: "く", question_display: "田舎で<span style='color:red;'>く</span>らす。", question_speech: "田舎で「く」らす。" }
+    ]
+};
+
 const QUIZ_PERSPECTIVES = [
     "【視点: 名言・セリフ】キャラクターの決め台詞、口癖、または印象的な会話シーンから出題してください。",
     "【視点: 数字・データ】身長、体重、年号、個数、威力など、具体的な『数字』に関する事実から出題してください。",
@@ -288,6 +322,38 @@ async function verifyQuiz(quizData, genre) {
     } catch (e) {
         console.warn("Verification API Error:", e.message);
         return false;
+    }
+}
+
+// 漢字ドリル検証用
+async function verifyKanji(kanjiData) {
+    if (!kanjiData || !kanjiData.kanji || !kanjiData.reading || !kanjiData.question_display) return false;
+    
+    // 簡易検証: 読み仮名が空でないか、HTMLタグが含まれているか
+    if (kanjiData.reading.trim() === "") return false;
+    if (!kanjiData.question_display.includes("<span")) return false;
+    
+    // AIによる整合性チェック
+    try {
+        const model = genAI.getGenerativeModel({ model: MODEL_FAST });
+        const checkPrompt = `
+        以下の漢字問題の整合性をチェックしてください。
+        漢字: ${kanjiData.kanji}
+        読み: ${kanjiData.reading}
+        例文: ${kanjiData.question_display.replace(/<[^>]*>/g, '')}
+        
+        判定基準:
+        1. 漢字と読みが正しい組み合わせか（一般的な読みか）。
+        2. 例文が日本語として自然か。
+        
+        OKなら "PASS"、NGなら "FAIL" と出力してください。
+        `;
+        const result = await model.generateContent(checkPrompt);
+        const text = result.response.text().trim();
+        return text.includes("PASS");
+    } catch (e) {
+        console.warn("Kanji Verify Error (Skipping AI check):", e.message);
+        return true; // AIチェックエラー時は形式チェックのみで通過とする
     }
 }
 
@@ -582,22 +648,20 @@ app.post('/generate-minitest', async (req, res) => {
     }
 });
 
-// --- 漢字ドリル生成 API (精度向上版 & リトライ待機強化 & 読み上げ修正) ---
+// --- 漢字ドリル生成 API (強化版: 検証＆フォールバック) ---
 app.post('/generate-kanji', async (req, res) => {
     const MAX_RETRIES = 3;
     let attempt = 0;
+    const { grade, mode, targetKanji } = req.body; 
 
     while (attempt < MAX_RETRIES) {
         attempt++;
         try {
-            const { grade, mode, targetKanji } = req.body; 
-            
-            // ★精度向上のため temperature を下げる
             const model = genAI.getGenerativeModel({ 
                 model: MODEL_FAST, 
                 generationConfig: { 
                     responseMimeType: "application/json",
-                    temperature: 0.3 
+                    temperature: 0.4 
                 } 
             });
             
@@ -615,31 +679,28 @@ app.post('/generate-kanji', async (req, res) => {
             }
 
             const prompt = `
-            あなたは日本の小学校教師（国語のエキスパート）です。小学${grade}年生向けの漢字ドリルを1問作成してください。
+            あなたは日本の小学校教師です。小学${grade}年生向けの漢字ドリルを1問作成してください。
             モードは「${mode === 'reading' ? '読み問題' : '書き取り問題'}」です。
             
             ${instruction}
 
             【問題作成のルール】
-            1. **整合性**: 例文は、その漢字の意味が正しく通じる自然な日本語にしてください。
-            2. **データ**: 「画数」「音読み」「訓読み」は正確なデータを提供してください。
+            1. **自然な例文**: その漢字の意味が正しく通じる、子供に分かりやすい短い例文にしてください。
+            2. **正確性**: 音読み、訓読み、画数は正確なデータを提供してください。
             
             ${mode === 'writing' ? `
-            【書き取り問題の作成ルール (絶対厳守)】
-            1. ターゲットの漢字「${targetKanji}」を含む短い例文を作成してください。
-            2. 例文の中で、**ターゲットの漢字「${targetKanji}」に対応する読み仮名全体**をひらがなに変換し、
-               そのひらがな部分を \`<span style='color:red;'>...</span>\` タグで囲んで強調してください。
-            3. **重要**: 「私（わたし）」のように読みが複数文字の場合、**「わた」ではなく「わたし」全体**を赤字にしてください。送り仮名がある場合（例：強（つよ）い）は、漢字部分（つよ）のみを赤字にしてください。
-            4. 例: 「私」が出題の場合 → 「これは<span style='color:red;'>わたし</span>の宝物です。」
-            5. 例: 「犬」が出題の場合 → 「かわいい<span style='color:red;'>いぬ</span>が走る。」
-            6. **音声読み上げ**: 書き取り問題の場合は、答えとなる言葉（ひらがな）を含めて例文全体を普通に読み上げてください。
+            【書き取り問題の作成ルール (厳守)】
+            1. ターゲットの漢字「${targetKanji || "指定なし"}」を含む例文を作成。
+            2. **答えとなる読み仮名部分**をひらがなにし、\`<span style='color:red;'>...</span>\` タグで囲んでください。
+            3. 例: 「私」が出題 → 「これは<span style='color:red;'>わたし</span>の宝物です。」
+            4. **重要**: 送り仮名がある場合（例: 強（つよ）い）、漢字部分（つよ）のみを赤字にしてください。
+            5. \`question_speech\`: 答えを含めて普通に読み上げてください。
             ` : `
-            【読み問題の作成ルール】
-            1. ターゲットの漢字「${targetKanji}」を含む短い例文を作成してください。
-            2. ターゲットの漢字部分を \`<span style='color:red;'>${targetKanji}</span>\` タグで囲んで強調してください。
-            3. **音声読み上げ (重要)**: 読み問題なので、**正解の読み方を絶対に読み上げないでください**。
-               - 例文を読み上げる際は、ターゲットの漢字部分を「赤色の漢字」や「なになに」と言い換えてください。
-               - 例: 「この<span style='color:red;'>泉</span>の水は...」 → 読み上げ: 「この『赤色の漢字』の水は、とても冷たい。」
+            【読み問題の作成ルール (厳守)】
+            1. ターゲットの漢字「${targetKanji || "指定なし"}」を含む例文を作成。
+            2. **ターゲットの漢字そのもの**を \`<span style='color:red;'>...</span>\` タグで囲んでください。
+            3. 例: 「<span style='color:red;'>私</span>は元気です。」
+            4. \`question_speech\`: **正解の読み方を絶対に言わないでください**。赤字部分は「赤色の漢字」や「なになに」と言い換えてください。
             `}
 
             【出力JSONフォーマット】
@@ -650,65 +711,84 @@ app.post('/generate-kanji', async (req, res) => {
                 "onyomi": "音読み（カタカナ、なければ空文字）",
                 "kunyomi": "訓読み（ひらがな、なければ空文字）",
                 "kakusu": "画数（数字のみ）",
-                "question_display": "画面表示用のHTML（上記のルールに従った例文）",
-                "question_speech": "読み上げ用テキスト（上記のルールに従って作成）"
+                "question_display": "画面表示用のHTML（ルールに従った例文）",
+                "question_speech": "読み上げ用テキスト"
             }
             `;
 
             const result = await model.generateContent(prompt);
             let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
             const cleanText = extractFirstJson(text); 
-
             const json = JSON.parse(cleanText);
             
             // 検証
-            if (json.kanji && json.reading && json.question_display) {
-                 // ターゲット指定があった場合、答えが一致しているかチェック
-                 if (targetKanji && json.kanji !== targetKanji) {
-                     console.warn(`[Kanji Gen] Mismatch! Requested: ${targetKanji}, Got: ${json.kanji}. Retrying...`);
-                     continue; // リトライ
-                 }
-                 res.json(json);
-                 return;
+            if (targetKanji && json.kanji !== targetKanji) {
+                console.warn(`[Kanji Gen] Mismatch! Requested: ${targetKanji}, Got: ${json.kanji}. Retrying...`);
+                throw new Error("Target kanji mismatch");
             }
+
+            const isValid = await verifyKanji(json);
+            if (isValid) {
+                res.json(json);
+                return;
+            } else {
+                console.warn(`[Kanji Gen] Verification Failed. Retrying...`);
+                throw new Error("Verification failed");
+            }
+
         } catch (e) {
             console.error(`Kanji Gen Error (Attempt ${attempt}):`, e.message);
-            // ★リトライ待機: 429エラー等に備えて待機時間を設ける
-            if (attempt < MAX_RETRIES) {
-                const waitTime = attempt * 2000; // 2秒, 4秒待機
-                console.log(`Waiting ${waitTime}ms before retry...`);
-                await sleep(waitTime);
-            }
+            if (attempt < MAX_RETRIES) await sleep(500);
         }
     }
-    // リトライ失敗
-    res.status(500).json({ error: "漢字が見つからないにゃ…" });
+
+    // リトライ失敗時のフォールバック
+    console.log("[Kanji Gen] Switching to Fallback Stock.");
+    try {
+        const gradeKey = String(grade);
+        const stockList = FALLBACK_KANJI_DRILLS[gradeKey] || FALLBACK_KANJI_DRILLS["1"];
+        // モードに合うものをフィルタリング
+        const filteredStock = stockList.filter(q => q.type === mode);
+        const finalStock = filteredStock.length > 0 ? filteredStock : stockList;
+        
+        const fallback = finalStock[Math.floor(Math.random() * finalStock.length)];
+        
+        // 足りない情報を補完
+        const safeFallback = {
+            ...fallback,
+            onyomi: "", // ストックにはないので空
+            kunyomi: "",
+            kakusu: "0",
+            fallback: true
+        };
+        res.json(safeFallback);
+    } catch (e) {
+        res.status(500).json({ error: "漢字が見つからないにゃ…" });
+    }
 });
 
-
-// --- 漢字採点 API (★機能拡張: テキスト判定追加) ---
+// --- 漢字採点 API (AI判定 + ゆらぎ許容) ---
 app.post('/check-kanji', async (req, res) => {
     try {
-        // userTextがあれば「読み判定モード」、imageがあれば「書き取り判定モード」
         const { image, targetKanji, userText, targetReading } = req.body;
         const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
 
         if (userText && targetReading) {
-            // ★読み問題の音声回答判定（AI判定導入）
+            // ★読み問題の音声回答判定
             const prompt = `
             あなたは国語の先生です。子供が漢字の読み問題を音声で答えました。
-            正誤判定を行ってください。
+            正誤判定を行ってください。甘めに判定してください。
 
             【問題】漢字: 「${targetKanji}」, 正解の読み: 「${targetReading}」
             【子供の回答(音声認識結果)】: 「${userText}」
 
             【判定ルール】
-            1. 音声認識の結果なので、漢字変換されてしまっている場合があります（例: 正解「こう」→ 回答「高」）。
-            2. 回答の読みが、正解の読みと一致していれば「正解」としてください。
-            3. 明らかに違う読みや、全く関係ない言葉なら「不正解」です。
-            4. 多少の言い回し（「答えは〇〇」など）が含まれていても、核心部分が合っていれば正解です。
+            1. **完全一致**: もちろん正解。
+            2. **漢字変換**: 音声認識が勝手に漢字変換していても、読みが合っていれば正解（例: 正解「こう」→ 回答「高」）。
+            3. **言い回し**: 「答えは〇〇」「〇〇です」などの余計な言葉が含まれていても、核心部分が合っていれば正解。
+            4. **同音異義語**: 文脈が不明瞭でも、音が合っていれば正解。
 
-            出力JSON: { "is_correct": boolean, "comment": "ネル先生としての優しいコメント" }
+            出力JSON: { "is_correct": boolean, "comment": "ネル先生としての優しいコメント（20文字以内）" }
             `;
             const result = await model.generateContent(prompt);
             let text = extractFirstJson(result.response.text());
@@ -719,8 +799,8 @@ app.post('/check-kanji', async (req, res) => {
             const prompt = `
             これは子供が手書きした漢字の画像です。
             ターゲット: 「${targetKanji}」
-            判定: 正しく書けているか（多少のバランス崩れは許容）
-            出力JSON: { "is_correct": boolean, "comment": "ネル先生としてのコメント" }
+            判定: 正しく書けているか（多少のバランス崩れは許容。トメ・ハネ・ハライは厳しくしなくて良い）
+            出力JSON: { "is_correct": boolean, "comment": "ネル先生としてのコメント（20文字以内）" }
             `;
             const result = await model.generateContent([
                 prompt,
