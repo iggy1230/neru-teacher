@@ -1,21 +1,4 @@
-// --- js/ui/sticker.js (v1.1: みんなのシール帳・ゴミ箱・画像追加版) ---
-
-// 画像プール (ランダム用)
-const STICKER_IMAGES = [
-    // ステッカーフォルダ (MAX_COUNT=2 なので 001, 002)
-    'assets/images/sticker/sticker001.png',
-    'assets/images/sticker/sticker002.png',
-    // キャラクター
-    'assets/images/characters/nell-normal.png',
-    'assets/images/characters/nell-happy.png',
-    'assets/images/characters/nell-excited.png',
-    // アイテム・ゲーム
-    'assets/images/items/nikukyuhanko.png',
-    'assets/images/game/souji/neru_dot.png',
-    'assets/images/game/souji/runba_dot.png',
-    'assets/images/game/souji/kari1_dot.png',
-    'assets/images/game/souji/churu_dot.png'
-];
+// --- js/ui/sticker.js (v1.3: 連番26枚対応版) ---
 
 window.showStickerBook = function(targetUserId = null) {
     window.switchScreen('screen-sticker-book');
@@ -32,17 +15,24 @@ window.showStickerBook = function(targetUserId = null) {
 window.grantRandomSticker = function(fromLunch = false) {
     if (!currentUser) return;
     
-    // 画像プールからランダムに選択
-    const randomIndex = Math.floor(Math.random() * STICKER_IMAGES.length);
-    const filePath = STICKER_IMAGES[randomIndex];
+    // ★修正: シールの総数を26に設定
+    const TOTAL_STICKERS = 26;
+    
+    // 1 から TOTAL_STICKERS までのランダムな整数を生成
+    const num = Math.floor(Math.random() * TOTAL_STICKERS) + 1;
+    
+    // 3桁の文字列に変換 (例: 5 -> "005")
+    const numStr = String(num).padStart(3, '0');
+    const filePath = `assets/images/sticker/sticker${numStr}.png`;
     
     // 新しいシールデータ作成
+    // 初期位置を台紙の「右側の枠外」に設定 (x: 115%)
     const newSticker = {
         id: 'st_' + Date.now() + '_' + Math.floor(Math.random()*1000),
         src: filePath,
-        x: 50 + (Math.random() * 20 - 10), // 中央付近にランダム
-        y: 50 + (Math.random() * 20 - 10),
-        rotation: (Math.random() * 40 - 20), // 軽いランダム回転
+        x: 115, 
+        y: 10 + (Math.random() * 30), // 上の方に少し散らす
+        rotation: (Math.random() * 40 - 20),
         scale: 1.0,
         zIndex: 100 // 最前面へ
     };
@@ -56,23 +46,16 @@ window.grantRandomSticker = function(fromLunch = false) {
     // 演出
     if(window.safePlay) window.safePlay(window.sfxHirameku);
     
-    // 給食からの呼び出しなら特別なメッセージ
-    if (fromLunch) {
-        window.updateNellMessage("いっぱいくれたお礼に特製シールをあげるにゃ！", "excited", false, true);
-        
-        // 画像をプリロードして確認（エラーならアラートでごまかす）
-        const img = new Image();
-        img.onload = () => {
-            alert(`🎉 おめでとう！\n特製シールをゲットしたにゃ！\nシール帳に貼っておいたにゃ！`);
-        };
-        img.onerror = () => {
-            alert(`🎉 おめでとう！\n特製シールをゲットしたにゃ！`);
-        };
-        img.src = filePath;
-    } else {
-        // 通常の呼び出し
-        alert(`🎉 シールをゲットしたにゃ！`);
-    }
+    // アラート表示
+    const img = new Image();
+    img.onload = () => {
+        alert(`🎉 おめでとう！\n特製シールをゲットしたにゃ！\nシール帳の右側に置いておいたにゃ！`);
+    };
+    img.onerror = () => {
+        // 画像がない場合のアラート
+        alert(`🎉 おめでとう！\n特製シールをゲットしたにゃ！\n(画像が見つからなかったときは肉球になるにゃ)`);
+    };
+    img.src = filePath;
 };
 
 window.loadAndRenderStickers = async function(userId) {
@@ -157,9 +140,12 @@ window.createStickerElement = function(data, editable = true) {
     if (data.src) {
         img.src = data.src;
     } else if (window.STICKER_TYPES) {
+        // 古いデータ形式の互換性
         const typeDef = window.STICKER_TYPES.find(t => t.id === data.typeId);
         if (typeDef && typeDef.src) img.src = typeDef.src;
         else img.src = 'assets/images/items/nikukyuhanko.png'; // fallback
+    } else {
+        img.src = 'assets/images/items/nikukyuhanko.png';
     }
     
     img.className = 'sticker-img';
@@ -189,15 +175,17 @@ window.attachStickerEvents = function(el, data) {
     let moved = false;
     const trash = document.getElementById('sticker-trash');
 
-    // ゴミ箱との当たり判定
+    // ゴミ箱判定ロジック (中心点判定)
     const isOverTrash = (element) => {
         if (!trash) return false;
-        const r1 = element.getBoundingClientRect();
-        const r2 = trash.getBoundingClientRect();
-        return !(r1.right < r2.left || 
-                 r1.left > r2.right || 
-                 r1.bottom < r2.top || 
-                 r1.top > r2.bottom);
+        const r1 = element.getBoundingClientRect(); // シール
+        const r2 = trash.getBoundingClientRect();   // ゴミ箱
+        
+        // シールの中心点
+        const c1 = { x: r1.left + r1.width / 2, y: r1.top + r1.height / 2 };
+        
+        // 中心点がゴミ箱の矩形内にあるか
+        return (c1.x >= r2.left && c1.x <= r2.right && c1.y >= r2.top && c1.y <= r2.bottom);
     };
 
     // ドラッグ開始
@@ -212,7 +200,7 @@ window.attachStickerEvents = function(el, data) {
         // 最前面へ
         el.style.zIndex = 999;
         
-        // ゴミ箱をアクティブ表示（少し大きくする等）
+        // ゴミ箱をアクティブ表示
         if (trash) trash.classList.add('active');
         
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
@@ -246,10 +234,9 @@ window.attachStickerEvents = function(el, data) {
         let newX = initialLeft + dxPercent;
         let newY = initialTop + dyPercent;
         
-        // 画面外へのはみ出し制限は一旦解除（ゴミ箱が外にあるかもしれないので）
-        // ただし、極端に行き過ぎないように
-        newX = Math.max(-20, Math.min(120, newX));
-        newY = Math.max(-20, Math.min(120, newY));
+        // はみ出し制限を緩和 (枠外配置用)
+        newX = Math.max(-50, Math.min(150, newX));
+        newY = Math.max(-50, Math.min(150, newY));
 
         el.style.left = newX + '%';
         el.style.top = newY + '%';
@@ -280,7 +267,7 @@ window.attachStickerEvents = function(el, data) {
         // ゴミ箱判定
         if (moved && trash && isOverTrash(el)) {
             // 削除実行
-            if (window.sfxBatu) window.safePlay(window.sfxBatu); // ポイ捨て音代わり
+            if (window.sfxBatu) window.safePlay(window.sfxBatu); 
             
             // DOM削除
             el.remove();
@@ -293,19 +280,12 @@ window.attachStickerEvents = function(el, data) {
             return; // 終了
         }
         
-        // 削除されなかった場合の位置調整（画面内に戻す）
-        let currentLeft = parseFloat(el.style.left);
-        let currentTop = parseFloat(el.style.top);
-        currentLeft = Math.max(0, Math.min(100, currentLeft));
-        currentTop = Math.max(0, Math.min(100, currentTop));
-        
-        el.style.left = currentLeft + '%';
-        el.style.top = currentTop + '%';
+        // 削除されなかった場合の位置調整
         el.style.opacity = '1';
 
         // データ更新
-        data.x = currentLeft;
-        data.y = currentTop;
+        data.x = parseFloat(el.style.left);
+        data.y = parseFloat(el.style.top);
 
         if (!moved) {
             // タップ回転
@@ -358,7 +338,6 @@ window.openStickerUserList = async function() {
     }
 
     try {
-        // 最近ログインしたユーザーを取得
         const snapshot = await db.collection("users")
             .orderBy("lastLogin", "desc")
             .limit(20)

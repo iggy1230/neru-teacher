@@ -1,4 +1,4 @@
-// --- js/analyze.js (v470.1: 完全版 - シール獲得対応) ---
+// --- js/analyze.js (v470.2: 完全版 - シール獲得セリフ統合版) ---
 
 // ==========================================
 // グローバル変数・初期設定
@@ -491,8 +491,10 @@ window.giveLunch = function() {
     
     // ★新規: シール獲得判定 (1000個区切り)
     const newTotal = currentUser.totalLunchGiven;
+    let stickerGranted = false;
+    
     if (Math.floor(newTotal / 1000) > Math.floor(prevTotal / 1000)) {
-        // シール獲得！
+        stickerGranted = true;
         if (typeof window.grantRandomSticker === 'function') {
             setTimeout(() => {
                 // 引数 true は「給食画面からの獲得」を示す
@@ -526,10 +528,19 @@ window.giveLunch = function() {
     })
     .then(r => r.json())
     .then(d => { 
-        window.updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy", true, true); 
+        let replyMsg = d.reply || "おいしいにゃ！";
+        // ★修正: シール獲得時はメッセージを結合して発話
+        if (stickerGranted) {
+            replyMsg += " …あ！そうだ！いっぱいくれたお礼に、特製シールをあげるにゃ！";
+        }
+        window.updateNellMessage(replyMsg, d.isSpecial ? "excited" : "happy", true, true); 
     })
     .catch(e => { 
-        window.updateNellMessage("おいしいにゃ！", "happy", false); 
+        let replyMsg = "おいしいにゃ！";
+        if (stickerGranted) {
+            replyMsg += " …あ！そうだ！いっぱいくれたお礼に、特製シールをあげるにゃ！";
+        }
+        window.updateNellMessage(replyMsg, "happy", false); 
     }); 
 }; 
 
