@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v470.16: シール帳ゴミ箱対応版) --- */
+/* --- style.css (完全版 v470.18: シール枠外配置対応版) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -1538,7 +1538,7 @@ button { font-family: inherit; }
     background: #81d4fa; /* 外側の水色カバー */
     border-radius: 15px;
     position: relative;
-    overflow: hidden; 
+    overflow: visible !important; /* ★修正: 台紙の外（枠外）にも表示できるようにする */
     box-shadow: 
         inset 0 0 10px rgba(0,0,0,0.1),
         0 5px 15px rgba(0,0,0,0.2);
@@ -1562,7 +1562,7 @@ button { font-family: inherit; }
     background: #fff; /* 中の白いページ */
     border-radius: 8px;
     position: relative;
-    overflow: hidden;
+    overflow: visible; /* ★修正: 台紙の外にも表示 */
     box-shadow: inset 2px 0 5px rgba(0,0,0,0.05);
 }
 
@@ -1672,7 +1672,7 @@ button { font-family: inherit; }
     box-shadow: 0 4px 8px rgba(0,0,0,0.2);
     z-index: 500;
     transition: transform 0.2s, background-color 0.2s;
-    pointer-events: none; /* ドラッグ中はJSで判定するため、通常時はクリックスルー */
+    pointer-events: none; /* ドラッグ判定はJSのgetBoundingClientRectで行うため、イベント透過で問題なし */
 }
 
 #sticker-trash.active {
