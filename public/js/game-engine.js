@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v470.24: スロット減速版・完全版) ---
+// --- js/game-engine.js (v470.26: ウルトラクイズ報酬調整版) ---
 
 console.log("Game Engine Loading...");
 
@@ -769,10 +769,18 @@ window.finishQuizSet = function() {
     window.currentQuiz = null;
     
     const correctCount = Math.floor(quizState.score / 20);
-    const currentLevel = quizState.level || 1;
-    let rewardPerCorrect = 50; 
+    const currentLevel = parseInt(quizState.level) || 1;
+    
+    // ★修正: レベル別報酬設定
+    let rewardPerCorrect = 50; // デフォルト(Lv1)
+    
+    if (currentLevel === 2) rewardPerCorrect = 100;
+    else if (currentLevel === 3) rewardPerCorrect = 150;
+    else if (currentLevel === 4) rewardPerCorrect = 200;
+    else if (currentLevel >= 5) rewardPerCorrect = 300;
+    
     let totalReward = correctCount * rewardPerCorrect;
-    if (correctCount === 0) totalReward = 10;
+    if (correctCount === 0) totalReward = 10; // 参加賞
 
     // ★修正: ランキングには「獲得カリカリ数(totalReward)」を保存
     window.saveHighScore(`quiz_${quizState.genre}`, totalReward);
@@ -844,8 +852,82 @@ window.stopQuizVoiceInput = function(keepStatus = false) {
     if (status && !keepStatus) status.innerText = "";
 };
 
+// ★完全実装: 間違い報告機能
 window.reportQuizError = async function() {
-    alert("機能未実装だにゃ！ごめんにゃ！");
+    if (!window.currentQuiz) return;
+    
+    // 1. 理由を聞く
+    const reason = prompt("どこが間違っているか教えてにゃ？\n（例：答えが古い、選択肢に正解がない、など）");
+    if (!reason || reason.trim() === "") return;
+
+    // 2. UIを待機状態にする
+    const qText = document.getElementById('quiz-question-text');
+    const optionsContainer = document.getElementById('quiz-options-container');
+    const controls = document.getElementById('quiz-controls');
+    
+    window.updateNellMessage("むむっ！本当かにゃ？調べてみるにゃ！ちょっと待ってて！", "thinking", false, true);
+    qText.innerText = "間違いを確認して、修正中にゃ... 🖊️";
+    optionsContainer.innerHTML = ""; // 選択肢を消す
+    controls.style.display = 'none'; // ボタン類を隠す
+
+    try {
+        // 3. サーバーへ修正リクエスト
+        const res = await fetch('/correct-quiz', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                oldQuiz: window.currentQuiz, 
+                reason: reason, 
+                genre: quizState.genre 
+            })
+        });
+
+        if (!res.ok) throw new Error("Server Error");
+
+        const newQuiz = await res.json();
+
+        // 4. クイズデータを更新
+        window.currentQuiz = newQuiz;
+        quizState.currentQuizData = newQuiz;
+        
+        // 履歴の最後（今の問題の答え）を更新しておく（重複チェック用）
+        if (quizState.history.length > 0) {
+            quizState.history[quizState.history.length - 1] = newQuiz.answer;
+        }
+
+        // 5. 画面に反映
+        qText.innerText = newQuiz.question;
+        
+        // 解説文があればそれを、なければデフォルト感謝
+        const thanksMsg = newQuiz.explanation || "教えてくれてありがとうにゃ！修正した問題だにゃ！";
+        window.updateNellMessage(thanksMsg, "happy", false, true);
+
+        // 選択肢ボタンを再生成
+        if (newQuiz.options && Array.isArray(newQuiz.options)) {
+            const shuffledOptions = [...newQuiz.options].sort(() => Math.random() - 0.5);
+            shuffledOptions.forEach(opt => {
+                const btn = document.createElement('button');
+                btn.className = "quiz-option-btn";
+                btn.innerText = opt;
+                btn.onclick = () => window.checkQuizAnswer(opt, true); 
+                optionsContainer.appendChild(btn);
+            });
+        }
+        
+        const micArea = document.getElementById('quiz-mic-area');
+        if (micArea) micArea.style.display = 'block';
+
+        alert("問題を修正したにゃ！\nもう一度挑戦してにゃ！");
+
+    } catch (e) {
+        console.error("Correction Error:", e);
+        window.updateNellMessage("うーん、うまく修正できなかったにゃ... ごめんにゃ。", "sad", false, true);
+        qText.innerText = "修正に失敗しました。";
+        
+        // 詰まないようにスキップボタンを出す
+        controls.style.display = 'flex';
+        document.getElementById('next-quiz-btn').classList.remove('hidden');
+    }
 };
 
 // ==========================================

@@ -1,4 +1,4 @@
-// --- js/state/user.js (v452.2: グローバル変数公開修正版) ---
+// --- js/state/user.js (v470.27: シール保存ロジック修正版) ---
 
 // Firebase初期化
 let app, auth, db, storage;
@@ -73,6 +73,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (!currentUser.quizLevels) currentUser.quizLevels = { "全ジャンル": 1 };
                         if (!currentUser.savedQuizzes) currentUser.savedQuizzes = [];
                         if (currentUser.totalLunchGiven === undefined) currentUser.totalLunchGiven = 0;
+                        // シール配列の初期化
+                        if (!currentUser.stickers) currentUser.stickers = [];
                         login(currentUser, true); 
                     }
                 }
@@ -105,6 +107,7 @@ window.startGoogleLogin = function() {
             if (!currentUser.quizLevels) currentUser.quizLevels = { "全ジャンル": 1 };
             if (!currentUser.savedQuizzes) currentUser.savedQuizzes = [];
             if (currentUser.totalLunchGiven === undefined) currentUser.totalLunchGiven = 0;
+            if (!currentUser.stickers) currentUser.stickers = [];
             login(currentUser, true);
         } else {
             currentUser = { 
@@ -112,7 +115,8 @@ window.startGoogleLogin = function() {
                 isGoogleUser: true, 
                 quizLevels: { "全ジャンル": 1 },
                 savedQuizzes: [],
-                totalLunchGiven: 0 
+                totalLunchGiven: 0,
+                stickers: []
             };
             window.isGoogleEnrollment = true;
             alert("はじめましてだにゃ！\nGoogleアカウントで入学手続きをするにゃ！");
@@ -331,6 +335,8 @@ async function processAndCompleteEnrollment() {
             quizLevels: (currentUser && currentUser.quizLevels) || defaultQuizLevels,
             savedQuizzes: (currentUser && currentUser.savedQuizzes) || [],
             totalLunchGiven: (currentUser && currentUser.totalLunchGiven) || 0,
+            // ★重要: stickers 配列も保存対象に含める
+            stickers: (currentUser && currentUser.stickers) || [],
             isGoogleUser: !!(auth && auth.currentUser && !auth.currentUser.isAnonymous) 
         };
 
@@ -354,6 +360,7 @@ async function login(user, isGoogle = false) {
     if (!currentUser.quizLevels) currentUser.quizLevels = { "全ジャンル": 1 }; 
     if (!currentUser.savedQuizzes) currentUser.savedQuizzes = []; 
     if (currentUser.totalLunchGiven === undefined) currentUser.totalLunchGiven = 0;
+    if (!currentUser.stickers) currentUser.stickers = [];
 
     if (typeof user.id === 'number' && auth) {
          try {
@@ -375,10 +382,28 @@ async function login(user, isGoogle = false) {
     if (window.justEnrolledId === user.id) { updateNellMessage(`${user.name}さん、入学おめでとうだにゃ！`, "excited"); window.justEnrolledId = null; } else { updateNellMessage(`おかえり、${user.name}さん！`, "happy"); } 
 }
 
+// ★重要: saveAndSyncの修正 (stickers配列を明示的に保存)
 async function saveAndSync() { 
     if (!currentUser) return; 
     const kCounter = document.getElementById('karikari-count'); if (kCounter) kCounter.innerText = currentUser.karikari;
     const miniKCounter = document.getElementById('mini-karikari-count'); if (miniKCounter) miniKCounter.innerText = currentUser.karikari;
-    if (typeof currentUser.id === 'string' && db) { try { await db.collection("users").doc(currentUser.id).set(currentUser, { merge: true }); } catch(e) { console.error("Firestore sync error:", e); } }
+    
+    if (typeof currentUser.id === 'string' && db) { 
+        try { 
+            // set with merge: true で更新。stickers配列も含まれるようにする。
+            const dataToSave = {
+                karikari: currentUser.karikari,
+                lastLogin: currentUser.lastLogin,
+                attendance: currentUser.attendance,
+                streak: currentUser.streak,
+                totalLunchGiven: currentUser.totalLunchGiven,
+                stickers: currentUser.stickers || [] // これがないと保存されない！
+            };
+            // もしprofileなど他の変更がある場合も考慮して、currentUser全体をマージするほうが安全
+            // ただし循環参照やDOM要素が含まれていないことが前提
+            
+            await db.collection("users").doc(currentUser.id).set(currentUser, { merge: true }); 
+        } catch(e) { console.error("Firestore sync error:", e); } 
+    }
     updateLocalUserList(currentUser);
 }
