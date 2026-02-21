@@ -1,6 +1,20 @@
-// --- js/ui/sticker.js (v3.2: シール獲得演出強化版) ---
+// --- js/ui/sticker.js (v3.3: 戻り先制御追加版) ---
 
-window.showStickerBook = function(targetUserId = null) {
+// ★追加: 戻り先画面IDを保存する変数 (初期値: ロビー)
+let stickerReturnScreen = 'screen-lobby';
+
+window.showStickerBook = function(targetUserId = null, returnTo = 'screen-lobby') {
+    // 戻り先を保存 (指定があれば更新、なければロビーに戻ることを想定)
+    // ただし、もし returnTo が指定されていない場合でも、直前の画面がスロットならスロットに戻したいケースもあるが、
+    // ここでは明示的に引数で渡された場合のみ更新する設計にする。
+    // (引数なしの場合はデフォルト 'screen-lobby' になるので注意)
+    if (arguments.length > 1) {
+        stickerReturnScreen = returnTo;
+    } else {
+        // 引数が省略された場合、ここがロビーからの呼び出しならロビーに戻る、という想定
+        stickerReturnScreen = 'screen-lobby'; 
+    }
+
     window.switchScreen('screen-sticker-book');
     window.updateNellMessage("シール帳だにゃ！シールをタップすると回転できるにゃ！", "happy");
     
@@ -8,6 +22,15 @@ window.showStickerBook = function(targetUserId = null) {
     if (!userId) return;
 
     window.loadAndRenderStickers(userId);
+};
+
+// ★追加: シール帳を閉じて元の画面に戻る関数
+window.closeStickerBook = function() {
+    if (stickerReturnScreen && document.getElementById(stickerReturnScreen)) {
+        window.switchScreen(stickerReturnScreen);
+    } else {
+        window.backToLobby();
+    }
 };
 
 // ★Firebase Storageからランダムに取得する

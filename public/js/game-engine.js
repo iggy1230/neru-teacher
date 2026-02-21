@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v470.22: ミニテスト機能追加・完全版) ---
+// --- js/game-engine.js (v470.24: スロット減速版・完全版) ---
 
 console.log("Game Engine Loading...");
 
@@ -1887,4 +1887,213 @@ window.stopMinitestVoiceInput = function(keepStatus = false) {
         micBtn.style.background = "#4db6ac";
     }
     if (status && !keepStatus) status.innerText = "";
+};
+
+// ==========================================
+// 8. ネル先生スロット (Slot Game)
+// ==========================================
+let slotGameState = {
+    isRunning: false,
+    reelCount: 3,
+    spinning: [false, false, false],
+    positions: [0, 0, 0],
+    symbols: [
+        'assets/images/game/slot/neru_dot.png',
+        'assets/images/game/slot/kari100_dot.png',
+        'assets/images/game/slot/mouse_dot.png',
+        'assets/images/game/slot/soccerball_dot.png',
+        'assets/images/game/slot/baseball_dot.png',
+        'assets/images/game/slot/churu_dot.png'
+    ],
+    symbolHeight: 90, // リールの各アイテムの高さ
+    animationId: null,
+    todayPlayCount: 0
+};
+
+window.showSlotGame = function() {
+    if (typeof window.switchScreen === 'function') {
+        window.switchScreen('screen-slot');
+    } else {
+        document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+        document.getElementById('screen-slot').classList.remove('hidden');
+    }
+
+    // 1日3回の制限チェック
+    window.checkSlotDailyLimit();
+
+    // スロットの初期化
+    window.initSlotReels();
+    
+    // UIリセット
+    document.getElementById('slot-start-btn').disabled = false;
+    document.querySelectorAll('.slot-stop-btn').forEach(btn => btn.disabled = true);
+    
+    window.updateNellMessage("スロットで運試しにゃ！3回できるにゃ！", "excited");
+};
+
+window.checkSlotDailyLimit = function() {
+    if (!currentUser) return;
+    
+    // テスト段階なので無制限 (常に0にリセット)
+    const today = new Date().toISOString().split('T')[0];
+    if (!currentUser.slotGameData) {
+        currentUser.slotGameData = { date: today, count: 0 };
+    }
+    // テスト用に強制リセット
+    currentUser.slotGameData.count = 0; 
+    
+    // UI更新
+    slotGameState.todayPlayCount = currentUser.slotGameData.count;
+    document.getElementById('slot-remain-count').innerText = "∞"; // テスト中
+    
+    if (typeof window.saveAndSync === 'function') window.saveAndSync();
+};
+
+window.initSlotReels = function() {
+    for (let i = 0; i < slotGameState.reelCount; i++) {
+        const strip = document.getElementById(`reel-strip-${i+1}`);
+        if (!strip) continue;
+        
+        strip.innerHTML = "";
+        // シンボルをループさせるために複数セット追加
+        const loopCount = 5; 
+        for (let j = 0; j < loopCount; j++) {
+            slotGameState.symbols.forEach(src => {
+                const item = document.createElement('div');
+                item.className = 'reel-item';
+                item.innerHTML = `<img src="${src}">`;
+                strip.appendChild(item);
+            });
+        }
+        
+        // 初期位置
+        strip.style.transform = `translateY(0px)`;
+        slotGameState.positions[i] = 0;
+        slotGameState.spinning[i] = false;
+    }
+};
+
+window.startSlot = function() {
+    // テスト中は制限なし
+    /*
+    if (slotGameState.todayPlayCount >= 3) {
+        window.updateNellMessage("今日はもう終わりだにゃ！また明日にゃ！", "normal");
+        return;
+    }
+    */
+    
+    if (slotGameState.isRunning) return;
+    slotGameState.isRunning = true;
+    
+    // カウント消費 (テスト中は増やさない)
+    // slotGameState.todayPlayCount++;
+    // currentUser.slotGameData.count = slotGameState.todayPlayCount;
+    // document.getElementById('slot-remain-count').innerText = 3 - slotGameState.todayPlayCount;
+    // if (typeof window.saveAndSync === 'function') window.saveAndSync();
+
+    // UI更新
+    document.getElementById('slot-start-btn').disabled = true;
+    document.querySelectorAll('.slot-stop-btn').forEach(btn => btn.disabled = false);
+    
+    // 回転開始
+    for (let i = 0; i < slotGameState.reelCount; i++) {
+        slotGameState.spinning[i] = true;
+    }
+    
+    if(window.safePlay) window.safePlay(window.sfxBtn);
+    window.slotGameLoop();
+};
+
+window.slotGameLoop = function() {
+    let allStopped = true;
+    
+    for (let i = 0; i < slotGameState.reelCount; i++) {
+        if (slotGameState.spinning[i]) {
+            allStopped = false;
+            // スクロール速度 (0.8倍に減速)
+            const baseSpeed = 10 + i;
+            const speed = baseSpeed * 0.8;
+            
+            slotGameState.positions[i] -= speed;
+            
+            // ループ処理
+            const stripHeight = slotGameState.symbols.length * slotGameState.symbolHeight; // 1セットの高さ
+            if (slotGameState.positions[i] <= -stripHeight * 3) { // ある程度回ったら戻す
+                slotGameState.positions[i] += stripHeight;
+            }
+            
+            const strip = document.getElementById(`reel-strip-${i+1}`);
+            if (strip) {
+                strip.style.transform = `translateY(${slotGameState.positions[i]}px)`;
+            }
+        }
+    }
+    
+    if (!allStopped) {
+        slotGameState.animationId = requestAnimationFrame(window.slotGameLoop);
+    } else {
+        window.checkSlotResult();
+    }
+};
+
+window.stopReel = function(index) {
+    if (!slotGameState.spinning[index]) return;
+    
+    slotGameState.spinning[index] = false;
+    document.getElementById(`stop-btn-${index+1}`).disabled = true;
+    if(window.safePlay) window.safePlay(window.sfxBtn);
+
+    // 目押し停止処理 (スナップ)
+    const currentY = slotGameState.positions[index];
+    const h = slotGameState.symbolHeight;
+    // 1番近いシンボル位置に吸着
+    const snappedY = Math.round(currentY / h) * h;
+    slotGameState.positions[index] = snappedY;
+    
+    const strip = document.getElementById(`reel-strip-${index+1}`);
+    if (strip) {
+        strip.style.transition = "transform 0.2s ease-out";
+        strip.style.transform = `translateY(${snappedY}px)`;
+        setTimeout(() => { strip.style.transition = "none"; }, 200);
+    }
+};
+
+window.checkSlotResult = function() {
+    slotGameState.isRunning = false;
+    
+    // 止まった位置からシンボルを特定
+    const h = slotGameState.symbolHeight;
+    const symbolCount = slotGameState.symbols.length;
+    
+    const results = slotGameState.positions.map(pos => {
+        // posはマイナス値。絶対値を取って高さで割り、シンボル数で割った余り
+        // ※ 座標が0に近いほどリストの上の方(0番目)になるが、
+        // translateがマイナスに進むので、絶対値を取ると下の要素が表示される。
+        // 目押し位置の調整として、+0.5 などのオフセットは不要（スナップ済み）
+        const index = Math.abs(Math.round(pos / h)) % symbolCount;
+        return index;
+    });
+    
+    // 判定
+    const [r1, r2, r3] = results;
+    if (r1 === r2 && r2 === r3) {
+        // 当たり！
+        if(window.safePlay) window.safePlay(window.sfxHirameku);
+        window.updateNellMessage("やったにゃ！大当たりだにゃ！！", "excited");
+        
+        // シール付与 (grantRandomStickerを流用)
+        // 引数trueで「おめでとう」演出付き
+        if (typeof window.grantRandomSticker === 'function') {
+            setTimeout(() => {
+                window.grantRandomSticker(true);
+            }, 1000);
+        }
+        
+    } else {
+        // ハズレ
+        window.updateNellMessage("残念！また挑戦してにゃ！", "normal");
+    }
+    
+    // テスト中は常に有効
+    document.getElementById('slot-start-btn').disabled = false;
 };

@@ -1,11 +1,11 @@
-<!-- index.html (完全版 v470.21: 給食画面にシール帳ボタン追加) -->
+<!-- index.html (完全版 v470.24: スロット戻るボタン＆シール帳連携強化版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>🐾猫後市立ねこづか小学校</title>
-    <link rel="stylesheet" href="style.css?v=470.21">
+    <link rel="stylesheet" href="style.css?v=470.23">
     <link href="https://fonts.googleapis.com/css2?family=Sawarabi+Gothic&family=M+PLUS+Rounded+1c:wght@700;900&family=Kiwi+Maru:wght@900&family=Klee+One:wght@400;600&family=Zen+Kurenaido&display=swap" rel="stylesheet">
     <!-- ライブラリ群 -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -35,7 +35,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v470.21</div>
+            <div class="version-tag">Build: v470.24</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -118,6 +118,8 @@
             <h2 class="section-title">🍽️ 給食室</h2>
             <div class="lobby-menu" style="margin-top: 20px;">
                 <button onclick="selectMode('lunch')" class="main-btn pink-btn">🍽️ おいしい給食</button>
+                <!-- ★スロットゲームボタンをここに配置 -->
+                <button onclick="window.showSlotGame()" class="main-btn" style="background:#ad1457 !important; box-shadow:0 4px 0 #880e4f !important;">🎰 ネル先生スロット</button>
                 <button onclick="window.showStickerBook()" class="main-btn" style="background-color:#e91e63 !important; box-shadow: 0 4px 0 #c2185b !important;">📒 シール帳をみる</button>
                 <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
             </div>
@@ -137,6 +139,7 @@
         <section id="screen-playground" class="screen hidden">
             <h2 class="section-title" style="color:#fbc02d; text-shadow: 2px 2px 0 #fff;">🏀 体育館</h2>
             <div class="lobby-menu" style="margin-top: 20px;">
+                <!-- スロットは削除 -->
                 <button onclick="window.showDanmakuGame()" class="main-btn red-btn" style="background:#d32f2f !important; box-shadow:0 4px 0 #b71c1c !important;">🤖 VS ロボット掃除機</button>
                 <button onclick="window.showGame()" class="main-btn yellow-btn">🍖 カリカリ・キャッチ</button>
                 <button onclick="window.showMemoryGame()" class="main-btn green-btn" style="background:#4caf50 !important; box-shadow:0 4px 0 #2e7d32 !important;">🃏 お宝神経衰弱</button>
@@ -148,7 +151,10 @@
         </section>
 
         <!-- ★ シール帳画面 -->
-        <section id="screen-sticker-book" class="screen hidden" style="padding-top:60px;">
+        <section id="screen-sticker-book" class="screen hidden" style="padding-top:60px; position:relative;">
+            <!-- ★新規追加: 左上の戻るボタン (遷移元に戻る) -->
+            <button onclick="window.closeStickerBook()" class="main-btn gray-btn" style="position:absolute; top:10px; left:10px; width:auto; padding:5px 15px; margin:0; z-index:200; font-size:1.2rem; box-shadow:0 2px 0 #78909c !important;">←</button>
+
             <h2 class="section-title" style="color:#e91e63; text-shadow: 2px 2px 0 #fff;">📒 シール帳</h2>
             <div style="display:flex; justify-content:center; gap:10px; margin-bottom:5px;">
                 <button onclick="window.showStickerBook()" class="main-btn pink-btn" style="width:auto; padding:5px 15px; font-size:0.9rem; margin:0;">じぶんの</button>
@@ -175,8 +181,60 @@
             </p>
             <div style="text-align:center; margin-top:10px;">
                 <button onclick="window.saveStickers()" class="main-btn blue-btn" style="width:auto; display:inline-block; padding:10px 20px;">💾 保存する</button>
-                <button onclick="backToLobby()" class="main-btn gray-btn" style="width:auto; display:inline-block; padding:10px 20px;">もどる</button>
+                <!-- 閉じるボタンを closeStickerBook に変更 -->
+                <button onclick="window.closeStickerBook()" class="main-btn gray-btn" style="width:auto; display:inline-block; padding:10px 20px;">もどる</button>
             </div>
+        </section>
+
+        <!-- ★ スロットゲーム画面 -->
+        <section id="screen-slot" class="screen hidden">
+             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-slot"></div><div class="chat-bubble"><p id="nell-text-slot">1日3回限定の運試しだにゃ！</p></div></div>
+             <h2 class="section-title" style="margin-top:10px; color:#ad1457;">🎰 ネル先生スロット</h2>
+             <div class="glass-card" style="text-align:center; padding:20px; background:#fce4ec; border:4px solid #f8bbd0;">
+                 <div style="margin-bottom:10px; font-weight:bold; color:#880e4f;">
+                     残り回数: <span id="slot-remain-count" style="font-size:1.5rem;">∞</span> (テスト中)
+                 </div>
+                 
+                 <div class="slot-machine-container">
+                     <!-- リール -->
+                     <div class="slot-reels">
+                         <div class="slot-reel" id="reel-1">
+                             <div class="reel-strip" id="reel-strip-1"></div>
+                         </div>
+                         <div class="slot-reel" id="reel-2">
+                             <div class="reel-strip" id="reel-strip-2"></div>
+                         </div>
+                         <div class="slot-reel" id="reel-3">
+                             <div class="reel-strip" id="reel-strip-3"></div>
+                         </div>
+                         
+                         <!-- 当たり判定ライン (CSSでオーバーレイ表示) -->
+                         <div class="slot-overlay-line"></div>
+                     </div>
+                     
+                     <!-- ストップボタン -->
+                     <div class="slot-stop-buttons">
+                         <button class="slot-stop-btn" id="stop-btn-1" onclick="window.stopReel(0)">STOP</button>
+                         <button class="slot-stop-btn" id="stop-btn-2" onclick="window.stopReel(1)">STOP</button>
+                         <button class="slot-stop-btn" id="stop-btn-3" onclick="window.stopReel(2)">STOP</button>
+                     </div>
+                 </div>
+
+                 <button id="slot-start-btn" onclick="window.startSlot()" class="main-btn pink-btn" style="margin-top:20px; font-size:1.2rem; box-shadow:0 6px 0 #c2185b !important;">
+                     スタート！
+                 </button>
+                 
+                 <!-- ★新規追加: シール帳への遷移ボタン (スロット画面から見に行けるようにする) -->
+                 <button onclick="window.showStickerBook(null, 'screen-slot')" class="main-btn" style="margin-top:15px; background-color:#e91e63 !important; box-shadow: 0 4px 0 #c2185b !important;">
+                     📒 シール帳をみる
+                 </button>
+                 
+                 <p style="font-size:0.8rem; color:#666; margin-top:10px;">
+                     絵柄が3つ揃うと特製シールをゲットだにゃ！<br>
+                     目押しで狙うにゃ！
+                 </p>
+             </div>
+             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
 
         <!-- ... (その他の画面: minitest, quiz, etc.) ... -->
@@ -472,8 +530,8 @@
     <script src="js/state/user.js?v=452.1"></script>
     <script src="js/voice-service.js?v=428.0"></script>
     <script src="js/camera-service.js?v=432.0"></script>
-    <script src="js/game-engine.js?v=470.7"></script>
+    <script src="js/game-engine.js?v=470.24"></script>
     <script src="js/analyze.js?v=470.1"></script>
-    <script src="js/ui/sticker.js?v=3.0"></script>
+    <script src="js/ui/sticker.js?v=3.3"></script>
 </body>
 </html>
