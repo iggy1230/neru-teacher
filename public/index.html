@@ -1,11 +1,11 @@
-<!-- index.html (完全版 v470.18: 新規シール置き場追加版) -->
+<!-- index.html (完全版 v470.21: 給食画面にシール帳ボタン追加) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>🐾猫後市立ねこづか小学校</title>
-    <link rel="stylesheet" href="style.css?v=470.18">
+    <link rel="stylesheet" href="style.css?v=470.21">
     <link href="https://fonts.googleapis.com/css2?family=Sawarabi+Gothic&family=M+PLUS+Rounded+1c:wght@700;900&family=Kiwi+Maru:wght@900&family=Klee+One:wght@400;600&family=Zen+Kurenaido&display=swap" rel="stylesheet">
     <!-- ライブラリ群 -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -35,7 +35,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v470.18</div>
+            <div class="version-tag">Build: v470.21</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -243,6 +243,10 @@
                             <!-- 1000個ボタン (テスト用) -->
                             <button onclick="document.getElementById('lunch-amount').value = 1000; giveLunch();" class="main-btn" style="margin-top:15px; background-color:#8d6e63 !important; box-shadow: 0 4px 0 #5d4037 !important; font-size:0.9rem;">
                                 🎁 一気に1000個あげる！(シールGET)
+                            </button>
+                            <!-- ★新規追加: シール帳をみるボタン -->
+                            <button onclick="window.showStickerBook()" class="main-btn" style="margin-top:10px; background-color:#e91e63 !important; box-shadow: 0 4px 0 #c2185b !important; font-size:0.9rem;">
+                                📒 シール帳をみる
                             </button>
 
                             <p style="margin-top:10px; font-size:0.8rem; color:#666;">（たくさんあげると反応が変わるかも？）</p>
@@ -470,6 +474,6 @@
     <script src="js/camera-service.js?v=432.0"></script>
     <script src="js/game-engine.js?v=470.7"></script>
     <script src="js/analyze.js?v=470.1"></script>
-    <script src="js/ui/sticker.js?v=1.3"></script>
+    <script src="js/ui/sticker.js?v=3.0"></script>
 </body>
 </html>
