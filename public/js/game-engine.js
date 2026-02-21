@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v470.26: ウルトラクイズ報酬調整版) ---
+// --- js/game-engine.js (v470.32: 漢字ドリルDB保存リトライ対応版) ---
 
 console.log("Game Engine Loading...");
 
@@ -75,7 +75,8 @@ window.saveHighScore = async function(gameKey, score) {
             }, { merge: true });
             console.log(`[Ranking] Highscore saved for ${gameKey}: ${score}`);
         } catch (e) {
-            console.error("[Ranking] Save failed:", e);
+            // 権限エラーなどはログに出すが、ゲーム進行は止めない
+            console.warn("[Ranking] Save failed:", e.message);
         }
     }
 };
@@ -773,7 +774,6 @@ window.finishQuizSet = function() {
     
     // ★修正: レベル別報酬設定
     let rewardPerCorrect = 50; // デフォルト(Lv1)
-    
     if (currentLevel === 2) rewardPerCorrect = 100;
     else if (currentLevel === 3) rewardPerCorrect = 150;
     else if (currentLevel === 4) rewardPerCorrect = 200;
@@ -1169,7 +1169,74 @@ window.redrawCanvas = function() {
     kanjiState.ctx.stroke();
 };
 
+// ★修正: Firestoreからストック問題を取得する関数
+async function fetchKanjiFromStock(grade, mode) {
+    if (!window.db) return null;
+    try {
+        const snapshot = await window.db.collection('kanji_problems')
+            .where('grade', '==', String(grade))
+            .where('type', '==', mode)
+            .limit(10) // ランダム性を出すため少し多めに取得
+            .get();
+        
+        if (snapshot.empty) return null;
+        
+        const docs = snapshot.docs;
+        const randomDoc = docs[Math.floor(Math.random() * docs.length)];
+        return randomDoc.data();
+    } catch (e) {
+        console.error("Stock Fetch Error:", e);
+        return null;
+    }
+}
+
+// ★修正: 生成した問題を保存する関数 (エラーハンドリング強化)
+async function saveKanjiProblemToDb(kanjiData) {
+    if (!window.db || !kanjiData || !kanjiData.kanji) return;
+    
+    try {
+        // 重複チェック (IDは漢字+タイプ+学年)
+        const docId = `${kanjiData.kanji}_${kanjiData.type}_${kanjiData.grade}`;
+        await window.db.collection('kanji_problems').doc(docId).set({
+            ...kanjiData,
+            createdAt: new Date().toISOString()
+        }, { merge: true });
+    } catch(e) {
+        // 権限エラーの場合はログを控えめに
+        if (e.code === 'permission-denied') {
+            console.log("DB Save Skipped (Permission Denied). Firebase rules need update?");
+        } else {
+            console.warn("DB Save Error:", e);
+        }
+    }
+}
+
 window.nextKanjiQuestion = async function() {
+    // ★UIリセット処理: 正解表示エリアを元の位置に戻す、中身を消す、花丸消す
+    const ansDisplay = document.getElementById('kanji-answer-display');
+    const contentArea = document.getElementById('kanji-game-content');
+    
+    // 正解表示エリアを元の場所（contentAreaの末尾）に戻す
+    if (ansDisplay && contentArea && ansDisplay.parentNode !== contentArea) {
+        contentArea.appendChild(ansDisplay);
+    }
+    
+    ansDisplay.classList.add('hidden');
+    ansDisplay.classList.remove('overlay-answer'); // 重ね表示用クラス削除
+    document.getElementById('kanji-answer-text').innerText = "";
+    
+    // 読み問題用にCanvasエリアを表示/非表示リセット (モードに応じて後で切り替えるが一旦リセット)
+    const canvasArea = document.getElementById('kanji-canvas-area');
+    canvasArea.style.display = 'block';
+
+    window.clearKanjiCanvas();
+    const hanamaru = document.getElementById('kanji-hanamaru');
+    if(hanamaru) { 
+        hanamaru.innerText = ""; 
+        hanamaru.className = ""; 
+        hanamaru.style.display = 'none'; 
+    }
+
     if (kanjiState.questionCount >= kanjiState.maxQuestions) {
         const reward = kanjiState.correctCount * 100;
         let msg = "";
@@ -1179,7 +1246,6 @@ window.nextKanjiQuestion = async function() {
         
         window.giveGameReward(reward);
         window.saveHighScore('kanji_drill', reward);
-
         window.updateNellMessage(msg, "happy", false, true);
         alert(msg);
         window.showKanjiMenu(); 
@@ -1187,24 +1253,13 @@ window.nextKanjiQuestion = async function() {
     }
     kanjiState.questionCount++;
     kanjiState.strokes = []; 
-    
     kanjiState.guideVisible = false;
-    // ★修正: はなまる要素のリセット
-    const hanamaru = document.getElementById('kanji-hanamaru');
-    if(hanamaru) { 
-        hanamaru.innerText = ""; 
-        hanamaru.className = ""; // クラス削除
-        hanamaru.style.display = 'none'; 
-    }
 
     document.getElementById('kanji-hint-readings').style.display = 'none';
     document.getElementById('guide-kanji-btn').innerText = "うすく表示";
     document.getElementById('kanji-progress').innerText = `${kanjiState.questionCount}/${kanjiState.maxQuestions} 問目`;
-    document.getElementById('kanji-answer-display').classList.add('hidden');
     document.getElementById('next-kanji-btn').style.display = 'none';
-    
-    const micStatus = document.getElementById('kanji-mic-status');
-    if(micStatus) micStatus.innerText = "";
+    document.getElementById('kanji-mic-status').innerText = "";
 
     const qText = document.getElementById('kanji-question-text');
     qText.innerText = "問題を探してるにゃ…";
@@ -1212,67 +1267,160 @@ window.nextKanjiQuestion = async function() {
 
     let targetKanji = null;
     const grade = currentUser ? currentUser.grade : "1";
-    // 重複防止ロジック
     if (window.KANJI_DATA && window.KANJI_DATA[grade]) {
         const list = window.KANJI_DATA[grade];
-        // 履歴にない漢字をフィルタリング
         const available = list.filter(k => !kanjiState.history.includes(k));
-        const sourceList = available.length > 0 ? available : list; // 全て出題済ならリセット
+        const sourceList = available.length > 0 ? available : list;
         if (sourceList.length > 0) {
             targetKanji = sourceList[Math.floor(Math.random() * sourceList.length)];
         }
     }
 
+    let data = null;
     try {
         const res = await fetch('/generate-kanji', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ grade: grade, mode: kanjiState.mode, targetKanji: targetKanji })
         });
-        const data = await res.json();
+        if (res.ok) {
+            data = await res.json();
+            // ★生成成功時: DBに保存
+            saveKanjiProblemToDb(data);
+        } else {
+            throw new Error("Server Error");
+        }
+    } catch (e) {
+        console.warn("API Error, trying stock...", e);
+        // ★APIエラー時: ストックから取得
+        data = await fetchKanjiFromStock(grade, kanjiState.mode);
+        if (!data) {
+            qText.innerText = "問題が出せないにゃ…"; 
+            window.updateNellMessage("ごめん、問題が出せないにゃ…", "sad");
+            return;
+        }
+    }
+
+    if (data && data.kanji) {
+        kanjiState.history.push(data.kanji);
+        kanjiState.data = data;
         
-        if (data && data.kanji) {
-            // 履歴に追加
-            kanjiState.history.push(data.kanji);
-            kanjiState.data = data;
+        qText.innerHTML = data.question_display;
+        const strokesEl = document.getElementById('kanji-hint-strokes');
+        if(strokesEl) strokesEl.innerText = data.kakusu ? `画数: ${data.kakusu}` : "";
+        const hintDiv = document.getElementById('kanji-hint-readings');
+        if (hintDiv) {
+            let hints = [];
+            if(data.onyomi) hints.push(`音: ${data.onyomi}`);
+            if(data.kunyomi) hints.push(`訓: ${data.kunyomi}`);
+            hintDiv.innerText = hints.join(' / ');
+            hintDiv.style.display = 'none';
+        }
+        window.updateNellMessage(data.question_speech, "normal", false, true);
+        
+        const cvs = document.getElementById('kanji-canvas');
+        const mic = document.getElementById('kanji-mic-container');
+        const controls = document.getElementById('kanji-controls');
+        const giveupBtn = document.getElementById('giveup-kanji-btn');
+        const reportBtn = document.getElementById('report-kanji-btn'); // ★追加ボタン
+        if(reportBtn) reportBtn.style.display = 'inline-block';
+        
+        if (data.type === 'writing') {
+            cvs.classList.remove('hidden'); 
+            mic.classList.add('hidden'); 
+            controls.style.display = 'flex';
+            giveupBtn.style.display = 'inline-block';
+            window.clearKanjiCanvas();
+        } else {
+            cvs.classList.add('hidden'); 
+            mic.classList.remove('hidden');
+            controls.style.display = 'none';
+            giveupBtn.style.display = 'inline-block';
+            const micBtn = document.getElementById('kanji-mic-btn');
+            if (micBtn) { micBtn.disabled = false; micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で答える'; micBtn.style.background = "#4db6ac"; }
+        }
+    }
+};
+
+window.processKanjiSuccess = function(comment) {
+    if(window.safePlay) window.safePlay(window.sfxMaru);
+    window.updateNellMessage(comment, "excited", false, true);
+    kanjiState.correctCount++;
+    
+    document.getElementById('kanji-controls').style.display = 'none';
+    document.getElementById('kanji-mic-container').classList.add('hidden');
+    document.getElementById('giveup-kanji-btn').style.display = 'none';
+    const reportBtn = document.getElementById('report-kanji-btn');
+    if(reportBtn) reportBtn.style.display = 'none';
+    
+    document.getElementById('next-kanji-btn').style.display = 'inline-block';
+    
+    const ansDisplay = document.getElementById('kanji-answer-display');
+    const ansText = document.getElementById('kanji-answer-text');
+    const detailText = document.getElementById('kanji-answer-detail');
+    
+    ansDisplay.classList.remove('hidden');
+    ansText.innerText = kanjiState.data.kanji;
+    if(detailText) detailText.innerHTML = `音読み: ${kanjiState.data.onyomi || "-"} / 訓読み: ${kanjiState.data.kunyomi || "-"} / 画数: ${kanjiState.data.kakusu || "-"}画`;
+
+    // ★修正: 読み問題(reading)の場合、正解表示エリアをキャンバス位置へ移動
+    if (kanjiState.data.type === 'reading') {
+        const canvasArea = document.getElementById('kanji-canvas-area');
+        if (canvasArea) {
+            canvasArea.appendChild(ansDisplay); // 移動
+            ansDisplay.classList.add('overlay-answer'); // スタイル適用
             
-            qText.innerHTML = data.question_display;
-            const strokesEl = document.getElementById('kanji-hint-strokes');
-            if(strokesEl) strokesEl.innerText = data.kakusu ? `画数: ${data.kakusu}` : "";
-            const hintDiv = document.getElementById('kanji-hint-readings');
-            if (hintDiv) {
-                let hints = [];
-                if(data.onyomi) hints.push(`音: ${data.onyomi}`);
-                if(data.kunyomi) hints.push(`訓: ${data.kunyomi}`);
-                hintDiv.innerText = hints.join(' / ');
-                hintDiv.style.display = 'none';
-            }
-            window.updateNellMessage(data.question_speech, "normal", false, true);
-            
-            const cvs = document.getElementById('kanji-canvas');
-            const mic = document.getElementById('kanji-mic-container');
-            const controls = document.getElementById('kanji-controls');
-            const giveupBtn = document.getElementById('giveup-kanji-btn');
-            
-            if (data.type === 'writing') {
-                cvs.classList.remove('hidden'); 
-                mic.classList.add('hidden'); 
-                controls.style.display = 'flex';
-                giveupBtn.style.display = 'inline-block';
-                window.clearKanjiCanvas();
-            } else {
-                cvs.classList.add('hidden'); 
-                mic.classList.remove('hidden');
-                controls.style.display = 'none';
-                giveupBtn.style.display = 'inline-block';
-                
-                const micBtn = document.getElementById('kanji-mic-btn');
-                if (micBtn) { micBtn.disabled = false; micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で答える'; micBtn.style.background = "#4db6ac"; }
-            }
-        } else { throw new Error("Invalid Kanji Data"); }
-    } catch (e) { 
-        console.error(e); 
-        qText.innerText = "問題が出せないにゃ…"; 
-        window.updateNellMessage("ごめん、問題が出せないにゃ…", "sad"); 
+            // キャンバスエリアを表示（キャンバス自体はhiddenでもエリアは必要）
+            canvasArea.style.display = 'block';
+            document.getElementById('kanji-canvas').classList.add('hidden'); // 念のため
+        }
+    }
+    
+    // 花丸表示
+    const hanamaru = document.getElementById('kanji-hanamaru');
+    if (hanamaru) { 
+        hanamaru.innerText = "○"; 
+        hanamaru.className = "hanamaru-stamp"; 
+        hanamaru.style.display = 'flex'; 
+        hanamaru.style.fontSize = "200px";
+        hanamaru.style.color = "rgba(255, 50, 50, 0.7)";
+        hanamaru.style.textShadow = "none";
+        hanamaru.style.fontFamily = "sans-serif";
+    }
+};
+
+// ★新規: 漢字ドリル間違い報告
+window.reportKanjiError = async function() {
+    if (!kanjiState.data) return;
+    const reason = prompt("どこが間違っているか教えてにゃ？\n（例：学年が違う、読みがおかしい、など）");
+    if (!reason || reason.trim() === "") return;
+
+    window.updateNellMessage("確認して直すにゃ！待ってて！", "thinking");
+    const qText = document.getElementById('kanji-question-text');
+    qText.innerText = "修正中にゃ... 🖊️";
+
+    try {
+        const res = await fetch('/correct-kanji', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ oldKanji: kanjiState.data, reason: reason })
+        });
+        if (!res.ok) throw new Error("Correction Failed");
+        const newData = await res.json();
+        
+        // データ更新
+        kanjiState.data = newData;
+        // 画面更新
+        qText.innerHTML = newData.question_display;
+        window.updateNellMessage("修正したにゃ！これでどうかにゃ？", "happy", false, true);
+        
+        // DB保存 (上書き)
+        saveKanjiProblemToDb(newData);
+        
+        alert("問題を修正したにゃ！");
+    } catch(e) {
+        console.error("Report Error:", e);
+        window.updateNellMessage("ごめん、直せなかったにゃ...", "sad");
+        qText.innerText = "修正失敗...";
     }
 };
 
@@ -1354,39 +1502,6 @@ window.checkKanjiReadingLocal = function(text) {
         return true;
     }
     return false;
-};
-
-window.processKanjiSuccess = function(comment) {
-    if(window.safePlay) window.safePlay(window.sfxMaru);
-    window.updateNellMessage(comment, "excited", false, true);
-    kanjiState.correctCount++;
-    
-    if (kanjiState.data.type === 'writing') {
-        window.clearKanjiCanvas(true);
-    }
-    
-    document.getElementById('kanji-controls').style.display = 'none';
-    document.getElementById('kanji-mic-container').classList.add('hidden');
-    document.getElementById('giveup-kanji-btn').style.display = 'none';
-    document.getElementById('next-kanji-btn').style.display = 'inline-block';
-    
-    const ansDisplay = document.getElementById('kanji-answer-display');
-    ansDisplay.classList.remove('hidden');
-    document.getElementById('kanji-answer-text').innerText = kanjiState.data.kanji;
-    const detailText = document.getElementById('kanji-answer-detail');
-    if(detailText) detailText.innerHTML = `音読み: ${kanjiState.data.onyomi || "-"} / 訓読み: ${kanjiState.data.kunyomi || "-"} / 画数: ${kanjiState.data.kakusu || "-"}画`;
-    
-    // ★修正: はなまる表示 (シンプルな「○」)
-    const hanamaru = document.getElementById('kanji-hanamaru');
-    if (hanamaru) { 
-        hanamaru.innerText = "○"; 
-        hanamaru.className = "hanamaru-stamp"; // CSSアニメーション適用
-        hanamaru.style.display = 'flex'; 
-        hanamaru.style.fontSize = "200px";
-        hanamaru.style.color = "rgba(255, 50, 50, 0.7)";
-        hanamaru.style.textShadow = "none";
-        hanamaru.style.fontFamily = "sans-serif";
-    }
 };
 
 window.clearKanjiCanvas = function(forceClear = false) {

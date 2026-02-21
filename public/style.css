@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v470.24: スロット豪華装飾版) --- */
+/* --- style.css (完全版 v470.30: 漢字ドリル花丸オーバーレイ対応版) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -1483,6 +1483,25 @@ button { font-family: inherit; }
     }
 }
 
+/* ★漢字ドリル読み問題正解時のオーバーレイ */
+.overlay-answer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.95);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    border-radius: 10px;
+    z-index: 5; /* 花丸(z:10)より下、キャンバスより上 */
+    margin: 0 !important;
+    border: none !important; 
+    box-shadow: none !important;
+}
+
 /* ★新規: ランキングメニューのスタイル */
 .ranking-menu-scroll {
     display: flex;
@@ -1762,7 +1781,7 @@ button { font-family: inherit; }
     border-radius: 10px;
 }
 
-/* スロットゲーム画面スタイル (豪華版) */
+/* スロットゲーム画面スタイル */
 .slot-machine-container {
     display: flex;
     flex-direction: column;

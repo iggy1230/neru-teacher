@@ -1,11 +1,11 @@
-<!-- index.html (完全版 v470.28: シール獲得フォールバック対応版) -->
+<!-- index.html (完全版 v470.30: 漢字ドリルUI改善・報告ボタン追加版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>🐾猫後市立ねこづか小学校</title>
-    <link rel="stylesheet" href="style.css?v=470.23">
+    <link rel="stylesheet" href="style.css?v=470.30">
     <link href="https://fonts.googleapis.com/css2?family=Sawarabi+Gothic&family=M+PLUS+Rounded+1c:wght@700;900&family=Kiwi+Maru:wght@900&family=Klee+One:wght@400;600&family=Zen+Kurenaido&display=swap" rel="stylesheet">
     <!-- ライブラリ群 -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -35,7 +35,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v470.28</div>
+            <div class="version-tag">Build: v470.30</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -434,6 +434,8 @@
                     </div>
                     <div style="text-align:center; margin-top:10px;">
                         <button id="giveup-kanji-btn" onclick="giveUpKanji()" class="main-btn gray-btn" style="background:transparent; color:#999; border:none; box-shadow:none; font-size:0.8rem; display:none;">🏳️ 答えを見る</button>
+                        <!-- ★追加: 間違い報告ボタン -->
+                        <button id="report-kanji-btn" onclick="reportKanjiError()" class="main-btn" style="background:transparent; border:2px solid #bdbdbd; color:#757575; font-size:0.8rem; width:auto; padding:5px 15px; box-shadow:none; display:none;">⚠️ 問題の間違いを報告</button>
                     </div>
                     <button id="next-kanji-btn" onclick="nextKanjiQuestion()" class="main-btn" style="background:#ec407a; margin-top:15px; display:none;">次の問題へ ▶</button>
                     <div id="kanji-answer-display" class="hidden" style="margin-top:15px; padding:15px; background:#fff3e0; border-radius:10px; border:2px solid #ffb74d; color:#e65100;">
@@ -527,11 +529,11 @@
     <script src="js/config/kanji-data.js?v=1.0"></script>
     <script src="js/ui/ranking.js?v=470.13"></script> 
     <script src="js/ui/ui.js?v=468.3"></script>
-    <script src="js/state/user.js?v=470.27"></script> <!-- user.jsも更新 -->
+    <script src="js/state/user.js?v=452.1"></script>
     <script src="js/voice-service.js?v=428.0"></script>
     <script src="js/camera-service.js?v=432.0"></script>
-    <script src="js/game-engine.js?v=470.24"></script>
+    <script src="js/game-engine.js?v=470.30"></script>
     <script src="js/analyze.js?v=470.1"></script>
-    <script src="js/ui/sticker.js?v=3.7"></script>
+    <script src="js/ui/sticker.js?v=3.2"></script>
 </body>
 </html>
