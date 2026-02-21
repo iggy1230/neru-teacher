@@ -1,4 +1,4 @@
-// --- js/state/user.js (v452.1: 累計給食数対応版) ---
+// --- js/state/user.js (v452.2: グローバル変数公開修正版) ---
 
 // Firebase初期化
 let app, auth, db, storage;
@@ -17,7 +17,11 @@ if (typeof firebaseConfig === 'undefined') {
         storage = firebase.storage();
     }
 }
+
+// ★修正: データベースと認証情報を他のファイルからも使えるようにする
 window.fireStorage = storage;
+window.db = db;
+window.auth = auth;
 
 let users = JSON.parse(localStorage.getItem('nekoneko_users')) || [];
 let currentUser = null;
@@ -68,7 +72,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (currentUser.isGoogleUser === undefined) currentUser.isGoogleUser = !user.isAnonymous;
                         if (!currentUser.quizLevels) currentUser.quizLevels = { "全ジャンル": 1 };
                         if (!currentUser.savedQuizzes) currentUser.savedQuizzes = [];
-                        // ★新規: 累計給食数の初期化
                         if (currentUser.totalLunchGiven === undefined) currentUser.totalLunchGiven = 0;
                         login(currentUser, true); 
                     }
@@ -327,7 +330,6 @@ async function processAndCompleteEnrollment() {
             streak: (currentUser && currentUser.streak) || 0,
             quizLevels: (currentUser && currentUser.quizLevels) || defaultQuizLevels,
             savedQuizzes: (currentUser && currentUser.savedQuizzes) || [],
-            // ★新規: 累計給食数
             totalLunchGiven: (currentUser && currentUser.totalLunchGiven) || 0,
             isGoogleUser: !!(auth && auth.currentUser && !auth.currentUser.isAnonymous) 
         };
@@ -351,7 +353,6 @@ async function login(user, isGoogle = false) {
     if (!currentUser.attendance) currentUser.attendance = {}; 
     if (!currentUser.quizLevels) currentUser.quizLevels = { "全ジャンル": 1 }; 
     if (!currentUser.savedQuizzes) currentUser.savedQuizzes = []; 
-    // ★新規: ログイン時も初期化
     if (currentUser.totalLunchGiven === undefined) currentUser.totalLunchGiven = 0;
 
     if (typeof user.id === 'number' && auth) {
