@@ -1,4 +1,4 @@
-// --- js/analyze.js (v470.3: 完全版 - 給食セリフ修正＆構文エラー修正) ---
+// --- js/analyze.js (v470.4: ファイルアップロード引数柔軟対応版) ---
 
 // ==========================================
 // グローバル変数・初期設定
@@ -312,8 +312,8 @@ window.addEventListener('DOMContentLoaded', () => {
 
     const camIn = document.getElementById('hw-input-camera'); 
     const albIn = document.getElementById('hw-input-album'); 
-    if(camIn) camIn.addEventListener('change', (e) => { if(window.handleFileUpload) window.handleFileUpload(e.target.files[0]); e.target.value=''; });
-    if(albIn) albIn.addEventListener('change', (e) => { if(window.handleFileUpload) window.handleFileUpload(e.target.files[0]); e.target.value=''; });
+    if(camIn) camIn.addEventListener('change', (e) => { if(window.handleFileUpload) window.handleFileUpload(e.target.files); e.target.value=''; });
+    if(albIn) albIn.addEventListener('change', (e) => { if(window.handleFileUpload) window.handleFileUpload(e.target.files); e.target.value=''; });
     const startCamBtn = document.getElementById('start-webcam-btn');
     if (startCamBtn && window.startHomeworkWebcam) startCamBtn.onclick = window.startHomeworkWebcam;
 });
@@ -497,9 +497,8 @@ window.giveLunch = function() {
         stickerGranted = true;
         if (typeof window.grantRandomSticker === 'function') {
             setTimeout(() => {
-                // 引数 true は「給食画面からの獲得」を示す
                 window.grantRandomSticker(true);
-            }, 1500); // 食べた後に演出
+            }, 1500); 
         }
     }
     
@@ -710,7 +709,6 @@ window.updateGradingMessage = function() {
     }
 };
 
-// ★修正: リスト画面に戻った際にスクロール位置を復元し、ハイライトする（待機時間を調整）
 window.backToProblemSelection = function() { 
     document.getElementById('final-view').classList.add('hidden'); document.getElementById('hint-detail-container').classList.add('hidden'); document.getElementById('chalkboard').classList.add('hidden'); document.getElementById('answer-display-area').classList.add('hidden'); 
     
@@ -721,24 +719,19 @@ window.backToProblemSelection = function() {
         window.updateNellMessage("他も見るにゃ？", "normal", false); 
     } 
     
-    // スクロール位置復元 & ハイライト処理
     if (window.lastSelectedProblemId) {
-        // ★描画完了を待つために時間を延ばす (100ms -> 300ms)
         setTimeout(() => {
             const target = document.getElementById(`grade-item-${window.lastSelectedProblemId}`);
             if (target) {
                 target.scrollIntoView({ behavior: 'auto', block: 'center' });
-                // 一旦クラスを削除してリフローさせてから再付与
                 target.classList.remove('highlight-flash');
                 void target.offsetWidth; 
                 target.classList.add('highlight-flash');
-                
-                // アニメーション終了後にクラス削除
                 setTimeout(() => {
                     target.classList.remove('highlight-flash');
                 }, 2000); 
             }
-            window.lastSelectedProblemId = null; // リセット
+            window.lastSelectedProblemId = null; 
         }, 300);
     }
 
@@ -747,7 +740,6 @@ window.backToProblemSelection = function() {
 
 window.pressThanks = function() { window.backToProblemSelection(); };
 
-// ★修正: 連打防止 & 宿題判定報酬制限 (finishGrading)
 window.finishGrading = async function(btnElement) { 
     if(!btnElement || btnElement.disabled) return; 
     btnElement.disabled = true; 
@@ -755,19 +747,15 @@ window.finishGrading = async function(btnElement) {
 
     try {
         if (currentUser) { 
-            // 宿題判定をチェック
             if (window.isHomeworkDetected) {
-                // 宿題だった場合は褒めるだけ (報酬は廃止)
                 await window.updateNellMessage("よくがんばったにゃ！えらいにゃ！", "excited", false); 
             } else {
-                // 宿題でない場合は褒めるだけ
                 await window.updateNellMessage("面白い写真を見せてくれてありがとうにゃ！次は宿題も見せてにゃ！", "happy", false);
             }
         }
     } catch(e) {
         console.error("Grading Finish Error:", e);
     } finally {
-        // ★修正: 確実にロビーに戻るように、タイマーをセット
         setTimeout(() => { 
             if(typeof window.backToLobby === 'function') {
                 window.backToLobby(true); 
@@ -778,7 +766,6 @@ window.finishGrading = async function(btnElement) {
     }
 };
 
-// ★修正: 連打防止 & 宿題判定報酬制限 (pressAllSolved)
 window.pressAllSolved = async function(btnElement) { 
     if(!btnElement || btnElement.disabled) return; 
     btnElement.disabled = true; 
@@ -787,7 +774,6 @@ window.pressAllSolved = async function(btnElement) {
     try {
         if (currentUser) { 
             if (window.isHomeworkDetected) {
-                // 報酬なし
                 await window.updateNellMessage("全部わかったなんてすごいにゃ！えらいにゃ！", "excited", false);
             } else {
                 await window.updateNellMessage("物知りだにゃ〜！また色んなものを見せてにゃ！", "happy", false);
@@ -796,7 +782,6 @@ window.pressAllSolved = async function(btnElement) {
     } catch(e) {
         console.error("Solved Finish Error:", e);
     } finally {
-        // ★修正: 確実にロビーに戻る
         setTimeout(() => { 
             if(typeof window.backToLobby === 'function') {
                 window.backToLobby(true);
@@ -807,189 +792,149 @@ window.pressAllSolved = async function(btnElement) {
     }
 };
 
-window.cleanupAnalysis = function() { window.isAnalyzing = false; if(window.sfxBunseki) window.sfxBunseki.pause(); if(typeof window.analysisTimers !== 'undefined' && window.analysisTimers) { window.analysisTimers.forEach(t => clearTimeout(t)); window.analysisTimers = []; } };
-
 // ==========================================
-// 5. カメラ・画像処理ロジック (完全版復元)
+// 5. カメラ・画像処理ロジック (柔軟対応版)
 // ==========================================
 
-// ★修正: 宿題分析用ファイルアップロードとクロッパー起動
-window.handleFileUpload = async function(file) { 
+window.handleChatImageFile = async function(files, context = 'embedded') {
+    let file = files;
+    if (files instanceof FileList) {
+        if (files.length === 0) return;
+        file = files[0];
+    }
+    if (!file) return;
+
+    let btnId; if(context === 'embedded') btnId = 'upload-embedded-btn'; else if(context === 'simple') btnId = 'upload-simple-btn';
+    const btn = document.getElementById(btnId);
+    if(btn) { btn.innerHTML = "<span>📡</span> 解析中..."; btn.style.backgroundColor = "#ccc"; btn.disabled = true; }
+    
+    let imageLocation = null;
+    try {
+        if (typeof getGpsFromExif === 'function') {
+            imageLocation = await getGpsFromExif(file);
+        }
+    } catch(e) {}
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        const img = new Image();
+        img.onload = async () => {
+            const canvas = document.createElement('canvas'); const MAX_WIDTH = 800; const scale = Math.min(1, MAX_WIDTH / img.width); canvas.width = img.width * scale; canvas.height = img.height * scale;
+            const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6); const base64Data = compressedDataUrl.split(',')[1];
+            
+            await window.sendImageToChatAPI(base64Data, context, imageLocation);
+            
+            if(btn) { btn.innerHTML = "<span>📁</span> アルバム"; btn.style.backgroundColor = "#4a90e2"; btn.disabled = false; }
+            let inputId; if(context === 'embedded') inputId = 'embedded-image-upload'; else if(context === 'simple') inputId = 'simple-image-upload';
+            const input = document.getElementById(inputId); if(input) input.value = '';
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+};
+
+window.sendImageToChatAPI = async function(base64Data, context, imageLocation = null) {
+    if(typeof window.addLogItem === 'function') window.addLogItem('user', '（画像送信）');
+    let memoryContext = ""; if (window.NellMemory && currentUser) { try { memoryContext = await window.NellMemory.generateContextString(currentUser.id); } catch(e) {} }
+    
+    const useImageLocation = !!imageLocation;
+    const finalLocation = imageLocation || window.currentLocation;
+    const finalAddress = useImageLocation ? null : window.currentAddress;
+
+    try {
+        if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
+        const res = await fetch('/chat-dialogue', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                image: base64Data, 
+                text: "この写真に写っているものについて解説してください", 
+                name: currentUser ? currentUser.name : "生徒", 
+                history: window.chatSessionHistory, 
+                location: finalLocation, 
+                address: finalAddress,   
+                memoryContext: memoryContext 
+            })
+        });
+        if (!res.ok) throw new Error("Server response not ok"); const data = await res.json();
+        const speechText = data.speech || data.reply || "教えてあげるにゃ！";
+        if(typeof window.addLogItem === 'function') window.addLogItem('nell', speechText); if(typeof window.addToSessionHistory === 'function') window.addToSessionHistory('nell', speechText);
+        if(typeof window.updateNellMessage === 'function') await window.updateNellMessage(speechText, "happy", true, true);
+        let boardId = (context === 'embedded') ? 'embedded-chalkboard' : 'chalkboard-simple'; const embedBoard = document.getElementById(boardId); if (embedBoard && data.board && data.board.trim() !== "") { embedBoard.innerText = data.board; embedBoard.classList.remove('hidden'); }
+    } catch(e) {
+        console.error("HTTP Image Error:", e); if(typeof window.updateNellMessage === 'function') window.updateNellMessage("よく見えなかったにゃ…もう一回お願いにゃ！", "thinking", false, true);
+    }
+};
+
+window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
+    if (window.isLiveImageSending) return;
+    if (window.isAlwaysListening && window.continuousRecognition) { try { window.continuousRecognition.stop(); } catch(e){} }
+    let videoId, btnId, activeColor; if (context === 'embedded') { videoId = 'live-chat-video-embedded'; btnId = 'live-camera-btn-embedded'; activeColor = '#66bb6a'; } else if (context === 'simple') { videoId = 'live-chat-video-simple'; btnId = 'live-camera-btn-simple'; activeColor = '#66bb6a'; }
+    const video = document.getElementById(videoId); if (!video || !video.srcObject || !video.srcObject.active) return alert("カメラが動いてないにゃ...");
+    window.isLiveImageSending = true; const btn = document.getElementById(btnId); if (btn) { btn.innerHTML = "<span>📡</span> 送信中にゃ..."; btn.style.backgroundColor = "#ccc"; }
+    const canvas = document.createElement('canvas'); canvas.width = video.videoWidth || 640; canvas.height = video.videoHeight || 480; const ctx = canvas.getContext('2d'); ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const compressedDataUrl = window.processImageForAI(canvas); const base64Data = compressedDataUrl.split(',')[1];
+    const flash = document.createElement('div'); flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;"; document.body.appendChild(flash); setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
+    
+    await window.sendImageToChatAPI(base64Data, context);
+    
+    window.isLiveImageSending = false; if(typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera(); if (btn) { btn.innerHTML = "<span>📷</span> カメラで見せて質問"; btn.style.backgroundColor = activeColor; } if (window.isAlwaysListening) { try { window.continuousRecognition.start(); } catch(e){} }
+};
+
+window.captureAndSendLiveImage = function(context = 'main') {
+    if (context === 'main') { if (window.currentMode === 'chat-free') context = 'free'; else if (window.activeChatContext === 'embedded') context = 'embedded'; else if (window.currentMode === 'simple-chat') context = 'simple'; }
+    if (context === 'embedded' || context === 'simple') { window.captureAndSendLiveImageHttp(context); return; }
+    if (!window.liveSocket || window.liveSocket.readyState !== WebSocket.OPEN) { return alert("まずは「おはなしする」でネル先生とつながってにゃ！"); }
+    if (window.isLiveImageSending) return; 
+    let videoId = 'live-chat-video-free'; let containerId = 'live-chat-video-container-free'; const video = document.getElementById(videoId); const btn = document.getElementById('live-camera-btn-free');
+    if (!video || !video.srcObject || !video.srcObject.active) { if (typeof window.startPreviewCamera === 'function') { window.startPreviewCamera(videoId, containerId).then(() => { if (btn) { btn.innerHTML = "<span>📸</span> 撮影して送信"; btn.style.backgroundColor = "#ff5252"; } }); } else { alert("カメラ機能が読み込まれていないにゃ..."); } return; }
+    window.stopAudioPlayback(); window.ignoreIncomingAudio = true; window.isLiveImageSending = true; if (btn) { btn.innerHTML = "<span>📡</span> 送信中にゃ..."; btn.style.backgroundColor = "#ccc"; } window.isMicMuted = true;
+    const canvas = document.createElement('canvas'); canvas.width = video.videoWidth || 640; canvas.height = video.videoHeight || 480; const ctx = canvas.getContext('2d'); ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const notif = document.createElement('div'); notif.innerText = `📝 問題を送ったにゃ！`; notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #8bc34a; color:#558b2f; padding:10px 20px; border-radius:30px; font-weight:bold; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 4px 10px rgba(0,0,0,0.2);"; document.body.appendChild(notif); setTimeout(() => notif.remove(), 2000);
+    const compressedDataUrl = window.processImageForAI(canvas); const base64Data = compressedDataUrl.split(',')[1];
+    const flash = document.createElement('div'); flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;"; document.body.appendChild(flash); setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
+    const videoContainer = document.getElementById('live-chat-video-container-free'); if (videoContainer) { const oldPreview = document.getElementById('snapshot-preview-overlay'); if(oldPreview) oldPreview.remove(); const previewImg = document.createElement('img'); previewImg.id = 'snapshot-preview-overlay'; previewImg.src = compressedDataUrl; previewImg.style.cssText = "position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; z-index:10; border:4px solid #ffeb3b; box-sizing:border-box; animation: fadeIn 0.2s;"; videoContainer.style.position = "relative"; videoContainer.appendChild(previewImg); setTimeout(() => { if(previewImg && previewImg.parentNode) previewImg.remove(); }, 3000); }
+    if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ん？どれどれ…", "thinking", false, false);
+    if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN) { let promptText = "（ユーザーが勉強の問題や画像を見せました）この画像の内容を詳しく、子供にもわかるように丁寧に教えてください。図鑑登録は不要です。"; window.liveSocket.send(JSON.stringify({ clientContent: { turns: [{ role: "user", parts: [ { text: promptText }, { inlineData: { mime_type: "image/jpeg", data: base64Data } } ] }], turnComplete: true } })); }
+    setTimeout(() => { window.isLiveImageSending = false; window.isMicMuted = false; if (typeof window.stopPreviewCamera === 'function') { window.stopPreviewCamera(); } if (btn) { btn.innerHTML = "<span>📷</span> 写真を見せてお話"; btn.style.backgroundColor = "#009688"; } }, 3000); setTimeout(() => { window.ignoreIncomingAudio = false; }, 300);
+};
+
+window.handleFileUpload = async function(files) { 
+    let file = files;
+    if (files instanceof FileList) {
+        if (files.length === 0) return;
+        file = files[0];
+    }
     if (window.isAnalyzing || !file) return; 
     document.getElementById('upload-controls').classList.add('hidden'); 
     document.getElementById('cropper-modal').classList.remove('hidden'); 
-    
-    // Canvas初期化
-    const canvas = document.getElementById('crop-canvas'); 
-    canvas.style.opacity = '0'; 
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    const reader = new FileReader(); 
-    reader.onload = async (e) => { 
-        window.cropImg = new Image(); 
-        // ローカルアップロード時はcrossOriginを付けない（iOS対策）
-        window.cropImg.onload = async () => { 
-            const w = window.cropImg.width; 
-            const h = window.cropImg.height; 
-            // 初期クロップ範囲（中央80%）
-            window.cropPoints = [ { x: w * 0.1, y: h * 0.1 }, { x: w * 0.9, y: h * 0.1 }, { x: w * 0.9, y: h * 0.9 }, { x: w * 0.1, y: h * 0.9 } ]; 
-            canvas.style.opacity = '1'; 
-            window.initCustomCropper(); 
-        }; 
-        window.cropImg.onerror = () => {
-            alert("画像の読み込みに失敗しました。");
-            document.getElementById('cropper-modal').classList.add('hidden');
-            document.getElementById('upload-controls').classList.remove('hidden');
-        };
-        window.cropImg.src = e.target.result; 
-    }; 
-    reader.readAsDataURL(file); 
+    const canvas = document.getElementById('crop-canvas'); canvas.style.opacity = '0'; 
+    const reader = new FileReader(); reader.onload = async (e) => { window.cropImg = new Image(); window.cropImg.onload = async () => { const w = window.cropImg.width; const h = window.cropImg.height; window.cropPoints = [ { x: w * 0.1, y: h * 0.1 }, { x: w * 0.9, y: h * 0.1 }, { x: w * 0.9, y: h * 0.9 }, { x: w * 0.1, y: h * 0.9 } ]; canvas.style.opacity = '1'; if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ここを読み取るにゃ？", "normal"); window.initCustomCropper(); }; window.cropImg.src = e.target.result; }; reader.readAsDataURL(file); 
 };
 
 window.initCustomCropper = function() { 
-    const modal = document.getElementById('cropper-modal'); 
-    // 確実に表示
-    modal.classList.remove('hidden'); 
-    
-    const canvas = document.getElementById('crop-canvas'); 
-    const MAX_CANVAS_SIZE = 1200; // 制限緩和
-    let w = window.cropImg.width; 
-    let h = window.cropImg.height; 
-    
-    if (w > MAX_CANVAS_SIZE || h > MAX_CANVAS_SIZE) { 
-        const scale = Math.min(MAX_CANVAS_SIZE / w, MAX_CANVAS_SIZE / h); 
-        w *= scale; h *= scale; 
-        window.cropPoints = window.cropPoints.map(p => ({ x: p.x * scale, y: p.y * scale })); 
-    } 
-    
-    canvas.width = w; 
-    canvas.height = h; 
-    const ctx = canvas.getContext('2d'); 
-    ctx.drawImage(window.cropImg, 0, 0, w, h); 
-    
-    // ★重要: 相対座標計算のためにスタイル調整
-    // Canvasを親要素内で中央配置し、getBoundingClientRectではなく
-    // 親要素内での相対位置でハンドルを描画するロジックに変更（下記 updateCropUI 参照）
-
-    window.updateCropUI(canvas); 
-    
-    // イベントリスナー再登録
-    const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl']; 
-    handles.forEach((id, idx) => { 
-        const el = document.getElementById(id); 
-        el.onmousedown = (e) => { e.preventDefault(); window.activeHandle = idx; }; 
-        el.ontouchstart = (e) => { e.preventDefault(); window.activeHandle = idx; }; 
-    }); 
-    
-    const move = (e) => { 
-        if (window.activeHandle === -1) return; 
-        e.preventDefault(); 
-        
-        // ★修正: 親要素基準の相対座標計算
-        const wrapper = document.querySelector('.cropper-wrapper');
-        const rect = canvas.getBoundingClientRect(); // Canvasの画面上の絶対位置
-        
-        const clientX = e.touches ? e.touches[0].clientX : e.clientX; 
-        const clientY = e.touches ? e.touches[0].clientY : e.clientY; 
-        
-        // Canvas内の相対座標 (0.0 ~ 1.0)
-        let relX = (clientX - rect.left) / rect.width; 
-        let relY = (clientY - rect.top) / rect.height; 
-        
-        // 範囲制限
-        relX = Math.max(0, Math.min(1, relX));
-        relY = Math.max(0, Math.min(1, relY));
-
-        window.cropPoints[window.activeHandle] = { x: relX * canvas.width, y: relY * canvas.height }; 
-        window.updateCropUI(canvas); 
-    }; 
-    
-    const end = () => { window.activeHandle = -1; }; 
-    
-    window.onmousemove = move; 
-    window.ontouchmove = move; 
-    window.onmouseup = end; 
-    window.ontouchend = end; 
-    
-    const okBtn = document.getElementById('cropper-ok-btn');
-    // クローンしてリスナー重複防止
-    const newOkBtn = okBtn.cloneNode(true);
-    okBtn.parentNode.replaceChild(newOkBtn, okBtn);
-    
-    newOkBtn.onclick = () => { 
-        if (window.sfxHirameku) { window.safePlay(window.sfxHirameku); } 
-        modal.classList.add('hidden'); 
-        // イベント解除
-        window.onmousemove = null; window.ontouchmove = null; window.onmouseup = null; window.ontouchend = null;
-
-        const croppedBase64 = window.performPerspectiveCrop(canvas, window.cropPoints); 
-        window.startAnalysis(croppedBase64); 
-    }; 
-    
-    const cancelBtn = document.getElementById('cropper-cancel-btn');
-    cancelBtn.onclick = () => {
-         modal.classList.add('hidden');
-         document.getElementById('upload-controls').classList.remove('hidden');
-    };
+    const modal = document.getElementById('cropper-modal'); modal.classList.remove('hidden'); const canvas = document.getElementById('crop-canvas'); const MAX_CANVAS_SIZE = 2500; let w = window.cropImg.width; let h = window.cropImg.height; if (w > MAX_CANVAS_SIZE || h > MAX_CANVAS_SIZE) { const scale = Math.min(MAX_CANVAS_SIZE / w, MAX_CANVAS_SIZE / h); w *= scale; h *= scale; window.cropPoints = window.cropPoints.map(p => ({ x: p.x * scale, y: p.y * scale })); } canvas.width = w; canvas.height = h; canvas.style.width = '100%'; canvas.style.height = '100%'; canvas.style.objectFit = 'contain'; const ctx = canvas.getContext('2d'); ctx.drawImage(window.cropImg, 0, 0, w, h); window.updateCropUI(canvas); 
+    const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl']; handles.forEach((id, idx) => { const el = document.getElementById(id); const startDrag = (e) => { e.preventDefault(); window.activeHandle = idx; }; el.onmousedown = startDrag; el.ontouchstart = startDrag; }); 
+    const move = (e) => { if (window.activeHandle === -1) return; e.preventDefault(); const rect = canvas.getBoundingClientRect(); const imgRatio = canvas.width / canvas.height; const rectRatio = rect.width / rect.height; let drawX, drawY, drawW, drawH; if (imgRatio > rectRatio) { drawW = rect.width; drawH = rect.width / imgRatio; drawX = 0; drawY = (rect.height - drawH) / 2; } else { drawH = rect.height; drawW = rect.height * imgRatio; drawY = 0; drawX = (rect.width - drawW) / 2; } const clientX = e.touches ? e.touches[0].clientX : e.clientX; const clientY = e.touches ? e.touches[0].clientY : e.clientY; let relX = (clientX - rect.left - drawX) / drawW; let relY = (clientY - rect.top - drawY) / drawH; relX = Math.max(0, Math.min(1, relX)); relY = Math.max(0, Math.min(1, relY)); window.cropPoints[window.activeHandle] = { x: relX * canvas.width, y: relY * canvas.height }; window.updateCropUI(canvas); }; 
+    const end = () => { window.activeHandle = -1; }; window.onmousemove = move; window.ontouchmove = move; window.onmouseup = end; window.ontouchend = end; 
+    document.getElementById('cropper-cancel-btn').onclick = () => { modal.classList.add('hidden'); window.onmousemove = null; window.ontouchmove = null; document.getElementById('upload-controls').classList.remove('hidden'); }; 
+    document.getElementById('cropper-ok-btn').onclick = () => { if (window.sfxHirameku) { const originalVol = window.sfxHirameku.volume; window.sfxHirameku.volume = 0; window.sfxHirameku.play().then(() => { window.sfxHirameku.pause(); window.sfxHirameku.currentTime = 0; window.sfxHirameku.volume = originalVol; }).catch(e => {}); } if (window.initAudioContext) { window.initAudioContext().catch(()=>{}); } modal.classList.add('hidden'); window.onmousemove = null; window.ontouchmove = null; const croppedBase64 = window.performPerspectiveCrop(canvas, window.cropPoints); window.startAnalysis(croppedBase64); }; 
 };
 
 window.updateCropUI = function(canvas) { 
-    const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl']; 
-    
-    // Canvasの表示サイズとオフセットを取得
-    // position:absoluteで配置されているハンドル等は、親(.cropper-wrapper)基準で配置される
-    // Canvas自体も中央揃えされているため、そのオフセットを加算する
-    
-    const canvasLeft = canvas.offsetLeft;
-    const canvasTop = canvas.offsetTop;
-    const canvasW = canvas.offsetWidth;
-    const canvasH = canvas.offsetHeight;
-    
-    // 内部座標 -> 表示座標変換
-    const toScreen = (p) => ({ 
-        x: (p.x / canvas.width) * canvasW + canvasLeft, 
-        y: (p.y / canvas.height) * canvasH + canvasTop 
-    }); 
-    
-    const screenPoints = window.cropPoints.map(toScreen); 
-    
-    screenPoints.forEach((p, i) => { 
-        const el = document.getElementById(handles[i]); 
-        if(el) { el.style.left = p.x + 'px'; el.style.top = p.y + 'px'; } 
-    }); 
-    
-    const svg = document.getElementById('crop-lines'); 
-    if(svg) { 
-        // SVGは親要素いっぱいに広がっている前提 (width:100%, height:100%)
-        // そのため、上記の親基準座標(screenPoints)をそのまま使える
-        const ptsStr = screenPoints.map(p => `${p.x},${p.y}`).join(' '); 
-        svg.innerHTML = `<polyline points="${ptsStr} ${screenPoints[0].x},${screenPoints[0].y}" style="fill:rgba(255,255,255,0.2);stroke:#ff4081;stroke-width:2;stroke-dasharray:5" />`; 
-    } 
+    const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl']; const rect = canvas.getBoundingClientRect(); const imgRatio = canvas.width / canvas.height; const rectRatio = rect.width / rect.height; let drawX, drawY, drawW, drawH; if (imgRatio > rectRatio) { drawW = rect.width; drawH = rect.width / imgRatio; drawX = 0; drawY = (rect.height - drawH) / 2; } else { drawH = rect.height; drawW = rect.height * imgRatio; drawY = 0; drawX = (rect.width - drawW) / 2; } const toScreen = (p) => ({ x: (p.x / canvas.width) * drawW + drawX + canvas.offsetLeft, y: (p.y / canvas.height) * drawH + drawY + canvas.offsetTop }); const screenPoints = window.cropPoints.map(toScreen); handles.forEach((id, i) => { const el = document.getElementById(id); el.style.left = screenPoints[i].x + 'px'; el.style.top = screenPoints[i].y + 'px'; }); const svg = document.getElementById('crop-lines'); svg.style.left = canvas.offsetLeft + 'px'; svg.style.top = canvas.offsetTop + 'px'; svg.style.width = canvas.offsetWidth + 'px'; svg.style.height = canvas.offsetHeight + 'px'; const toSvg = (p) => ({ x: (p.x / canvas.width) * drawW + drawX, y: (p.y / canvas.height) * drawH + drawY }); const svgPts = window.cropPoints.map(toSvg); const ptsStr = svgPts.map(p => `${p.x},${p.y}`).join(' '); svg.innerHTML = `<polyline points="${ptsStr} ${svgPts[0].x},${svgPts[0].y}" style="fill:rgba(255,255,255,0.2);stroke:#ff4081;stroke-width:2;stroke-dasharray:5" />`; 
 };
 
 window.performPerspectiveCrop = function(sourceCanvas, points) { 
-    const minX = Math.min(...points.map(p => p.x)), maxX = Math.max(...points.map(p => p.x)); 
-    const minY = Math.min(...points.map(p => p.y)), maxY = Math.max(...points.map(p => p.y)); 
-    let w = maxX - minX, h = maxY - minY; 
-    if(w < 1) w = 1; if(h < 1) h = 1; 
-    
-    const tempCv = document.createElement('canvas'); 
-    tempCv.width = w; tempCv.height = h; 
-    const ctx = tempCv.getContext('2d'); 
-    ctx.drawImage(sourceCanvas, minX, minY, w, h, 0, 0, w, h); 
-    const result = window.processImageForAI(tempCv).split(',')[1]; 
-    return result; 
+    const minX = Math.min(...points.map(p => p.x)), maxX = Math.max(...points.map(p => p.x)); const minY = Math.min(...points.map(p => p.y)), maxY = Math.max(...points.map(p => p.y)); let w = maxX - minX, h = maxY - minY; if (w < 1) w = 1; if (h < 1) h = 1; const tempCv = document.createElement('canvas'); tempCv.width = w; tempCv.height = h; const ctx = tempCv.getContext('2d'); ctx.drawImage(sourceCanvas, minX, minY, w, h, 0, 0, w, h); const result = window.processImageForAI(tempCv).split(',')[1]; tempCv.width = 1; tempCv.height = 1; return result; 
 };
 
 window.startAnalysis = async function(b64) {
-    // 制限追加: 前回の分析から30秒以内なら実行しない
     const now = Date.now();
     if (window.lastAnalysisTime && (now - window.lastAnalysisTime < 30000)) {
          if(typeof window.updateNellMessage === 'function') {
              window.updateNellMessage("ちょっと待ってにゃ、目が回っちゃうにゃ…少し休ませてにゃ。", "thinking", false, true);
          }
-         // UIを戻す
          document.getElementById('cropper-modal').classList.add('hidden'); 
          document.getElementById('upload-controls').classList.remove('hidden'); 
          return;
@@ -1019,7 +964,6 @@ window.startAnalysis = async function(b64) {
         if(typeof window.updateProgress === 'function') window.updateProgress(p); 
     }, 300);
 
-    // ★修正: 実況ループでセリフがかぶらないように待機時間を調整
     const performAnalysisNarration = async () => { 
         const msgs = [ 
             { text: "じーっと見て、問題を書き写してるにゃ…", mood: "thinking" }, 
@@ -1036,12 +980,10 @@ window.startAnalysis = async function(b64) {
         for (const item of msgs) { 
             if (!window.isAnalyzing) return; 
             if(typeof window.updateNellMessage === 'function') {
-                // 音声再生（speak=true）
                 await window.updateNellMessage(item.text, item.mood, false, true);
             }
             if (!window.isAnalyzing) return; 
             
-            // 文字数に基づいて待機時間を計算 (最低3秒)
             const waitTime = Math.max(3000, item.text.length * 250); 
             await new Promise(r => setTimeout(r, waitTime)); 
         } 
@@ -1106,118 +1048,10 @@ window.startAnalysis = async function(b64) {
 window.cleanupAnalysis = function() { 
     window.isAnalyzing = false; 
     window.sfxBunseki.pause(); 
-    // 読み上げを強制停止
     if(typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
     
     if(typeof window.analysisTimers !== 'undefined' && window.analysisTimers) { 
         window.analysisTimers.forEach(t => clearTimeout(t)); 
         window.analysisTimers = []; 
     } 
-};
-
-window.captureAndSendLiveImage = function(context = 'main') {
-    if (context === 'main') { if (window.currentMode === 'chat-free') context = 'free'; else if (window.activeChatContext === 'embedded') context = 'embedded'; else if (window.currentMode === 'simple-chat') context = 'simple'; }
-    if (context === 'embedded' || context === 'simple') { window.captureAndSendLiveImageHttp(context); return; }
-    if (!window.liveSocket || window.liveSocket.readyState !== WebSocket.OPEN) { return alert("まずは「おはなしする」でネル先生とつながってにゃ！"); }
-    if (window.isLiveImageSending) return; 
-    let videoId = 'live-chat-video-free'; let containerId = 'live-chat-video-container-free'; const video = document.getElementById(videoId); const btn = document.getElementById('live-camera-btn-free');
-    if (!video || !video.srcObject || !video.srcObject.active) { if (typeof window.startPreviewCamera === 'function') { window.startPreviewCamera(videoId, containerId).then(() => { if (btn) { btn.innerHTML = "<span>📸</span> 撮影して送信"; btn.style.backgroundColor = "#ff5252"; } }); } else { alert("カメラ機能が読み込まれていないにゃ..."); } return; }
-    window.stopAudioPlayback(); window.ignoreIncomingAudio = true; window.isLiveImageSending = true; if (btn) { btn.innerHTML = "<span>📡</span> 送信中にゃ..."; btn.style.backgroundColor = "#ccc"; } window.isMicMuted = true;
-    const canvas = document.createElement('canvas'); canvas.width = video.videoWidth || 640; canvas.height = video.videoHeight || 480; const ctx = canvas.getContext('2d'); ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const notif = document.createElement('div'); notif.innerText = `📝 問題を送ったにゃ！`; notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #8bc34a; color:#558b2f; padding:10px 20px; border-radius:30px; font-weight:bold; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 4px 10px rgba(0,0,0,0.2);"; document.body.appendChild(notif); setTimeout(() => notif.remove(), 2000);
-    const compressedDataUrl = window.processImageForAI(canvas); const base64Data = compressedDataUrl.split(',')[1];
-    const flash = document.createElement('div'); flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;"; document.body.appendChild(flash); setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
-    const videoContainer = document.getElementById('live-chat-video-container-free'); if (videoContainer) { const oldPreview = document.getElementById('snapshot-preview-overlay'); if(oldPreview) oldPreview.remove(); const previewImg = document.createElement('img'); previewImg.id = 'snapshot-preview-overlay'; previewImg.src = compressedDataUrl; previewImg.style.cssText = "position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; z-index:10; border:4px solid #ffeb3b; box-sizing:border-box; animation: fadeIn 0.2s;"; videoContainer.style.position = "relative"; videoContainer.appendChild(previewImg); setTimeout(() => { if(previewImg && previewImg.parentNode) previewImg.remove(); }, 3000); }
-    if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ん？どれどれ…", "thinking", false, false);
-    if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN) { let promptText = "（ユーザーが勉強の問題や画像を見せました）この画像の内容を詳しく、子供にもわかるように丁寧に教えてください。図鑑登録は不要です。"; window.liveSocket.send(JSON.stringify({ clientContent: { turns: [{ role: "user", parts: [ { text: promptText }, { inlineData: { mime_type: "image/jpeg", data: base64Data } } ] }], turnComplete: true } })); }
-    setTimeout(() => { window.isLiveImageSending = false; window.isMicMuted = false; if (typeof window.stopPreviewCamera === 'function') { window.stopPreviewCamera(); } if (btn) { btn.innerHTML = "<span>📷</span> 写真を見せてお話"; btn.style.backgroundColor = "#009688"; } }, 3000); setTimeout(() => { window.ignoreIncomingAudio = false; }, 300);
-};
-
-window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
-    if (window.isLiveImageSending) return;
-    if (window.isAlwaysListening && window.continuousRecognition) { try { window.continuousRecognition.stop(); } catch(e){} }
-    let videoId, btnId, activeColor; if (context === 'embedded') { videoId = 'live-chat-video-embedded'; btnId = 'live-camera-btn-embedded'; activeColor = '#66bb6a'; } else if (context === 'simple') { videoId = 'live-chat-video-simple'; btnId = 'live-camera-btn-simple'; activeColor = '#66bb6a'; }
-    const video = document.getElementById(videoId); if (!video || !video.srcObject || !video.srcObject.active) return alert("カメラが動いてないにゃ...");
-    window.isLiveImageSending = true; const btn = document.getElementById(btnId); if (btn) { btn.innerHTML = "<span>📡</span> 送信中にゃ..."; btn.style.backgroundColor = "#ccc"; }
-    const canvas = document.createElement('canvas'); canvas.width = video.videoWidth || 640; canvas.height = video.videoHeight || 480; const ctx = canvas.getContext('2d'); ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const compressedDataUrl = window.processImageForAI(canvas); const base64Data = compressedDataUrl.split(',')[1];
-    const flash = document.createElement('div'); flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;"; document.body.appendChild(flash); setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
-    if(typeof window.addLogItem === 'function') window.addLogItem('user', '（画像送信）');
-    let memoryContext = ""; if (window.NellMemory && currentUser) { try { memoryContext = await window.NellMemory.generateContextString(currentUser.id); } catch(e) {} }
-    
-    // window.sendImageToChatAPI を呼び出す
-    await window.sendImageToChatAPI(base64Data, context);
-    
-    window.isLiveImageSending = false; if(typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera(); if (btn) { btn.innerHTML = "<span>📷</span> カメラで見せて質問"; btn.style.backgroundColor = activeColor; } if (window.isAlwaysListening) { try { window.continuousRecognition.start(); } catch(e){} }
-};
-
-window.uploadChatImage = function(context = 'embedded') {
-    let inputId; if(context === 'embedded') inputId = 'embedded-image-upload'; else if(context === 'simple') inputId = 'simple-image-upload';
-    const input = document.getElementById(inputId); if(input) input.click();
-};
-
-window.handleChatImageFile = async function(file, context = 'embedded') {
-    if (!file) return;
-    let btnId; if(context === 'embedded') btnId = 'upload-embedded-btn'; else if(context === 'simple') btnId = 'upload-simple-btn';
-    const btn = document.getElementById(btnId);
-    if(btn) { btn.innerHTML = "<span>📡</span> 解析中..."; btn.style.backgroundColor = "#ccc"; btn.disabled = true; }
-    
-    // EXIFから位置情報を取得 (非同期)
-    let imageLocation = null;
-    try {
-        imageLocation = await getGpsFromExif(file);
-    } catch(e) {}
-
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-        const img = new Image();
-        img.onload = async () => {
-            const canvas = document.createElement('canvas'); const MAX_WIDTH = 800; const scale = Math.min(1, MAX_WIDTH / img.width); canvas.width = img.width * scale; canvas.height = img.height * scale;
-            const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6); const base64Data = compressedDataUrl.split(',')[1];
-            
-            // 位置情報を渡す
-            await window.sendImageToChatAPI(base64Data, context, imageLocation);
-            
-            if(btn) { btn.innerHTML = "<span>📁</span> アルバム"; btn.style.backgroundColor = "#4a90e2"; btn.disabled = false; }
-            let inputId; if(context === 'embedded') inputId = 'embedded-image-upload'; else if(context === 'simple') inputId = 'simple-image-upload';
-            const input = document.getElementById(inputId); if(input) input.value = '';
-        };
-        img.src = e.target.result;
-    };
-    reader.readAsDataURL(file);
-};
-
-// imageLocation 引数を追加
-window.sendImageToChatAPI = async function(base64Data, context, imageLocation = null) {
-    if(typeof window.addLogItem === 'function') window.addLogItem('user', '（画像送信）');
-    let memoryContext = ""; if (window.NellMemory && currentUser) { try { memoryContext = await window.NellMemory.generateContextString(currentUser.id); } catch(e) {} }
-    
-    // 位置情報の優先順位ロジック
-    const useImageLocation = !!imageLocation;
-    const finalLocation = imageLocation || window.currentLocation;
-    const finalAddress = useImageLocation ? null : window.currentAddress;
-
-    try {
-        if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
-        const res = await fetch('/chat-dialogue', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                image: base64Data, 
-                text: "この写真に写っているものについて解説してください", 
-                name: currentUser ? currentUser.name : "生徒", 
-                history: window.chatSessionHistory, 
-                location: finalLocation, // 画像位置情報または現在地
-                address: finalAddress,   // 画像位置を使う場合はnull
-                memoryContext: memoryContext 
-            })
-        });
-        if (!res.ok) throw new Error("Server response not ok"); const data = await res.json();
-        const speechText = data.speech || data.reply || "教えてあげるにゃ！";
-        if(typeof window.addLogItem === 'function') window.addLogItem('nell', speechText); if(typeof window.addToSessionHistory === 'function') window.addToSessionHistory('nell', speechText);
-        if(typeof window.updateNellMessage === 'function') await window.updateNellMessage(speechText, "happy", true, true);
-        let boardId = (context === 'embedded') ? 'embedded-chalkboard' : 'chalkboard-simple'; const embedBoard = document.getElementById(boardId); if (embedBoard && data.board && data.board.trim() !== "") { embedBoard.innerText = data.board; embedBoard.classList.remove('hidden'); }
-    } catch(e) {
-        console.error("HTTP Image Error:", e); if(typeof window.updateNellMessage === 'function') window.updateNellMessage("よく見えなかったにゃ…もう一回お願いにゃ！", "thinking", false, true);
-    }
 };
