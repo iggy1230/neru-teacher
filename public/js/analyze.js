@@ -1,4 +1,4 @@
-// --- js/analyze.js (v470.4: ファイルアップロード引数柔軟対応版) ---
+// --- js/analyze.js (v470.5: 宿題分析後の常時音声認識廃止版) ---
 
 // ==========================================
 // グローバル変数・初期設定
@@ -868,7 +868,7 @@ window.sendImageToChatAPI = async function(base64Data, context, imageLocation = 
 
 window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
     if (window.isLiveImageSending) return;
-    if (window.isAlwaysListening && window.continuousRecognition) { try { window.continuousRecognition.stop(); } catch(e){} }
+    
     let videoId, btnId, activeColor; if (context === 'embedded') { videoId = 'live-chat-video-embedded'; btnId = 'live-camera-btn-embedded'; activeColor = '#66bb6a'; } else if (context === 'simple') { videoId = 'live-chat-video-simple'; btnId = 'live-camera-btn-simple'; activeColor = '#66bb6a'; }
     const video = document.getElementById(videoId); if (!video || !video.srcObject || !video.srcObject.active) return alert("カメラが動いてないにゃ...");
     window.isLiveImageSending = true; const btn = document.getElementById(btnId); if (btn) { btn.innerHTML = "<span>📡</span> 送信中にゃ..."; btn.style.backgroundColor = "#ccc"; }
@@ -878,7 +878,7 @@ window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
     
     await window.sendImageToChatAPI(base64Data, context);
     
-    window.isLiveImageSending = false; if(typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera(); if (btn) { btn.innerHTML = "<span>📷</span> カメラで見せて質問"; btn.style.backgroundColor = activeColor; } if (window.isAlwaysListening) { try { window.continuousRecognition.start(); } catch(e){} }
+    window.isLiveImageSending = false; if(typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera(); if (btn) { btn.innerHTML = "<span>📷</span> カメラで見せて質問"; btn.style.backgroundColor = activeColor; } 
 };
 
 window.captureAndSendLiveImage = function(context = 'main') {
@@ -942,7 +942,6 @@ window.startAnalysis = async function(b64) {
     window.lastAnalysisTime = now;
 
     if (window.isAnalyzing) return;
-    if (typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
     
     window.isAnalyzing = true; 
     document.getElementById('cropper-modal').classList.add('hidden'); 
@@ -1026,9 +1025,6 @@ window.startAnalysis = async function(b64) {
                 if(typeof window.renderProblemSelection === 'function') window.renderProblemSelection(); 
                 if(typeof window.updateNellMessage === 'function') window.updateNellMessage(doneMsg, "happy", false); 
             } 
-            if (window.currentMode === 'explain' || window.currentMode === 'grade' || window.currentMode === 'review') { 
-                if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening(); 
-            } 
         }, 1500); 
     } catch (err) { 
         console.error("Analysis Error:", err); 
@@ -1039,9 +1035,6 @@ window.startAnalysis = async function(b64) {
         document.getElementById('upload-controls').classList.remove('hidden'); 
         if(backBtn) backBtn.classList.remove('hidden'); 
         if(typeof window.updateNellMessage === 'function') window.updateNellMessage("うまく読めなかったにゃ…もう一度お願いにゃ！", "thinking", false); 
-        if (window.currentMode === 'explain' || window.currentMode === 'grade' || window.currentMode === 'review') { 
-            if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening(); 
-        } 
     }
 };
 

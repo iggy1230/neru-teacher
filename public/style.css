@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v470.30: 漢字ドリル花丸オーバーレイ対応版) --- */
+/* --- style.css (完全版 v470.31: にっぽん地図マスタースタイル追加版) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -897,7 +897,6 @@ button { font-family: inherit; }
     box-shadow: 0 2px 0 #2a609e; 
 }
 
-/* ★修正: クラス化してスタイルを統一 */
 #live-chat-video-container,
 .live-chat-video-wrapper {
     width: 100%; 
@@ -1120,54 +1119,45 @@ button { font-family: inherit; }
     animation: bounce 1s infinite alternate;
 }
 
-/* 
-   ★追加: カメラ起動時の軽量化モード 
-   iPhone等の描画負荷を軽減するため、重いエフェクトを無効化
-*/
+/* カメラ起動時の軽量化モード */
 .camera-active .volume-controls-fixed,
 .camera-active .glass-card,
 .camera-active .whiteboard-overlay,
 .camera-active .memory-modal-overlay {
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
-    background: rgba(255, 255, 255, 0.95); /* ぼかしの代わりにベタ塗り(少し透過) */
+    background: rgba(255, 255, 255, 0.95);
 }
 
-/* カメラ起動中は背景画像を非表示にして描画負荷を下げる */
 .camera-active body::before {
     display: none !important;
 }
 
-/* 背景画像の代わりに単色背景 */
 .camera-active body {
     background-color: #fff9f0;
 }
 
-/*
-   ★新規: お宝神経衰弱用スタイル (グリッド制御強化版)
-*/
+/* お宝神経衰弱用スタイル */
 .memory-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    grid-template-rows: repeat(4, 1fr); /* 4行に固定 */
+    grid-template-rows: repeat(4, 1fr);
     gap: 4px;
     margin-top: 5px;
     padding: 5px;
     perspective: 1000px;
-    /* 画面高さの60% -> 70% に拡張してカードを縦長にする */
     height: 70vh;
-    max-height: 500px; /* PCなど大画面対策 */
+    max-height: 500px; 
 }
 
 .memory-card {
     width: 100%;
     height: 100%;
-    background-color: transparent; /* ここは透明にする */
+    background-color: transparent; 
     cursor: pointer;
     position: relative;
     user-select: none;
     border-radius: 5px;
-    /* 親要素にperspectiveがある場合でも、子要素の3D変換を有効にする */
     transform-style: preserve-3d; 
     -webkit-transform-style: preserve-3d;
 }
@@ -1179,10 +1169,9 @@ button { font-family: inherit; }
     text-align: center;
     transition: transform 0.6s;
     transform-style: preserve-3d;
-    -webkit-transform-style: preserve-3d; /* iOS Safari fix */
+    -webkit-transform-style: preserve-3d; 
     box-shadow: 0 2px 5px rgba(0,0,0,0.1);
     border-radius: 5px;
-    /* iOSでのレンダリングバグ対策: GPUレイヤー分離 */
     transform: translateZ(0); 
     -webkit-transform: translateZ(0);
 }
@@ -1196,11 +1185,10 @@ button { font-family: inherit; }
     position: absolute;
     width: 100%;
     height: 100%;
-    -webkit-backface-visibility: hidden; /* Safari */
+    -webkit-backface-visibility: hidden;
     backface-visibility: hidden;
     border-radius: 5px;
     background-color: #fff;
-    /* チラつき防止 */
     transform: translate3d(0,0,0); 
     -webkit-transform: translate3d(0,0,0);
 }
@@ -1213,8 +1201,7 @@ button { font-family: inherit; }
     justify-content: center;
     font-size: 2rem;
     border: 2px solid #fff;
-    z-index: 2; /* デフォルトで手前 */
-    /* 裏面であることを明示 */
+    z-index: 2;
     transform: rotateY(0deg); 
     -webkit-transform: rotateY(0deg);
 }
@@ -1230,10 +1217,9 @@ button { font-family: inherit; }
     z-index: 1;
 }
 
-/* 写真部分のズーム表示設定 (画像のみ見せる調整) */
 .memory-card-img-container {
     width: 100%;
-    height: 75%; /* 75%に調整して名称エリアを確保 */
+    height: 75%; 
     overflow: hidden; 
     position: relative;
     background: #f0f0f0;
@@ -1246,14 +1232,13 @@ button { font-family: inherit; }
     width: 100%;
     height: 100%;
     object-fit: cover;
-    /* 画像を下に移動させるために object-position を 5% に変更（上端基準に近づける） */
     object-position: center 5%; 
     transform: scale(1.6);
     transform-origin: center center;
 }
 
 .memory-card-name {
-    height: 25%; /* 名称エリア */
+    height: 25%; 
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1281,10 +1266,7 @@ button { font-family: inherit; }
 .minitest-correct, .quiz-correct { background: #e8f5e9 !important; border-color: #4caf50 !important; color: #2e7d32 !important; }
 .minitest-wrong, .quiz-wrong { background: #ffebee !important; border-color: #ef5350 !important; color: #c62828 !important; }
 
-/* 
-   ★重要: お宝図鑑のカードアイテム用（JSからクラス付与）
-   強制的にマージンとトランスフォームをリセットし、重なりを防ぐ
-*/
+/* お宝図鑑のカードアイテム用 */
 .collection-grid-item {
     background: white;
     border-radius: 8px;
@@ -1301,8 +1283,6 @@ button { font-family: inherit; }
     aspect-ratio: 0.68;
     overflow: hidden;
     z-index: 1;
-    
-    /* 古いJSのインラインスタイルを強制上書き */
     margin: 0 !important; 
     transform: none !important;
 }
@@ -1334,7 +1314,7 @@ button { font-family: inherit; }
     text-overflow: ellipsis;
 }
 
-/* ★ランキング掲示板用スタイル (v416.0追加) */
+/* ランキング掲示板用スタイル */
 .ranking-item {
     display: flex;
     justify-content: space-between;
@@ -1363,7 +1343,7 @@ button { font-family: inherit; }
     align-items: center;
     gap: 10px;
     flex: 1;
-    min-width: 0; /* flex内で省略させるために必要 */
+    min-width: 0; 
 }
 
 .rank-position {
@@ -1420,7 +1400,7 @@ button { font-family: inherit; }
     font-weight: bold;
 }
 
-/* ★追加: 漢字ドリル画面のデザイン強化 */
+/* 漢字ドリル画面のデザイン強化 */
 #kanji-question-text, 
 #kanji-answer-text,
 #kanji-canvas {
@@ -1428,7 +1408,7 @@ button { font-family: inherit; }
 }
 
 #kanji-game-container {
-    background-color: #fffdf5; /* クリーム色の紙っぽい背景 */
+    background-color: #fffdf5; 
     background-image: 
         linear-gradient(#e0e0e0 1px, transparent 1px),
         linear-gradient(90deg, #e0e0e0 1px, transparent 1px);
@@ -1439,9 +1419,8 @@ button { font-family: inherit; }
 }
 
 #kanji-canvas {
-    border: 4px solid #5d4037; /* 濃い茶色の枠 */
+    border: 4px solid #5d4037; 
     background-color: #fff;
-    /* 十字リーダー（田の字） */
     background-image: 
         linear-gradient(to right, transparent 49.5%, #cfd8dc 50%, transparent 50.5%),
         linear-gradient(to bottom, transparent 49.5%, #cfd8dc 50%, transparent 50.5%);
@@ -1451,7 +1430,7 @@ button { font-family: inherit; }
     display: block;
     margin: 0 auto;
     border-radius: 2px;
-    touch-action: none; /* スマホでのスクロール暴発防止 */
+    touch-action: none; 
 }
 
 #kanji-controls {
@@ -1459,31 +1438,22 @@ button { font-family: inherit; }
     gap: 15px !important;
 }
 
-/* ★修正: 花丸のアニメーション (シンプル赤丸) */
 .hanamaru-stamp {
-    /* width/heightは親要素(#kanji-hanamaru)のstyleで制御 */
     display: flex;
     align-items: center;
     justify-content: center;
     opacity: 0;
     transform: scale(2.0);
     animation: stampAnimation 0.3s ease-out forwards;
-    pointer-events: none; /* クリック透過 */
-    z-index: 100; /* キャンバスより前面に */
+    pointer-events: none; 
+    z-index: 100; 
 }
 
 @keyframes stampAnimation {
-    0% {
-        transform: scale(2.0);
-        opacity: 0;
-    }
-    100% {
-        transform: scale(1);
-        opacity: 1;
-    }
+    0% { transform: scale(2.0); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
 }
 
-/* ★漢字ドリル読み問題正解時のオーバーレイ */
 .overlay-answer {
     position: absolute;
     top: 0;
@@ -1496,13 +1466,13 @@ button { font-family: inherit; }
     justify-content: center;
     align-items: center;
     border-radius: 10px;
-    z-index: 5; /* 花丸(z:10)より下、キャンバスより上 */
+    z-index: 5; 
     margin: 0 !important;
     border: none !important; 
     box-shadow: none !important;
 }
 
-/* ★新規: ランキングメニューのスタイル */
+/* ランキングメニューのスタイル */
 .ranking-menu-scroll {
     display: flex;
     overflow-x: auto;
@@ -1510,10 +1480,9 @@ button { font-family: inherit; }
     padding: 10px 5px;
     margin-bottom: 10px;
     -webkit-overflow-scrolling: touch;
-    width: 100%; /* 幅を明示 */
+    width: 100%; 
 }
 
-/* スクロールバーを操作可能にするため表示 (デザイン調整) */
 .ranking-menu-scroll::-webkit-scrollbar {
     height: 6px;
 }
@@ -1550,23 +1519,22 @@ button { font-family: inherit; }
     box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
 }
 
-/* ★新規: シール帳 (screen-sticker-book) 用スタイル (バインダー風) */
+/* シール帳用スタイル */
 #sticker-board-container {
     width: 100%;
     height: 65vh;
-    background: #81d4fa; /* 外側の水色カバー */
+    background: #81d4fa; 
     border-radius: 15px;
     position: relative;
-    overflow: visible !important; /* ★修正: 台紙の外（枠外）にも表示できるようにする */
+    overflow: visible !important; 
     box-shadow: 
         inset 0 0 10px rgba(0,0,0,0.1),
         0 5px 15px rgba(0,0,0,0.2);
     margin-top: 10px;
-    padding: 10px; /* カバーの余白 */
+    padding: 10px; 
     display: flex;
 }
 
-/* バインダーの表紙感 */
 #sticker-board-container::before {
     content: "";
     position: absolute;
@@ -1578,14 +1546,13 @@ button { font-family: inherit; }
 
 #sticker-board {
     flex: 1;
-    background: #fff; /* 中の白いページ */
+    background: #fff; 
     border-radius: 8px;
     position: relative;
-    overflow: visible; /* ★修正: 台紙の外にも表示 */
+    overflow: visible; 
     box-shadow: inset 2px 0 5px rgba(0,0,0,0.05);
 }
 
-/* 中央のリング */
 .binder-ring {
     position: absolute;
     left: 50%;
@@ -1597,7 +1564,7 @@ button { font-family: inherit; }
         0deg,
         transparent,
         transparent 20px,
-        #ab47bc 20px,   /* 紫色のリング */
+        #ab47bc 20px,
         #ab47bc 24px,
         transparent 24px,
         transparent 40px
@@ -1607,7 +1574,6 @@ button { font-family: inherit; }
     filter: drop-shadow(1px 1px 1px rgba(0,0,0,0.2));
 }
 
-/* 中央の折り目 */
 #sticker-board::after {
     content: "";
     position: absolute;
@@ -1619,7 +1585,6 @@ button { font-family: inherit; }
     pointer-events: none;
 }
 
-/* 右側の留め具 */
 .binder-clasp {
     position: absolute;
     right: -12px;
@@ -1646,25 +1611,23 @@ button { font-family: inherit; }
     box-shadow: inset 1px 1px 2px rgba(0,0,0,0.2);
 }
 
-/* ★修正: シールアイテムのサイズを強制 (70x70) */
 .sticker-item {
     position: absolute;
-    width: 70px;  /* 幅固定 100px -> 70px */
-    height: 70px; /* 高さ固定 100px -> 70px */
+    width: 70px;  
+    height: 70px; 
     cursor: grab;
     user-select: none;
     touch-action: none;
     transition: transform 0.1s;
     filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.3));
     box-sizing: border-box; 
-    border: 2px solid transparent; /* 通常時は透明な枠 */
-    /* 中心基準にするための調整はJSで行うが、念のため */
+    border: 2px solid transparent; 
     transform-origin: center center;
 }
 
 .sticker-item.selected {
-    border: 2px dashed #2196f3; /* 選択時は青い点線 */
-    z-index: 1000 !important; /* 選択中は最前面 */
+    border: 2px dashed #2196f3; 
+    z-index: 1000 !important; 
     cursor: grab;
 }
 
@@ -1674,7 +1637,6 @@ button { font-family: inherit; }
     z-index: 1000 !important; 
 }
 
-/* ★修正: 画像は親要素(70x70)に収まるようにする */
 .sticker-img {
     width: 100%;
     height: 100%;
@@ -1683,27 +1645,25 @@ button { font-family: inherit; }
     display: block;
 }
 
-/* 回転ハンドル */
 .sticker-rotate-handle {
-    display: none; /* 通常は非表示 */
+    display: none; 
     position: absolute;
-    bottom: -10px; /* 枠の少し外側 */
+    bottom: -10px; 
     right: -10px;
     width: 30px;
     height: 30px;
     background-color: #fff;
     border: 2px solid #2196f3;
     border-radius: 50%;
-    background-image: url('assets/images/items/icon_rotate.png'); /* 回転アイコン */
+    background-image: url('assets/images/items/icon_rotate.png'); 
     background-size: 60%;
     background-position: center;
     background-repeat: no-repeat;
     box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-    cursor: alias; /* 回転っぽいカーソル */
+    cursor: alias; 
     z-index: 1001;
 }
 
-/* 回転アイコン画像がない場合の代替文字 */
 .sticker-rotate-handle::after {
     content: "↻";
     position: absolute;
@@ -1714,7 +1674,6 @@ button { font-family: inherit; }
     color: #2196f3;
 }
 
-/* 選択されている時だけハンドルを表示 */
 .sticker-item.selected .sticker-rotate-handle {
     display: block;
 }
@@ -1725,7 +1684,6 @@ button { font-family: inherit; }
     pointer-events: none;
 }
 
-/* ゴミ箱 */
 #sticker-trash {
     position: absolute;
     bottom: 20px;
@@ -1742,7 +1700,7 @@ button { font-family: inherit; }
     box-shadow: 0 4px 8px rgba(0,0,0,0.2);
     z-index: 500;
     transition: transform 0.2s, background-color 0.2s;
-    pointer-events: none; /* ドラッグ判定はJSのgetBoundingClientRectで行うため、イベント透過で問題なし */
+    pointer-events: none; 
 }
 
 #sticker-trash.active {
@@ -1756,11 +1714,10 @@ button { font-family: inherit; }
     border-color: #d32f2f;
 }
 
-/* ★新規: 新しいシール置き場 */
 .new-sticker-area {
-    position: relative; /* シールの絶対配置の基準になる */
+    position: relative; 
     width: 100%;
-    height: 120px; /* 置き場の高さ */
+    height: 120px; 
     background: rgba(0, 0, 0, 0.2);
     border-radius: 15px;
     margin-top: 15px;
@@ -1787,7 +1744,7 @@ button { font-family: inherit; }
     flex-direction: column;
     align-items: center;
     gap: 15px;
-    background: linear-gradient(135deg, #333 0%, #555 100%); /* 少し豪華に */
+    background: linear-gradient(135deg, #333 0%, #555 100%); 
     padding: 20px;
     border-radius: 20px;
     box-shadow: 
@@ -1795,7 +1752,7 @@ button { font-family: inherit; }
         inset 0 0 10px rgba(255,255,255,0.1);
     margin: 10px auto;
     max-width: 320px;
-    border: 5px solid #ffd700; /* 金枠 */
+    border: 5px solid #ffd700; 
 }
 
 .slot-reels {
@@ -1809,13 +1766,12 @@ button { font-family: inherit; }
     box-shadow: inset 0 0 10px #000;
 }
 
-/* 当たり判定ライン（オーバーレイ） */
 .slot-overlay-line {
     position: absolute;
     top: 50%;
     left: 0;
     width: 100%;
-    height: 40px; /* リール項目の高さの半分くらい */
+    height: 40px; 
     transform: translateY(-50%);
     border-top: 2px solid rgba(255, 215, 0, 0.6);
     border-bottom: 2px solid rgba(255, 215, 0, 0.6);
@@ -1833,7 +1789,6 @@ button { font-family: inherit; }
     border: 2px solid #ccc;
     border-radius: 5px;
     position: relative;
-    /* 立体感を出す */
     box-shadow: inset 0 0 15px rgba(0,0,0,0.5); 
 }
 
@@ -1845,7 +1800,6 @@ button { font-family: inherit; }
     display: flex;
     flex-direction: column;
     align-items: center;
-    /* ドット絵をきれいに見せる */
     image-rendering: pixelated; 
 }
 
@@ -1882,7 +1836,7 @@ button { font-family: inherit; }
     font-weight: bold;
     box-shadow: 0 4px 0 #b71c1c;
     cursor: pointer;
-    font-family: monospace; /* アーケードっぽく */
+    font-family: monospace; 
     border: 2px solid #fff;
 }
 
@@ -1898,3 +1852,44 @@ button { font-family: inherit; }
     border-color: #555;
     cursor: not-allowed;
 }
+
+/* ★にっぽん地図マスター用スタイル */
+#map-svg-inner svg {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+/* Geolonia等の地図用クラス対応 */
+#map-svg-inner .prefecture {
+    fill: #a5d6a7; /* デフォルトの緑 */
+    stroke: #ffffff;
+    stroke-width: 1px;
+    transition: fill 0.3s ease;
+}
+
+#map-svg-inner .prefecture.highlight {
+    fill: #ff5252 !important; /* 問題の県は赤 */
+    animation: pulseMap 1.5s infinite;
+}
+
+#map-svg-inner .prefecture.silhouette-mode {
+    fill: #555 !important;
+    stroke: none !important;
+}
+
+@keyframes pulseMap {
+    0% { opacity: 1; }
+    50% { opacity: 0.6; }
+    100% { opacity: 1; }
+}
+
+.map-option-btn {
+    display: block; width: 100%; margin: 0; padding: 15px;
+    border: 2px solid #00bcd4; border-radius: 10px; background: white;
+    font-size: 1.1rem; font-weight: bold; color: #00838f; cursor: pointer;
+    box-shadow: 0 4px 0 #b2ebf2; text-align: center;
+}
+.map-option-btn:active { transform: translateY(2px); box-shadow: 0 2px 0 #b2ebf2; }
+.map-option-correct { background: #e8f5e9 !important; border-color: #4caf50 !important; color: #2e7d32 !important; }
+.map-option-wrong { background: #ffebee !important; border-color: #ef5350 !important; color: #c62828 !important; }

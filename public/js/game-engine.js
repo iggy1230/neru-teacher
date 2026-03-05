@@ -1,4 +1,6 @@
-// --- js/game-engine.js (v470.32: 漢字ドリルDB保存リトライ対応版) ---
+// --- START OF FILE game-engine.js ---
+
+// --- js/game-engine.js (v470.33: にっぽん地図マスター追加版) ---
 
 console.log("Game Engine Loading...");
 
@@ -6,7 +8,7 @@ console.log("Game Engine Loading...");
 // 共通ヘルパー: 文字列類似度判定
 // ==========================================
 function levenshteinDistance(a, b) {
-    const matrix = [];
+    const matrix =[];
     for (let i = 0; i <= b.length; i++) matrix[i] = [i];
     for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
 
@@ -75,7 +77,6 @@ window.saveHighScore = async function(gameKey, score) {
             }, { merge: true });
             console.log(`[Ranking] Highscore saved for ${gameKey}: ${score}`);
         } catch (e) {
-            // 権限エラーなどはログに出すが、ゲーム進行は止めない
             console.warn("[Ranking] Save failed:", e.message);
         }
     }
@@ -139,7 +140,7 @@ window.initGame = function() {
     window.score = 0;
     const scoreEl = document.getElementById('game-score');
     if(scoreEl) scoreEl.innerText = window.score;
-    window.bricks = [];
+    window.bricks =[];
     for(let c = 0; c < 5; c++) {
         for(let r = 0; r < 4; r++) {
             window.bricks.push({ x: 30 + (c * 55), y: 30 + (r * 30), w: 40, h: 20, status: 1 });
@@ -238,12 +239,12 @@ const DANMAKU_ASSETS_PATH = '/assets/images/game/souji/';
 
 const danmakuImages = { player: new Image(), boss: new Image(), goods: [], bads: [] };
 
-const goodItemsDef = [
+const goodItemsDef =[
     { file: 'kari1_dot.png', score: 10, weight: 60 },
     { file: 'kari100_dot.png', score: 50, weight: 30 },
     { file: 'churu_dot.png', score: 100, weight: 10 }
 ];
-const badItemsDef = [
+const badItemsDef =[
     'soccerball_dot.png', 'baseball_dot.png', 'coffee_dot.png',
     'can_dot.png', 'mouse_dot.png', 'konchu_dot.png', 'choco_dot.png'
 ];
@@ -277,7 +278,7 @@ function loadDanmakuImages() {
 
 let danmakuState = { 
     running: false, ctx: null, canvas: null, width: 0, height: 0, score: 0, life: 3, frame: 0, invincibleTimer: 0, 
-    player: { x: 0, y: 0, w: 40, h: 40 }, boss: { x: 0, y: 0, w: 60, h: 60, angle: 0 }, bullets: [], touching: false 
+    player: { x: 0, y: 0, w: 40, h: 40 }, boss: { x: 0, y: 0, w: 60, h: 60, angle: 0 }, bullets:[], touching: false 
 };
 
 window.showDanmakuGame = function() {
@@ -336,7 +337,7 @@ function initDanmakuEntities() {
     danmakuState.player.y = danmakuState.height - 60; 
     danmakuState.boss.x = danmakuState.width / 2; 
     danmakuState.boss.y = 80; 
-    danmakuState.bullets = []; 
+    danmakuState.bullets =[]; 
     danmakuState.frame = 0; 
     danmakuState.life = 3;
     danmakuState.invincibleTimer = 0;
@@ -448,7 +449,6 @@ function drawDanmakuFrame() {
     ctx.strokeStyle = "#ffe082"; ctx.lineWidth = 2; 
     for(let i=0; i<h; i+=40) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(w, i); ctx.stroke(); }
     
-    // Boss
     if (danmakuImages.boss.complete && danmakuImages.boss.naturalWidth > 0) {
         ctx.drawImage(danmakuImages.boss, danmakuState.boss.x - 30, danmakuState.boss.y - 30, 60, 60);
     } else {
@@ -456,9 +456,7 @@ function drawDanmakuFrame() {
     }
 
     if (danmakuState.invincibleTimer > 0 && Math.floor(danmakuState.frame / 4) % 2 === 0) {
-        // Blink
     } else {
-        // Player
         if (danmakuImages.player.complete && danmakuImages.player.naturalWidth > 0) {
             ctx.drawImage(danmakuImages.player, danmakuState.player.x - 20, danmakuState.player.y - 20, 40, 40);
         } else {
@@ -466,7 +464,6 @@ function drawDanmakuFrame() {
         }
     }
 
-    // Bullets
     danmakuState.bullets.forEach(b => {
         if (b.img && b.img.complete && b.img.naturalWidth > 0) {
             ctx.drawImage(b.img, b.x - 16, b.y - 16, 32, 32);
@@ -476,7 +473,6 @@ function drawDanmakuFrame() {
         }
     });
 
-    // Life
     ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.font = "20px sans-serif"; ctx.fillStyle = "#ff5252";
     let lifeStr = "❤️".repeat(Math.max(0, danmakuState.life));
     ctx.fillText("LIFE: " + lifeStr, 10, 10);
@@ -486,8 +482,8 @@ function drawDanmakuFrame() {
 // 3. ウルトラクイズ (showQuizGame)
 // ==========================================
 let quizState = {
-    currentQuestionIndex: 0, maxQuestions: 5, score: 0, currentQuizData: null, questionQueue: [], sessionQuizzes: [], 
-    genre: "全ジャンル", level: 1, isFinished: false, history: [], sessionId: 0 
+    currentQuestionIndex: 0, maxQuestions: 5, score: 0, currentQuizData: null, questionQueue: [], sessionQuizzes:[], 
+    genre: "全ジャンル", level: 1, isFinished: false, history:[], sessionId: 0 
 };
 
 window.showQuizGame = function() {
@@ -495,7 +491,7 @@ window.showQuizGame = function() {
     window.currentMode = 'quiz';
     
     const levels = (currentUser && currentUser.quizLevels) ? currentUser.quizLevels : {};
-    const genres = ["全ジャンル", "一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム", "マインクラフト", "ロブロックス", "ポケモン", "魔法陣グルグル", "ジョジョの奇妙な冒険", "STPR", "夏目友人帳"];
+    const genres =["全ジャンル", "一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム", "マインクラフト", "ロブロックス", "ポケモン", "魔法陣グルグル", "ジョジョの奇妙な冒険", "STPR", "夏目友人帳"];
     const idMap = {
         "全ジャンル": "btn-quiz-all", "一般知識": "btn-quiz-general", "雑学": "btn-quiz-trivia", "芸能・スポーツ": "btn-quiz-entertainment",
         "歴史・地理・社会": "btn-quiz-history", "ゲーム": "btn-quiz-game", "マインクラフト": "btn-quiz-minecraft", "ロブロックス": "btn-quiz-roblox",
@@ -539,7 +535,6 @@ window.showLevelSelection = function(genre) {
         container.appendChild(btn);
     }
     
-    // ★ランキングボタン
     const rankBtn = document.getElementById('quiz-ranking-btn');
     if (rankBtn) {
         rankBtn.onclick = () => window.showRanking(`quiz_${genre}`, `🏆 ${genre} ランキング`);
@@ -559,8 +554,8 @@ window.startQuizSet = async function(genre, level) {
     quizState.isFinished = false;
     quizState.currentQuizData = null;
     quizState.questionQueue = []; 
-    quizState.sessionQuizzes = []; 
-    quizState.history = []; 
+    quizState.sessionQuizzes =[]; 
+    quizState.history =[]; 
     quizState.sessionId = Date.now(); 
 
     document.getElementById('quiz-genre-select').classList.add('hidden');
@@ -772,23 +767,20 @@ window.finishQuizSet = function() {
     const correctCount = Math.floor(quizState.score / 20);
     const currentLevel = parseInt(quizState.level) || 1;
     
-    // ★修正: レベル別報酬設定
-    let rewardPerCorrect = 50; // デフォルト(Lv1)
+    let rewardPerCorrect = 50; 
     if (currentLevel === 2) rewardPerCorrect = 100;
     else if (currentLevel === 3) rewardPerCorrect = 150;
     else if (currentLevel === 4) rewardPerCorrect = 200;
     else if (currentLevel >= 5) rewardPerCorrect = 300;
     
     let totalReward = correctCount * rewardPerCorrect;
-    if (correctCount === 0) totalReward = 10; // 参加賞
+    if (correctCount === 0) totalReward = 10; 
 
-    // ★修正: ランキングには「獲得カリカリ数(totalReward)」を保存
     window.saveHighScore(`quiz_${quizState.genre}`, totalReward);
 
     let msg = "";
     let mood = "normal";
     
-    // レベルアップ判定
     let isLevelUp = false;
     let newLevel = 1;
 
@@ -852,26 +844,21 @@ window.stopQuizVoiceInput = function(keepStatus = false) {
     if (status && !keepStatus) status.innerText = "";
 };
 
-// ★完全実装: 間違い報告機能
 window.reportQuizError = async function() {
     if (!window.currentQuiz) return;
-    
-    // 1. 理由を聞く
     const reason = prompt("どこが間違っているか教えてにゃ？\n（例：答えが古い、選択肢に正解がない、など）");
     if (!reason || reason.trim() === "") return;
 
-    // 2. UIを待機状態にする
     const qText = document.getElementById('quiz-question-text');
     const optionsContainer = document.getElementById('quiz-options-container');
     const controls = document.getElementById('quiz-controls');
     
     window.updateNellMessage("むむっ！本当かにゃ？調べてみるにゃ！ちょっと待ってて！", "thinking", false, true);
     qText.innerText = "間違いを確認して、修正中にゃ... 🖊️";
-    optionsContainer.innerHTML = ""; // 選択肢を消す
-    controls.style.display = 'none'; // ボタン類を隠す
+    optionsContainer.innerHTML = ""; 
+    controls.style.display = 'none'; 
 
     try {
-        // 3. サーバーへ修正リクエスト
         const res = await fetch('/correct-quiz', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -883,26 +870,18 @@ window.reportQuizError = async function() {
         });
 
         if (!res.ok) throw new Error("Server Error");
-
         const newQuiz = await res.json();
 
-        // 4. クイズデータを更新
         window.currentQuiz = newQuiz;
         quizState.currentQuizData = newQuiz;
-        
-        // 履歴の最後（今の問題の答え）を更新しておく（重複チェック用）
         if (quizState.history.length > 0) {
             quizState.history[quizState.history.length - 1] = newQuiz.answer;
         }
 
-        // 5. 画面に反映
         qText.innerText = newQuiz.question;
-        
-        // 解説文があればそれを、なければデフォルト感謝
         const thanksMsg = newQuiz.explanation || "教えてくれてありがとうにゃ！修正した問題だにゃ！";
         window.updateNellMessage(thanksMsg, "happy", false, true);
 
-        // 選択肢ボタンを再生成
         if (newQuiz.options && Array.isArray(newQuiz.options)) {
             const shuffledOptions = [...newQuiz.options].sort(() => Math.random() - 0.5);
             shuffledOptions.forEach(opt => {
@@ -923,8 +902,6 @@ window.reportQuizError = async function() {
         console.error("Correction Error:", e);
         window.updateNellMessage("うーん、うまく修正できなかったにゃ... ごめんにゃ。", "sad", false, true);
         qText.innerText = "修正に失敗しました。";
-        
-        // 詰まないようにスキップボタンを出す
         controls.style.display = 'flex';
         document.getElementById('next-quiz-btn').classList.remove('hidden');
     }
@@ -976,9 +953,6 @@ window.nextRiddle = async function() {
         if (riddleState.score === 5) msg = `全問正解！すごいにゃ！カリカリ${reward}個あげるにゃ！`;
         else if (riddleState.score > 0) msg = `${riddleState.score}問正解！カリカリ${reward}個あげるにゃ！`;
         else msg = `残念、全問不正解だにゃ…。次はがんばるにゃ！`;
-        
-        // ★修正: なぞなぞにもランキングがあればここで reward を保存する
-        // window.saveHighScore('riddle', reward); 
         
         window.giveGameReward(reward);
         window.updateNellMessage(msg, "happy", false, true);
@@ -1041,7 +1015,7 @@ window.checkRiddleAnswer = function(userSpeech) {
     if (!riddleState.currentRiddle || window.currentMode !== 'riddle') return false; 
     if (!document.getElementById('riddle-answer-display').classList.contains('hidden')) return false;
     const correct = riddleState.currentRiddle.answer;
-    const accepted = riddleState.currentRiddle.accepted_answers || [];
+    const accepted = riddleState.currentRiddle.accepted_answers ||[];
     const userAnswer = userSpeech.trim();
     const status = document.getElementById('riddle-mic-status');
     if(status) status.innerText = `「${userAnswer}」？`;
@@ -1089,7 +1063,7 @@ let kanjiState = {
     isDrawing: false, mode: 'writing', 
     questionCount: 0, maxQuestions: 5, correctCount: 0,
     guideVisible: false, strokes: [], currentStroke: null,
-    history: [] // 重複防止用
+    history:[] 
 };
 
 window.showKanjiMenu = function() {
@@ -1106,7 +1080,7 @@ window.startKanjiSet = function(mode) {
     kanjiState.questionCount = 0;
     kanjiState.correctCount = 0;
     kanjiState.strokes = [];
-    kanjiState.history = []; // 履歴リセット
+    kanjiState.history =[]; 
     
     document.getElementById('kanji-menu-container').style.display = 'none';
     const content = document.getElementById('kanji-game-content');
@@ -1147,7 +1121,6 @@ window.redrawCanvas = function() {
     if (!kanjiState.ctx) return;
     kanjiState.ctx.clearRect(0, 0, 300, 300);
     
-    // ガイド描画
     if (kanjiState.guideVisible && kanjiState.data) {
         kanjiState.ctx.save();
         kanjiState.ctx.font = "240px 'Klee One', 'Zen Kurenaido', sans-serif";
@@ -1156,7 +1129,6 @@ window.redrawCanvas = function() {
         kanjiState.ctx.restore();
     }
     
-    // ストローク再描画
     kanjiState.ctx.beginPath();
     kanjiState.strokes.forEach(stroke => {
         if (stroke.points.length > 0) {
@@ -1169,14 +1141,13 @@ window.redrawCanvas = function() {
     kanjiState.ctx.stroke();
 };
 
-// ★修正: Firestoreからストック問題を取得する関数
 async function fetchKanjiFromStock(grade, mode) {
     if (!window.db) return null;
     try {
         const snapshot = await window.db.collection('kanji_problems')
             .where('grade', '==', String(grade))
             .where('type', '==', mode)
-            .limit(10) // ランダム性を出すため少し多めに取得
+            .limit(10) 
             .get();
         
         if (snapshot.empty) return null;
@@ -1190,19 +1161,16 @@ async function fetchKanjiFromStock(grade, mode) {
     }
 }
 
-// ★修正: 生成した問題を保存する関数 (エラーハンドリング強化)
 async function saveKanjiProblemToDb(kanjiData) {
     if (!window.db || !kanjiData || !kanjiData.kanji) return;
     
     try {
-        // 重複チェック (IDは漢字+タイプ+学年)
         const docId = `${kanjiData.kanji}_${kanjiData.type}_${kanjiData.grade}`;
         await window.db.collection('kanji_problems').doc(docId).set({
             ...kanjiData,
             createdAt: new Date().toISOString()
         }, { merge: true });
     } catch(e) {
-        // 権限エラーの場合はログを控えめに
         if (e.code === 'permission-denied') {
             console.log("DB Save Skipped (Permission Denied). Firebase rules need update?");
         } else {
@@ -1212,20 +1180,17 @@ async function saveKanjiProblemToDb(kanjiData) {
 }
 
 window.nextKanjiQuestion = async function() {
-    // ★UIリセット処理: 正解表示エリアを元の位置に戻す、中身を消す、花丸消す
     const ansDisplay = document.getElementById('kanji-answer-display');
     const contentArea = document.getElementById('kanji-game-content');
     
-    // 正解表示エリアを元の場所（contentAreaの末尾）に戻す
     if (ansDisplay && contentArea && ansDisplay.parentNode !== contentArea) {
         contentArea.appendChild(ansDisplay);
     }
     
     ansDisplay.classList.add('hidden');
-    ansDisplay.classList.remove('overlay-answer'); // 重ね表示用クラス削除
+    ansDisplay.classList.remove('overlay-answer'); 
     document.getElementById('kanji-answer-text').innerText = "";
     
-    // 読み問題用にCanvasエリアを表示/非表示リセット (モードに応じて後で切り替えるが一旦リセット)
     const canvasArea = document.getElementById('kanji-canvas-area');
     canvasArea.style.display = 'block';
 
@@ -1252,7 +1217,7 @@ window.nextKanjiQuestion = async function() {
         return;
     }
     kanjiState.questionCount++;
-    kanjiState.strokes = []; 
+    kanjiState.strokes =[]; 
     kanjiState.guideVisible = false;
 
     document.getElementById('kanji-hint-readings').style.display = 'none';
@@ -1284,14 +1249,12 @@ window.nextKanjiQuestion = async function() {
         });
         if (res.ok) {
             data = await res.json();
-            // ★生成成功時: DBに保存
             saveKanjiProblemToDb(data);
         } else {
             throw new Error("Server Error");
         }
     } catch (e) {
         console.warn("API Error, trying stock...", e);
-        // ★APIエラー時: ストックから取得
         data = await fetchKanjiFromStock(grade, kanjiState.mode);
         if (!data) {
             qText.innerText = "問題が出せないにゃ…"; 
@@ -1309,7 +1272,7 @@ window.nextKanjiQuestion = async function() {
         if(strokesEl) strokesEl.innerText = data.kakusu ? `画数: ${data.kakusu}` : "";
         const hintDiv = document.getElementById('kanji-hint-readings');
         if (hintDiv) {
-            let hints = [];
+            let hints =[];
             if(data.onyomi) hints.push(`音: ${data.onyomi}`);
             if(data.kunyomi) hints.push(`訓: ${data.kunyomi}`);
             hintDiv.innerText = hints.join(' / ');
@@ -1321,7 +1284,7 @@ window.nextKanjiQuestion = async function() {
         const mic = document.getElementById('kanji-mic-container');
         const controls = document.getElementById('kanji-controls');
         const giveupBtn = document.getElementById('giveup-kanji-btn');
-        const reportBtn = document.getElementById('report-kanji-btn'); // ★追加ボタン
+        const reportBtn = document.getElementById('report-kanji-btn'); 
         if(reportBtn) reportBtn.style.display = 'inline-block';
         
         if (data.type === 'writing') {
@@ -1362,20 +1325,16 @@ window.processKanjiSuccess = function(comment) {
     ansText.innerText = kanjiState.data.kanji;
     if(detailText) detailText.innerHTML = `音読み: ${kanjiState.data.onyomi || "-"} / 訓読み: ${kanjiState.data.kunyomi || "-"} / 画数: ${kanjiState.data.kakusu || "-"}画`;
 
-    // ★修正: 読み問題(reading)の場合、正解表示エリアをキャンバス位置へ移動
     if (kanjiState.data.type === 'reading') {
         const canvasArea = document.getElementById('kanji-canvas-area');
         if (canvasArea) {
-            canvasArea.appendChild(ansDisplay); // 移動
-            ansDisplay.classList.add('overlay-answer'); // スタイル適用
-            
-            // キャンバスエリアを表示（キャンバス自体はhiddenでもエリアは必要）
+            canvasArea.appendChild(ansDisplay); 
+            ansDisplay.classList.add('overlay-answer'); 
             canvasArea.style.display = 'block';
-            document.getElementById('kanji-canvas').classList.add('hidden'); // 念のため
+            document.getElementById('kanji-canvas').classList.add('hidden'); 
         }
     }
     
-    // 花丸表示
     const hanamaru = document.getElementById('kanji-hanamaru');
     if (hanamaru) { 
         hanamaru.innerText = "○"; 
@@ -1388,7 +1347,6 @@ window.processKanjiSuccess = function(comment) {
     }
 };
 
-// ★新規: 漢字ドリル間違い報告
 window.reportKanjiError = async function() {
     if (!kanjiState.data) return;
     const reason = prompt("どこが間違っているか教えてにゃ？\n（例：学年が違う、読みがおかしい、など）");
@@ -1407,15 +1365,11 @@ window.reportKanjiError = async function() {
         if (!res.ok) throw new Error("Correction Failed");
         const newData = await res.json();
         
-        // データ更新
         kanjiState.data = newData;
-        // 画面更新
         qText.innerHTML = newData.question_display;
         window.updateNellMessage("修正したにゃ！これでどうかにゃ？", "happy", false, true);
         
-        // DB保存 (上書き)
         saveKanjiProblemToDb(newData);
-        
         alert("問題を修正したにゃ！");
     } catch(e) {
         console.error("Report Error:", e);
@@ -1428,7 +1382,6 @@ window.startKanjiVoiceInput = function() {
     const micBtn = document.getElementById('kanji-mic-btn');
     const status = document.getElementById('kanji-mic-status');
     
-    // UI更新
     if (micBtn) { micBtn.disabled = true; micBtn.innerHTML = '<span style="font-size:1.5rem;">👂</span> 聞いてるにゃ...'; micBtn.style.background = "#ff5252"; }
     if (status) status.innerText = "お話してにゃ！";
     
@@ -1461,10 +1414,8 @@ window.checkKanjiVoiceAnswer = async function(transcript) {
     const status = document.getElementById('kanji-mic-status');
     if(status) status.innerText = `「${transcript}」？`;
     
-    // 1. クライアントサイドでの簡易判定
     if (window.checkKanjiReadingLocal(transcript)) return;
 
-    // 2. 失敗したらサーバーのAIに判定を依頼
     if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ん？合ってるかにゃ…？", "thinking");
     
     try {
@@ -1507,7 +1458,7 @@ window.checkKanjiReadingLocal = function(text) {
 window.clearKanjiCanvas = function(forceClear = false) {
     if (!kanjiState.ctx) return;
     kanjiState.ctx.clearRect(0, 0, 300, 300);
-    kanjiState.strokes = [];
+    kanjiState.strokes =[];
     window.redrawCanvas();
 };
 
@@ -1581,7 +1532,7 @@ window.sendHttpTextInternal = function(text) {
 // 6. お宝神経衰弱 (showMemoryGame)
 // ==========================================
 let memoryGameState = {
-    cards: [], flippedCards: [], nellMemory: {}, turn: 'player', difficulty: 'weak', scores: { player: 0, nell: 0 }, isProcessing: false,
+    cards:[], flippedCards:[], nellMemory: {}, turn: 'player', difficulty: 'weak', scores: { player: 0, nell: 0 }, isProcessing: false,
     settings: {
         weak: { memoryRate: 0.1, errorRate: 0.5, reward: 10 },
         normal: { memoryRate: 0.5, errorRate: 0.2, reward: 20 },
@@ -1607,7 +1558,7 @@ window.startMemoryGame = async function(difficulty) {
     memoryGameState.scores = { player: 0, nell: 0 };
     memoryGameState.turn = 'player';
     memoryGameState.isProcessing = false;
-    memoryGameState.flippedCards = [];
+    memoryGameState.flippedCards =[];
     memoryGameState.nellMemory = {};
     
     document.getElementById('memory-difficulty-select').classList.add('hidden');
@@ -1624,27 +1575,27 @@ window.createCardDeck = async function() {
     const grid = document.getElementById('memory-grid');
     grid.innerHTML = '';
     
-    let collection = [];
+    let collection =[];
     if (window.NellMemory) {
         const profile = await window.NellMemory.getUserProfile(currentUser.id);
         if (profile && profile.collection) collection = profile.collection;
     }
 
-    let publicCollection = [];
+    let publicCollection =[];
     if (window.NellMemory && typeof window.NellMemory.getPublicCollection === 'function') {
         try { publicCollection = await window.NellMemory.getPublicCollection(); } catch (e) {}
     }
     
     const normalizedPublic = publicCollection.map(p => ({ name: p.name, image: p.image, description: p.description }));
-    let rawCandidates = [...collection, ...normalizedPublic];
+    let rawCandidates =[...collection, ...normalizedPublic];
     
     const uniqueMap = new Map();
     rawCandidates.forEach(item => { if (!item.image) return; if (!uniqueMap.has(item.image)) uniqueMap.set(item.image, item); });
     let allCandidates = Array.from(uniqueMap.values());
     allCandidates.sort(() => Math.random() - 0.5);
     
-    let selectedItems = [];
-    const dummyImages = [
+    let selectedItems =[];
+    const dummyImages =[
         'assets/images/characters/nell-normal.png', 'assets/images/characters/nell-happy.png', 'assets/images/characters/nell-thinking.png',
         'assets/images/characters/nell-excited.png', 'assets/images/items/student-id-base.png', 'assets/images/characters/nell-kokugo.png',
         'assets/images/characters/nell-sansu.png', 'assets/images/characters/nell-rika.png', 'assets/images/characters/nell-shakai.png'
@@ -1706,7 +1657,7 @@ window.performFlip = function(index) {
 
 window.checkMatch = async function() {
     memoryGameState.isProcessing = true;
-    const [card1, card2] = memoryGameState.flippedCards;
+    const[card1, card2] = memoryGameState.flippedCards;
     const playerName = currentUser ? currentUser.name : 'ユーザー';
     
     if (card1.id === card2.id) {
@@ -1723,7 +1674,7 @@ window.checkMatch = async function() {
             window.updateNellMessage(`ネル先生が「${card1.name}」をゲットしたにゃ！`, "excited");
         }
         await window.showMatchModal(card1);
-        memoryGameState.flippedCards = [];
+        memoryGameState.flippedCards =[];
         
         const allMatched = memoryGameState.cards.every(c => c.matched);
         if (allMatched) {
@@ -1739,7 +1690,7 @@ window.checkMatch = async function() {
             const el2 = document.getElementById(`memory-card-${card2.index}`);
             if(el1) el1.classList.remove('flipped'); if(el2) el2.classList.remove('flipped');
             card1.flipped = false; card2.flipped = false;
-            memoryGameState.flippedCards = [];
+            memoryGameState.flippedCards =[];
             memoryGameState.turn = (memoryGameState.turn === 'player') ? 'nell' : 'player';
             const indicator = document.getElementById('memory-turn-indicator');
             if (memoryGameState.turn === 'nell') {
@@ -1770,7 +1721,7 @@ window.nellTurn = function() {
         for (let j = i + 1; j < knownIndices.length; j++) {
             const idx1 = knownIndices[i]; const idx2 = knownIndices[j];
             if (memoryGameState.cards[idx1].id === memoryGameState.cards[idx2].id) {
-                if (Math.random() > settings.errorRate) pairToFlip = [idx1, idx2];
+                if (Math.random() > settings.errorRate) pairToFlip =[idx1, idx2];
                 break;
             }
         }
@@ -1831,17 +1782,14 @@ window.endMemoryGame = function() {
     let msg = "";
     let mood = "normal";
     
-    // 報酬計算（先に計算）
     let reward = 0;
     if (pScore > nScore) {
         reward = pScore * settings.reward;
     } else {
-        // 負け・引き分け時の参加賞
         reward = 10;
-        if (pScore === nScore) reward = pScore * settings.reward; // 引き分けでもスコア分あげる
+        if (pScore === nScore) reward = pScore * settings.reward; 
     }
 
-    // ★修正: ランキングには「獲得カリカリ数(reward)」を保存
     window.saveHighScore('memory_match', reward);
 
     if (pScore > nScore) {
@@ -1861,15 +1809,6 @@ window.endMemoryGame = function() {
     window.updateNellMessage(msg, mood, false, true);
     alert(msg);
     window.showMemoryGame(); 
-};
-
-// ★後方互換性ラッパー: 古いキャッシュのHTMLから呼ばれたとき用
-window.showGameRanking = function(gameKey, title) {
-    if (window.showRanking) {
-        window.showRanking(gameKey, title);
-    } else {
-        console.error("showRanking is missing!");
-    }
 };
 
 // ==========================================
@@ -1919,7 +1858,6 @@ window.nextMinitestQuestion = async function() {
     minitestState.count++;
     minitestState.isAnswering = true;
     
-    // UI初期化
     document.getElementById('minitest-progress').innerText = `${minitestState.count}/${minitestState.maxQuestions} 問目`;
     document.getElementById('minitest-question').innerText = "問題を作成中にゃ...";
     document.getElementById('minitest-options').innerHTML = "";
@@ -1940,7 +1878,7 @@ window.nextMinitestQuestion = async function() {
         if (data.error) throw new Error(data.error);
         
         minitestState.currentQuestion = data;
-        window.currentMinitest = data; // グローバル参照用(音声入力等)
+        window.currentMinitest = data; 
         
         document.getElementById('minitest-question').innerText = data.question;
         window.updateNellMessage(data.question, "normal", false, true);
@@ -1968,7 +1906,6 @@ window.checkMinitestAnswer = function(userAnswer, btnElement) {
     const correct = minitestState.currentQuestion.answer;
     const isCorrect = (userAnswer === correct);
     
-    // ボタンの色変え
     const buttons = document.querySelectorAll('.minitest-option-btn');
     buttons.forEach(b => {
         b.disabled = true;
@@ -1985,7 +1922,6 @@ window.checkMinitestAnswer = function(userAnswer, btnElement) {
         window.updateNellMessage(`残念！正解は「${correct}」だにゃ。`, "gentle", false, true);
     }
     
-    // 解説表示
     const expArea = document.getElementById('minitest-explanation-area');
     const expText = document.getElementById('minitest-explanation-text');
     expText.innerText = minitestState.currentQuestion.explanation || "解説はないみたいだにゃ。";
@@ -1993,7 +1929,6 @@ window.checkMinitestAnswer = function(userAnswer, btnElement) {
 };
 
 window.finishMinitest = function() {
-    // 結果発表
     let msg = "";
     let mood = "normal";
     const score = minitestState.score;
@@ -2020,7 +1955,6 @@ window.finishMinitest = function() {
     window.showMinitestMenu();
 };
 
-// 音声入力用
 window.startMinitestVoiceInput = function() {
     const micBtn = document.getElementById('minitest-mic-btn');
     const status = document.getElementById('minitest-mic-status');
@@ -2037,11 +1971,9 @@ window.startMinitestVoiceInput = function() {
     if (typeof window.startOneShotRecognition === 'function') {
         window.startOneShotRecognition(
             (transcript) => {
-                // 音声認識結果と選択肢を照合
                 const options = minitestState.currentQuestion.options;
                 let matchedOption = null;
                 
-                // 完全一致または部分一致を探す
                 for (const opt of options) {
                     if (transcript.includes(opt) || opt.includes(transcript)) {
                         matchedOption = opt;
@@ -2050,7 +1982,6 @@ window.startMinitestVoiceInput = function() {
                 }
                 
                 if (matchedOption) {
-                    // ボタンを探してクリック扱いに
                     const buttons = document.querySelectorAll('.minitest-option-btn');
                     for (const btn of buttons) {
                         if (btn.innerText === matchedOption) {
@@ -2094,7 +2025,7 @@ let slotGameState = {
     reelCount: 3,
     spinning: [false, false, false],
     positions: [0, 0, 0],
-    symbols: [
+    symbols:[
         'assets/images/game/slot/neru_dot.png',
         'assets/images/game/slot/kari100_dot.png',
         'assets/images/game/slot/mouse_dot.png',
@@ -2102,7 +2033,7 @@ let slotGameState = {
         'assets/images/game/slot/baseball_dot.png',
         'assets/images/game/slot/churu_dot.png'
     ],
-    symbolHeight: 90, // リールの各アイテムの高さ
+    symbolHeight: 90, 
     animationId: null,
     todayPlayCount: 0
 };
@@ -2115,13 +2046,9 @@ window.showSlotGame = function() {
         document.getElementById('screen-slot').classList.remove('hidden');
     }
 
-    // 1日3回の制限チェック
     window.checkSlotDailyLimit();
-
-    // スロットの初期化
     window.initSlotReels();
     
-    // UIリセット
     document.getElementById('slot-start-btn').disabled = false;
     document.querySelectorAll('.slot-stop-btn').forEach(btn => btn.disabled = true);
     
@@ -2131,17 +2058,14 @@ window.showSlotGame = function() {
 window.checkSlotDailyLimit = function() {
     if (!currentUser) return;
     
-    // テスト段階なので無制限 (常に0にリセット)
     const today = new Date().toISOString().split('T')[0];
     if (!currentUser.slotGameData) {
         currentUser.slotGameData = { date: today, count: 0 };
     }
-    // テスト用に強制リセット
     currentUser.slotGameData.count = 0; 
     
-    // UI更新
     slotGameState.todayPlayCount = currentUser.slotGameData.count;
-    document.getElementById('slot-remain-count').innerText = "∞"; // テスト中
+    document.getElementById('slot-remain-count').innerText = "∞"; 
     
     if (typeof window.saveAndSync === 'function') window.saveAndSync();
 };
@@ -2152,7 +2076,6 @@ window.initSlotReels = function() {
         if (!strip) continue;
         
         strip.innerHTML = "";
-        // シンボルをループさせるために複数セット追加
         const loopCount = 5; 
         for (let j = 0; j < loopCount; j++) {
             slotGameState.symbols.forEach(src => {
@@ -2163,7 +2086,6 @@ window.initSlotReels = function() {
             });
         }
         
-        // 初期位置
         strip.style.transform = `translateY(0px)`;
         slotGameState.positions[i] = 0;
         slotGameState.spinning[i] = false;
@@ -2171,28 +2093,12 @@ window.initSlotReels = function() {
 };
 
 window.startSlot = function() {
-    // テスト中は制限なし
-    /*
-    if (slotGameState.todayPlayCount >= 3) {
-        window.updateNellMessage("今日はもう終わりだにゃ！また明日にゃ！", "normal");
-        return;
-    }
-    */
-    
     if (slotGameState.isRunning) return;
     slotGameState.isRunning = true;
     
-    // カウント消費 (テスト中は増やさない)
-    // slotGameState.todayPlayCount++;
-    // currentUser.slotGameData.count = slotGameState.todayPlayCount;
-    // document.getElementById('slot-remain-count').innerText = 3 - slotGameState.todayPlayCount;
-    // if (typeof window.saveAndSync === 'function') window.saveAndSync();
-
-    // UI更新
     document.getElementById('slot-start-btn').disabled = true;
     document.querySelectorAll('.slot-stop-btn').forEach(btn => btn.disabled = false);
     
-    // 回転開始
     for (let i = 0; i < slotGameState.reelCount; i++) {
         slotGameState.spinning[i] = true;
     }
@@ -2207,15 +2113,13 @@ window.slotGameLoop = function() {
     for (let i = 0; i < slotGameState.reelCount; i++) {
         if (slotGameState.spinning[i]) {
             allStopped = false;
-            // スクロール速度 (0.8倍に減速)
             const baseSpeed = 10 + i;
             const speed = baseSpeed * 0.8;
             
             slotGameState.positions[i] -= speed;
             
-            // ループ処理
-            const stripHeight = slotGameState.symbols.length * slotGameState.symbolHeight; // 1セットの高さ
-            if (slotGameState.positions[i] <= -stripHeight * 3) { // ある程度回ったら戻す
+            const stripHeight = slotGameState.symbols.length * slotGameState.symbolHeight; 
+            if (slotGameState.positions[i] <= -stripHeight * 3) { 
                 slotGameState.positions[i] += stripHeight;
             }
             
@@ -2240,10 +2144,8 @@ window.stopReel = function(index) {
     document.getElementById(`stop-btn-${index+1}`).disabled = true;
     if(window.safePlay) window.safePlay(window.sfxBtn);
 
-    // 目押し停止処理 (スナップ)
     const currentY = slotGameState.positions[index];
     const h = slotGameState.symbolHeight;
-    // 1番近いシンボル位置に吸着
     const snappedY = Math.round(currentY / h) * h;
     slotGameState.positions[index] = snappedY;
     
@@ -2258,39 +2160,348 @@ window.stopReel = function(index) {
 window.checkSlotResult = function() {
     slotGameState.isRunning = false;
     
-    // 止まった位置からシンボルを特定
     const h = slotGameState.symbolHeight;
     const symbolCount = slotGameState.symbols.length;
     
     const results = slotGameState.positions.map(pos => {
-        // posはマイナス値。絶対値を取って高さで割り、シンボル数で割った余り
-        // ※ 座標が0に近いほどリストの上の方(0番目)になるが、
-        // translateがマイナスに進むので、絶対値を取ると下の要素が表示される。
-        // 目押し位置の調整として、+0.5 などのオフセットは不要（スナップ済み）
         const index = Math.abs(Math.round(pos / h)) % symbolCount;
         return index;
     });
     
-    // 判定
-    const [r1, r2, r3] = results;
+    const[r1, r2, r3] = results;
     if (r1 === r2 && r2 === r3) {
-        // 当たり！
         if(window.safePlay) window.safePlay(window.sfxHirameku);
         window.updateNellMessage("やったにゃ！大当たりだにゃ！！", "excited");
         
-        // シール付与 (grantRandomStickerを流用)
-        // 引数trueで「おめでとう」演出付き
         if (typeof window.grantRandomSticker === 'function') {
             setTimeout(() => {
                 window.grantRandomSticker(true);
             }, 1000);
         }
-        
     } else {
-        // ハズレ
         window.updateNellMessage("残念！また挑戦してにゃ！", "normal");
     }
     
-    // テスト中は常に有効
     document.getElementById('slot-start-btn').disabled = false;
+};
+
+// ==========================================
+// 9. にっぽん地図マスター (Map Game)
+// ==========================================
+let mapGameState = {
+    difficulty: 'easy',
+    currentQuestion: null,
+    score: 0,
+    count: 0,
+    maxQuestions: 5,
+    history:[], 
+    svgLoaded: false
+};
+
+const MAP_SVG_URL = "https://raw.githubusercontent.com/geolonia/japanese-prefectures/master/map-mobile.svg";
+
+async function loadMapSvg() {
+    if (mapGameState.svgLoaded) return;
+    try {
+        const res = await fetch(MAP_SVG_URL);
+        const svgText = await res.text();
+        const container = document.getElementById('map-svg-inner');
+        if (!container) return;
+        
+        container.innerHTML = svgText;
+        
+        const svg = container.querySelector('svg');
+        if (svg) {
+            svg.style.width = '100%';
+            svg.style.height = '100%';
+            
+            const prefs = svg.querySelectorAll('.prefecture');
+            prefs.forEach(p => {
+                const codeStr = p.getAttribute('data-code');
+                if (codeStr) {
+                    const code = parseInt(codeStr, 10);
+                    p.id = `pref-path-${code}`;
+                }
+            });
+            mapGameState.svgLoaded = true;
+        }
+    } catch (e) {
+        console.error("Map SVG Load Error:", e);
+        const container = document.getElementById('map-svg-inner');
+        if (container) container.innerText = "地図が読み込めなかったにゃ…";
+    }
+}
+
+window.showMapGame = function() {
+    window.switchScreen('screen-map-game');
+    window.currentMode = 'mapgame';
+    
+    document.getElementById('map-game-menu').classList.remove('hidden');
+    document.getElementById('map-game-play').classList.add('hidden');
+    window.updateNellMessage("にっぽん全国の旅に出るにゃ！難易度を選んでにゃ！", "excited", false);
+    
+    loadMapSvg(); // バックグラウンドでSVG読み込み
+};
+
+window.startMapGame = async function(diff) {
+    if (!mapGameState.svgLoaded) {
+        await loadMapSvg();
+    }
+    
+    mapGameState.difficulty = diff;
+    mapGameState.score = 0;
+    mapGameState.count = 0;
+    mapGameState.history =[];
+    
+    document.getElementById('map-game-menu').classList.add('hidden');
+    document.getElementById('map-game-play').classList.remove('hidden');
+    
+    const label = document.getElementById('map-game-mode-label');
+    if (diff === 'easy') label.innerText = "🔰 地方しぼり (4択)";
+    if (diff === 'normal') label.innerText = "🌟 全国ランダム (音声)";
+    if (diff === 'hard') label.innerText = "🔥 シルエットクイズ (音声)";
+    
+    window.nextMapQuestion();
+};
+
+window.nextMapQuestion = function() {
+    if (mapGameState.count >= mapGameState.maxQuestions) {
+        window.finishMapGame();
+        return;
+    }
+    
+    mapGameState.count++;
+    document.getElementById('map-game-progress').innerText = `${mapGameState.count}/${mapGameState.maxQuestions} 問目`;
+    
+    // UIリセット
+    const qText = document.getElementById('map-question-text');
+    const optContainer = document.getElementById('map-options-container');
+    const micContainer = document.getElementById('map-mic-container');
+    const ansDisplay = document.getElementById('map-answer-display');
+    const controls = document.getElementById('map-controls');
+    
+    ansDisplay.classList.add('hidden');
+    controls.style.display = 'none';
+    document.getElementById('map-next-btn').style.display = 'none';
+    const giveupBtn = document.getElementById('map-giveup-btn');
+    if (giveupBtn) giveupBtn.style.display = 'block';
+    
+    // SVGの全県ハイライト解除
+    document.querySelectorAll('#map-svg-inner .prefecture').forEach(p => {
+        p.classList.remove('highlight', 'silhouette-mode');
+        p.style.display = ''; 
+    });
+    
+    // 問題を選ぶ
+    let available = window.PREF_DATA.filter(p => !mapGameState.history.includes(p.id));
+    if(available.length === 0) available = window.PREF_DATA;
+    const qPref = available[Math.floor(Math.random() * available.length)];
+    mapGameState.currentQuestion = qPref;
+    mapGameState.history.push(qPref.id);
+    
+    // SVGの演出
+    const targetPath = document.getElementById(`pref-path-${qPref.id}`);
+    if (targetPath) {
+        if (mapGameState.difficulty === 'hard') {
+            document.querySelectorAll('#map-svg-inner .prefecture').forEach(p => {
+                if (p.id !== `pref-path-${qPref.id}`) p.style.display = 'none';
+            });
+            targetPath.classList.add('silhouette-mode');
+            qText.innerText = "この形の県はどこかにゃ？";
+            window.updateNellMessage("この形の県はどこかにゃ？", "thinking");
+        } else {
+            targetPath.classList.add('highlight');
+            qText.innerText = "赤く光っている県はどこかにゃ？";
+            window.updateNellMessage("赤く光っている県はどこかにゃ？", "thinking");
+        }
+    }
+    
+    // 回答UIの準備
+    if (mapGameState.difficulty === 'easy') {
+        optContainer.style.display = 'flex';
+        micContainer.style.display = 'none';
+        
+        let options = [qPref];
+        let others = window.PREF_DATA.filter(p => p.id !== qPref.id).sort(()=>Math.random() - 0.5).slice(0, 3);
+        options = options.concat(others).sort(()=>Math.random() - 0.5);
+        
+        optContainer.innerHTML = '';
+        options.forEach(opt => {
+            const btn = document.createElement('button');
+            btn.className = "map-option-btn";
+            btn.innerText = opt.name;
+            btn.onclick = () => window.checkMapAnswer(opt.name, btn);
+            optContainer.appendChild(btn);
+        });
+    } else {
+        optContainer.style.display = 'none';
+        micContainer.style.display = 'block';
+        const micBtn = document.getElementById('map-mic-btn');
+        if (micBtn) {
+            micBtn.disabled = false;
+            micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で答える';
+            micBtn.style.background = "#4db6ac";
+        }
+        document.getElementById('map-mic-status').innerText = "";
+    }
+    
+    controls.style.display = 'flex';
+};
+
+window.checkMapAnswer = function(userAnswer, btnElement = null) {
+    const qPref = mapGameState.currentQuestion;
+    if (!qPref) return;
+    
+    let isCorrect = false;
+    
+    if (btnElement) {
+        // 4択ボタン
+        isCorrect = (userAnswer === qPref.name);
+        
+        const buttons = document.querySelectorAll('.map-option-btn');
+        buttons.forEach(b => {
+            b.disabled = true;
+            if (b.innerText === qPref.name) b.classList.add('map-option-correct');
+            if (!isCorrect && b === btnElement) b.classList.add('map-option-wrong');
+        });
+    } else {
+        // 音声入力
+        const u = userAnswer.trim();
+        if (u === qPref.name) {
+            isCorrect = true;
+        } else {
+            if (qPref.yomi && Array.isArray(qPref.yomi)) {
+                qPref.yomi.forEach(y => {
+                    if (fuzzyContains(u, y) || fuzzyContains(u, qPref.name)) isCorrect = true;
+                });
+            }
+        }
+        
+        const status = document.getElementById('map-mic-status');
+        if (status) status.innerText = `「${userAnswer}」？`;
+    }
+    
+    if (isCorrect) {
+        if(window.safePlay) window.safePlay(window.sfxMaru);
+        mapGameState.score += 20;
+        window.showMapResult(true);
+    } else {
+        if(window.safePlay) window.safePlay(window.sfxBatu);
+        window.showMapResult(false);
+    }
+};
+
+window.giveUpMapGame = function() {
+    if(window.safePlay) window.safePlay(window.sfxBatu);
+    window.showMapResult(false);
+};
+
+window.showMapResult = function(isCorrect) {
+    const qPref = mapGameState.currentQuestion;
+    if (!qPref) return;
+    
+    document.getElementById('map-mic-container').style.display = 'none';
+    const giveupBtn = document.getElementById('map-giveup-btn');
+    if (giveupBtn) giveupBtn.style.display = 'none';
+    
+    document.getElementById('map-next-btn').style.display = 'block';
+    
+    const ansDisplay = document.getElementById('map-answer-display');
+    const ansText = document.getElementById('map-answer-text');
+    const ansDesc = document.getElementById('map-answer-desc');
+    
+    ansDisplay.classList.remove('hidden');
+    ansText.innerText = qPref.name;
+    ansDesc.innerText = qPref.desc || "";
+    
+    // シルエット解除 (元の色と表示に戻す)
+    const targetPath = document.getElementById(`pref-path-${qPref.id}`);
+    if (targetPath) {
+        targetPath.classList.remove('silhouette-mode');
+        document.querySelectorAll('#map-svg-inner .prefecture').forEach(p => p.style.display = '');
+    }
+    
+    if (isCorrect) {
+        window.updateNellMessage(`正解だにゃ！\n${qPref.desc}`, "excited", false, true);
+    } else {
+        window.updateNellMessage(`残念！ここは「${qPref.name}」だったにゃ。\n${qPref.desc}`, "gentle", false, true);
+    }
+};
+
+window.finishMapGame = function() {
+    let score = mapGameState.score;
+    let multiplier = 1;
+    if (mapGameState.difficulty === 'normal') multiplier = 1.5;
+    if (mapGameState.difficulty === 'hard') multiplier = 3;
+    
+    let reward = Math.floor(score * multiplier);
+    if (reward === 0) reward = 10; 
+    
+    window.saveHighScore('map_master', reward);
+    
+    let msg = "";
+    let mood = "normal";
+    
+    if (score === 100) {
+        msg = `全問正解！にっぽん地図マスターだにゃ！\nカリカリ${reward}個あげるにゃ！`;
+        mood = "excited";
+        
+        if (typeof window.grantRandomSticker === 'function') {
+            setTimeout(() => window.grantRandomSticker(true), 1500);
+            msg += "\nさらに特製シールもプレゼントにゃ！";
+        }
+    } else if (score >= 60) {
+        msg = `${score/20}問正解！よく知ってるにゃ！\nカリカリ${reward}個あげるにゃ！`;
+        mood = "happy";
+    } else {
+        msg = `難しかったかにゃ？\n参加賞でカリカリ${reward}個あげるにゃ。また挑戦してにゃ！`;
+        mood = "gentle";
+    }
+    
+    window.giveGameReward(reward);
+    window.updateNellMessage(msg, mood, false, true);
+    alert(msg);
+    
+    window.showMapGame();
+};
+
+window.startMapVoiceInput = function() {
+    const micBtn = document.getElementById('map-mic-btn');
+    const status = document.getElementById('map-mic-status');
+    
+    if (micBtn) {
+        micBtn.disabled = true;
+        micBtn.innerHTML = '<span style="font-size:1.5rem;">👂</span> 聞いてるにゃ...';
+        micBtn.style.background = "#ff5252";
+    }
+    if (status) status.innerText = "答えを言ってにゃ！";
+    
+    if(typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
+    
+    if (typeof window.startOneShotRecognition === 'function') {
+        window.startOneShotRecognition(
+            (transcript) => {
+                window.checkMapAnswer(transcript);
+                window.stopMapVoiceInput(true);
+            },
+            () => {
+                window.stopMapVoiceInput();
+            }
+        );
+    } else {
+        alert("音声認識が使えないにゃ...");
+        window.stopMapVoiceInput();
+    }
+};
+
+window.stopMapVoiceInput = function(keepStatus = false) {
+    const micBtn = document.getElementById('map-mic-btn');
+    const status = document.getElementById('map-mic-status');
+    
+    if (micBtn) {
+        micBtn.disabled = false;
+        micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で答える';
+        micBtn.style.background = "#4db6ac";
+    }
+    if (status && !keepStatus) status.innerText = "";
 };
