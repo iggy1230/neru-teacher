@@ -1,4 +1,6 @@
-/* --- style.css (完全版 v470.31: にっぽん地図マスタースタイル追加版) --- */
+/* --- START OF FILE style.css --- */
+
+/* --- style.css (完全版 v470.36: 自習ドリル管理スタイル追加版) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -528,7 +530,7 @@ button { font-family: inherit; }
     display: block;
 }
 
-.game-ui { text-align: center; margin-top: 10px; }
+.game-ui { text-align: center; margin: 10px; }
 .game-ui p { font-size: 1.2rem; font-weight: bold; color: #d84315; }
 
 /* 問題リスト・採点結果 */
@@ -1860,16 +1862,15 @@ button { font-family: inherit; }
     object-fit: contain;
 }
 
-/* Geolonia等の地図用クラス対応 */
 #map-svg-inner .prefecture {
-    fill: #a5d6a7; /* デフォルトの緑 */
+    fill: #a5d6a7; 
     stroke: #ffffff;
     stroke-width: 1px;
     transition: fill 0.3s ease;
 }
 
 #map-svg-inner .prefecture.highlight {
-    fill: #ff5252 !important; /* 問題の県は赤 */
+    fill: #ff5252 !important; 
     animation: pulseMap 1.5s infinite;
 }
 
@@ -1893,3 +1894,51 @@ button { font-family: inherit; }
 .map-option-btn:active { transform: translateY(2px); box-shadow: 0 2px 0 #b2ebf2; }
 .map-option-correct { background: #e8f5e9 !important; border-color: #4caf50 !important; color: #2e7d32 !important; }
 .map-option-wrong { background: #ffebee !important; border-color: #ef5350 !important; color: #c62828 !important; }
+
+/* 自習室用スタイル追加 */
+#drill-questions-grid .grade-item {
+    background: #fff;
+    border: 2px solid #b2dfdb;
+    transition: transform 0.2s;
+}
+
+#drill-questions-grid .grade-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+}
+
+/* ★追加: 自習ドリル管理画面用スタイル */
+.drill-manage-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #f5f5f5;
+    padding: 10px 15px;
+    border-radius: 10px;
+    margin-bottom: 10px;
+    border: 1px solid #e0e0e0;
+}
+
+.drill-manage-item-title {
+    font-weight: bold;
+    color: #333;
+    font-size: 1rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-right: 10px;
+}
+
+.drill-manage-buttons {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.drill-edit-btn {
+    background: #42a5f5 !important;
+}
+
+.drill-delete-btn {
+    background: #ef5350 !important;
+}

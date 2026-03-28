@@ -1,4 +1,6 @@
-// --- js/ui/ui.js (v468.3: みんなの図鑑お掃除機能追加版) ---
+// --- START OF FILE ui.js ---
+
+// --- js/ui/ui.js (v470.36: 自習室UI連携強化版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -47,9 +49,9 @@ window.applyVolumeToAll = function() {
     if (window.audioList) {
         window.audioList.forEach(audio => {
             if (audio === window.sfxBunseki) {
-                audio.volume = targetVol * 0.1; 
+                 audio.volume = targetVol * 0.1; 
             } else {
-                audio.volume = targetVol;
+                 audio.volume = targetVol;
             }
         });
     }
@@ -103,7 +105,6 @@ window.switchScreen = function(to) {
             window.updateNellMessage("運動の時間だにゃ！", "excited", false);
         }
 
-        // カリカリ常時表示ロジック
         const miniKarikari = document.getElementById('mini-karikari-display');
         if (miniKarikari) {
             const hideList = ['screen-title', 'screen-gate', 'screen-enrollment'];
@@ -165,7 +166,7 @@ window.backToLobby = function(suppressGreeting = false) {
 
     if (window.quizState) {
         window.quizState.sessionId = Date.now(); 
-        window.quizState.questionQueue = []; 
+        window.quizState.questionQueue =[]; 
         window.quizState.isFinished = true;
     }
 
@@ -389,13 +390,13 @@ window.renderCollectionList = async function() {
 
     grid.innerHTML = '<p style="width:100%; text-align:center; grid-column: span 3;">読み込み中にゃ...</p>';
     
-    let items = [];
+    let items =[];
 
     if (window.collectionTabMode === 'mine') {
         // 自分のコレクション
         if (sortArea) sortArea.style.display = 'flex';
         const profile = await window.NellMemory.getUserProfile(currentUser.id);
-        const collection = profile.collection || [];
+        const collection = profile.collection ||[];
         
         items = collection.map((item, index) => ({
             ...item,
@@ -758,7 +759,7 @@ window.renderMapMarkers = async function() {
     });
 
     const profile = await window.NellMemory.getUserProfile(currentUser.id);
-    const collection = profile.collection || [];
+    const collection = profile.collection ||[];
     
     let hasMarkers = false;
     
@@ -959,7 +960,7 @@ window.deleteProfileItem = async function(category, itemContent) {
 function renderLogView(container) {
     container.innerHTML = '';
     const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
-    let history = [];
+    let history =[];
     try {
         history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
     } catch(e) {}
@@ -1055,7 +1056,6 @@ window.addLogItem = function(role, text) {
     const container = document.getElementById('log-content');
     if (!container) return;
     
-    // ログが多すぎる場合は古いものを削除
     if (container.children.length > 50) {
         container.removeChild(container.firstChild);
     }
@@ -1070,7 +1070,7 @@ window.addLogItem = function(role, text) {
 };
 
 window.addToSessionHistory = function(role, text) {
-    if (!window.chatSessionHistory) window.chatSessionHistory = [];
+    if (!window.chatSessionHistory) window.chatSessionHistory =[];
     window.chatSessionHistory.push({ role: role, text: text });
     if (window.chatSessionHistory.length > 10) {
         window.chatSessionHistory.shift();
@@ -1082,23 +1082,20 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
         speak = false;
     }
 
-    // ネル先生の顔アイコンの切り替え
-    const gameScreen = document.getElementById('screen-game');
-    const isGameHidden = gameScreen ? gameScreen.classList.contains('hidden') : true;
+    // ★修正: アクティブな画面の吹き出しIDを動的に探す
+    let targetId = null;
+    const idsToSearch = ['nell-text', 'nell-text-game', 'nell-text-riddle', 'nell-text-minitest', 'nell-text-map', 'nell-text-self-study'];
+    for(const id of idsToSearch) {
+        const el = document.getElementById(id);
+        if (el && el.offsetParent !== null) { // 表示されている要素を探す
+            targetId = id;
+            break;
+        }
+    }
     
-    // なぞなぞモード用
-    const riddleScreen = document.getElementById('screen-riddle');
-    const isRiddleHidden = riddleScreen ? riddleScreen.classList.contains('hidden') : true;
+    // 見つからない場合はデフォルトの'nell-text'を使う
+    if (!targetId) targetId = 'nell-text';
 
-    // ミニテストモード用
-    const minitestScreen = document.getElementById('screen-minitest');
-    const isMinitestHidden = minitestScreen ? minitestScreen.classList.contains('hidden') : true;
-
-    let targetId = 'nell-text';
-    if (!isGameHidden) targetId = 'nell-text-game';
-    else if (!isRiddleHidden) targetId = 'nell-text-riddle';
-    else if (!isMinitestHidden) targetId = 'nell-text-minitest';
-    
     const el = document.getElementById(targetId);
     
     let cleanText = t || "";
@@ -1153,7 +1150,7 @@ window.sendHttpText = async function(context) {
     window.addLogItem('user', text);
     window.addToSessionHistory('user', text);
 
-    let missingInfo = [];
+    let missingInfo =[];
     let memoryContext = "";
     
     if (window.NellMemory && currentUser) {

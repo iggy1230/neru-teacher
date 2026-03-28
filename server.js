@@ -1,4 +1,6 @@
-// --- server.js (v470.29: 完全版 - 漢字ドリル修正機能・検証強化搭載) ---
+// --- START OF FILE server.js ---
+
+// --- server.js (v470.35: 完全版 - 公式Google Cloud TTSプロキシ搭載) ---
 
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import express from 'express';
@@ -40,7 +42,7 @@ async function appendToServerLog(name, text) {
             hour12: false 
         });
         const newLog = `[${timestamp}] ${text}`;
-        let currentLogs = data[name] || [];
+        let currentLogs = data[name] ||[];
         currentLogs.push(newLog);
         if (currentLogs.length > 50) currentLogs = currentLogs.slice(-50);
         data[name] = currentLogs;
@@ -119,50 +121,50 @@ function getSubjectInstructions(subject) {
 }
 
 const GENRE_REFERENCES = {
-    "魔法陣グルグル": [
+    "魔法陣グルグル":[
         "https://dic.pixiv.net/a/%E9%AD%94%E6%B3%95%E9%99%A3%E3%82%B0%E3%83%AB%E3%82%B0%E3%83%AB",
         "https://ja.wikipedia.org/wiki/%E9%AD%94%E6%B3%95%E9%99%A3%E3%82%B0%E3%83%AB%E3%82%B0%E3%83%AB"
     ],
-    "ジョジョの奇妙な冒険": [
+    "ジョジョの奇妙な冒険":[
         "https://dic.pixiv.net/a/%E3%82%B8%E3%83%A7%E3%82%B8%E3%83%A7%E3%81%AE%E5%A5%87%E5%A6%99%E3%81%AA%E5%86%92%E9%99%BA",
         "https://w.atwiki.jp/jojo-dic/"
     ],
-    "ポケモン": [
+    "ポケモン":[
         "https://dic.pixiv.net/a/%E3%83%9D%E3%82%B1%E3%83%A2%E3%83%B3",
         "https://wiki.xn--rckteqa2e.com/wiki/%E3%83%A1%E3%82%A4%E3%83%B3%E3%83%9A%E3%83%BC%E3%82%B8"
     ],
-    "マインクラフト": [
+    "マインクラフト":[
         "https://minecraft.fandom.com/ja/wiki/Minecraft_Wiki"
     ],
-    "ロブロックス": [
+    "ロブロックス":[
         "https://roblox.fandom.com/ja/wiki/Roblox_Wiki"
     ],
-    "ドラえもん": [
+    "ドラえもん":[
         "https://dic.pixiv.net/a/%E3%83%89%E3%83%A9%E3%81%88%E3%82%82%E3%83%B3",
         "https://hanaballoon.com/dorawiki/index.php/%E3%83%A1%E3%82%A4%E3%83%B3%E3%83%9A%E3%83%BC%E3%82%B8"
     ],
-    "歴史・戦国武将": [
+    "歴史・戦国武将":[
         "https://ja.wikipedia.org/wiki/%E6%88%A6%E5%9B%BD%E6%AD%A6%E5%B0%86",
         "https://japanknowledge.com/introduction/keyword.html?i=932"
     ],
-    "一般知識": [
+    "一般知識":[
         "https://ja.wikipedia.org/wiki/%E9%9B%91%E5%AD%A6",
         "https://r25.jp/article/553641712437603302"
     ],
-    "STPR": [
+    "STPR":[
         "https://stpr.com/",
         "https://dic.pixiv.net/a/%E3%81%99%E3%81%A8%E3%81%B7%E3%82%8A",
         "https://dic.pixiv.net/a/KnightA",
         "https://dic.pixiv.net/a/AMPTAKxCOLORS"
     ],
-    "夏目友人帳": [
+    "夏目友人帳":[
         "https://dic.pixiv.net/a/%E5%A4%8F%E7%9B%AE%E5%8F%8B%E4%BA%BA%E5%B8%B3",
         "https://ja.wikipedia.org/wiki/%E5%A4%8F%E7%9B%AE%E5%8F%8B%E4%BA%BA%E5%B8%B3"
     ]
 };
 
 const FALLBACK_QUIZZES = {
-    "一般知識": [
+    "一般知識":[
         {
             "question": "日本で一番高い山はどこですか？",
             "options": ["富士山", "北岳", "奥穂高岳", "間ノ岳"],
@@ -172,16 +174,16 @@ const FALLBACK_QUIZZES = {
         },
         {
             "question": "1年は何日ありますか？（うるう年ではない場合）",
-            "options": ["365日", "366日", "364日", "360日"],
+            "options":["365日", "366日", "364日", "360日"],
             "answer": "365日",
             "explanation": "地球が太陽の周りを一周するのにかかる時間が約365日だからです。",
             "fact_basis": "平年は365日、閏年は366日。"
         }
     ],
-    "雑学": [
+    "雑学":[
         {
             "question": "パンダの好物と言えば何ですか？",
-            "options": ["笹（ササ）", "バナナ", "お肉", "魚"],
+            "options":["笹（ササ）", "バナナ", "お肉", "魚"],
             "answer": "笹（ササ）",
             "explanation": "パンダは竹や笹を主食としています。",
             "fact_basis": "ジャイアントパンダの主食は竹や笹。"
@@ -194,42 +196,42 @@ const FALLBACK_QUIZZES = {
             "fact_basis": "道路交通法では青色灯火。"
         }
     ],
-    "ポケモン": [
+    "ポケモン":[
         {
             "question": "ピカチュウの進化前のポケモンはどれですか？",
-            "options": ["ピチュー", "ライチュウ", "ミミッキュ", "プラスル"],
+            "options":["ピチュー", "ライチュウ", "ミミッキュ", "プラスル"],
             "answer": "ピチュー",
             "explanation": "ピチューがなつくとピカチュウに進化します。",
             "fact_basis": "ピチュー -> ピカチュウ -> ライチュウ"
         },
         {
             "question": "最初の3匹のうち、炎タイプのポケモンはどれ？（カントー地方）",
-            "options": ["ヒトカゲ", "ゼニガメ", "フシギダネ", "ピカチュウ"],
+            "options":["ヒトカゲ", "ゼニガメ", "フシギダネ", "ピカチュウ"],
             "answer": "ヒトカゲ",
             "explanation": "ヒトカゲは炎タイプ、ゼニガメは水タイプ、フシギダネは草タイプです。",
             "fact_basis": "初代御三家はフシギダネ、ヒトカゲ、ゼニガメ。"
         }
     ],
-    "マインクラフト": [
+    "マインクラフト":[
         {
             "question": "クリーパーを倒すと手に入るアイテムはどれですか？",
-            "options": ["火薬", "骨", "腐った肉", "糸"],
+            "options":["火薬", "骨", "腐った肉", "糸"],
             "answer": "火薬",
             "explanation": "クリーパーは爆発するモンスターなので、倒すと火薬を落とします。",
             "fact_basis": "クリーパーのドロップアイテムは火薬。"
         },
         {
             "question": "ネザーに行くために必要なゲートを作る材料は？",
-            "options": ["黒曜石", "ダイヤモンド", "鉄ブロック", "土"],
+            "options":["黒曜石", "ダイヤモンド", "鉄ブロック", "土"],
             "answer": "黒曜石",
             "explanation": "黒曜石を四角く並べて火をつけるとネザーゲートが開きます。",
             "fact_basis": "ネザーポータルは黒曜石で枠を作る。"
         }
     ],
-    "default": [
+    "default":[
         {
             "question": "空が青いのはなぜですか？",
-            "options": ["太陽の光が散らばるから", "海が青いから", "宇宙が青いから", "ペンキで塗っているから"],
+            "options":["太陽の光が散らばるから", "海が青いから", "宇宙が青いから", "ペンキで塗っているから"],
             "answer": "太陽の光が散らばるから",
             "explanation": "太陽の光が大気中の粒にぶつかって、青い光がたくさん散らばる「散乱」という現象が起きるからです。",
             "fact_basis": "レイリー散乱による。"
@@ -239,39 +241,39 @@ const FALLBACK_QUIZZES = {
 
 // 漢字ドリル用ストック問題
 const FALLBACK_KANJI_DRILLS = {
-    "1": [
+    "1":[
         { type: "reading", kanji: "空", reading: "そら", question_display: "青い<span style='color:red;'>空</span>を見上げる。", question_speech: "青い「そら」を見上げる。" },
         { type: "reading", kanji: "犬", reading: "いぬ", question_display: "かわいい<span style='color:red;'>犬</span>が走る。", question_speech: "かわいい「いぬ」が走る。" },
         { type: "writing", kanji: "花", reading: "はな", question_display: "きれいな<span style='color:red;'>はな</span>がさいた。", question_speech: "きれいな「はな」がさいた。" },
         { type: "writing", kanji: "白", reading: "しろ", question_display: "<span style='color:red;'>しろ</span>い雲がうかぶ。", question_speech: "「しろ」い雲がうかぶ。" }
     ],
-    "2": [
+    "2":[
         { type: "reading", kanji: "海", reading: "うみ", question_display: "広い<span style='color:red;'>海</span>に行く。", question_speech: "広い「うみ」に行く。" },
         { type: "reading", kanji: "光", reading: "ひかり", question_display: "太陽の<span style='color:red;'>光</span>があたる。", question_speech: "太陽の「ひかり」があたる。" },
         { type: "writing", kanji: "楽", reading: "たの", question_display: "学校はとても<span style='color:red;'>たの</span>しい。", question_speech: "学校はとても「たの」しい。" },
         { type: "writing", kanji: "岩", reading: "いわ", question_display: "大きな<span style='color:red;'>いわ</span>がある。", question_speech: "大きな「いわ」がある。" }
     ],
-    "3": [
+    "3":[
         { type: "reading", kanji: "坂", reading: "さか", question_display: "急な<span style='color:red;'>坂</span>をのぼる。", question_speech: "急な「さか」をのぼる。" },
         { type: "reading", kanji: "旅", reading: "たび", question_display: "遠くへ<span style='color:red;'>旅</span>に出る。", question_speech: "遠くへ「たび」に出る。" },
         { type: "writing", kanji: "波", reading: "なみ", question_display: "<span style='color:red;'>なみ</span>の音が聞こえる。", question_speech: "「なみ」の音が聞こえる。" },
         { type: "writing", kanji: "鉄", reading: "てつ", question_display: "このぼうは<span style='color:red;'>てつ</span>でできている。", question_speech: "このぼうは「てつ」でできている。" }
     ],
-    "4": [
+    "4":[
         { type: "reading", kanji: "愛", reading: "あい", question_display: "<span style='color:red;'>愛</span>をこめて手紙を書く。", question_speech: "「あい」をこめて手紙を書く。" },
         { type: "writing", kanji: "熱", reading: "ねつ", question_display: "お湯が<span style='color:red;'>ねつ</span>を持つ。", question_speech: "お湯が「ねつ」を持つ。" }
     ],
-    "5": [
+    "5":[
         { type: "reading", kanji: "夢", reading: "ゆめ", question_display: "将来の<span style='color:red;'>夢</span>を語る。", question_speech: "将来の「ゆめ」を語る。" },
         { type: "writing", kanji: "豊", reading: "ゆた", question_display: "緑が<span style='color:red;'>ゆた</span>かな山。", question_speech: "緑が「ゆた」かな山。" }
     ],
-    "6": [
+    "6":[
         { type: "reading", kanji: "誠", reading: "まこと", question_display: "<span style='color:red;'>誠</span>実な人柄。", question_speech: "「せい」じつな人柄。" },
         { type: "writing", kanji: "暮", reading: "く", question_display: "田舎で<span style='color:red;'>く</span>らす。", question_speech: "田舎で「く」らす。" }
     ]
 };
 
-const QUIZ_PERSPECTIVES = [
+const QUIZ_PERSPECTIVES =[
     "【視点: 名言・セリフ】キャラクターの決め台詞、口癖、または印象的な会話シーンから出題してください。",
     "【視点: 数字・データ】身長、体重、年号、個数、威力など、具体的な『数字』に関する事実から出題してください。",
     "【視点: 意外な事実】ファンなら知っているが一般にはあまり知られていない、意外な裏設定や豆知識から出題してください。",
@@ -366,6 +368,54 @@ async function verifyKanji(kanjiData, targetGrade) {
 // API Endpoints
 // ==========================================
 
+// --- ★公式 Google Cloud TTS プロキシ API ---
+app.post('/api/tts', async (req, res) => {
+    try {
+        const { text } = req.body;
+        if (!text) return res.status(400).send('No text provided');
+
+        // Renderに設定したAPIキーを読み込む
+        const apiKey = process.env.GOOGLE_TTS_API_KEY;
+        if (!apiKey) {
+            console.error("⚠️ GOOGLE_TTS_API_KEY が設定されていません。");
+            return res.status(500).json({ error: "API Key not configured" });
+        }
+
+        const url = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`;
+        
+        // 公式APIへのリクエスト内容（Wavenet-Aという可愛い声を使います）
+        const payload = {
+            input: { text: text },
+            voice: { languageCode: "ja-JP", name: "ja-JP-Wavenet-A" }, 
+            audioConfig: { 
+                audioEncoding: "MP3",
+                speakingRate: 1.15, // 少し早口にして元気さを出す
+                pitch: 4.0          // 少し高めの声にして子供っぽくする
+            } 
+        };
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+            console.error("Google TTS API Error:", data);
+            throw new Error(data.error?.message || "Google TTS API Error");
+        }
+
+        // 音声データ(Base64)をブラウザに返す
+        res.json({ audioContent: data.audioContent });
+        
+    } catch (error) {
+        console.error("[Official TTS Error]", error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+
 // --- クイズ生成 API ---
 app.post('/generate-quiz', async (req, res) => {
     const MAX_RETRIES = 3; 
@@ -382,7 +432,7 @@ app.post('/generate-quiz', async (req, res) => {
             
             let targetGenre = genre;
             if (!targetGenre || targetGenre === "全ジャンル") {
-                const baseGenres = ["一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム"];
+                const baseGenres =["一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム"];
                 targetGenre = baseGenres[Math.floor(Math.random() * baseGenres.length)];
             }
 
@@ -443,7 +493,7 @@ app.post('/generate-quiz', async (req, res) => {
             {
               "fact_basis": "検索結果で見つけた、クイズの根拠となる正確な一文（コピペ）",
               "question": "問題文",
-              "options": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"],
+              "options":["選択肢1", "選択肢2", "選択肢3", "選択肢4"],
               "answer": "正解（optionsのいずれかと完全一致）",
               "explanation": "解説（出典元を明記すること。例：『ピクシブ百科事典によると～』）",
               "actual_genre": "${targetGenre}"
@@ -493,10 +543,8 @@ app.post('/generate-quiz', async (req, res) => {
             if (attempt >= MAX_RETRIES) {
                 console.log(`[Quiz Fallback] Switching to Stock Quiz for genre: ${genre}`);
                 
-                // ストック問題から選択
                 let stockList = FALLBACK_QUIZZES[genre];
                 
-                // 指定ジャンルがない、またはストックが空の場合はデフォルトを使用
                 if (!stockList || stockList.length === 0) {
                     stockList = FALLBACK_QUIZZES["default"];
                 }
@@ -506,7 +554,7 @@ app.post('/generate-quiz', async (req, res) => {
                 res.json({
                     ...fallbackQuiz,
                     actual_genre: genre || "雑学",
-                    fallback: true // デバッグ用
+                    fallback: true 
                 });
                 return;
             }
@@ -549,7 +597,7 @@ app.post('/correct-quiz', async (req, res) => {
         {
           "fact_basis": "修正の根拠となった検索結果",
           "question": "修正後の問題文",
-          "options": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"],
+          "options":["選択肢1", "選択肢2", "選択肢3", "選択肢4"],
           "answer": "正解",
           "explanation": "感謝の言葉 + 解説",
           "actual_genre": "${genre}"
@@ -558,7 +606,7 @@ app.post('/correct-quiz', async (req, res) => {
 
         const result = await model.generateContent(prompt);
         let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        const cleanText = extractFirstJson(text); // ★JSON抽出強化
+        const cleanText = extractFirstJson(text);
         const jsonResponse = JSON.parse(cleanText);
         
         if (!jsonResponse.options.includes(jsonResponse.answer)) {
@@ -579,7 +627,7 @@ app.post('/generate-riddle', async (req, res) => {
         const { grade } = req.body;
         const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
 
-        const patterns = [
+        const patterns =[
             { type: "言葉遊び・ダジャレ", desc: "「パンはパンでも…」や「イスはイスでも…」のような、言葉の響きを使った古典的で面白いなぞなぞ。", example: "「パンはパンでも、食べられないパンはなーんだ？（答え：フライパン）」" },
             { type: "特徴当て（生き物・モノ）", desc: "「耳が長くて、ぴょんぴょん跳ねる動物は？」のような、特徴をヒントにするクイズ。", example: "「お昼になると、小さくなるものなーんだ？（答え：影）」" },
             { type: "あるなしクイズ・連想", desc: "「使うと減るけど、使わないと減らないものは？」のような、少し頭を使うトンチ問題。", example: "「使うときは投げるもの、なーんだ？（答え：アンカー・投網・ボールなど）」" },
@@ -606,13 +654,13 @@ app.post('/generate-riddle', async (req, res) => {
         {
             "question": "問題文（「問題！〇〇なーんだ？」のように）",
             "answer": "正解の単語（ひらがな、または一般的な表記）",
-            "accepted_answers": ["正解の別名", "漢字表記", "カタカナ表記", "ひらがな表記"] 
+            "accepted_answers":["正解の別名", "漢字表記", "カタカナ表記", "ひらがな表記"] 
         }
         `;
 
         const result = await model.generateContent(prompt);
         let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        text = extractFirstJson(text); // ★JSON抽出強化
+        text = extractFirstJson(text); 
         res.json(JSON.parse(text));
     } catch (e) {
         console.error("Riddle Gen Error:", e);
@@ -637,7 +685,7 @@ app.post('/generate-minitest', async (req, res) => {
         【出力JSONフォーマット】
         {
             "question": "問題文",
-            "options": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"],
+            "options":["選択肢1", "選択肢2", "選択肢3", "選択肢4"],
             "answer": "正解の選択肢の文字列（optionsに含まれるものと同じ）",
             "explanation": "正解の解説（子供向けに優しく、語尾は『にゃ』）"
         }
@@ -645,7 +693,7 @@ app.post('/generate-minitest', async (req, res) => {
 
         const result = await model.generateContent(prompt);
         let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        text = extractFirstJson(text); // ★JSON抽出強化
+        text = extractFirstJson(text); 
         res.json(JSON.parse(text));
     } catch (e) {
         console.error("MiniTest Gen Error:", e);
@@ -774,7 +822,7 @@ app.post('/generate-kanji', async (req, res) => {
     }
 });
 
-// --- ★新規: 漢字ドリル修正 API ---
+// --- 漢字ドリル修正 API ---
 app.post('/correct-kanji', async (req, res) => {
     try {
         const { oldKanji, reason } = req.body;
@@ -903,7 +951,7 @@ app.post('/chat-dialogue', async (req, res) => {
             【現在、ユーザーは「${problemContext.type}」に挑戦中です】
             問題: ${problemContext.question}
             正解: ${problemContext.answer}
-            （選択肢がある場合）: ${JSON.stringify(problemContext.options || [])}
+            （選択肢がある場合）: ${JSON.stringify(problemContext.options ||[])}
             
             ユーザーの発言: 「${text}」
             
@@ -999,7 +1047,7 @@ app.post('/update-memory', async (req, res) => {
                 "nickname": "...",
                 "birthday": "...",
                 "likes": ["..."],
-                "weaknesses": ["..."],
+                "weaknesses":["..."],
                 "achievements": ["..."],
                 "last_topic": "..."
             },
@@ -1069,14 +1117,13 @@ app.post('/analyze', async (req, res) => {
         - student_answer が空文字 "" の場合は、is_correct は false にする。
         - 3段階のヒント(hints)を作成する。ヒントも小学${grade}年生向けに平易にすること。
 
-        【出力JSONフォーマット】
-        [
+        【出力JSONフォーマット】[
           {
             "id": 1,
             "is_homework": true または false,
             "label": "①",
             "question": "問題文",
-            "correct_answer": ["正解"], 
+            "correct_answer":["正解"], 
             "student_answer": ["手書きの答え"],
             "is_correct": true,
             "hints": ["ヒント1", "ヒント2", "ヒント3"]
@@ -1090,7 +1137,7 @@ app.post('/analyze', async (req, res) => {
         ]);
 
         const responseText = result.response.text();
-        let problems = [];
+        let problems =[];
         try {
             let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
             cleanText = extractFirstJson(cleanText); // ★JSON抽出強化
@@ -1220,7 +1267,7 @@ app.post('/identify-item', async (req, res) => {
     }
 });
 
-// --- 給食反応 API (★コメントスタイル統一版) ---
+// --- 給食反応 API ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
         const { name, amount } = req.body; 
@@ -1228,7 +1275,7 @@ app.post('/lunch-reaction', async (req, res) => {
         
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
-            safetySettings: [
+            safetySettings:[
                 { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
                 { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
                 { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
@@ -1240,7 +1287,6 @@ app.post('/lunch-reaction', async (req, res) => {
         let prompt = "";
         let isSpecial = false;
 
-        // ★個数による分岐ロジック (コメントスタイルを統一)
         if (numAmount >= 10000) {
             isSpecial = true;
             prompt = `あなたは猫の「ネル先生」。生徒「${name}」から一度に${numAmount}個もの給食（カリカリ）をもらいました！
@@ -1271,7 +1317,6 @@ app.post('/lunch-reaction', async (req, res) => {
                2. クスッと笑える独特な食レポや感想を、**かなり喜んでいる様子**で表現してください。
                3. 文字数は50文字程度。`;
         } else {
-            // 1〜99個
             prompt = `あなたは猫の「ネル先生」。生徒「${name}」から給食（カリカリ）を${numAmount}個もらって食べました。
                【ルール】
                1. 相手を呼ぶときは必ず「${name}さん」と呼ぶこと。
@@ -1284,7 +1329,7 @@ app.post('/lunch-reaction', async (req, res) => {
 
     } catch (error) { 
         console.error("Lunch Reaction Error:", error); 
-        const fallbacks = ["おいしいにゃ！", "うまうまにゃ！", "カリカリ最高にゃ！", "ありがとにゃ！", "元気が出たにゃ！"];
+        const fallbacks =["おいしいにゃ！", "うまうまにゃ！", "カリカリ最高にゃ！", "ありがとにゃ！", "元気が出たにゃ！"];
         res.json({ reply: fallbacks[0], isSpecial: false }); 
     }
 });
@@ -1383,17 +1428,17 @@ wss.on('connection', async (clientWs, req) => {
                 - 楽しそうに、親しみやすく振る舞ってください。
                 `;
 
-                const tools = [
+                const tools =[
                     { google_search: {} },
                     {
-                        function_declarations: [
+                        function_declarations:[
                             {
                                 name: "show_kanji",
                                 description: "Display a Kanji, word, or math formula on the whiteboard.",
                                 parameters: {
                                     type: "OBJECT",
                                     properties: { content: { type: "STRING" } },
-                                    required: ["content"]
+                                    required:["content"]
                                 }
                             }
                         ]
@@ -1412,7 +1457,7 @@ wss.on('connection', async (clientWs, req) => {
                             } 
                         }, 
                         tools: tools,
-                        systemInstruction: { parts: [{ text: systemInstructionText }] }
+                        systemInstruction: { parts:[{ text: systemInstructionText }] }
                     }
                 }));
 
@@ -1432,7 +1477,7 @@ wss.on('connection', async (clientWs, req) => {
                                 if (part.functionCall.name === "show_kanji") {
                                     geminiWs.send(JSON.stringify({
                                         toolResponse: {
-                                            functionResponses: [{
+                                            functionResponses:[{
                                                 name: "show_kanji",
                                                 response: { result: "displayed" },
                                                 id: part.functionCall.id
@@ -1496,10 +1541,10 @@ wss.on('connection', async (clientWs, req) => {
                 geminiWs.send(JSON.stringify({ client_content: msg.clientContent }));
             }
             if (msg.base64Audio) {
-                geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: msg.base64Audio }] } }));
+                geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks:[{ mimeType: "audio/pcm;rate=16000", data: msg.base64Audio }] } }));
             }
             if (msg.base64Image) {
-                geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "image/jpeg", data: msg.base64Image }] } }));
+                geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks:[{ mimeType: "image/jpeg", data: msg.base64Image }] } }));
             }
         } catch(e) { console.error("Client WS Handling Error:", e); }
     });
