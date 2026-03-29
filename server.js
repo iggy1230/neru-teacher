@@ -368,7 +368,7 @@ async function verifyKanji(kanjiData, targetGrade) {
 // API Endpoints
 // ==========================================
 
-// --- ★公式 Google Cloud TTS プロキシ API ---
+// --- ★公式 Google Cloud TTS API プロキシ ---
 app.post('/api/tts', async (req, res) => {
     try {
         const { text } = req.body;
@@ -383,14 +383,14 @@ app.post('/api/tts', async (req, res) => {
 
         const url = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`;
         
-        // 公式APIへのリクエスト内容（Wavenet-Aという可愛い声を使います）
+        // 公式APIへのリクエスト内容
         const payload = {
             input: { text: text },
             voice: { languageCode: "ja-JP", name: "ja-JP-Wavenet-A" }, 
             audioConfig: { 
                 audioEncoding: "MP3",
-                speakingRate: 1.15, // 少し早口にして元気さを出す
-                pitch: 4.0          // 少し高めの声にして子供っぽくする
+                speakingRate: 1.0, // ★変更: 1.15から通常速度の1.0へ
+                pitch: 0.0          // ★変更: 4.0から通常の高さの0.0へ
             } 
         };
 
@@ -414,7 +414,6 @@ app.post('/api/tts', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
-
 
 // --- クイズ生成 API ---
 app.post('/generate-quiz', async (req, res) => {

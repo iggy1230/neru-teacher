@@ -1,20 +1,15 @@
 // --- START OF FILE ui.js ---
 
-// --- js/ui/ui.js (v470.36: 自習室UI連携強化版) ---
+// --- js/ui/ui.js (v470.40: 構文エラー完全修正版) ---
 
-// カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
-// 図鑑のソートモード (初期値: 登録番号降順 = 新しい順)
 window.collectionSortMode = 'desc'; 
-// ★図鑑のタブモード (mine / public)
 window.collectionTabMode = 'mine';
-// ★図鑑描画ループのID管理
 window.collectionRenderId = null;
 
 // ==========================================
 // 音量管理 (直接操作)
 // ==========================================
-
 window.toggleMuteDirect = function() {
     window.isMuted = !window.isMuted;
     window.applyVolumeToAll();
@@ -24,7 +19,7 @@ window.toggleMuteDirect = function() {
 window.changeVolumeDirect = function(slider) {
     window.appVolume = slider.value / 100;
     if (window.appVolume > 0 && window.isMuted) {
-        window.isMuted = false; // スライダー操作でミュート解除
+        window.isMuted = false;
     }
     window.applyVolumeToAll();
     window.updateVolumeUI();
@@ -34,9 +29,7 @@ window.updateVolumeUI = function() {
     const btn = document.getElementById('mute-btn');
     const slider = document.getElementById('direct-volume-slider');
     
-    if (btn) {
-        btn.innerText = window.isMuted ? "🔇" : "🔊";
-    }
+    if (btn) btn.innerText = window.isMuted ? "🔇" : "🔊";
     if (slider) {
         slider.value = window.appVolume * 100;
         slider.style.opacity = window.isMuted ? "0.5" : "1.0";
@@ -48,11 +41,8 @@ window.applyVolumeToAll = function() {
     
     if (window.audioList) {
         window.audioList.forEach(audio => {
-            if (audio === window.sfxBunseki) {
-                 audio.volume = targetVol * 0.1; 
-            } else {
-                 audio.volume = targetVol;
-            }
+            if (audio === window.sfxBunseki) audio.volume = targetVol * 0.1; 
+            else audio.volume = targetVol;
         });
     }
     
@@ -62,9 +52,8 @@ window.applyVolumeToAll = function() {
 };
 
 // ==========================================
-// ★ Helper Functions
+// Helper Functions
 // ==========================================
-
 window.cleanDisplayString = function(text) {
     if (!text) return "";
     let clean = text;
@@ -90,7 +79,6 @@ window.formatCollectionNumber = function(num) {
 // ==========================================
 // 画面切り替え・基本ナビゲーション
 // ==========================================
-
 window.switchScreen = function(to) {
     document.querySelectorAll('.screen').forEach(s => {
         s.classList.add('hidden');
@@ -107,7 +95,7 @@ window.switchScreen = function(to) {
 
         const miniKarikari = document.getElementById('mini-karikari-display');
         if (miniKarikari) {
-            const hideList = ['screen-title', 'screen-gate', 'screen-enrollment'];
+            const hideList =['screen-title', 'screen-gate', 'screen-enrollment'];
             if (hideList.includes(to)) {
                 miniKarikari.classList.add('hidden');
             } else {
@@ -125,19 +113,13 @@ window.switchScreen = function(to) {
 };
 
 window.startApp = async function() {
-    if (window.initAudioContext) {
-        await window.initAudioContext();
-    }
-    if (window.sfxChime) {
-        window.safePlay(window.sfxChime);
-    }
+    if (window.initAudioContext) await window.initAudioContext();
+    if (window.sfxChime) window.safePlay(window.sfxChime);
     switchScreen('screen-gate');
 };
 
 window.backToTitle = async function() {
-    if (typeof window.logoutProcess === 'function') {
-        await window.logoutProcess();
-    }
+    if (typeof window.logoutProcess === 'function') await window.logoutProcess();
     switchScreen('screen-title');
 };
 
@@ -187,7 +169,6 @@ window.backToLobby = function(suppressGreeting = false) {
 // ==========================================
 // 出席簿 (Attendance)
 // ==========================================
-
 window.showAttendance = function() {
     switchScreen('screen-attendance');
     renderAttendance();
@@ -211,7 +192,7 @@ window.renderAttendance = function() {
     header.innerHTML = `<button onclick="changeCalendarMonth(-1)" class="mini-teach-btn" style="width:30px; height:30px; font-size:1rem; margin:0; display:flex; align-items:center; justify-content:center;">◀</button><span style="flex: 1; text-align: center;">${year}年 ${month + 1}月</span><button onclick="changeCalendarMonth(1)" class="mini-teach-btn" style="width:30px; height:30px; font-size:1rem; margin:0; display:flex; align-items:center; justify-content:center;">▶</button>`;
     grid.appendChild(header);
     
-    const weekDays = ['日', '月', '火', '水', '木', '金', '土'];
+    const weekDays =['日', '月', '火', '水', '木', '金', '土'];
     weekDays.forEach(day => { 
         const dayEl = document.createElement('div'); 
         dayEl.innerText = day; 
@@ -258,7 +239,6 @@ window.changeCalendarMonth = function(diff) {
 // ==========================================
 // プログレスバー
 // ==========================================
-
 window.updateProgress = function(p) { 
     const bar = document.getElementById('progress-bar'); 
     if (bar) bar.style.width = p + '%'; 
@@ -267,14 +247,11 @@ window.updateProgress = function(p) {
 };
 
 // ==========================================
-// 図鑑 (Collection) - ★共有機能・タブ切り替え・リネーム
+// 図鑑 (Collection)
 // ==========================================
-
-// タブ切り替え
 window.switchCollectionTab = function(tab) {
     window.collectionTabMode = tab;
     
-    // タブの見た目更新
     const btnMine = document.getElementById('col-tab-mine');
     const btnPublic = document.getElementById('col-tab-public');
     if (btnMine && btnPublic) {
@@ -287,7 +264,6 @@ window.switchCollectionTab = function(tab) {
         }
     }
     
-    // リスト再描画
     window.renderCollectionList();
 };
 
@@ -302,18 +278,17 @@ window.openCollectionDetailByIndex = function(index) {
                 
                 const item = profile.collection[index];
                 const totalCount = profile.collection.length;
-                window.showCollectionDetail(item, index, totalCount, true); // true = 自分の
+                window.showCollectionDetail(item, index, totalCount, true);
             }
         });
     } else {
-        // Publicモードの場合、window.publicCollectionCache から取得
         if (window.publicCollectionCache && window.publicCollectionCache[index]) {
             const item = window.publicCollectionCache[index];
             const modal = document.getElementById('collection-modal');
             if (modal && modal.classList.contains('hidden')) modal.classList.remove('hidden');
             
             const totalCount = window.publicCollectionCache.length;
-            window.showCollectionDetail(item, index, totalCount, false); // false = 他人の
+            window.showCollectionDetail(item, index, totalCount, false);
         }
     }
 };
@@ -332,7 +307,6 @@ window.showCollection = async function(keepTab = false) {
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 85vh; display: flex; flex-direction: column;">
             <h3 style="text-align:center; margin:0 0 10px 0; color:#f57f17; flex-shrink: 0;">📖 お宝図鑑</h3>
             
-            <!-- タブ -->
             <div style="display:flex; gap:10px; margin-bottom:10px; flex-shrink:0;">
                 <button id="col-tab-mine" onclick="switchCollectionTab('mine')" class="memory-tab active-tab" style="flex:1; border-radius:10px; border:2px solid #f57f17; background:#fff; color:#f57f17;">じぶんの</button>
                 <button id="col-tab-public" onclick="switchCollectionTab('public')" class="memory-tab" style="flex:1; border-radius:10px; border:2px solid #8d6e63; background:#fff; color:#8d6e63;">みんなの</button>
@@ -363,20 +337,17 @@ window.showCollection = async function(keepTab = false) {
     `;
     modal.classList.remove('hidden');
 
-    // 引数 keepTab が true なら現在のタブモードを維持、それ以外は 'mine' にリセット
     if (!keepTab) {
         window.collectionTabMode = 'mine';
     } else {
-        // UI上のタブのアクティブ状態を復元
         window.switchCollectionTab(window.collectionTabMode);
-        return; // switchCollectionTab内でrenderCollectionListが呼ばれるのでここで終了
+        return; 
     }
 
     window.renderCollectionList();
 };
 
 window.renderCollectionList = async function() {
-    // ★重要: 前回の描画ループがあればキャンセル
     if (window.collectionRenderId) {
         cancelAnimationFrame(window.collectionRenderId);
         window.collectionRenderId = null;
@@ -393,7 +364,6 @@ window.renderCollectionList = async function() {
     let items =[];
 
     if (window.collectionTabMode === 'mine') {
-        // 自分のコレクション
         if (sortArea) sortArea.style.display = 'flex';
         const profile = await window.NellMemory.getUserProfile(currentUser.id);
         const collection = profile.collection ||[];
@@ -418,14 +388,13 @@ window.renderCollectionList = async function() {
         }
 
     } else {
-        // みんなのコレクション
-        if (sortArea) sortArea.style.display = 'none'; // 公開用は時系列固定
+        if (sortArea) sortArea.style.display = 'none'; 
         const publicItems = await window.NellMemory.getPublicCollection();
-        window.publicCollectionCache = publicItems; // 詳細表示用にキャッシュ
+        window.publicCollectionCache = publicItems; 
         
         items = publicItems.map((item, index) => ({
             ...item,
-            originalIndex: index // キャッシュ配列のインデックス
+            originalIndex: index 
         }));
     }
 
@@ -477,7 +446,6 @@ window.renderCollectionList = async function() {
             img.decoding = "async";
             img.style.cssText = "width:100%; height:100%; object-fit:contain; display:block; background-color: #f9f9f9;";
             
-            // ★修正: 名前バッジを表示（自分のカードでも表示するように変更）
             const badge = document.createElement('div');
             badge.className = "info-badge";
             if (window.collectionTabMode === 'public') {
@@ -515,14 +483,11 @@ window.showCollectionDetail = function(item, originalIndex, totalCount, isMine) 
         mapBtnHtml = `<button onclick="window.closeCollection(); window.showMap(${item.location.lat}, ${item.location.lon});" class="mini-teach-btn" style="background:#29b6f6; width:auto; margin-left:10px;">🗺️ 地図で見る</button>`;
     }
 
-    // ★修正: 共有/非共有ボタンの切り替え
     let shareBtnHtml = "";
     if (isMine) {
         if (!item.isShared) {
-            // まだ共有していない -> 公開ボタン
             shareBtnHtml = `<button onclick="shareCollectionItem(${originalIndex})" class="mini-teach-btn" style="background:#ff9800; width:auto;">✨ みんなに公開する</button>`;
         } else {
-            // 既に共有している -> 非公開に戻すボタン
             shareBtnHtml = `
                 <div style="display:flex; flex-direction:column; align-items:center; gap:5px;">
                     <span style="font-size:0.8rem; color:#ff9800; font-weight:bold;">みんなに公開中だにゃ！</span>
@@ -530,7 +495,6 @@ window.showCollectionDetail = function(item, originalIndex, totalCount, isMine) 
                 </div>`;
         }
     } else {
-        // 他人のアイテム: 「みんなの」タブで見ている場合、不備データのお掃除機能を追加
         shareBtnHtml = `
             <div style="display:flex; flex-direction:column; align-items:center; gap:5px;">
                 <span style="font-size:0.8rem; color:#666;">発見者: <strong>${window.cleanDisplayString(item.discovererName || "誰か")}さん</strong></span>
@@ -540,13 +504,11 @@ window.showCollectionDetail = function(item, originalIndex, totalCount, isMine) 
             </div>`;
     }
 
-    // 削除ボタン (自分のみ)
     let deleteBtnHtml = "";
     if (isMine) {
         deleteBtnHtml = `<button onclick="deleteCollectionItem(${originalIndex})" class="mini-teach-btn" style="background:#ff5252;">削除</button>`;
     }
 
-    // ★追加: 名前表示とリネームボタン
     let nameDisplayHtml = "";
     if (isMine) {
         const currentName = window.cleanDisplayString(item.name || "名称未設定");
@@ -561,7 +523,6 @@ window.showCollectionDetail = function(item, originalIndex, totalCount, isMine) 
         nameDisplayHtml = `<h3 style="text-align:center; margin:0 0 5px 0; color:#555;">${window.cleanDisplayString(item.name || "名称未設定")}</h3>`;
     }
 
-    // 左右ナビ
     let leftBtnHtml = "";
     if (originalIndex > 0) {
         leftBtnHtml = `
@@ -613,7 +574,6 @@ window.showCollectionDetail = function(item, originalIndex, totalCount, isMine) 
     `;
 };
 
-// ★追加: 不備のある公開アイテムを削除する機能
 window.cleanPublicItem = async function(docId) {
     if (!docId) return;
     if (!db) return;
@@ -622,14 +582,13 @@ window.cleanPublicItem = async function(docId) {
     try {
         await db.collection("public_collection").doc(docId).delete();
         alert("公開データを削除したにゃ！スッキリしたにゃ！");
-        window.showCollection(true); // リストを更新
+        window.showCollection(true); 
     } catch(e) {
         console.error("Public Clean Error:", e);
         alert("削除に失敗したにゃ。");
     }
 };
 
-// ★追加: リネーム処理
 window.renameCollectionItem = async function(index, currentName) {
     const newName = prompt("新しい名前を入れるにゃ！", currentName);
     if (newName && newName.trim() !== "" && newName !== currentName) {
@@ -637,7 +596,6 @@ window.renameCollectionItem = async function(index, currentName) {
         
         try {
             await window.NellMemory.renameCollectionItem(currentUser.id, index, newName);
-            // 成功したら画面更新
             window.openCollectionDetailByIndex(index);
         } catch(e) {
             alert("名前を変更できなかったにゃ...");
@@ -653,7 +611,6 @@ window.shareCollectionItem = async function(index) {
         const result = await window.NellMemory.shareToPublicCollection(currentUser.id, index, currentUser.name);
         if (result === "SUCCESS") {
             alert("公開したにゃ！みんなが見れるようになったにゃ！");
-            // 再描画してボタンを「公開済み」にする
             window.openCollectionDetailByIndex(index);
         } else if (result === "ALREADY_SHARED") {
             alert("もう公開済みだにゃ！");
@@ -686,7 +643,6 @@ window.deleteCollectionItem = async function(index) {
     if (!confirm("本当にこのお宝を削除するにゃ？")) return;
     if (window.NellMemory && currentUser) {
         await window.NellMemory.deleteFromCollection(currentUser.id, index);
-        // ★修正: 削除後にタブ状態を維持して一覧に戻る
         window.showCollection(true); 
     }
 };
@@ -706,7 +662,6 @@ window.closeCollection = function() {
 // ==========================================
 // ★ 足あとマップ (Leaflet)
 // ==========================================
-
 window.mapInstance = null;
 
 window.showMap = async function(targetLat, targetLon) {
@@ -751,7 +706,6 @@ window.showMap = async function(targetLat, targetLon) {
 window.renderMapMarkers = async function() {
     if (!window.mapInstance || !window.NellMemory || !currentUser) return;
     
-    // 既存マーカーのクリア
     window.mapInstance.eachLayer((layer) => {
         if (layer instanceof L.Marker) {
             window.mapInstance.removeLayer(layer);
@@ -762,7 +716,6 @@ window.renderMapMarkers = async function() {
     const collection = profile.collection ||[];
     
     let hasMarkers = false;
-    
     const displayCollection = collection.slice(0, 50);
     
     displayCollection.forEach((item, index) => {
@@ -772,9 +725,9 @@ window.renderMapMarkers = async function() {
             const icon = L.divIcon({
                 className: 'custom-div-icon',
                 html: `<div class="map-pin-icon" style="background-image: url('${item.image}');"></div>`,
-                iconSize: [50, 50],
+                iconSize:[50, 50],
                 iconAnchor: [25, 25],
-                popupAnchor: [0, -30]
+                popupAnchor:[0, -30]
             });
             
             const displayName = window.cleanDisplayString(item.name);
@@ -798,11 +751,9 @@ window.renderMapMarkers = async function() {
             .bindPopup("現在はここだにゃ！").openPopup();
     }
 };
-
 // ==========================================
 // ★ 記憶管理 (プロフィール)
 // ==========================================
-
 window.openMemoryManager = function() {
     if (!currentUser) return;
     const modal = document.getElementById('memory-manager-modal');
@@ -978,7 +929,6 @@ function renderLogView(container) {
     `;
     container.appendChild(ctrlDiv);
 
-    // ログが多い場合は直近50件のみ表示（メモリ対策）
     const displayHistory = [...history].reverse().slice(0, 50);
 
     displayHistory.forEach((item, index) => {
@@ -1031,7 +981,6 @@ window.deleteSelectedLogs = function() {
     }
 };
 
-// ページ読み込み完了時にUI状態を初期化
 document.addEventListener('DOMContentLoaded', () => {
     window.updateVolumeUI();
 });
@@ -1051,7 +1000,6 @@ document.addEventListener('click', (e) => {
 // ==========================================
 // ★ ログ管理・セッション履歴・UI更新
 // ==========================================
-
 window.addLogItem = function(role, text) {
     const container = document.getElementById('log-content');
     if (!container) return;
@@ -1078,22 +1026,24 @@ window.addToSessionHistory = function(role, text) {
 };
 
 window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false, speak = true) {
+    if (speak && typeof window.cancelNellSpeech === 'function') {
+        window.cancelNellSpeech();
+    }
+
     if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN && window.currentMode !== 'chat') {
         speak = false;
     }
 
-    // ★修正: アクティブな画面の吹き出しIDを動的に探す
     let targetId = null;
-    const idsToSearch = ['nell-text', 'nell-text-game', 'nell-text-riddle', 'nell-text-minitest', 'nell-text-map', 'nell-text-self-study'];
+    const idsToSearch =['nell-text', 'nell-text-game', 'nell-text-quiz', 'nell-text-riddle', 'nell-text-minitest', 'nell-text-map', 'nell-text-self-study', 'nell-text-danmaku', 'nell-text-kanji', 'nell-text-memory', 'nell-text-slot'];
     for(const id of idsToSearch) {
         const el = document.getElementById(id);
-        if (el && el.offsetParent !== null) { // 表示されている要素を探す
+        if (el && el.offsetParent !== null) { 
             targetId = id;
             break;
         }
     }
     
-    // 見つからない場合はデフォルトの'nell-text'を使う
     if (!targetId) targetId = 'nell-text';
 
     const el = document.getElementById(targetId);

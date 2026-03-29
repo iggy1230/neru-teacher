@@ -1,6 +1,6 @@
 // --- START OF FILE self-study.js ---
 
-// --- js/self-study.js (v1.4: 管理機能搭載版) ---
+// --- js/self-study.js (v1.5: 全ユーザー共有版) ---
 
 let selfStudyState = {
     drills:[],
@@ -18,22 +18,75 @@ function playSelfStudyVoice(text, mood = "normal") {
 }
 
 // ==========================================
+// 共有データのロード/保存処理
+// ==========================================
+window.loadSharedDrills = async function() {
+    let drills =[];
+    if (window.db) {
+        try {
+            const snapshot = await window.db.collection('shared_drills').get();
+            snapshot.forEach(doc => {
+                drills.push(doc.data());
+            });
+            // DBから取得できたらローカルストレージも更新
+            localStorage.setItem('nekoneko_shared_drills', JSON.stringify(drills));
+            return drills;
+        } catch(e) {
+            console.warn("Firestore shared_drills load error (fallback to local):", e);
+        }
+    }
+    return JSON.parse(localStorage.getItem('nekoneko_shared_drills') || "[]");
+};
+
+window.saveSharedDrill = async function(drillData) {
+    if (window.db) {
+        try {
+            await window.db.collection('shared_drills').doc(drillData.id).set(drillData);
+        } catch(e) {
+            console.warn("Firestore shared_drills save error:", e);
+        }
+    }
+    // ローカルにも保存して同期を保つ
+    let drills = JSON.parse(localStorage.getItem('nekoneko_shared_drills') || "[]");
+    const idx = drills.findIndex(d => d.id === drillData.id);
+    if (idx !== -1) drills[idx] = drillData;
+    else drills.push(drillData);
+    localStorage.setItem('nekoneko_shared_drills', JSON.stringify(drills));
+};
+
+window.deleteSharedDrill = async function(drillId) {
+    if (window.db) {
+        try {
+            await window.db.collection('shared_drills').doc(drillId).delete();
+        } catch(e) {
+            console.warn("Firestore shared_drills delete error:", e);
+        }
+    }
+    let drills = JSON.parse(localStorage.getItem('nekoneko_shared_drills') || "[]");
+    drills = drills.filter(d => d.id !== drillId);
+    localStorage.setItem('nekoneko_shared_drills', JSON.stringify(drills));
+};
+
+// ==========================================
 // 1. 親モード: ドリル管理
 // ==========================================
-window.showDrillManagement = function() {
+window.showDrillManagement = async function() {
     window.switchScreen('screen-drill-management');
     playSelfStudyVoice("登録したドリルを管理するにゃ！", "normal");
 
     const container = document.getElementById('drill-management-list');
-    container.innerHTML = '';
+    container.innerHTML = '<p style="text-align:center; color:#888;">読み込み中にゃ...</p>';
     
-    if (!currentUser || !currentUser.custom_drills || currentUser.custom_drills.length === 0) {
+    const drills = await window.loadSharedDrills();
+    container.innerHTML = '';
+
+    if (drills.length === 0) {
         container.innerHTML = '<p style="text-align:center; color:#888;">まだドリルが登録されてないにゃ。</p>';
         return;
     }
 
     // 新しい順にソート
-    const sortedDrills = [...currentUser.custom_drills].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const sortedDrills = [...drills].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
     sortedDrills.forEach(drill => {
         const itemDiv = document.createElement('div');
@@ -51,43 +104,35 @@ window.showDrillManagement = function() {
 };
 
 window.renameDrill = async function(drillId) {
-    if (!currentUser || !currentUser.custom_drills) return;
-    
-    const drill = currentUser.custom_drills.find(d => d.id === drillId);
+    const drills = await window.loadSharedDrills();
+    const drill = drills.find(d => d.id === drillId);
     if (!drill) return;
 
     const newTitle = prompt("新しいドリルの名前を入力してにゃ！", drill.title);
     if (newTitle && newTitle.trim() !== "" && newTitle !== drill.title) {
         drill.title = newTitle.trim();
         
-        if (typeof window.saveAndSync === 'function') {
-            await window.saveAndSync();
-            alert("名前を変更したにゃ！");
-            window.showDrillManagement(); // リストを再描画
-        }
+        await window.saveSharedDrill(drill);
+        alert("名前を変更したにゃ！");
+        window.showDrillManagement(); // リストを再描画
     }
 };
 
 window.deleteDrill = async function(drillId) {
-    if (!currentUser || !currentUser.custom_drills) return;
-    
-    const drill = currentUser.custom_drills.find(d => d.id === drillId);
+    const drills = await window.loadSharedDrills();
+    const drill = drills.find(d => d.id === drillId);
     if (!drill) return;
 
     if (confirm(`本当に「${drill.title}」を削除するにゃ？\nこの操作は元に戻せないにゃ！`)) {
-        currentUser.custom_drills = currentUser.custom_drills.filter(d => d.id !== drillId);
-
-        if (typeof window.saveAndSync === 'function') {
-            await window.saveAndSync();
-            alert("ドリルを削除したにゃ！");
-            window.showDrillManagement(); // リストを再描画
-        }
+        await window.deleteSharedDrill(drillId);
+        alert("ドリルを削除したにゃ！");
+        window.showDrillManagement(); // リストを再描画
     }
 };
 
 // JSONのインポート用
 window.openDrillImportModal = function() {
-    if (!currentUser) return;
+    if (!currentUser) return alert("生徒を選んでログインしてにゃ！");
     const modal = document.getElementById('drill-import-modal');
     if (modal) {
         document.getElementById('drill-json-input').value = "";
@@ -117,10 +162,6 @@ window.importDrillJson = async function() {
             throw new Error("フォーマットが違うみたいだにゃ（titleとpagesが必要）");
         }
 
-        if (!currentUser.custom_drills) {
-            currentUser.custom_drills =[];
-        }
-
         const newDrillId = "drill_" + Date.now() + "_" + Math.floor(Math.random()*1000);
         const dataToSave = {
             ...drillData,
@@ -128,11 +169,7 @@ window.importDrillJson = async function() {
             createdAt: new Date().toISOString()
         };
 
-        currentUser.custom_drills.push(dataToSave);
-        
-        if (typeof window.saveAndSync === 'function') {
-            await window.saveAndSync();
-        }
+        await window.saveSharedDrill(dataToSave);
         
         alert("ドリルを登録したにゃ！");
         window.closeDrillImportModal();
@@ -162,11 +199,10 @@ window.showSelfStudyMenu = async function() {
     playSelfStudyVoice("自習室だにゃ！どのドリルをやるにゃ？", "normal");
     
     const container = document.getElementById('self-study-drill-list');
+    container.innerHTML = '<p style="text-align:center; color:#888;">読み込み中にゃ...</p>';
+    
+    selfStudyState.drills = await window.loadSharedDrills();
     container.innerHTML = '';
-    
-    if (!currentUser) return;
-    
-    selfStudyState.drills = currentUser.custom_drills ||[];
     
     if (selfStudyState.drills.length === 0) {
         container.innerHTML = '<p style="text-align:center; color:#888;">まだドリルが登録されてないにゃ。<br>おうちの人に登録してもらってにゃ！</p>';
