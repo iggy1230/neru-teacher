@@ -1,13 +1,12 @@
-<!-- index.html (完全版 v470.36: 自習ドリル管理機能追加版) -->
+<!-- index.html (完全版 v470.42: 図書室リーダーUI改善版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>🐾猫後市立ねこづか小学校</title>
-    <link rel="stylesheet" href="style.css?v=470.36">
+    <link rel="stylesheet" href="style.css?v=470.42">
     <link href="https://fonts.googleapis.com/css2?family=Sawarabi+Gothic&family=M+PLUS+Rounded+1c:wght@700;900&family=Kiwi+Maru:wght@900&family=Klee+One:wght@400;600&family=Zen+Kurenaido&display=swap" rel="stylesheet">
-    <!-- ライブラリ群 -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
@@ -19,6 +18,8 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
     <script src="js/config/map-data.js?v=1.0"></script>
+    <!-- ★PDF読み込み用ライブラリ -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
 </head>
 <body>
     <canvas id="hanamaru-canvas"></canvas>
@@ -36,7 +37,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v470.36</div>
+            <div class="version-tag">Build: v470.42</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -77,6 +78,7 @@
             <div class="lobby-menu">
                 <button onclick="openTimerModal()" class="main-btn pink-btn" style="background-color:#ff7043 !important; box-shadow: 0 4px 0 #d84315 !important;">⏱️ ネル先生タイマー</button>
                 <button onclick="switchScreen('screen-classroom')" class="main-btn green-btn">🏫 教室</button>
+                <button onclick="window.showLibrary()" class="main-btn" style="background-color:#8d6e63 !important; box-shadow: 0 4px 0 #5d4037 !important;">📚 図書室</button>
                 <button onclick="switchScreen('screen-playground')" class="main-btn yellow-btn" style="background-color:#fbc02d !important; box-shadow: 0 4px 0 #f57f17 !important;">🏀 体育館</button>
                 <button onclick="switchScreen('screen-lunchroom')" class="main-btn orange-btn">🍽️ 給食室</button>
                 <button onclick="switchScreen('screen-staffroom')" class="main-btn purple-btn">👩‍🏫 職員室</button>
@@ -130,7 +132,7 @@
         <section id="screen-staffroom" class="screen hidden">
             <h2 class="section-title">👩‍🏫 職員室</h2>
             <div class="lobby-menu" style="margin-top: 20px;">
-                <!-- ★変更: ボタン名と遷移先 -->
+                <button onclick="window.openPdfImportModal()" class="main-btn" style="background-color:#8d6e63 !important; box-shadow: 0 4px 0 #5d4037 !important;">📚 図書室に本を寄贈(親用)</button>
                 <button onclick="window.showDrillManagement()" class="main-btn" style="background-color:#0288d1 !important; box-shadow: 0 4px 0 #01579b !important;">📚 自習ドリルの管理(親用)</button>
                 <button onclick="openMemoryManager()" class="main-btn gray-btn" style="background:#607d8b !important; border:none; box-shadow:0 4px 0 #455a64 !important;">📝 プロフィール</button>
                 <button onclick="showAttendance()" class="main-btn purple-btn">📅 出席簿をみる</button>
@@ -153,7 +155,56 @@
             </div>
         </section>
 
-        <!-- ★追加: 自習ドリル管理画面 -->
+        <!-- ★図書室（本棚）画面 -->
+        <section id="screen-library" class="screen hidden">
+            <div class="nell-chat">
+                <div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-library"></div>
+                <div class="chat-bubble"><p id="nell-text-library">図書室だにゃ！</p></div>
+            </div>
+            <h2 class="section-title" style="color:#795548; text-shadow: 2px 2px 0 #fff;">📚 ネル先生の図書室</h2>
+            
+            <div class="glass-card" style="padding:15px; min-height: 60vh;">
+                <p style="text-align:center; font-weight:bold; margin-bottom:15px; color:#5d4037;">読みたい本を選んでにゃ！</p>
+                <div id="library-book-grid" style="display:grid; grid-template-columns: repeat(3, 1fr); gap:15px;">
+                    <!-- 本のリスト -->
+                </div>
+            </div>
+            <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
+        </section>
+
+        <!-- ★PDF読書（リーダー）画面 -->
+        <section id="screen-library-reader" class="screen hidden" style="padding: 10px 10px 20px 10px; background: #3e2723; height: 100vh; display: flex; flex-direction: column; overflow: hidden;">
+            <!-- ヘッダー -->
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-shrink:0;">
+                <button onclick="window.closeBook()" class="mini-teach-btn" style="background:#ef5350; font-size:1rem; padding:8px 15px; margin:0;">✖ 閉じる</button>
+                <span id="pdf-reader-title" style="color:white; font-weight:bold; flex:1; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding:0 10px;">タイトル</span>
+                <span id="pdf-page-info" style="color:white; font-size:0.9rem; font-weight:bold;">1 / ?</span>
+            </div>
+            
+            <!-- ビューワー部分 -->
+            <div id="pdf-reader-container" style="position:relative; width:100%; flex:1; background:#222; border-radius:10px; overflow:hidden; display:flex; align-items:center; justify-content:center; margin-bottom:15px;">
+                <!-- PDF描画キャンバス -->
+                <canvas id="pdf-render-canvas" style="max-width:100%; max-height:100%; box-shadow:0 5px 25px rgba(0,0,0,0.8);"></canvas>
+                
+                <!-- 画面端のタップ領域 -->
+                <div onclick="window.prevPdfPage()" style="position:absolute; top:0; left:0; width:25%; height:100%; cursor:pointer; z-index:10;"></div>
+                <div onclick="window.nextPdfPage()" style="position:absolute; top:0; right:0; width:25%; height:100%; cursor:pointer; z-index:10;"></div>
+            </div>
+            
+            <!-- フッター操作パネル（右手親指特化） -->
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-shrink:0; padding: 0 10px;">
+                <!-- 戻るボタン（左下・小さめ） -->
+                <button onclick="window.prevPdfPage()" class="main-btn" style="background: rgba(255,255,255,0.1) !important; color: white; border: 2px solid rgba(255,255,255,0.5); box-shadow: none !important; width: 55px; height: 55px; border-radius: 50%; padding: 0; margin: 0; display: flex; align-items: center; justify-content: center; font-size: 1.2rem;">◀</button>
+                
+                <!-- ガイドテキスト -->
+                <span style="color: #aaa; font-size: 0.8rem; flex:1; text-align:center; pointer-events: none;">画面の端をタップでも<br>めくれるにゃ！</span>
+                
+                <!-- 次へボタン（右下・特大） -->
+                <button onclick="window.nextPdfPage()" class="main-btn" style="background: #4caf50 !important; color: white; box-shadow: 0 6px 0 #2e7d32 !important; width: 75px; height: 75px; border-radius: 50%; padding: 0; margin: 0; display: flex; align-items: center; justify-content: center; font-size: 2rem;">▶</button>
+            </div>
+        </section>
+
+        <!-- 自習ドリル管理画面 -->
         <section id="screen-drill-management" class="screen hidden">
             <h2 class="section-title" style="color:#0288d1; text-shadow: 2px 2px 0 #fff;">📚 自習ドリルの管理</h2>
             <div class="glass-card" style="padding:15px;">
@@ -450,38 +501,32 @@
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
 
-        <!-- シール帳 -->
-        <section id="screen-sticker-book" class="screen hidden" style="padding-top:60px; position:relative;">
-            <button onclick="window.closeStickerBook()" class="main-btn gray-btn" style="position:absolute; top:10px; left:10px; width:auto; padding:5px 15px; margin:0; z-index:200; font-size:1.2rem; box-shadow:0 2px 0 #78909c !important;">←</button>
-
-            <h2 class="section-title" style="color:#e91e63; text-shadow: 2px 2px 0 #fff;">📒 シール帳</h2>
-            <div style="display:flex; justify-content:center; gap:10px; margin-bottom:5px;">
-                <button onclick="window.showStickerBook()" class="main-btn pink-btn" style="width:auto; padding:5px 15px; font-size:0.9rem; margin:0;">じぶんの</button>
-                <button onclick="window.openStickerUserList()" class="main-btn green-btn" style="width:auto; padding:5px 15px; font-size:0.9rem; margin:0; background-color:#8d6e63 !important; box-shadow:0 3px 0 #5d4037 !important;">みんなの</button>
-            </div>
-            <div id="sticker-board-container">
-                <div id="sticker-board">
-                    <div id="sticker-guide-text" style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); color:rgba(0,0,0,0.3); font-weight:bold; pointer-events:none;">ここにシールを貼ってね</div>
-                </div>
-            </div>
-            <div id="sticker-trash" class="hidden">🗑️</div>
-
-            <div id="new-sticker-area" class="new-sticker-area">
-                <div class="new-sticker-title">あたらしいシール</div>
-            </div>
-            
-            <p style="text-align:center; font-size:0.8rem; color:white; margin-top:5px; text-shadow:1px 1px 2px rgba(0,0,0,0.5);">
-                ドラッグで移動、タップで回転だにゃ！<br>
-                いらないシールはゴミ箱へポイだにゃ！
-            </p>
-            <div style="text-align:center; margin-top:10px;">
-                <button onclick="window.saveStickers()" class="main-btn blue-btn" style="width:auto; display:inline-block; padding:10px 20px;">💾 保存する</button>
-                <button onclick="window.closeStickerBook()" class="main-btn gray-btn" style="width:auto; display:inline-block; padding:10px 20px;">もどる</button>
-            </div>
-        </section>
     </div>
 
     <!-- モーダル類 -->
+    <!-- ★PDFインポートモーダル (親用) -->
+    <div id="pdf-import-modal" class="memory-modal-overlay hidden">
+        <div class="memory-modal-content" style="max-height:90vh;">
+            <h3 style="text-align:center; margin:0 0 10px 0; color:#8d6e63;">📚 図書室に本を寄贈</h3>
+            <p style="font-size:0.8rem; color:#666; margin-bottom:10px;">PDF形式のファイル（絵本やドリル）を選んでにゃ。</p>
+            
+            <input type="file" id="pdf-file-input" accept=".pdf" style="display:none;" onchange="window.onPdfFileSelected(event)">
+            <button onclick="document.getElementById('pdf-file-input').click()" class="main-btn green-btn" style="margin-bottom:15px;">📁 PDFファイルを選ぶ</button>
+            
+            <div id="pdf-meta-area" class="hidden" style="text-align:center; background:#f5f5f5; padding:10px; border-radius:10px; margin-bottom:15px;">
+                <p style="font-size:0.7rem; color:#888; margin-bottom:5px;">↓1ページ目から表紙を自動で作ったにゃ！</p>
+                <img id="pdf-preview-cover" src="" style="width:120px; height:160px; object-fit:contain; border-radius:5px; box-shadow:0 2px 5px rgba(0,0,0,0.2); margin-bottom:10px; background:#fff;">
+                <input type="text" id="pdf-title-input" class="styled-input" placeholder="本のタイトル" style="margin-bottom:5px;">
+                <input type="text" id="pdf-author-input" class="styled-input" placeholder="作者（または学年など）">
+            </div>
+
+            <div style="text-align:center; margin-top:15px; display:flex; gap:10px;">
+                <button onclick="window.closePdfImportModal()" class="main-btn gray-btn" style="flex:1; margin:0;">キャンセル</button>
+                <button id="pdf-upload-btn" onclick="window.uploadPdfToFirebase()" class="main-btn blue-btn" style="flex:1; margin:0;" disabled>ファイルを選んでにゃ</button>
+            </div>
+        </div>
+    </div>
+
     <!-- ドリルJSON登録モーダル (親用) -->
     <div id="drill-import-modal" class="memory-modal-overlay hidden">
         <div class="memory-modal-content" style="max-height:90vh;">
@@ -519,6 +564,7 @@
     <script src="js/game-engine.js"></script>
     <script src="js/analyze.js"></script>
     <script src="js/ui/sticker.js"></script>
-    <script src="js/self-study.js?v=1.4"></script>
+    <script src="js/self-study.js?v=1.5"></script>
+    <script src="js/library.js?v=4.0"></script>
 </body>
 </html>
